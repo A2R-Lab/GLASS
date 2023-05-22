@@ -1,4 +1,4 @@
 # GLASS
 
 ## Usage
-```#include "./GLASS/GLASS.cu"```
+```#include "./GLASS/GLASS.cuh"```
