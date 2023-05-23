@@ -15,7 +15,7 @@ void invertMatrix(uint32_t dimA, T *A, T *s_temp, cgrps::thread_group g){
         unsigned pivColOffset = pivRC*dimA;
         // save the pivot and pivot column and row
         T pvInv = static_cast<T>(1)/A[pivRC + pivColOffset];
-        for (unsigned ind = GATO_THREAD_ID; ind < 2*dimA+1; ind++){
+        for (unsigned ind = g.thread_rank(); ind < 2*dimA+1; ind++){
             unsigned AInd;
             if (ind < dimA){AInd = ind + pivColOffset;}
             else{AInd = pivRC + pivColOffset + (ind-dimA)*dimA;}
@@ -23,7 +23,7 @@ void invertMatrix(uint32_t dimA, T *A, T *s_temp, cgrps::thread_group g){
         }
         g.sync();
         // make the pivot update
-        for (unsigned ind = GATO_THREAD_ID; ind < dimA*(dimA+1); ind += GATO_THREADS_PER_BLOCK){
+        for (unsigned ind = g.thread_rank(); ind < dimA*(dimA+1); ind += g.size()){
             unsigned row = ind % dimA; unsigned col = ind / dimA; unsigned colOffset = ind - row;
             // s_temp = orpcvs|prvOld
             if (row == pivRC){A[row + pivColOffset + colOffset] *= pvInv;}
@@ -48,17 +48,17 @@ void invertMatrix(uint32_t dimA, T *A, uint32_t dimB, T *B, uint32_t dimMax, T *
         bool AActive = pivRC < dimA; bool BActive = pivRC < dimB;
         unsigned pivColOffsetA = pivRC*dimA; unsigned pivColOffsetB = pivRC*dimB;
         // save the pivot column and row
-        for (unsigned ind = GATO_THREAD_ID; ind < dimMax; ind++){
+        for (unsigned ind = g.thread_rank(); ind < dimMax; ind++){
             if (AActive && ind < dimA){s_memA[ind] = A[ind + pivColOffsetA];}
             if (BActive && ind < dimB){s_memB[ind] = B[ind + pivColOffsetB];}
         }
-        for (unsigned ind = GATO_THREAD_ID; ind < dimMax+1; ind++){
+        for (unsigned ind = g.thread_rank(); ind < dimMax+1; ind++){
             if (AActive && ind < dimA+1){s_memA[ind + dimA] = A[ind*dimA + pivRC + pivColOffsetA];}
             if (BActive && ind < dimB+1){s_memB[ind + dimB] = B[ind*dimB + pivRC + pivColOffsetB];}
         }
         g.sync();
         // make the pivot update with s_mem = [colA,rowA,colB,rowB,colC,rowC]
-        for (unsigned ind = GATO_THREAD_ID; ind < dimMax*(dimMax+1); ind += GATO_THREADS_PER_BLOCK){
+        for (unsigned ind = g.thread_rank(); ind < dimMax*(dimMax+1); ind += g.size()){
             if (AActive && ind < dimA*(dimA+1)){
                 unsigned row = ind % dimA; unsigned col = ind / dimA;
                 if (row == pivRC){A[pivColOffsetA + ind] /= s_memA[pivRC];}
@@ -90,19 +90,19 @@ void invertMatrix(uint32_t dimA, T *A, uint32_t dimB, T *B, uint32_t dimC, T *C,
         bool AActive = pivRC < dimA; bool BActive = pivRC < dimB; bool CActive = pivRC < dimC;
         unsigned pivColOffsetA = pivRC*dimA; unsigned pivColOffsetB = pivRC*dimB; unsigned pivColOffsetC = pivRC*dimC;
         // save the pivot column and row
-        for (unsigned ind = GATO_THREAD_ID; ind < dimMax; ind++){
+        for (unsigned ind = g.thread_rank(); ind < dimMax; ind++){
             if (AActive && ind < dimA){s_memA[ind] = A[ind + pivColOffsetA];}
             if (BActive && ind < dimB){s_memB[ind] = B[ind + pivColOffsetB];}
             if (CActive && ind < dimC){s_memC[ind] = C[ind + pivColOffsetC];}
         }
-        for (unsigned ind = GATO_THREAD_ID; ind < dimMax+1; ind++){
+        for (unsigned ind = g.thread_rank(); ind < dimMax+1; ind++){
             if (AActive && ind < dimA+1){s_memA[ind + dimA] = A[ind*dimA + pivRC + pivColOffsetA];}
             if (BActive && ind < dimB+1){s_memB[ind + dimB] = B[ind*dimB + pivRC + pivColOffsetB];}
             if (CActive && ind < dimC+1){s_memC[ind + dimC] = C[ind*dimC + pivRC + pivColOffsetC];}
         }
         g.sync();
         // make the pivot update with s_mem = [colA,rowA,colB,rowB,colC,rowC]
-        for (unsigned ind = GATO_THREAD_ID; ind < dimMax*(dimMax+1); ind += GATO_THREADS_PER_BLOCK){
+        for (unsigned ind = g.thread_rank(); ind < dimMax*(dimMax+1); ind += g.size()){
             if (AActive && ind < dimA*(dimA+1)){
                 unsigned row = ind % dimA; unsigned col = ind / dimA;
                 if (row == pivRC){A[pivColOffsetA + ind] /= s_memA[pivRC];}

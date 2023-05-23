@@ -4,12 +4,12 @@ namespace cgrps = cooperative_groups;
 
 template <typename T>
 __device__
-void reduce(std::uint32_t n,
+void reduce(uint32_t n,
             T *x,
-            cgrps::thread_block g)
+            cgrps::thread_group g)
 {
-    const std::uint32_t rank = g.thread_rank();
-    const std::uint32_t size = g.size(); 
+    const uint32_t rank = g.thread_rank();
+    const uint32_t size = g.size(); 
     unsigned size_left = n;
 
     // loop until only a few values left
@@ -19,29 +19,57 @@ void reduce(std::uint32_t n,
         size_left = (size_left - odd_flag)/2; 
         // reduce in half
         for (unsigned ind = rank; ind < size_left; ind += size){
-            dstTemp[ind] += dstTemp[ind + size_left];
+            x[ind] += x[ind + size_left];
         }	
         // add the odd size adjust if needed
-        if (rank == 0 && odd_flag){dstTemp[0] += dstTemp[2*size_left];}
+        if (rank == 0 && odd_flag){x[0] += x[2*size_left];}
         // sync and repeat
         g.sync();
     }
     // when we get really small sum up what is left
     if (rank == 0){
-        for(unsigned ind = 1; ind < size_left; ind++){dstTemp[0] += dstTemp[ind];}
+        for(unsigned ind = 1; ind < size_left; ind++){x[0] += x[ind];}
     }
 }
 
 template <typename T>
 __device__
-void dot(std::uint32_t n, 
+void reduce(T *out,
+            uint32_t n,
+            T *x,
+            cgrps::thread_group g)
+{
+
+    for(int i=g.thread_rank(); i < n; i += g.size()){ out[i] = x[i]; }
+    g.sync();
+    reduce(n, out, g);
+}
+
+template <typename T>
+__device__
+void dot(uint32_t n, 
           T *x, 
           T *y, 
           cgrps::thread_group g)
 {
-    for(std::uint32_t ind = g.thread_rank(); ind < n; ind += g.size()){
+    for(uint32_t ind = g.thread_rank(); ind < n; ind += g.size()){
         y[ind] = x[ind] * y[ind];
     }
     g.sync();
     reduce<T>(n, y, g);
+}
+
+template <typename T>
+__device__
+void dot(T *out,
+         uint32_t n, 
+         T *x, 
+         T *y, 
+         cgrps::thread_group g)
+{
+    for(uint32_t ind = g.thread_rank(); ind < n; ind += g.size()){
+        out[ind] = x[ind] * y[ind];
+    }
+    g.sync();
+    reduce<T>(n, out, g);
 }

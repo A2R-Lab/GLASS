@@ -6,8 +6,9 @@ namespace cgrps = cooperative_groups;
 template <typename T>
 __device__
 void loadIdentity(uint32_t dimA, 
-                  T *A){
-    for (unsigned ind = GATO_THREAD_ID; ind < dimA*dimA; ind += GATO_THREADS_PER_BLOCK){
+                  T *A,
+                  cgrps::thread_group g){
+    for (unsigned ind = g.thread_rank(); ind < dimA*dimA; ind += g.size()){
         unsigned r, c;
         r = ind % dimA; 
         c = ind / dimA;
@@ -21,8 +22,9 @@ __device__
 void loadIdentity(uint32_t dimA, 
                   T *A, 
                   uint32_t dimB, 
-                  T *B){
-    for (unsigned ind = GATO_THREAD_ID; ind < dimA*dimA+dimB*dimB; ind += GATO_THREADS_PER_BLOCK){
+                  T *B,
+                  cgrps::thread_group g){
+    for (unsigned ind = g.thread_rank(); ind < dimA*dimA+dimB*dimB; ind += g.size()){
         unsigned r, c, indAdj; T *V;
         if (ind < dimA*dimA){
             indAdj = ind;
@@ -45,8 +47,9 @@ void loadIdentity(uint32_t dimA,
                   uint32_t dimB, 
                   T *B, 
                   uint32_t dimC, 
-                  T *C){
-    for (unsigned ind = GATO_THREAD_ID; ind < dimA*dimA+dimB*dimB+dimC*dimC; ind += GATO_THREADS_PER_BLOCK){
+                  T *C,
+                  cgrps::thread_group g){
+    for (unsigned ind = g.thread_rank(); ind < dimA*dimA+dimB*dimB+dimC*dimC; ind += g.size()){
         unsigned r, c, indAdj; T *V;
         if (ind < dimA*dimA){
             indAdj = ind;

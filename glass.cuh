@@ -1,14 +1,17 @@
-/*      L1      */
-#include "./src/L1/axpy.cu"
-#include "./src/L1/copy.cu"
-#include "./src/L1/dot.cu"
-#include "./src/L1/ident.cu"
-#include "./src/L1/scal.cu"
-#include "./src/L1/swap.cu"
+#pragma once
+namespace glass{
+    /*      L1      */
+    #include "./src/L1/axpy.cuh"
+    #include "./src/L1/copy.cuh"
+    #include "./src/L1/dot.cuh"
+    #include "./src/L1/ident.cuh"
+    #include "./src/L1/scal.cuh"
+    #include "./src/L1/swap.cuh"
 
-/*      L2      */
-#include "./src/L2/gemv.cu"
+    /*      L2      */
+    #include "./src/L2/gemv.cuh"
 
-/*      L3      */
-#include "./src/L3/gemm.cu"
-#include "./src/L3/inv.cu"
+    /*      L3      */
+    #include "./src/L3/gemm.cuh"
+    #include "./src/L3/inv.cuh"
+}
