@@ -66,3 +66,16 @@ void loadIdentity(uint32_t dimA,
         V[indAdj] = static_cast<T>(r == c);
     }
 }
+
+
+template <typename T>
+__device__
+void addI(uint32_t n,
+          T *A,
+          T alpha,
+          cgrps::thread_group g)
+{
+    for(uint32_t i = g.thread_rank(); i < n * n; i += g.size()){
+        if(i % n == i / n){ A[i] += alpha; }
+    }
+}
