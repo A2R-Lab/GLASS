@@ -7,7 +7,7 @@ template <typename T>
 __device__
 void loadIdentity(uint32_t dimA, 
                   T *A,
-                  cgrps::thread_group g){
+                  cgrps::thread_group g = cgrps::this_thread_block()){
     for (unsigned ind = g.thread_rank(); ind < dimA*dimA; ind += g.size()){
         unsigned r, c;
         r = ind % dimA; 
@@ -23,7 +23,7 @@ void loadIdentity(uint32_t dimA,
                   T *A, 
                   uint32_t dimB, 
                   T *B,
-                  cgrps::thread_group g){
+                  cgrps::thread_group g = cgrps::this_thread_block()){
     for (unsigned ind = g.thread_rank(); ind < dimA*dimA+dimB*dimB; ind += g.size()){
         unsigned r, c, indAdj; T *V;
         if (ind < dimA*dimA){
@@ -48,7 +48,7 @@ void loadIdentity(uint32_t dimA,
                   T *B, 
                   uint32_t dimC, 
                   T *C,
-                  cgrps::thread_group g){
+                  cgrps::thread_group g = cgrps::this_thread_block()){
     for (unsigned ind = g.thread_rank(); ind < dimA*dimA+dimB*dimB+dimC*dimC; ind += g.size()){
         unsigned r, c, indAdj; T *V;
         if (ind < dimA*dimA){
@@ -73,7 +73,7 @@ __device__
 void addI(uint32_t n,
           T *A,
           T alpha,
-          cgrps::thread_group g)
+          cgrps::thread_group g = cgrps::this_thread_block())
 {
     for(uint32_t i = g.thread_rank(); i < n * n; i += g.size()){
         if(i % n == i / n){ A[i] += alpha; }
