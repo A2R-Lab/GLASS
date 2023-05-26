@@ -82,7 +82,7 @@ __device__
 void invertMatrix(uint32_t dimA, T *A, uint32_t dimB, T *B, uint32_t dimC, T *C, T *s_temp, cgrps::thread_group g = cgrps::this_thread_block()){
     
     uint32_t dimMax = max(dimA, dimB);
-    dimMax = max(dimMax, dimC)
+    dimMax = max(dimMax, dimC);
     // now we are going to guassian elimination walking down the matrix (assuming no leading 0s)
     // we therefore use the columns in order as the pivot column for each pivot we need to rescale 
     // that row so that the pivot value (pv) is 1 THEN for all other row values (orv) we need to add a multiple 

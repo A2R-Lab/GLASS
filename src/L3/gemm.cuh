@@ -80,7 +80,7 @@ void gemm(std::uint32_t m,
                 res += A[ind*m + row] * B[ind*n + col];
             }
 
-            C[col*m + row] = alpha * res + beta * C[col*m + row];
+            C[col*m + row] = alpha * res;
         }
     }
     else{
@@ -97,7 +97,7 @@ void gemm(std::uint32_t m,
                 res += A[ind*m + row] * B[col*n + ind];
             }
 
-            C[col*m + row] = alpha * res + beta * C[col*m + row];
+            C[col*m + row] = alpha * res;
         }
     }
 }
