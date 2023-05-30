@@ -14,3 +14,17 @@ void axpy(std::uint32_t n,
         y[ind] = alpha * x[ind] + y[ind];
     }
 }
+
+template <typename T>
+__device__
+void axpy(std::uint32_t n, 
+          T alpha, 
+          T *x, 
+          T *y, 
+          T *z, 
+          cgrps::thread_group g)
+{
+    for(std::uint32_t ind = g.thread_rank(); ind < n; ind += g.size()){
+        z[ind] = alpha * x[ind] + y[ind];
+    }
+}
