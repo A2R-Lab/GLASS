@@ -1,0 +1,23 @@
+#include <cstdint>
+#include <cooperative_groups.h>
+namespace cgrps = cooperative_groups;
+
+/*
+ *  @brief Function that sets all elements of matrix/vector to a specific constant
+ *  @params
+ *  std::unit32_t n  - total size of matrix/vector
+ *  T const - the constant to set 
+ *  T *x - matrix/vector to change
+ */
+
+template <typename T>
+__device__
+void set_const(std::uint32_t n, 
+          T const, 
+          T *x, 
+          cgrps::thread_group g)
+{
+    for(std::uint32_t ind = g.thread_rank(); ind < n; ind += g.size()){
+        x[ind] = const;
+    }
+}
