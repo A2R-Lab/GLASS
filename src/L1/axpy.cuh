@@ -2,6 +2,11 @@
 #include <cooperative_groups.h>
 namespace cgrps = cooperative_groups;
 
+/*
+    Compute the scaled sum of two vectors
+    alpha * x + y
+    store the result back in y
+*/
 template <typename T>
 __device__
 void axpy(std::uint32_t n, 
@@ -15,6 +20,11 @@ void axpy(std::uint32_t n,
     }
 }
 
+/*
+    Compute the scaled sum of two vectors
+    alpha * x + y
+    store the result in z
+*/
 template <typename T>
 __device__
 void axpy(std::uint32_t n, 

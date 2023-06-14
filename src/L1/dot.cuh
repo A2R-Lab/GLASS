@@ -4,6 +4,14 @@ namespace cgrps = cooperative_groups;
 
 #include "reduce.cuh"
 
+
+/*
+    dot product of two vectors
+    x and y are input vectors
+    store the result in y
+    n is the length of the vectors
+    g is the thread group
+*/
 template <typename T>
 __device__
 void dot(uint32_t n, 
@@ -18,6 +26,13 @@ void dot(uint32_t n,
     reduce<T>(n, y, g);
 }
 
+/*
+    dot product of two vectors
+    x and y are input vectors
+    store the result in out
+    n is the length of the vectors
+    g is the thread group
+*/
 template <typename T>
 __device__
 void dot(T *out,

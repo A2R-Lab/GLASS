@@ -2,6 +2,23 @@
 #include <cooperative_groups.h>
 namespace cgrps = cooperative_groups;
 
+/*
+    *  copy
+    *  =====
+    *
+    *  Copies the contents of x into y.
+    *
+    *  Parameters
+    *  ----------
+    *  n : std::uint32_t
+    *      The number of elements to copy.
+    *  x : T*
+    *      The array to copy from.
+    *  y : T*
+    *      The array to copy to.
+    *  g : cgrps::thread_group
+    *      The thread group to use.
+    */
 template <typename T>
 __device__
 void copy(std::uint32_t n, 
@@ -14,6 +31,26 @@ void copy(std::uint32_t n,
     }
 }
 
+/*
+    * copy
+    * ====
+    * 
+    *  Copies the scaled contents of x into y.
+    *  Scale each element in x by alpha
+    * 
+    * Parameters
+    * ----------
+    * n : std::uint32_t
+    *    The number of elements to copy.
+    * alpha : T
+    *   The scaling factor
+    * x : T*
+    *  The array to copy from.
+    * y : T*
+    * The array to copy to.
+    * g : cgrps::thread_group
+    * The thread group to use.
+*/
 template <typename T>
 __device__
 void copy(std::uint32_t n,
