@@ -11,7 +11,7 @@
 
 template <typename T> 
 __device__ 
-void cholDecomp_InPlace_c (std::unit32_t n,
+void chol_InPlace (std::unit32_t n,
                         T *s_A,
                         cgrps::thread_group g = cgrps::this_thread_block())
 {
