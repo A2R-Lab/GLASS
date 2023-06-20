@@ -10,13 +10,12 @@ void gemv(std::uint32_t m,
           T *A,
           T *x,
           T beta, 
-          T *y, 
-          cgrps::thread_group g = cgrps::this_thread_block())
+          T *y)
 {
         if(TRANSPOSE){
             T res;
 
-            for(std::uint32_t row = g.thread_rank(); row < n; row += g.size()){
+            for(std::uint32_t row = threadIdx.x; row < n; row += blockDim.x){
                 res = static_cast<T>(0);
                 for(std::uint32_t col = 0; col < m; col++){
                     res += A[row*m + col] * x[col];
@@ -27,7 +26,7 @@ void gemv(std::uint32_t m,
         else{
             T res;
 
-            for(std::uint32_t row = g.thread_rank(); row < m; row += g.size()){
+            for(std::uint32_t row = threadIdx.x; row < m; row += blockDim.x){
                 res = static_cast<T>(0);
                 for(std::uint32_t col = 0; col < n; col++){
                     res += A[row + col*m] * x[col];
@@ -45,13 +44,12 @@ void gemv(std::uint32_t m,
           T alpha,
           T *A,
           T *x,
-          T *y, 
-          cgrps::thread_group g = cgrps::this_thread_block())
+          T *y)
 {
         if(TRANSPOSE){
             T res;
 
-            for(std::uint32_t row = g.thread_rank(); row < n; row += g.size()){
+            for(std::uint32_t row = threadIdx.x; row < n; row += blockDim.x){
                 res = static_cast<T>(0);
                 for(std::uint32_t col = 0; col < m; col++){
                     res += A[row*m + col] * x[col];
@@ -62,7 +60,7 @@ void gemv(std::uint32_t m,
         else{
             T res;
 
-            for(std::uint32_t row = g.thread_rank(); row < m; row += g.size()){
+            for(std::uint32_t row = threadIdx.x; row < m; row += blockDim.x){
                 res = static_cast<T>(0);
                 for(std::uint32_t col = 0; col < n; col++){
                     res += A[row + col*m] * x[col];

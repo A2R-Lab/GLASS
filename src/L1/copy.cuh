@@ -1,3 +1,4 @@
+#pragma once
 #include <cstdint>
 #include <cooperative_groups.h>
 namespace cgrps = cooperative_groups;
@@ -21,12 +22,11 @@ namespace cgrps = cooperative_groups;
     */
 template <typename T>
 __device__
-void copy(std::uint32_t n, 
+void copy(const uint32_t n, 
           T *x, 
-          T *y, 
-          cgrps::thread_group g = cgrps::this_thread_block())
+          T *y)
 {
-    for(std::uint32_t ind = g.thread_rank(); ind < n; ind += g.size()){
+    for(std::uint32_t ind = threadIdx.x; ind < n; ind += blockDim.x){
         y[ind] = x[ind];
     }
 }
@@ -53,13 +53,12 @@ void copy(std::uint32_t n,
 */
 template <typename T>
 __device__
-void copy(std::uint32_t n,
+void copy(const std::uint32_t n,
           T alpha,
           T *x, 
-          T *y, 
-          cgrps::thread_group g = cgrps::this_thread_block())
+          T *y)
 {
-    for(std::uint32_t ind = g.thread_rank(); ind < n; ind += g.size()){
+    for(std::uint32_t ind = threadIdx.x; ind < n; ind += blockDim.x){
         y[ind] = alpha * x[ind];
     }
 }

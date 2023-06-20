@@ -6,9 +6,8 @@ namespace cgrps = cooperative_groups;
 template <typename T>
 __device__
 void loadIdentity(uint32_t dimA, 
-                  T *A,
-                  cgrps::thread_group g = cgrps::this_thread_block()){
-    for (unsigned ind = g.thread_rank(); ind < dimA*dimA; ind += g.size()){
+                  T *A){
+    for (unsigned ind = threadIdx.x; ind < dimA*dimA; ind += blockDim.x){
         unsigned r, c;
         r = ind % dimA; 
         c = ind / dimA;
@@ -22,9 +21,8 @@ __device__
 void loadIdentity(uint32_t dimA, 
                   T *A, 
                   uint32_t dimB, 
-                  T *B,
-                  cgrps::thread_group g = cgrps::this_thread_block()){
-    for (unsigned ind = g.thread_rank(); ind < dimA*dimA+dimB*dimB; ind += g.size()){
+                  T *B){
+    for (unsigned ind = threadIdx.x; ind < dimA*dimA+dimB*dimB; ind += blockDim.x){
         unsigned r, c, indAdj; T *V;
         if (ind < dimA*dimA){
             indAdj = ind;
@@ -47,9 +45,8 @@ void loadIdentity(uint32_t dimA,
                   uint32_t dimB, 
                   T *B, 
                   uint32_t dimC, 
-                  T *C,
-                  cgrps::thread_group g = cgrps::this_thread_block()){
-    for (unsigned ind = g.thread_rank(); ind < dimA*dimA+dimB*dimB+dimC*dimC; ind += g.size()){
+                  T *C){
+    for (unsigned ind = threadIdx.x; ind < dimA*dimA+dimB*dimB+dimC*dimC; ind += blockDim.x){
         unsigned r, c, indAdj; T *V;
         if (ind < dimA*dimA){
             indAdj = ind;
@@ -72,10 +69,9 @@ template <typename T>
 __device__
 void addI(uint32_t n,
           T *A,
-          T alpha,
-          cgrps::thread_group g = cgrps::this_thread_block())
+          T alpha)
 {
-    for(uint32_t i = g.thread_rank(); i < n * n; i += g.size()){
+    for(uint32_t i = threadIdx.x; i < n * n; i += blockDim.x){
         if(i % n == i / n){ A[i] += alpha; }
     }
 }

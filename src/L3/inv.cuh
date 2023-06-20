@@ -5,7 +5,7 @@ namespace cgrps = cooperative_groups;
 
 template <typename T>
 __device__
-void invertMatrix(uint32_t dimA, T *A, T *s_temp, cgrps::thread_group g = cgrps::this_thread_block()){ 
+void invertMatrix(uint32_t dimA, T *A, T *s_temp){ 
 // we are going to guassian elimination walking down the matrix (assuming no leading 0s)
 // we therefore use the columns in order as the pivot column for each pivot we need to rescale 
 // that row so that the pivot value (pv) is 1 THEN for all other row values (orv) we need to add a multiple 
@@ -15,28 +15,28 @@ void invertMatrix(uint32_t dimA, T *A, T *s_temp, cgrps::thread_group g = cgrps:
         unsigned pivColOffset = pivRC*dimA;
         // save the pivot and pivot column and row
         T pvInv = static_cast<T>(1)/A[pivRC + pivColOffset];
-        for (unsigned ind = g.thread_rank(); ind < 2*dimA+1; ind++){
+        for (unsigned ind = threadIdx.x; ind < 2*dimA+1; ind++){
             unsigned AInd;
             if (ind < dimA){AInd = ind + pivColOffset;}
             else{AInd = pivRC + pivColOffset + (ind-dimA)*dimA;}
             s_temp[ind] = A[AInd];
         }
-        g.sync();
+        __syncthreads();
         // make the pivot update
-        for (unsigned ind = g.thread_rank(); ind < dimA*(dimA+1); ind += g.size()){
+        for (unsigned ind = threadIdx.x; ind < dimA*(dimA+1); ind += blockDim.x){
             unsigned row = ind % dimA; unsigned col = ind / dimA; unsigned colOffset = ind - row;
             // s_temp = orpcvs|prvOld
             if (row == pivRC){A[row + pivColOffset + colOffset] *= pvInv;}
             else{A[row + pivColOffset + colOffset] -= s_temp[row]*pvInv*s_temp[dimA+col];}
         }
-        g.sync();
+        __syncthreads();
     }
 }
 
 
 template <typename T>
 __device__
-void invertMatrix(uint32_t dimA, T *A, uint32_t dimB, T *B, T *s_temp, cgrps::thread_group g = cgrps::this_thread_block()){
+void invertMatrix(uint32_t dimA, T *A, uint32_t dimB, T *B, T *s_temp){
 
     uint32_t dimMax = max(dimA, dimB);
     // now we are going to guassian elimination walking down the matrix (assuming no leading 0s)
@@ -49,17 +49,17 @@ void invertMatrix(uint32_t dimA, T *A, uint32_t dimB, T *B, T *s_temp, cgrps::th
         bool AActive = pivRC < dimA; bool BActive = pivRC < dimB;
         unsigned pivColOffsetA = pivRC*dimA; unsigned pivColOffsetB = pivRC*dimB;
         // save the pivot column and row
-        for (unsigned ind = g.thread_rank(); ind < dimMax; ind++){
+        for (unsigned ind = threadIdx.x; ind < dimMax; ind++){
             if (AActive && ind < dimA){s_memA[ind] = A[ind + pivColOffsetA];}
             if (BActive && ind < dimB){s_memB[ind] = B[ind + pivColOffsetB];}
         }
-        for (unsigned ind = g.thread_rank(); ind < dimMax+1; ind++){
+        for (unsigned ind = threadIdx.x; ind < dimMax+1; ind++){
             if (AActive && ind < dimA+1){s_memA[ind + dimA] = A[ind*dimA + pivRC + pivColOffsetA];}
             if (BActive && ind < dimB+1){s_memB[ind + dimB] = B[ind*dimB + pivRC + pivColOffsetB];}
         }
-        g.sync();
+        __syncthreads();
         // make the pivot update with s_mem = [colA,rowA,colB,rowB,colC,rowC]
-        for (unsigned ind = g.thread_rank(); ind < dimMax*(dimMax+1); ind += g.size()){
+        for (unsigned ind = threadIdx.x; ind < dimMax*(dimMax+1); ind += blockDim.x){
             if (AActive && ind < dimA*(dimA+1)){
                 unsigned row = ind % dimA; unsigned col = ind / dimA;
                 if (row == pivRC){A[pivColOffsetA + ind] /= s_memA[pivRC];}
@@ -71,7 +71,7 @@ void invertMatrix(uint32_t dimA, T *A, uint32_t dimB, T *B, T *s_temp, cgrps::th
                 else{B[pivColOffsetB + ind] -= s_memB[row]/s_memB[pivRC]*s_memB[dimB+col];}
             }
         }
-        g.sync();
+        __syncthreads();
     }
 }
 
@@ -79,7 +79,7 @@ void invertMatrix(uint32_t dimA, T *A, uint32_t dimB, T *B, T *s_temp, cgrps::th
 // relies on s_temp of size [2*dimA + 2*dimB + 2*dimC + 3]
 template <typename T>
 __device__
-void invertMatrix(uint32_t dimA, T *A, uint32_t dimB, T *B, uint32_t dimC, T *C, T *s_temp, cgrps::thread_group g = cgrps::this_thread_block()){
+void invertMatrix(uint32_t dimA, T *A, uint32_t dimB, T *B, uint32_t dimC, T *C, T *s_temp){
     
     uint32_t dimMax = max(dimA, dimB);
     dimMax = max(dimMax, dimC);
@@ -93,19 +93,19 @@ void invertMatrix(uint32_t dimA, T *A, uint32_t dimB, T *B, uint32_t dimC, T *C,
         bool AActive = pivRC < dimA; bool BActive = pivRC < dimB; bool CActive = pivRC < dimC;
         unsigned pivColOffsetA = pivRC*dimA; unsigned pivColOffsetB = pivRC*dimB; unsigned pivColOffsetC = pivRC*dimC;
         // save the pivot column and row
-        for (unsigned ind = g.thread_rank(); ind < dimMax; ind++){
+        for (unsigned ind = threadIdx.x; ind < dimMax; ind++){
             if (AActive && ind < dimA){s_memA[ind] = A[ind + pivColOffsetA];}
             if (BActive && ind < dimB){s_memB[ind] = B[ind + pivColOffsetB];}
             if (CActive && ind < dimC){s_memC[ind] = C[ind + pivColOffsetC];}
         }
-        for (unsigned ind = g.thread_rank(); ind < dimMax+1; ind++){
+        for (unsigned ind = threadIdx.x; ind < dimMax+1; ind++){
             if (AActive && ind < dimA+1){s_memA[ind + dimA] = A[ind*dimA + pivRC + pivColOffsetA];}
             if (BActive && ind < dimB+1){s_memB[ind + dimB] = B[ind*dimB + pivRC + pivColOffsetB];}
             if (CActive && ind < dimC+1){s_memC[ind + dimC] = C[ind*dimC + pivRC + pivColOffsetC];}
         }
-        g.sync();
+        __syncthreads();
         // make the pivot update with s_mem = [colA,rowA,colB,rowB,colC,rowC]
-        for (unsigned ind = g.thread_rank(); ind < dimMax*(dimMax+1); ind += g.size()){
+        for (unsigned ind = threadIdx.x; ind < dimMax*(dimMax+1); ind += blockDim.x){
             if (AActive && ind < dimA*(dimA+1)){
                 unsigned row = ind % dimA; unsigned col = ind / dimA;
                 if (row == pivRC){A[pivColOffsetA + ind] /= s_memA[pivRC];}
@@ -122,6 +122,6 @@ void invertMatrix(uint32_t dimA, T *A, uint32_t dimB, T *B, uint32_t dimC, T *C,
                 else{C[pivColOffsetC + ind] -= s_memC[row]/s_memC[pivRC]*s_memC[dimC+col];}
             }
         }
-        g.sync();
+        __syncthreads();
     }
 }

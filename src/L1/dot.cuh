@@ -13,17 +13,16 @@ namespace cgrps = cooperative_groups;
     g is the thread group
 */
 template <typename T>
-__device__
-void dot(uint32_t n, 
+__device__  __forceinline__
+void dot(const uint32_t n, 
           T *x, 
-          T *y, 
-          cgrps::thread_group g)
+          T *y)
 {
-    for(uint32_t ind = g.thread_rank(); ind < n; ind += g.size()){
+    for(uint32_t ind = threadIdx.x; ind < n; ind += blockDim.x){
         y[ind] = x[ind] * y[ind];
     }
-    g.sync();
-    reduce<T>(n, y, g);
+    __syncthreads();
+    reduce<T>(n, y);
 }
 
 /*
@@ -34,16 +33,28 @@ void dot(uint32_t n,
     g is the thread group
 */
 template <typename T>
-__device__
+__device__ __forceinline__
 void dot(T *out,
-         uint32_t n, 
+         const uint32_t n, 
          T *x, 
-         T *y, 
-         cgrps::thread_group g)
+         T *y)
 {
-    for(uint32_t ind = g.thread_rank(); ind < n; ind += g.size()){
+    for(uint32_t ind = threadIdx.x; ind < n; ind += blockDim.x){
         out[ind] = x[ind] * y[ind];
     }
-    g.sync();
-    reduce<T>(n, out, g);
+    __syncthreads();
+    reduce<T>(n, out);
+}
+
+template <typename T, uint32_t n>
+__device__ __forceinline__
+void dot(T *out,
+         T *x, 
+         T *y)
+{
+    for(uint32_t ind = threadIdx.x; ind < n; ind += blockDim.x){
+        out[ind] = x[ind] * y[ind];
+    }
+    __syncthreads();
+    reduce<T, n>(out);
 }
