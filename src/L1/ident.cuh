@@ -11,7 +11,7 @@ namespace cgrps = cooperative_groups;
  *
  * @tparam T         The type of elements in the matrix `A`.
  * @param  dimA      The dimension of the square matrix `A`.
- * @param  A         Pointer to the memory region representing matrix `A`.
+ * @param  A         Pointer next memory address after the memory region representing matrix `A`.
  * @param  g         (Optional) Thread group specifying the thread block to use for parallel execution.
  *                   Defaults to the current thread block obtained using `cgrps::this_thread_block()`.
  */
