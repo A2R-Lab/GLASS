@@ -2,7 +2,19 @@
 #include <cooperative_groups.h>
 namespace cgrps = cooperative_groups;
 
-// load identity in so memory is [A | I]
+/**
+ * Loads the identity matrix into a specified memory region.
+ *
+ * This function appends an identity matrix to a square matrix `A` of type `T`.
+ * So the result will b [A | I] where `A` is a square matrix of size `dimA` and `I` is the identity matrix of size `dimA`.
+ * The matrix `A` must be stored in device memory
+ *
+ * @tparam T         The type of elements in the matrix `A`.
+ * @param  dimA      The dimension of the square matrix `A`.
+ * @param  A         Pointer to the memory region representing matrix `A`.
+ * @param  g         (Optional) Thread group specifying the thread block to use for parallel execution.
+ *                   Defaults to the current thread block obtained using `cgrps::this_thread_block()`.
+ */
 template <typename T>
 __device__
 void loadIdentity(uint32_t dimA, 
@@ -37,7 +49,6 @@ void loadIdentity(uint32_t dimA,
         V[indAdj] = static_cast<T>(r == c);
     }
 }
-
 
 // load identity in so memory is [V | I]
 template <typename T>
