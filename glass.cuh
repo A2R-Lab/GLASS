@@ -12,6 +12,7 @@ namespace glass{
     #include "./src/L1/l2norm.cuh"
     #include "./src/L1/infnorm.cuh"
     #include "./src/L1/clip.cuh"
+    #include "./src/L1/elementwise_logic.cuh"
 
     /*      L2      */
     #include "./src/L2/gemv.cuh"
