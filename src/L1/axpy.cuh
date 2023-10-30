@@ -58,3 +58,22 @@ void axpby(std::uint32_t n,
         z[ind] = alpha * x[ind] + beta * y[ind];
     }
 }
+
+/*
+    Clip z between l and u
+*/
+template <typename T>
+__device__
+void clip(std::uint32_t n, 
+          T *x,
+          T *l, 
+          T *u, 
+          cgrps::thread_group g = cgrps::this_thread_block())
+{
+    for(std::uint32_t ind = g.thread_rank(); ind < n; ind += g.size()){
+		if ( x[ind]  < l[ind])
+			x[ind] = l[ind]
+		else if (x[ind > u[ind]])
+			x[ind] = u[ind]
+    }
+}
