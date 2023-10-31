@@ -72,8 +72,8 @@ void clip(std::uint32_t n,
 {
     for(std::uint32_t ind = g.thread_rank(); ind < n; ind += g.size()){
 		if ( x[ind]  < l[ind])
-			x[ind] = l[ind]
+			x[ind] = l[ind];
 		else if (x[ind > u[ind]])
-			x[ind] = u[ind]
+			x[ind] = u[ind];
     }
 }
