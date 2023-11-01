@@ -71,9 +71,11 @@ void clip(std::uint32_t n,
           cgrps::thread_group g = cgrps::this_thread_block())
 {
     for(std::uint32_t ind = g.thread_rank(); ind < n; ind += g.size()){
-		if ( x[ind]  < l[ind])
+		if ( x[ind]  < l[ind]){
 			x[ind] = l[ind];
-		else if (x[ind > u[ind]])
+		}
+		else if (x[ind] > u[ind]) {
 			x[ind] = u[ind];
+		}
     }
 }
