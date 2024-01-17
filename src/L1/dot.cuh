@@ -16,7 +16,8 @@ template <typename T>
 __device__  __forceinline__
 void dot(const uint32_t n, 
           T *x, 
-          T *y)
+          T *y, 
+          cgrps::thread_group g= cgrps::this_thread_block())
 {
     for(uint32_t ind = threadIdx.x; ind < n; ind += blockDim.x){
         y[ind] = x[ind] * y[ind];
@@ -37,24 +38,12 @@ __device__ __forceinline__
 void dot(T *out,
          const uint32_t n, 
          T *x, 
-         T *y)
+         T *y, 
+         cgrps::thread_group g = cgrps::this_thread_block())
 {
     for(uint32_t ind = threadIdx.x; ind < n; ind += blockDim.x){
         out[ind] = x[ind] * y[ind];
     }
-    __syncthreads();
-    reduce<T>(n, out);
-}
-
-template <typename T, uint32_t n>
-__device__ __forceinline__
-void dot(T *out,
-         T *x, 
-         T *y)
-{
-    for(uint32_t ind = threadIdx.x; ind < n; ind += blockDim.x){
-        out[ind] = x[ind] * y[ind];
-    }
-    __syncthreads();
-    reduce<T, n>(out);
+    g.sync();
+    reduce<T>(n, out, g);
 }
