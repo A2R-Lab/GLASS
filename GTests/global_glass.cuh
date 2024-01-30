@@ -101,6 +101,14 @@ void global_addI(uint32_t n,
 
 template <typename T>
 __global__
+void  global_l2norm(const uint32_t n,
+                T *x)
+{
+    glass::l2norm<T>(n, x);
+}
+
+template <typename T>
+__global__
 void global_reduce(uint32_t n,
             T *x){
             

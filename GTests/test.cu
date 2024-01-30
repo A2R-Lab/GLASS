@@ -102,7 +102,7 @@ class L3Test : public ::testing::Test{
 			}
 			cudaMalloc(&d_a, m*n * sizeof(int));
 			cudaMalloc(&d_b, n*k * sizeof(int));
-			cudaMalloc(&d_c, m*k*sizeof(int));
+			cudaMalloc(&d_c, m*k * sizeof(int));
 			cudaMemcpy(d_a, h_a, m*n * sizeof(int), cudaMemcpyHostToDevice);
 			cudaMemcpy(d_b, h_b, n*k * sizeof(int), cudaMemcpyHostToDevice);
 			cudaDeviceSynchronize();
@@ -139,6 +139,19 @@ TEST_F(L1Test, DotProductMultiBlock){
 	// copy the memory back
 	cudaMemcpy(h_c, d_c, sizeof(int), cudaMemcpyDeviceToHost);
 	EXPECT_EQ(*h_c, 656700);
+}
+
+TEST_F(L1Test, L2norm) {
+	int expected_sum = 0;
+	for (int i = 0; i < n; i++) {
+		expected_sum += h_a[i] * h_a[i];
+	}
+	printf("%d\n", expected_sum);
+
+	global_l2norm<<<1, n>>>(n, d_a);
+	cudaDeviceSynchronize();
+	cudaMemcpy(h_a, d_a, sizeof(*h_a), cudaMemcpyDeviceToHost);
+	EXPECT_EQ(h_a[0], floor(sqrtf(expected_sum)));
 }
 
 TEST_F(L2Test, gemv){
