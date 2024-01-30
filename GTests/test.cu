@@ -141,17 +141,58 @@ TEST_F(L1Test, DotProductMultiBlock){
 	EXPECT_EQ(*h_c, 656700);
 }
 
-TEST_F(L1Test, L2norm) {
+TEST_F(L1Test, reduce) {
 	int expected_sum = 0;
-	for (int i = 0; i < n; i++) {
-		expected_sum += h_a[i] * h_a[i];
-	}
-	printf("%d\n", expected_sum);
+	for (int i = 0; i < n; i++) { expected_sum += h_a[i]; }
+	global_reduce<<<1, n>>>(n, d_a);
+	cudaDeviceSynchronize();
+	cudaMemcpy(h_a, d_a, sizeof(*h_a), cudaMemcpyDeviceToHost);
+	EXPECT_EQ(h_a[0], expected_sum);
+}
 
+TEST_F(L1Test, l2norm) {
+	int expected_sum = 0;
+	for (int i = 0; i < n; i++) { expected_sum += h_a[i] * h_a[i]; }
 	global_l2norm<<<1, n>>>(n, d_a);
 	cudaDeviceSynchronize();
 	cudaMemcpy(h_a, d_a, sizeof(*h_a), cudaMemcpyDeviceToHost);
 	EXPECT_EQ(h_a[0], floor(sqrtf(expected_sum)));
+}
+
+TEST_F(L1Test, scal) {
+	int expected[n];
+	for (int i = 0; i < n; i++) { expected[i] = h_a[i] * 2; }
+	global_scal<<<1, n>>>(n, 2, d_a);
+	cudaDeviceSynchronize();
+	cudaMemcpy(h_a, d_a, sizeof(*h_a) * n, cudaMemcpyDeviceToHost);
+	for (int i = 0; i < n; i++) {
+		EXPECT_EQ(h_a[i], expected[i]);
+	}
+}
+
+TEST_F(L1Test, setConst) {
+	global_set_const<<<1, n>>>(n, n, d_a);
+	cudaDeviceSynchronize();
+	cudaMemcpy(h_a, d_a, sizeof(*h_a) * n, cudaMemcpyDeviceToHost);
+	for (int i = 0; i < n; i++) {
+		EXPECT_EQ(h_a[i], n);
+	}
+}
+
+TEST_F(L1Test, swap) {
+	int expected_a[n], expected_b[n];
+	for (int i = 0; i < n; i++) {
+		expected_a[i] = h_b[i];
+		expected_b[i] = h_a[i];
+	}
+	global_swap<<<1,n>>>(n, 1, d_a, d_b);
+	cudaDeviceSynchronize();
+	cudaMemcpy(h_a, d_a, sizeof(*h_a) * n, cudaMemcpyDeviceToHost);
+	cudaMemcpy(h_b, d_b, sizeof(*h_b) * n, cudaMemcpyDeviceToHost);
+	for (int i = 0; i < n; i++) {
+		EXPECT_EQ(h_a[i], expected_a[i]);
+		EXPECT_EQ(h_b[i], expected_b[i]);
+	}
 }
 
 TEST_F(L2Test, gemv){

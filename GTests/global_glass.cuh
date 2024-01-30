@@ -135,6 +135,15 @@ void global_scal(uint32_t n,
 
 template <typename T>
 __global__
+void global_set_const(uint32_t n,
+            T alpha,
+            T *x)
+{
+    glass::set_const<T>(n, alpha, x);
+}
+
+template <typename T>
+__global__
 void global_swap(uint32_t n, 
           T alpha, 
           T *x, 
