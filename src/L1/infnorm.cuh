@@ -18,15 +18,15 @@ void infnorm(const uint32_t n,
         size_left = (size_left - odd_flag)/2; 
         // reduce in half
         for (uint32_t i = ind; i < size_left; i += stride){
-            x[i] = max(x[i], x[i + size_left]);
+            x[i] = max(abs(x[i]), abs(x[i + size_left]));
         }	
         // add the odd size adjust if needed
-        if (ind == 0 && odd_flag){x[0] = max(x[0], x[2*size_left]);}
+        if (ind == 0 && odd_flag){x[0] = max(abs(x[0]), abs(x[2*size_left]));}
         // sync and repeat
         __syncthreads();
     }
     // when we get really small sum up what is left
     if (ind == 0){
-        for(unsigned ind = 1; ind < size_left; ind++){x[0] = max(x[0], x[ind]);}
+        for(unsigned ind = 1; ind < size_left; ind++){x[0] = max(abs(x[0]), abs(x[ind]));}
     }
 }
