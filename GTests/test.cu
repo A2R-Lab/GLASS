@@ -20,7 +20,7 @@ class L1Test : public ::testing::Test{
 			}
 			cudaMalloc(&d_a, n * sizeof(int));
 			cudaMalloc(&d_b, n * sizeof(int));
-			cudaMalloc(&d_c, sizeof(int));
+			cudaMalloc(&d_c, n * sizeof(int));
 			cudaMemcpy(d_a, h_a, n * sizeof(int), cudaMemcpyHostToDevice);
 			cudaMemcpy(d_b, h_b, n * sizeof(int), cudaMemcpyHostToDevice);
 			cudaDeviceSynchronize();
@@ -299,6 +299,11 @@ TEST_F(L3InvTest, invSingleWithLoadIdent){
 
 	// copy d_a inv over:	[d_a inv | d_a inv]
 	cudaMemcpy(d_a, d_a + m*m, m*m * sizeof(*d_a), cudaMemcpyDeviceToDevice);
+	cudaMemcpy(h_a, d_a + m*m, m*m * sizeof(*d_a), cudaMemcpyDeviceToHost);
+	double res[] = {1.0/9, 1.0/33, -1.0/9, 26.0/45, -211.0/495, -1.0/9, -1.0/33, -5.0/36, -7.0/90, 349.0/1980, -1.0/9, 2.0/33, 13.0/36, -331.0/90, 5407.0/1980, 1.0/9, -5.0/33, 5.0/36, 7.0/90, -169.0/1980, 0.0, 1.0/11, -1.0/4, 29.0/10, -483.0/220};
+	for (int i = 0; i < m*m; i++) {
+		assert(abs(h_a[i] - res[i]) < 1e-4);
+	}
 
 	// load identity:	[d_a inv | identity]
 	global_loadIdentity<<<1, 1>>>(m, d_a + m*m);
