@@ -135,6 +135,33 @@ class L3Test : public ::testing::Test{
 	int * d_a, *d_b, *d_c, *d_d, *d_e;
 };
 
+class L3InvTest : public ::testing::Test{
+
+	protected:
+		void SetUp() override {
+			m = 5;
+			h_a = new double[2*m*m] {
+				10, 2,  4,  5,  3,
+				11, 6,  12, 7,  13,
+				8,  9,  14, 15, 16,
+				17, 18, 19, 20, 21,
+				22, 23, 24, 25, 26,
+			};
+
+			cudaMalloc(&d_a, 2*m*m * sizeof(*d_a));
+			cudaMemcpy(d_a, h_a, 2*m*m * sizeof(*d_a), cudaMemcpyHostToDevice);
+			cudaDeviceSynchronize();
+		}
+		void TearDown() override {
+			cudaFree(d_a);
+			delete h_a;
+		}
+
+	int m;
+	double *h_a;
+	double *d_a;
+};
+
 TEST_F(L1Test, DotProduct){
 	global_dot<<<1, n>>>(d_c, n, d_a, d_b);
 	cudaDeviceSynchronize();
@@ -262,16 +289,40 @@ TEST_F(L3Test, gemm){
 	}
 }
 
-TEST_F(L3Test, invSingle){
-	global_invertMatrix<<<1, m*m>>>(m, d_d, d_e);
-	cudaDeviceSynchronize();
-	global_invertMatrix<<<1, m*m>>>(m, d_d, d_e);
-	cudaDeviceSynchronize();
-	cudaMemcpy(h_d, d_d, m*m*sizeof(int), cudaMemcpyDeviceToHost);
+TEST_F(L3InvTest, invSingleWithLoadIdent){
 
-	for(int i=0; i<m*m; i++){
-		EXPECT_EQ(h_d[i], 2 * i + 1);
+	double *d_temp;
+
+	cudaMalloc(&d_temp, (2*m + 1) * sizeof(*d_temp));
+
+	std::cout << "before: { ";
+	for (int i = 0; i < m * m * 2; i++) {
+		std::cout << h_a[i] << " ";
 	}
+	std::cout << "}\n";
+
+	global_loadIdentity<<<1, 1>>>(m, d_a + m*m);
+	cudaDeviceSynchronize();
+	global_invertMatrix<<<1, 1>>>(m, d_a, d_temp);
+	cudaDeviceSynchronize();
+	cudaMemcpy(d_a, d_a + m*m, m*m * sizeof(*d_a), cudaMemcpyDeviceToDevice);
+	global_loadIdentity<<<1, 1>>>(m, d_a + m*m);
+	cudaDeviceSynchronize();
+	global_invertMatrix<<<1, 1>>>(m, d_a, d_temp);
+	cudaDeviceSynchronize();
+	cudaMemcpy(d_a, d_a + m*m, m*m * sizeof(*d_a), cudaMemcpyDeviceToDevice);
+	global_loadIdentity<<<1, 1>>>(m, d_a + m*m);
+	cudaDeviceSynchronize();
+	cudaMemcpy(h_a, d_a, 2 * m*m * sizeof(*d_a), cudaMemcpyDeviceToHost);
+
+	cudaFree(d_temp);
+
+	std::cout << "after:  ";
+	std::cout << "{ ";
+	for (int i = 0; i < m * m * 2; i++) {
+		std::cout << h_a[i] << " ";
+	}
+	std::cout << "}\n";
 }
 
 TEST_F(L3Test, gemmMultiBlock){
