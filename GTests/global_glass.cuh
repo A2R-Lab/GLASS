@@ -9,7 +9,7 @@ void global_axpy(uint32_t n,
           T *x, 
           T *y)
 {
-	glass::axpy<T>(alpha, x, y);
+	glass::axpy<T>(n, alpha, x, y);
 }
 
 template <typename T>
@@ -21,6 +21,16 @@ void global_axpy(uint32_t n,
           T *z)
 {
     glass::axpy<T>(n, alpha, x, y, z);
+}
+
+template <typename T>
+__global__
+void global_clip(uint32_t n, 
+          T *x,
+          T *l, 
+          T *u)
+{
+    glass::clip<T>(n, x, l, u);
 }
 
 template <typename T>
@@ -40,7 +50,7 @@ void global_copy(uint32_t n,
           T *x, 
           T *y)
 {
-    glass::copy<T>(n, x, y);
+    glass::copy<T>(n, alpha, x, y);
 }
 
 template <typename T>
@@ -60,6 +70,14 @@ void global_dot(T *out,
          T *y)
 {
 	glass::dot<T>(out, n, x, y);
+}
+
+template <typename T>
+__global__
+void global_infnorm(uint32_t n, 
+         T *x)
+{
+	glass::infnorm<T>(n, x);
 }
 
 template <typename T>
