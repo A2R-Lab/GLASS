@@ -94,25 +94,17 @@ class L3Test : public ::testing::Test{
 			h_a = new int[m*n];
 			h_b = new int[n*k];
 			h_c = new int[m*k];
-			h_d = new int[m*m];
-			h_e = new int[m*m];
 			for(int i = 0; i < m*n; i++){
 					h_a[i] = i;
 			}
 			for(int i = 0; i < n*k; i++){
 					h_b[i] = 2 * i;
 			}
-			for(int i = 0; i < m*m; i++){
-					h_d[i] = 2 * i + 1;
-			}
 			cudaMalloc(&d_a, m*n * sizeof(int));
 			cudaMalloc(&d_b, n*k * sizeof(int));
 			cudaMalloc(&d_c, m*k * sizeof(int));
-			cudaMalloc(&d_d, m*m * sizeof(int));
-			cudaMalloc(&d_e, m*m * sizeof(int));
 			cudaMemcpy(d_a, h_a, m*n * sizeof(int), cudaMemcpyHostToDevice);
 			cudaMemcpy(d_b, h_b, n*k * sizeof(int), cudaMemcpyHostToDevice);
-			cudaMemcpy(d_d, h_d, m*m * sizeof(int), cudaMemcpyHostToDevice);
 			cudaDeviceSynchronize();
 		}
 		void TearDown() override {
@@ -121,18 +113,14 @@ class L3Test : public ::testing::Test{
 			cudaFree(d_a);
 			cudaFree(d_b);
 			cudaFree(d_c);
-			cudaFree(d_d);
-			cudaFree(d_e);
 			delete h_a;
 			delete h_b;
 			delete h_c;
-			delete h_d;
-			delete h_e;
 		}
 
 	int n, m, k;
-	int * h_a, *h_b, *h_c, *h_d, *h_e;
-	int * d_a, *d_b, *d_c, *d_d, *d_e;
+	int * h_a, *h_b, *h_c;
+	int * d_a, *d_b, *d_c;
 };
 
 class L3InvTest : public ::testing::Test{
