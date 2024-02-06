@@ -295,31 +295,46 @@ TEST_F(L3InvTest, invSingleWithLoadIdent){
 
 	cudaMalloc(&d_temp, (2*m + 1) * sizeof(*d_temp));
 
-	std::cout << "before: { ";
-	for (int i = 0; i < m * m * 2; i++) {
+	std::cout << "before:\t\t{ ";
+	for (int i = 0; i < m*m; i++) {
 		std::cout << h_a[i] << " ";
 	}
 	std::cout << "}\n";
 
+	// load identity:	[d_a 	| identity]
 	global_loadIdentity<<<1, 1>>>(m, d_a + m*m);
 	cudaDeviceSynchronize();
+
+	// invert d_a:		[ident w error? | d_a inv]
 	global_invertMatrix<<<1, 1>>>(m, d_a, d_temp);
 	cudaDeviceSynchronize();
+
+	// copy d_a inv over:	[d_a inv | d_a inv]
 	cudaMemcpy(d_a, d_a + m*m, m*m * sizeof(*d_a), cudaMemcpyDeviceToDevice);
+
+	// load identity:	[d_a inv | identity]
 	global_loadIdentity<<<1, 1>>>(m, d_a + m*m);
 	cudaDeviceSynchronize();
+
+	// invert d_a inv:	[ident w error? | d_a]
 	global_invertMatrix<<<1, 1>>>(m, d_a, d_temp);
 	cudaDeviceSynchronize();
-	cudaMemcpy(d_a, d_a + m*m, m*m * sizeof(*d_a), cudaMemcpyDeviceToDevice);
-	global_loadIdentity<<<1, 1>>>(m, d_a + m*m);
-	cudaDeviceSynchronize();
-	cudaMemcpy(h_a, d_a, 2 * m*m * sizeof(*d_a), cudaMemcpyDeviceToHost);
+
+	// copy from second half back to host
+	cudaMemcpy(h_a, d_a + m*m, m*m * sizeof(*d_a), cudaMemcpyDeviceToHost);
 
 	cudaFree(d_temp);
 
-	std::cout << "after:  ";
+	std::cout << "after as ints:\t";
 	std::cout << "{ ";
-	for (int i = 0; i < m * m * 2; i++) {
+	for (int i = 0; i < m*m; i++) {
+		std::cout << int(h_a[i]) << " ";
+	}
+	std::cout << "}\n";
+
+	std::cout << "as doubles:\t";
+	std::cout << "{ ";
+	for (int i = 0; i < m*m; i++) {
 		std::cout << h_a[i] << " ";
 	}
 	std::cout << "}\n";
