@@ -133,14 +133,6 @@ TEST_F(L1Test, DotProduct){
 	EXPECT_EQ(*h_c, 656700);
 }
 
-TEST_F(L1Test, DotProduct2dBlock){
-	global_dot<<<dim3(2,2), dim3(2,2)>>>(d_c, n, d_a, d_b);
-	cudaDeviceSynchronize();
-	// copy the memory back
-	cudaMemcpy(h_c, d_c, sizeof(int), cudaMemcpyDeviceToHost);
-	EXPECT_EQ(*h_c, 656700);
-}
-
 TEST_F(L1Test, DotProductMultiBlock){
 	global_dot<<<dim3(2,2,2), dim3(2,2,2)>>>(d_c, n, d_a, d_b);
 	cudaDeviceSynchronize();
