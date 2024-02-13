@@ -13,7 +13,7 @@ void invertMatrix(uint32_t dimA, T *A, T *s_temp){
         unsigned pivColOffset = pivRC*dimA;
         // save the pivot and pivot column and row
         T pvInv = static_cast<T>(1)/A[pivRC + pivColOffset];
-        for (unsigned ind = threadIdx.x; ind < 2*dimA+1; ind++){
+        for (unsigned ind = threadIdx.x; ind < 2*dimA+1; ind += blockDim.x){
             unsigned AInd;
             if (ind < dimA){AInd = ind + pivColOffset;}
             else{AInd = pivRC + pivColOffset + (ind-dimA)*dimA;}

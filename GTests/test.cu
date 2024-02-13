@@ -292,11 +292,11 @@ TEST_F(L3InvTest, invSingle) {
 	};
 
 	// load identity:	[d_a 	| identity]
-	global_loadIdentity<<<1, 1>>>(m, d_a + m*m);
+	global_loadIdentity<<<1, 64>>>(m, d_a + m*m);
 	cudaDeviceSynchronize();
 
 	// invert d_a:		[ident w error? | d_a inv]
-	global_invertMatrix<<<1, 1>>>(m, d_a, d_temp);
+	global_invertMatrix<<<1, 64>>>(m, d_a, d_temp);
 	cudaDeviceSynchronize();
 
 	cudaMemcpy(h_a, d_a + m*m, m*m * sizeof(*d_a), cudaMemcpyDeviceToHost);
@@ -308,18 +308,18 @@ TEST_F(L3InvTest, invSingle) {
 
 TEST_F(L3InvTest, invSingleAndMultiply) {
 	// load identity:	[d_a 	| identity]
-	global_loadIdentity<<<1, 1>>>(m, d_a + m*m);
+	global_loadIdentity<<<1, 64>>>(m, d_a + m*m);
 	cudaDeviceSynchronize();
 
 	// invert d_a:		[ident w error? | d_a inv]
-	global_invertMatrix<<<1, 1>>>(m, d_a, d_temp);
+	global_invertMatrix<<<1, 64>>>(m, d_a, d_temp);
 	cudaDeviceSynchronize();
 
 	// load into d_a again:	[d_a	| d_a inv]
 	cudaMemcpy(d_a, h_a, m*m * sizeof(*d_a), cudaMemcpyHostToDevice);
 
 	// multiply d_a * d_a inv, store result in d_b
-	global_gemm<double, false><<<1, 1>>>(m, m, m, 1.0, d_a, d_a + m*m, d_b),
+	global_gemm<double, false><<<1, 64>>>(m, m, m, 1.0, d_a, d_a + m*m, d_b),
 	cudaDeviceSynchronize();
 
 	cudaMemcpy(h_a, d_b, m*m * sizeof(*d_b), cudaMemcpyDeviceToHost);
