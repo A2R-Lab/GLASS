@@ -49,13 +49,15 @@ void chol_InPlace_vec(uint32_t n,
     uint32_t stride = blockDim.x * blockDim.y * blockDim.z;
 
     for (uint32_t row = 0; row < n-1; row++) {
-        // square root and normalization
+        // square root
         if (ind == 0) {
             s_A[n*row+row] = pow(s_A[n*row+row], 0.5);
+        }
+        __syncthreads(); // don't think I need?
 
-            for (uint32_t k = row+1; k < n; k++) {
-                s_A[n*row+k] /= s_A[n*row+row];
-            }
+        // normalization
+        for (uint32_t k = ind+row+1; k < n; k+= stride) {
+            s_A[n*row+k] /= s_A[n*row+row];
         }
         __syncthreads();
         
