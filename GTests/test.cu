@@ -137,17 +137,20 @@ class L3InvTest : public ::testing::Test{
 			};
 
 			cudaMalloc(&d_a, 2*m*m * sizeof(*d_a));
+			cudaMalloc(&d_temp, (2*m + 1) * sizeof(*d_temp));
 			cudaMemcpy(d_a, h_a, 2*m*m * sizeof(*d_a), cudaMemcpyHostToDevice);
 			cudaDeviceSynchronize();
 		}
 		void TearDown() override {
 			cudaFree(d_a);
+			cudaFree(d_temp);
 			delete h_a;
 		}
 
 	int m;
 	double *h_a;
 	double *d_a;
+	double *d_temp;
 };
 
 TEST_F(L1Test, DotProduct){
@@ -277,17 +280,16 @@ TEST_F(L3Test, gemm){
 	}
 }
 
-TEST_F(L3InvTest, invSingleWithLoadIdent){
+TEST_F(L3InvTest, invSingle) {
 
-	double *d_temp;
+	double res[] = {
+		1.0/9, 1.0/33, -1.0/9, 26.0/45, -211.0/495,
+		-1.0/9, -1.0/33, -5.0/36, -7.0/90, 349.0/1980,
+		-1.0/9, 2.0/33, 13.0/36, -331.0/90, 5407.0/1980,
+		1.0/9, -5.0/33, 5.0/36, 7.0/90, -169.0/1980,
+		0.0, 1.0/11, -1.0/4, 29.0/10, -483.0/220
+	};
 
-	cudaMalloc(&d_temp, (2*m + 1) * sizeof(*d_temp));
-
-	std::cout << "before:\t\t{ ";
-	for (int i = 0; i < m*m; i++) {
-		std::cout << h_a[i] << " ";
-	}
-	std::cout << "}\n";
 
 	// load identity:	[d_a 	| identity]
 	global_loadIdentity<<<1, 1>>>(m, d_a + m*m);
@@ -297,40 +299,11 @@ TEST_F(L3InvTest, invSingleWithLoadIdent){
 	global_invertMatrix<<<1, 1>>>(m, d_a, d_temp);
 	cudaDeviceSynchronize();
 
-	// copy d_a inv over:	[d_a inv | d_a inv]
-	cudaMemcpy(d_a, d_a + m*m, m*m * sizeof(*d_a), cudaMemcpyDeviceToDevice);
-	cudaMemcpy(h_a, d_a + m*m, m*m * sizeof(*d_a), cudaMemcpyDeviceToHost);
-	double res[] = {1.0/9, 1.0/33, -1.0/9, 26.0/45, -211.0/495, -1.0/9, -1.0/33, -5.0/36, -7.0/90, 349.0/1980, -1.0/9, 2.0/33, 13.0/36, -331.0/90, 5407.0/1980, 1.0/9, -5.0/33, 5.0/36, 7.0/90, -169.0/1980, 0.0, 1.0/11, -1.0/4, 29.0/10, -483.0/220};
-	for (int i = 0; i < m*m; i++) {
-		assert(abs(h_a[i] - res[i]) < 1e-4);
-	}
-
-	// load identity:	[d_a inv | identity]
-	global_loadIdentity<<<1, 1>>>(m, d_a + m*m);
-	cudaDeviceSynchronize();
-
-	// invert d_a inv:	[ident w error? | d_a]
-	global_invertMatrix<<<1, 1>>>(m, d_a, d_temp);
-	cudaDeviceSynchronize();
-
-	// copy from second half back to host
 	cudaMemcpy(h_a, d_a + m*m, m*m * sizeof(*d_a), cudaMemcpyDeviceToHost);
 
-	cudaFree(d_temp);
-
-	std::cout << "after as ints:\t";
-	std::cout << "{ ";
 	for (int i = 0; i < m*m; i++) {
-		std::cout << int(h_a[i]) << " ";
+		EXPECT_LT(abs(h_a[i] - res[i]), 1e-4);
 	}
-	std::cout << "}\n";
-
-	std::cout << "as doubles:\t";
-	std::cout << "{ ";
-	for (int i = 0; i < m*m; i++) {
-		std::cout << h_a[i] << " ";
-	}
-	std::cout << "}\n";
 }
 
 TEST_F(L3Test, gemmMultiBlock){
