@@ -324,7 +324,8 @@ TEST_F(L3InvTest, invSingleAndMultiply) {
 
 	cudaMemcpy(h_a, d_b, m*m * sizeof(*d_b), cudaMemcpyDeviceToHost);
 
-	for (int i = 0; i < 2*m*m; i++) {
+	// result should be identity
+	for (int i = 0; i < m*m; i++) {
 		EXPECT_LT(abs(h_a[i] - (i%m == i/m)), 1e-13);
 	}
 }
