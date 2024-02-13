@@ -46,7 +46,7 @@ int main(int argc, char *argv[]) {
 		cudaMemcpy(d_d, h_d, pow(len,2) * sizeof(double), cudaMemcpyHostToDevice);
 		cudaDeviceSynchronize();
 		clock_gettime(CLOCK_MONOTONIC, &start);
-		global_cholDecomp_InPlace<<<1,pow(len,2)>>>(len, d_d);
+		global_cholDecomp_InPlace<<<1,len>>>(len, d_d);
 		cudaDeviceSynchronize();
 		clock_gettime(CLOCK_MONOTONIC, &end);
 		time_taken = (double)end.tv_sec + (double)end.tv_nsec*1e-9
@@ -59,7 +59,7 @@ int main(int argc, char *argv[]) {
 		cudaMemcpy(d_d, h_d, pow(len,2) * sizeof(double), cudaMemcpyHostToDevice);
 		cudaDeviceSynchronize();
 		clock_gettime(CLOCK_MONOTONIC, &start);
-		global_cholDecomp_InPlace_vec<<<1,pow(len,2)>>>(len, d_d);
+		global_cholDecomp_InPlace_vec<<<1,len>>>(len, d_d);
 		cudaDeviceSynchronize();
 		clock_gettime(CLOCK_MONOTONIC, &end);
 		time_taken = (double)end.tv_sec + (double)end.tv_nsec*1e-9
