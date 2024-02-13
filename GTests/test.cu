@@ -137,6 +137,7 @@ class L3InvTest : public ::testing::Test{
 			};
 
 			cudaMalloc(&d_a, 2*m*m * sizeof(*d_a));
+			cudaMalloc(&d_b, 2*m*m * sizeof(*d_b));
 			cudaMalloc(&d_temp, (2*m + 1) * sizeof(*d_temp));
 			cudaMemcpy(d_a, h_a, 2*m*m * sizeof(*d_a), cudaMemcpyHostToDevice);
 			cudaDeviceSynchronize();
@@ -149,7 +150,7 @@ class L3InvTest : public ::testing::Test{
 
 	int m;
 	double *h_a;
-	double *d_a;
+	double *d_a, *d_b;
 	double *d_temp;
 };
 
@@ -290,7 +291,6 @@ TEST_F(L3InvTest, invSingle) {
 		0.0, 1.0/11, -1.0/4, 29.0/10, -483.0/220
 	};
 
-
 	// load identity:	[d_a 	| identity]
 	global_loadIdentity<<<1, 1>>>(m, d_a + m*m);
 	cudaDeviceSynchronize();
@@ -302,7 +302,30 @@ TEST_F(L3InvTest, invSingle) {
 	cudaMemcpy(h_a, d_a + m*m, m*m * sizeof(*d_a), cudaMemcpyDeviceToHost);
 
 	for (int i = 0; i < m*m; i++) {
-		EXPECT_LT(abs(h_a[i] - res[i]), 1e-4);
+		EXPECT_LT(abs(h_a[i] - res[i]), 1e-13);
+	}
+}
+
+TEST_F(L3InvTest, invSingleAndMultiply) {
+	// load identity:	[d_a 	| identity]
+	global_loadIdentity<<<1, 1>>>(m, d_a + m*m);
+	cudaDeviceSynchronize();
+
+	// invert d_a:		[ident w error? | d_a inv]
+	global_invertMatrix<<<1, 1>>>(m, d_a, d_temp);
+	cudaDeviceSynchronize();
+
+	// load into d_a again:	[d_a	| d_a inv]
+	cudaMemcpy(d_a, h_a, m*m * sizeof(*d_a), cudaMemcpyHostToDevice);
+
+	// multiply d_a * d_a inv, store result in d_b
+	global_gemm<double, false><<<1, 1>>>(m, m, m, 1.0, d_a, d_a + m*m, d_b),
+	cudaDeviceSynchronize();
+
+	cudaMemcpy(h_a, d_b, m*m * sizeof(*d_b), cudaMemcpyDeviceToHost);
+
+	for (int i = 0; i < 2*m*m; i++) {
+		EXPECT_LT(abs(h_a[i] - (i%m == i/m)), 1e-13);
 	}
 }
 
