@@ -170,6 +170,107 @@ TEST_F(L1Test, DotProductMultiBlock){
 	EXPECT_EQ(*h_c, 656700);
 }
 
+TEST_F(L1Test, axpy) {
+	int res[n];
+	int alpha = n;
+
+	for (int i=0; i<n; i++) {
+		res[i]= h_a[i]*alpha+h_b[i];
+	}
+	global_axpy<<<1,n>>>(n, alpha, d_a, d_b);
+	cudaDeviceSynchronize();
+	cudaMemcpy(h_b, d_b, n*sizeof(int), cudaMemcpyDeviceToHost);
+	for (int i=0; i<n; i++){
+		EXPECT_EQ(h_b[i], res[i]);
+	}
+}
+
+TEST_F(L1Test, clip) {
+	global_clip<<<1,n>>>(n, d_a, d_b, d_b);
+	cudaDeviceSynchronize();
+	cudaMemcpy(h_a, d_a, n*sizeof(int), cudaMemcpyDeviceToHost);
+	for (int i=0; i<n; i++){
+		EXPECT_EQ(h_a[i], h_b[i]);
+	}
+}
+
+TEST_F(L1Test, copy) {
+	global_copy<<<1,n>>>(n, d_a, d_b);
+	cudaDeviceSynchronize();
+	cudaMemcpy(h_b, d_b, n*sizeof(int), cudaMemcpyDeviceToHost);
+	for (int i=0; i<n; i++){
+		EXPECT_EQ(h_a[i], h_b[i]);
+	}
+}
+
+TEST_F(L1Test, copyMultiBlock) {
+	global_copy<<<dim3(2,2,2), dim3(2,2,2)>>>(n, d_a, d_b);
+	cudaDeviceSynchronize();
+	cudaMemcpy(h_b, d_b, n*sizeof(int), cudaMemcpyDeviceToHost);
+	for (int i=0; i<n; i++) {
+		EXPECT_EQ(h_a[i], h_b[i]);
+	}
+}
+
+TEST_F(L1Test, scaledCopy) {
+	int alpha = 4;
+
+	global_copy<<<1,n>>>(n, alpha, d_a, d_b);
+	cudaDeviceSynchronize();
+	cudaMemcpy(h_b, d_b, n*sizeof(int), cudaMemcpyDeviceToHost);
+	for (int i=0; i<n; i++) {
+		EXPECT_EQ(alpha*h_a[i], h_b[i]);
+	}
+}
+
+TEST_F(L1Test, loadIdentity) {
+	int dim = (int)sqrt(n);
+	global_loadIdentity<<<1,n>>>(dim, d_a);
+	cudaDeviceSynchronize();
+	cudaMemcpy(h_a, d_a, n*sizeof(int), cudaMemcpyDeviceToHost);
+	for (int i=0; i<n; i++) {
+		EXPECT_EQ((i%dim == i/dim), h_a[i]);
+	}
+}
+
+TEST_F(L1Test, loadIdentity2) {
+	int dim = (int)sqrt(n);
+	global_loadIdentity<<<1,n>>>(dim, d_a, dim, d_b);
+	cudaDeviceSynchronize();
+	cudaMemcpy(h_a, d_a, n*sizeof(int), cudaMemcpyDeviceToHost);
+	cudaMemcpy(h_b, d_b, n*sizeof(int), cudaMemcpyDeviceToHost);
+	for (int i=0; i<n; i++) {
+		EXPECT_EQ((i%dim == i/dim), h_a[i]);
+		EXPECT_EQ((i%dim == i/dim), h_b[i]);
+	}
+}
+
+TEST_F(L1Test, addI) {
+	int dim = (int)sqrt(n);
+	int alpha = 4;
+	int res[n];
+
+	for (int i=0; i<n; i++) {
+		if (i%dim == i/dim)
+			res[i] = h_a[i] + alpha;
+		else
+			res[i] = h_a[i];
+	}
+	global_addI<<<1,n>>>(dim, d_a, alpha);
+	cudaDeviceSynchronize();
+	cudaMemcpy(h_a, d_a, n*sizeof(int), cudaMemcpyDeviceToHost);
+	for (int i=0; i<n; i++){
+		EXPECT_EQ(res[i], h_a[i]);
+	}
+}
+
+TEST_F(L1Test, infnorm) {
+	global_infnorm<<<1,n>>>(n, d_b);
+	cudaDeviceSynchronize();
+	cudaMemcpy(h_b, d_b, sizeof(int), cudaMemcpyDeviceToHost);
+	EXPECT_EQ(198, h_b[0]);
+}
+
 TEST_F(L1Test, reduce) {
 	int expected_sum = 0;
 	for (int i = 0; i < n; i++) { expected_sum += h_a[i]; }
@@ -260,6 +361,24 @@ TEST_F(L2Test, gemvMultiBlock){
 	for(int i=0; i<m; i++){
 		EXPECT_EQ(h_c[i], res_transpose[i]);
 	}
+}
+
+TEST_F(L3Test, chol) {
+	double h_d[] = {10, 5, 2, 5, 3, 2, 2, 2, 3};
+	double res[] = {pow(10,0.5), 5/pow(10,0.5), 2/pow(10,0.5), 5, 
+					1/pow(2,0.5), pow(2,0.5), 2, 2, pow(3,0.5)/pow(5,0.5)};
+	double *d_d;
+
+	cudaMalloc(&d_d, 9 * sizeof(double));
+	cudaMemcpy(d_d, h_d, 9 * sizeof(double), cudaMemcpyHostToDevice);
+	global_cholDecomp_InPlace_c<<<1,9>>>(3, d_d);
+	cudaDeviceSynchronize();
+	cudaMemcpy(h_d, d_d, 9*sizeof(double), cudaMemcpyDeviceToHost);
+
+	for (int i = 0; i < 9; i++) {
+		EXPECT_FLOAT_EQ(h_d[i], res[i]);
+	}
+	cudaFree(d_d);
 }
 
 TEST_F(L3Test, gemm){
@@ -353,7 +472,3 @@ int main(){
         ::testing::InitGoogleTest();
         return RUN_ALL_TESTS();
 }
-
-
-
-
