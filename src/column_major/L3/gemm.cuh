@@ -36,7 +36,6 @@ void gemm(uint32_t m,
             res = static_cast<T>(0);
             row = element % m;
             col = element / m;
-
             for(ind = 0; ind < n; ind++){
                 res += A[ind*m + row] * B[col*n + ind];
             }
