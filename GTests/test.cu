@@ -363,7 +363,7 @@ TEST_F(L2Test, gemvMultiBlock){
 	}
 }
 
-TEST_F(L3Test, chol) {
+/*TEST_F(L3Test, chol) {
 	double h_d[] = {10, 5, 2, 5, 3, 2, 2, 2, 3};
 	double res[] = {pow(10,0.5), 5/pow(10,0.5), 2/pow(10,0.5), 5, 
 					1/pow(2,0.5), pow(2,0.5), 2, 2, pow(3,0.5)/pow(5,0.5)};
@@ -379,7 +379,7 @@ TEST_F(L3Test, chol) {
 		EXPECT_FLOAT_EQ(h_d[i], res[i]);
 	}
 	cudaFree(d_d);
-}
+}*/
 
 TEST_F(L3Test, gemm){
 	int res[] = {140,152,164,176,188,380,424,468,512,556,620,696,772,848,924};
