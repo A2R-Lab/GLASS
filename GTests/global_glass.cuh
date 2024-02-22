@@ -200,7 +200,7 @@ __global__
 void global_cholDecomp_InPlace_c (uint32_t n,
                         T *s_A)
 {
-    glass::chol_InPlace<T>(n, s_A);
+    glass::column_major::chol_InPlace<T>(n, s_A);
 }
 
 template <typename T, bool TRANSPOSE_B>
