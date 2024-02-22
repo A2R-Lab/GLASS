@@ -195,14 +195,13 @@ void global_gemv(uint32_t m,
         glass::gemv<T, TRANSPOSE>(m, n, alpha, A, x, y);
 }
 
-/*template <typename T> 
+template <typename T> 
 __global__ 
 void global_cholDecomp_InPlace_c (uint32_t n,
-                        T *s_A,
-                        cgrps::thread_group g = cgrps::this_thread_block())
+                        T *s_A)
 {
-    glass::cholDecomp_InPlace_c<T>(n, s_A, g);
-}*/
+    glass::chol_InPlace<T>(n, s_A);
+}
 
 template <typename T, bool TRANSPOSE_B>
 __global__
