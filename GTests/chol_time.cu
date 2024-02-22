@@ -4,6 +4,17 @@
 
 #include "../glass.cuh"
 
+inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
+{
+   if (code != cudaSuccess) 
+   {
+      fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+      if (abort) exit(code);
+   }
+}
+
+#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+
 __global__ 
 void cholDecomp_InPlace (int n, float *s_A, int reps)
 {
@@ -20,6 +31,10 @@ int main(int argc, char *argv[]) {
 	float *d_d;
 	long i;
 
+	if (argc != 3) {
+		printf("./<executable> <dim of matrix> <num of reps>\n");
+		exit(-1);
+	}
 	long len = atol(argv[1]);
 	long reps = atol(argv[2]);
 	float *h_d =(float*)malloc(sizeof(float)*pow(len,2));
@@ -30,13 +45,15 @@ int main(int argc, char *argv[]) {
 		else h_d[i] = 0;
 	}
 
-	cudaMalloc(&d_d, pow(len,2) * sizeof(float));
-	cudaMemcpy(d_d, h_d, pow(len,2) * sizeof(float), cudaMemcpyHostToDevice);
-	cudaDeviceSynchronize();
+	gpuErrchk(cudaMalloc(&d_d, pow(len,2) * sizeof(float)));
+	gpuErrchk(cudaMemcpy(d_d, h_d, pow(len,2) * sizeof(float), cudaMemcpyHostToDevice));
+	gpuErrchk(cudaDeviceSynchronize());
+	gpuErrchk(cudaPeekAtLastError());
 
 	clock_gettime(CLOCK_MONOTONIC, &start);
 	cholDecomp_InPlace<<<1,len>>>(len, d_d, reps);
-	cudaDeviceSynchronize();
+	gpuErrchk(cudaDeviceSynchronize());
+	gpuErrchk(cudaPeekAtLastError());
 	clock_gettime(CLOCK_MONOTONIC, &end);
 	total_time = (float)end.tv_sec + (float)end.tv_nsec*1e-9
 					- (float)start.tv_sec - (float)start.tv_nsec*1e-9;
