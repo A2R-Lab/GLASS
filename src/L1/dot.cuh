@@ -39,7 +39,7 @@ void dot(T *out,
          uint32_t n, 
          T *x, 
          T *y, 
-         cgrps::thread_group g)
+         cgrps::thread_group g = cgrps::this_thread_block())
 {
     for(uint32_t ind = g.thread_rank(); ind < n; ind += g.size()){
         out[ind] = x[ind] * y[ind];

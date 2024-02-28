@@ -9,6 +9,7 @@ namespace glass{
     #include "./src/L1/scal.cuh"
     #include "./src/L1/swap.cuh"
     #include "./src/L1/elementwise_logic.cuh"
+    #include "./src/L1/transpose.cuh"
 
     /*      L2      */
     #include "./src/L2/gemv.cuh"
