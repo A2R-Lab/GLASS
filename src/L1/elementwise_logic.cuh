@@ -40,6 +40,15 @@ void elementwise_not(uint32_t N, T* a, T* c,
 
 template <typename T>
 __device__
+void elementwise_abs(uint32_t N, T* a, T* b,
+                cgrps::thread_group g = cgrps::this_thread_block()) {
+    for (int i = g.thread_rank(); i < N; i += g.size()) {
+        b[i] = abs(a[i]);
+    }
+}
+
+template <typename T>
+__device__
 void elementwise_mult(uint32_t N, T* a, T* b, T* c,
                 cgrps::thread_group g = cgrps::this_thread_block()) {
     for (int i = g.thread_rank(); i < N; i += g.size()) {
