@@ -125,3 +125,38 @@ void invertMatrix(uint32_t dimA, T *A, uint32_t dimB, T *B, uint32_t dimC, T *C,
         g.sync();
     }
 }
+
+// template <typename T>
+// __device__
+// void invertSubMatrix(uint32_t dimA, uint32_t subMatrixSize, T *A, T *s_temp, cooperative_groups::thread_group g = cooperative_groups::this_thread_block()) {
+//     // Operate only within the bounds of the submatrix
+//     for (unsigned pivRC = 0; pivRC < subMatrixSize; pivRC++) {
+//         // Calculate the pivot's position taking into account the column-major order
+//         unsigned pivColOffset = pivRC * dimA; // Adjusted for column-major storage
+//         T pvInv = static_cast<T>(1) / A[pivRC + pivColOffset]; // Inverse of the pivot value
+
+//         // Temporarily store the current column for manipulation
+//         for (unsigned ind = g.thread_rank(); ind < subMatrixSize; ind += g.size()) {
+//             unsigned rowIndex = ind * dimA; // Adjust for column-major
+//             s_temp[ind] = A[pivRC + rowIndex]; // Store current column in s_temp
+//         }
+//         g.sync();
+
+//         // Normalize the pivot row
+//         if (g.thread_rank() < subMatrixSize) {
+//             A[pivRC + pivColOffset] *= pvInv; // Normalize pivot element itself
+//         }
+
+//         // Update the rest of the matrix based on the pivot
+//         for (unsigned ind = g.thread_rank(); ind < subMatrixSize * subMatrixSize; ind += g.size()) {
+//             unsigned col = ind / subMatrixSize;
+//             unsigned row = ind % subMatrixSize;
+//             unsigned idx = col * dimA + row;
+
+//             if (row != pivRC) { // Skip the pivot row itself
+//                 A[idx] -= s_temp[row] * pvInv * A[col * dimA + pivRC];
+//             }
+//         }
+//         g.sync();
+//     }
+// }

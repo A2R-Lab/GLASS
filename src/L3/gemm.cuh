@@ -224,3 +224,67 @@ void gemm_v2(std::uint32_t A_rows,
         }
     }
 }
+
+template <typename T>
+__device__ void simple_submatrix_gemm(T *s_C, const T *s_A, const T *s_B, int subA_rows, int subA_cols, int subB_cols,
+                                      int ld_A, int ld_B, int ld_C)
+{
+    int row = threadIdx.x / subB_cols; 
+    int col = threadIdx.x % subB_cols; 
+
+    if (row < subA_rows && col < subB_cols)
+    {
+        T sum = 0;
+        for (int k = 0; k < subA_cols; ++k)
+        {
+            sum += s_A[row + k * ld_A] * s_B[k * ld_B + col];
+        }
+
+        s_C[row + col * ld_C] = sum;
+    }
+}
+
+// template <typename T>
+// __device__
+// void simple_gemm_1D_inplace(T* s_A, const T* s_B,
+//                                  int subA_rows, int subA_cols, int subB_cols,
+//                                  int ld_A, int ld_B) {
+//     int row = threadIdx.x / subB_cols; // Integer division to find the row
+//     int col = threadIdx.x % subB_cols; // Modulo to find the column
+
+//     if (row < subA_rows && col < subB_cols) {
+//         T sum = 0;
+//         for (int k = 0; k < subA_cols; ++k) {
+//             sum += s_A[row + k * ld_A] * s_B[k * ld_B + col];
+//         }
+
+//         // Write the result in place to s_A
+//         // Note: This assumes s_A has been prepared to store the result.
+//         s_A[row + col * ld_A] = sum;
+//     }
+// }
+
+// template <typename T>
+// __device__ void simple_gemm_CG(T *s_C, const T *s_A, const T *s_B, int A_rows, int A_cols, int B_cols,
+//                                int ld_A, int ld_B, int ld_C, cgrps::thread_group g = cgrps::this_thread_block())
+// {
+//     const uint32_t element = g.thread_rank();
+//     const uint32_t total_threads = g.size();
+    
+//     // Loop over all elements this thread group needs to compute.
+//     // Each thread computes multiple elements of C.
+//     for(uint32_t index = element; index < A_rows * B_cols; index += total_threads) {
+//         const int row = index / B_cols;
+//         const int col = index % B_cols;
+
+//         if(row < A_rows && col < B_cols) {
+//             T sum = 0;
+//             for(int k = 0; k < A_cols; ++k) {
+//                 sum += s_A[row * ld_A + k] * s_B[k * ld_B + col];
+//             }
+
+//             // Write the computed sum to the appropriate location in s_C
+//             s_C[row * ld_C + col] = sum;
+//         }
+//     }
+// }
