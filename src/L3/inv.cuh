@@ -126,37 +126,59 @@ void invertMatrix(uint32_t dimA, T *A, uint32_t dimB, T *B, uint32_t dimC, T *C,
     }
 }
 
-// template <typename T>
-// __device__
-// void invertSubMatrix(uint32_t dimA, uint32_t subMatrixSize, T *A, T *s_temp, cooperative_groups::thread_group g = cooperative_groups::this_thread_block()) {
-//     // Operate only within the bounds of the submatrix
-//     for (unsigned pivRC = 0; pivRC < subMatrixSize; pivRC++) {
-//         // Calculate the pivot's position taking into account the column-major order
-//         unsigned pivColOffset = pivRC * dimA; // Adjusted for column-major storage
-//         T pvInv = static_cast<T>(1) / A[pivRC + pivColOffset]; // Inverse of the pivot value
-
-//         // Temporarily store the current column for manipulation
-//         for (unsigned ind = g.thread_rank(); ind < subMatrixSize; ind += g.size()) {
-//             unsigned rowIndex = ind * dimA; // Adjust for column-major
-//             s_temp[ind] = A[pivRC + rowIndex]; // Store current column in s_temp
-//         }
-//         g.sync();
-
-//         // Normalize the pivot row
-//         if (g.thread_rank() < subMatrixSize) {
-//             A[pivRC + pivColOffset] *= pvInv; // Normalize pivot element itself
-//         }
-
-//         // Update the rest of the matrix based on the pivot
-//         for (unsigned ind = g.thread_rank(); ind < subMatrixSize * subMatrixSize; ind += g.size()) {
-//             unsigned col = ind / subMatrixSize;
-//             unsigned row = ind % subMatrixSize;
-//             unsigned idx = col * dimA + row;
-
-//             if (row != pivRC) { // Skip the pivot row itself
-//                 A[idx] -= s_temp[row] * pvInv * A[col * dimA + pivRC];
-//             }
-//         }
-//         g.sync();
-//     }
-// }
+/*
+Working but untested; generated code
+*/
+template <typename T>
+__device__
+void invertSubMatrixColumnMajor2(uint32_t dimA, uint32_t dimSub, T *A, T *s_temp){
+    for (unsigned pivRC = 0; pivRC < dimSub; pivRC++) {
+        // Compute the inverse of the pivot element correctly for column-major storage
+        T pvInv = static_cast<T>(1) / A[pivRC + pivRC * dimA]; // Correct indexing for pivot in column-major
+        
+        // Load pivot row and column into shared memory with correct indexing for column-major
+        for (unsigned ind = threadIdx.x; ind < 2*dimSub; ind += blockDim.x) {
+            if (ind < dimSub) { // Loading pivot column
+                s_temp[ind] = A[ind * dimA + pivRC]; // Correct for column-major
+            } else { // Loading pivot row
+                s_temp[ind] = A[pivRC * dimA + (ind - dimSub)]; // Correct for column-major
+            }
+        }
+        __syncthreads();
+        
+        // Update matrix elements except for pivot row and column
+        for (unsigned ind = threadIdx.x; ind < dimSub * dimSub; ind += blockDim.x) {
+            unsigned row = ind / dimSub; // Correct calculation for column-major
+            unsigned col = ind % dimSub; // Correct calculation for column-major
+            
+            if (row == pivRC || col == pivRC) continue; // Skip pivot row and column
+            
+            T element = A[row * dimA + col]; // Accessing element for column-major
+            T pivotColElement = s_temp[row]; // Pivot column element for the current row
+            T pivotRowElement = s_temp[dimSub + col]; // Pivot row element for the current column
+            
+            // Update the element using Gaussian elimination logic
+            A[row * dimA + col] = element - pivotColElement * pivotRowElement * pvInv;
+        }
+        __syncthreads();
+        
+        // Update the pivot row for column-major, applying the inverse of the pivot value
+        for (unsigned ind = threadIdx.x; ind < dimSub; ind += blockDim.x) {
+            if (ind != pivRC) { // Exclude the pivot itself from this update
+                A[pivRC * dimA + ind] = s_temp[dimSub + ind] * pvInv;
+            }
+        }
+        __syncthreads();
+        
+        // Set the pivot element to its inverse in the matrix
+        A[pivRC + pivRC * dimA] = pvInv;
+        
+        // Update pivot column elements except for the pivot itself
+        for (unsigned ind = threadIdx.x; ind < dimSub; ind += blockDim.x) {
+            if (ind != pivRC) { // Exclude the pivot itself
+                A[ind * dimA + pivRC] = -s_temp[ind] * pvInv;
+            }
+        }
+        __syncthreads();
+    }
+}
