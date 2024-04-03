@@ -59,5 +59,5 @@ void dot(T *out,
         out[ind] = x[ind] * y[ind];
     }
     __syncthreads();
-    reduce<T, n>(out);
+    reduce<T>(n, out);
 }
