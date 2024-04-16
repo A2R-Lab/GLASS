@@ -18,5 +18,5 @@ template <typename T> __device__ void vector_norm(std::uint32_t N, T *a, T *out,
 	__syncthreads();
 	reduce(N, out, g);
 	__syncthreads();
-    // out[0] = sqrt(out[0]);
+    out[0] = sqrt(out[0]);
 }

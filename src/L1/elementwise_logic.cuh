@@ -20,6 +20,17 @@ void elementwise_min(uint32_t N, T* a, T* b, T* c,
     }
 }
 
+
+template <typename T>
+__device__
+void elementwise_less_than(uint32_t N, T* a, T* b, T* c,
+                cgrps::thread_group g = cgrps::this_thread_block()) {
+    for (int i = g.thread_rank(); i < N; i += g.size()) {
+        c[i] = a[i] < b[i];
+    }
+}
+
+
 template <typename T>
 __device__
 void elementwise_more_than(uint32_t N, T* a, T* b, T* c,
@@ -28,15 +39,6 @@ void elementwise_more_than(uint32_t N, T* a, T* b, T* c,
         c[i] = a[i] > b[i];
     }
 }
-
-// template <typename T>
-// __device__
-// void elementwise_more_than_or_eq(uint32_t N, T* a, T* b, T* c,
-//                 cgrps::thread_group g = cgrps::this_thread_block()) {
-//     for (int i = g.thread_rank(); i < N; i += g.size()) {
-//         c[i] = a[i] >= b[i];
-//     }
-// }
 
 template <typename T>
 __device__
