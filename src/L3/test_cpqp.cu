@@ -35,33 +35,36 @@ ub
 array([4.9239, 4.9239, 4.9239, 4.9239, 4.9239, 4.9239, 4.9239])
 */
 
-__global__ void test_cpqp(std::uint32_t dim, float *P, float *q, float *A, float *lb, float *ub, float *tmp1,
-                          float *tmp2, float *tmp3, float *x_0, float *res, float alpha = 0.9)
+template <typename T>
+__global__ void test_cpqp(std::uint32_t dim, T *P, T *q, T *A, T *lb, T *ub, T *tmp1,
+                          T *tmp2, T *tmp3, T *tmp4, T *tmp5, T *tmp6, T *x_0, T *res,
+                          T alpha = 0.9)
 {
-    cpqp<float>(dim, P, q, A, lb, ub, res, x_0, tmp1, tmp2, tmp3, alpha);
+    cpqp<double>(dim, P, q, A, lb, ub, res, x_0, tmp1, tmp2, tmp3, tmp4, tmp5, tmp6, alpha);
     __syncthreads();
 }
 
 void cpqp_test_1() {
     std::uint32_t num_control_dims = 7;
 
-    float P[num_control_dims *num_control_dims] = {12.6191, 0.0136,  -0.3856, 0.1301,  0.0613,  0.0454,  0.0173,  0.0136,  12.5569, 0.0865,
+    double P[num_control_dims *num_control_dims] = {12.6191, 0.0136,  -0.3856, 0.1301,  0.0613,  0.0454,  0.0173,  0.0136,  12.5569, 0.0865,
                  0.1415,  -0.0619, 0.0701,  -0.004,  -0.3856, 0.0865,  14.13,   -0.1305, -0.6172, -0.1599,
                  -0.0509, 0.1301,  0.1415,  -0.1305, 12.9557, -0.0594, 0.3747,  0.0042,  0.0613,  -0.0619,
                  -0.6172, -0.0594, 15.9793, 0.0845,  -0.1174, 0.0454,  0.0701,  -0.1599, 0.3747,  0.0845,
                  15.9542, -0.1119, 0.0173,  -0.004,  -0.0509, 0.0042,  -0.1174, -0.1119, 16.5841};
 
-    float q[num_control_dims] = {-0.3501, 0.0418, 1.1519, -0.2435, 0.0982, -0.5519, 0.3218};
+    double q[num_control_dims] = {-0.3501, 0.0418, 1.1519, -0.2435, 0.0982, -0.5519, 0.3218};
 
-    float A[num_control_dims * num_control_dims] = {1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+    double A[num_control_dims * num_control_dims] = {1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
                   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
                   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0};
 
-    float lb[num_control_dims] = {-4.9239, -4.9239, -4.9239, -4.9239, -4.9239, -4.9239, -4.9239};
-    float ub[num_control_dims] = {4.9239, 4.9239, 4.9239, 4.9239, 4.9239, 4.9239, 4.9239};
-    float x_0[num_control_dims] = {0, 0, 0, 0, 0, 0, 0};
+    double lb[num_control_dims] = {-4.9239, -4.9239, -4.9239, -4.9239, -4.9239, -4.9239, -4.9239};
+    double ub[num_control_dims] = {4.9239, 4.9239, 4.9239, 4.9239, 4.9239, 4.9239, 4.9239};
+    double x_0[num_control_dims] = {0.0251, -0.0032, -0.0808,  0.0168, -0.0096,  0.0332, -0.0195};
 
-    float *d_P, *d_q, *d_A, *d_lb, *d_ub, *d_tmp1, *d_tmp2, *d_tmp_grad_1, *d_x_0, *d_res;
+    double *d_P, *d_q, *d_A, *d_lb, *d_ub, *d_tmp1, *d_tmp2, *d_tmp3, *d_tmp4, *d_tmp5, *d_tmp6, *d_tmp_grad_1, *d_x_0,
+        *d_res;
     cudaMalloc(&d_P, num_control_dims * num_control_dims * sizeof(float));
     cudaMalloc(&d_q, num_control_dims * sizeof(float));
     cudaMalloc(&d_A, num_control_dims * num_control_dims * sizeof(float));
@@ -69,6 +72,10 @@ void cpqp_test_1() {
     cudaMalloc(&d_ub, num_control_dims * sizeof(float));
     cudaMalloc(&d_tmp1, num_control_dims * sizeof(float));
     cudaMalloc(&d_tmp2, num_control_dims * sizeof(float));
+    cudaMalloc(&d_tmp3, num_control_dims * sizeof(float));
+    cudaMalloc(&d_tmp4, num_control_dims * sizeof(float));
+    cudaMalloc(&d_tmp5, num_control_dims * sizeof(float));
+    cudaMalloc(&d_tmp6, num_control_dims * sizeof(float));
     cudaMalloc(&d_tmp_grad_1, num_control_dims * num_control_dims * sizeof(float));
     cudaMalloc(&d_x_0, num_control_dims * sizeof(float));
     cudaMalloc(&d_res, num_control_dims * sizeof(float));
@@ -93,7 +100,7 @@ void cpqp_test_1() {
     dim3 blockSize(1); // Choose suitable block size
     dim3 gridSize(1); // small test, only need 1 block
 
-    test_cpqp<<<gridSize, blockSize>>>(num_control_dims, d_P, d_q, d_A, d_lb, d_ub, d_tmp1, d_tmp2, d_tmp_grad_1, d_x_0,
+    test_cpqp<<<gridSize, blockSize>>>(num_control_dims, d_P, d_q, d_A, d_lb, d_ub, d_tmp1, d_tmp2, d_tmp3, d_tmp4, d_tmp5, d_tmp6, d_x_0,
                                        d_res);
     cudaDeviceSynchronize();
 }

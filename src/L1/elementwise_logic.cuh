@@ -4,10 +4,19 @@ namespace cgrps = cooperative_groups;
 
 template <typename T>
 __device__
-void elementwise_less_than(uint32_t N, T* a, T* b, T* c,
+void elementwise_max(uint32_t N, T* a, T* b, T* c,
                 cgrps::thread_group g = cgrps::this_thread_block()) {
     for (int i = g.thread_rank(); i < N; i += g.size()) {
-        c[i] = a[i] < b[i];
+        c[i] = max(a[i], b[i]);
+    }
+}
+
+template <typename T>
+__device__
+void elementwise_min(uint32_t N, T* a, T* b, T* c,
+                cgrps::thread_group g = cgrps::this_thread_block()) {
+    for (int i = g.thread_rank(); i < N; i += g.size()) {
+        c[i] = min(a[i], b[i]);
     }
 }
 
@@ -17,6 +26,24 @@ void elementwise_more_than(uint32_t N, T* a, T* b, T* c,
                 cgrps::thread_group g = cgrps::this_thread_block()) {
     for (int i = g.thread_rank(); i < N; i += g.size()) {
         c[i] = a[i] > b[i];
+    }
+}
+
+// template <typename T>
+// __device__
+// void elementwise_more_than_or_eq(uint32_t N, T* a, T* b, T* c,
+//                 cgrps::thread_group g = cgrps::this_thread_block()) {
+//     for (int i = g.thread_rank(); i < N; i += g.size()) {
+//         c[i] = a[i] >= b[i];
+//     }
+// }
+
+template <typename T>
+__device__
+void elementwise_less_than_or_eq(uint32_t N, T* a, T* b, T* c,
+                cgrps::thread_group g = cgrps::this_thread_block()) {
+    for (int i = g.thread_rank(); i < N; i += g.size()) {
+        c[i] = a[i] <= b[i];
     }
 }
 
@@ -62,6 +89,24 @@ void elementwise_mult(uint32_t N, T* a, T* b, T* c,
                 cgrps::thread_group g = cgrps::this_thread_block()) {
     for (int i = g.thread_rank(); i < N; i += g.size()) {
         c[i] = a[i] * b[i];
+    }
+}
+
+template <typename T>
+__device__
+void elementwise_sub(uint32_t N, T* a, T* b, T* c,
+                cgrps::thread_group g = cgrps::this_thread_block()) {
+    for (int i = g.thread_rank(); i < N; i += g.size()) {
+        c[i] = a[i] - b[i];
+    }
+}
+
+template <typename T>
+__device__
+void elementwise_mult_scalar(uint32_t N, T* a, T b, T* c,
+                cgrps::thread_group g = cgrps::this_thread_block()) {
+    for (int i = g.thread_rank(); i < N; i += g.size()) {
+        c[i] = a[i] * b;
     }
 }
 
