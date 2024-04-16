@@ -40,6 +40,10 @@ __global__ void test_cpqp(std::uint32_t dim, T *P, T *q, T *A, T *lb, T *ub, T *
                           T *tmp2, T *tmp3, T *tmp4, T *tmp5, T *tmp6, T *x_0, T *res,
                           T alpha = 0.9)
 {
+    for (int i = 0; i < dim; i++) {
+        printf("%f: ", x_0[i]);
+    }
+    printf("\n");
     cpqp<double>(dim, P, q, A, lb, ub, res, x_0, tmp1, tmp2, tmp3, tmp4, tmp5, tmp6, alpha);
     __syncthreads();
 }
@@ -62,39 +66,43 @@ void cpqp_test_1() {
     double lb[num_control_dims] = {-4.9239, -4.9239, -4.9239, -4.9239, -4.9239, -4.9239, -4.9239};
     double ub[num_control_dims] = {4.9239, 4.9239, 4.9239, 4.9239, 4.9239, 4.9239, 4.9239};
     double x_0[num_control_dims] = {0.0251, -0.0032, -0.0808,  0.0168, -0.0096,  0.0332, -0.0195};
+    // for (int i = 0; i < num_control_dims; i++) {
+        // printf("%f: ", x_0[i]);
+    // }
+    // printf("\n");
 
     double *d_P, *d_q, *d_A, *d_lb, *d_ub, *d_tmp1, *d_tmp2, *d_tmp3, *d_tmp4, *d_tmp5, *d_tmp6, *d_tmp_grad_1, *d_x_0,
         *d_res;
-    cudaMalloc(&d_P, num_control_dims * num_control_dims * sizeof(float));
-    cudaMalloc(&d_q, num_control_dims * sizeof(float));
-    cudaMalloc(&d_A, num_control_dims * num_control_dims * sizeof(float));
-    cudaMalloc(&d_lb, num_control_dims * sizeof(float));
-    cudaMalloc(&d_ub, num_control_dims * sizeof(float));
-    cudaMalloc(&d_tmp1, num_control_dims * sizeof(float));
-    cudaMalloc(&d_tmp2, num_control_dims * sizeof(float));
-    cudaMalloc(&d_tmp3, num_control_dims * sizeof(float));
-    cudaMalloc(&d_tmp4, num_control_dims * sizeof(float));
-    cudaMalloc(&d_tmp5, num_control_dims * sizeof(float));
-    cudaMalloc(&d_tmp6, num_control_dims * sizeof(float));
-    cudaMalloc(&d_tmp_grad_1, num_control_dims * num_control_dims * sizeof(float));
-    cudaMalloc(&d_x_0, num_control_dims * sizeof(float));
-    cudaMalloc(&d_res, num_control_dims * sizeof(float));
+    cudaMalloc(&d_P, num_control_dims * num_control_dims * sizeof(double));
+    cudaMalloc(&d_q, num_control_dims * sizeof(double));
+    cudaMalloc(&d_A, num_control_dims * num_control_dims * sizeof(double));
+    cudaMalloc(&d_lb, num_control_dims * sizeof(double));
+    cudaMalloc(&d_ub, num_control_dims * sizeof(double));
+    cudaMalloc(&d_tmp1, num_control_dims * sizeof(double));
+    cudaMalloc(&d_tmp2, num_control_dims * sizeof(double));
+    cudaMalloc(&d_tmp3, num_control_dims * sizeof(double));
+    cudaMalloc(&d_tmp4, num_control_dims * sizeof(double));
+    cudaMalloc(&d_tmp5, num_control_dims * sizeof(double));
+    cudaMalloc(&d_tmp6, num_control_dims * sizeof(double));
+    cudaMalloc(&d_tmp_grad_1, num_control_dims * num_control_dims * sizeof(double));
+    cudaMalloc(&d_x_0, num_control_dims * sizeof(double));
+    cudaMalloc(&d_res, num_control_dims * sizeof(double));
 
-    cudaMemcpy(d_P, P, num_control_dims * num_control_dims * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_q, q, num_control_dims * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_A, A, num_control_dims * num_control_dims * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_lb, lb, num_control_dims * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_ub, ub, num_control_dims * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_x_0, x_0, num_control_dims * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMalloc(&d_res, num_control_dims * sizeof(float));
-    // cudaMemcpy(d_tmp1, ub, num_control_dims * sizeof(float), cudaMemcpyHostToDevice);
-    // cudaMemcpy(d_tmp2, ub, num_control_dims * sizeof(float), cudaMemcpyHostToDevice);
-    // cudaMemcpy(d_tmp3, ub, num_control_dims * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_P, P, num_control_dims * num_control_dims * sizeof(double), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_q, q, num_control_dims * sizeof(double), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_A, A, num_control_dims * num_control_dims * sizeof(double), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_lb, lb, num_control_dims * sizeof(double), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_ub, ub, num_control_dims * sizeof(double), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_x_0, x_0, num_control_dims * sizeof(double), cudaMemcpyHostToDevice);
+    cudaMalloc(&d_res, num_control_dims * sizeof(double));
+    // cudaMemcpy(d_tmp1, ub, num_control_dims * sizeof(double), cudaMemcpyHostToDevice);
+    // cudaMemcpy(d_tmp2, ub, num_control_dims * sizeof(double), cudaMemcpyHostToDevice);
+    // cudaMemcpy(d_tmp3, ub, num_control_dims * sizeof(double), cudaMemcpyHostToDevice);
 
-    // float res[num_control_dims] = {0}; 
-    // float *d_res;
-    // cudaMalloc(&d_res, num_control_dims * sizeof(float));
-    // cudaMemcpy(d_res, res, num_control_dims * sizeof(float), cudaMemcpyHostToDevice);
+    // double res[num_control_dims] = {0}; 
+    // double *d_res;
+    // cudaMalloc(&d_res, num_control_dims * sizeof(double));
+    // cudaMemcpy(d_res, res, num_control_dims * sizeof(double), cudaMemcpyHostToDevice);
 
 
     dim3 blockSize(1); // Choose suitable block size
