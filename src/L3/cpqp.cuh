@@ -9,7 +9,7 @@ namespace cgrps = cooperative_groups;
 
 // all of these can be played with
 #define TOL 1e-5
-#define MAX_ITER 2
+#define MAX_ITER 100
 
 /*
 All inputs are assumed to be in column major order
@@ -53,56 +53,50 @@ template <typename T> __device__ void project(std::uint32_t dim, T *x, T *u, T *
 }
 
 template <typename T>
-__device__ bool cpqp(std::uint32_t dim, T *P, T *q, T *A, T *l, T *u, T *res, T *x, T *tmp1, T *tmp2, T *tmp3, T *tmp4,
+__device__ bool cpqp(std::uint32_t dim, T *P, T *q, T *A, T *l, T *u, T *x, T *tmp1, T *res, T *tmp3, T *tmp4,
                      T *tmp5, T *tmp6, T alpha, cgrps::thread_group g = cgrps::this_thread_block())
 
 {
-    printMatrixColumnMajor(l, 1, dim);
-    printMatrixColumnMajor(u, 1, dim);
-    project(dim, x, u, l, tmp1, tmp2);
-    printMatrixColumnMajor(tmp2, 1, dim);
-    // ***x is tmp2; up to here is fine
+    project(dim, x, u, l, tmp1, res);
+    // ***x is res; up to here is fine
 
 #pragma unroll
     for (int i = 0; i < MAX_ITER; i++)
     {
         // tmp3 is P @ x
-        printMatrixColumnMajor(tmp2, 1, dim);
-        gemm(dim, dim, 1, (T)1, P, tmp2, tmp3);
-        __syncthreads();
-        printMatrixColumnMajor(tmp3, 1, dim);
+        // grad = P @ x + q
+        gemm(dim, dim, 1, (T)1, P, res, tmp3);
         __syncthreads();
         matrixAlphaAdd((T)1, tmp3, q, tmp1, 1, dim);
         __syncthreads();
-        //  // ****grad is tmp1
-        //  // can use tmp3
-        printMatrixColumnMajor(tmp1, 1, dim); // up to here is fine
+
+        //  ****grad is tmp1
+        //  x_c = x - alpha * grad
         elementwise_mult_scalar(dim, tmp1, alpha, tmp3);
         __syncthreads();
-        elementwise_sub(dim, tmp2, tmp3, tmp4); // x_c is tmp4
+        elementwise_sub(dim, res, tmp3, tmp4); // x_c is tmp4
         __syncthreads();
+
+        // x_c = project_onto_constraints(x_c, l, u)
         project(dim, tmp4, u, l, tmp3, tmp5); // x_c projected is tmp5; up to here is fine
         __syncthreads();
-        printMatrixColumnMajor(tmp5, 1, dim);
-        // // result is in tmp5
-        // // i still need tmp1, tmp5,
-        gemm(dim, dim, 1, (T)1, A, tmp5, tmp2);
+
+        // Ax_c = A @ x_c
+        gemm(dim, dim, 1, (T)1, A, tmp5, res);
         __syncthreads();
-        printMatrixColumnMajor(tmp2, 1, dim); // Ax_C
-        printf("\n");
-        __syncthreads();
-        elementwise_less_than_or_eq(dim, l, tmp2, tmp3);
-        elementwise_less_than_or_eq(dim, tmp2, u, tmp4);
+
+        //np.all(l <= Ax_c) and np.all(Ax_c <= u) and np.linalg.norm(grad) <= tol
+        elementwise_less_than_or_eq(dim, l, res, tmp3);
+        elementwise_less_than_or_eq(dim, res, u, tmp4);
         reduce(dim, tmp3, g);
         reduce(dim, tmp4, g);
         vector_norm(dim, tmp1, tmp6);
         __syncthreads();
-        printMatrixColumnMajor(tmp3, 1, dim);
-        printMatrixColumnMajor(tmp4, 1, dim);
-        printMatrixColumnMajor(tmp6, 1, dim);
+
         if (tmp3[0] == dim && tmp4[0] == dim && tmp6[1] <= TOL)
             return true;
-        copy(dim, tmp5, tmp2);
+
+        copy(dim, tmp5, res);
         __syncthreads();
     }
 
