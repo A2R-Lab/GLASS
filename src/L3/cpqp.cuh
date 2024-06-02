@@ -1,3 +1,4 @@
+#include "L1/dot.cuh"
 #include "L1/copy.cuh"
 #include "L1/elementwise_logic.cuh"
 #include "L1/norm.cuh"
@@ -44,6 +45,20 @@ template <typename T> __device__ void printMatrixColumnMajor(T *matrix, int rows
     printf("\n");
 }
 
+// beware that this assumes q and x are 1D, which it is for DDP use case
+template <typename T>
+__device__ T objective_function(std::uint32_t dim, T *x, T *P, T *q, T *obj_tmp1, T *obj_tmp2, T *res, T *s_tmp,
+                                   cgrps::thread_group g)
+{
+    gemm_v2<T, true, false>(dim, 1, dim, dim, x, dim, P, dim, obj_tmp1, s_tmp);
+    __syncthreads();
+    dot<T>(res, dim, obj_tmp1, x, g);
+    dot<T>(obj_tmp2, dim, q, x, g);
+    __syncthreads();
+
+    return 0.5 * res[0] + obj_tmp2[0];
+}
+
 template <typename T> __device__ void project(std::uint32_t dim, T *x, T *u, T *l, T *t1, T *t2)
 {
     elementwise_min(dim, u, x, t1);
@@ -53,10 +68,14 @@ template <typename T> __device__ void project(std::uint32_t dim, T *x, T *u, T *
 }
 
 template <typename T>
-__device__ bool cpqp(std::uint32_t dim, T *P, T *q, T *A, T *l, T *u, T *x, T *tmp1, T *res, T *tmp3, T *tmp4,
-                     T *tmp5, T *tmp6, T alpha, cgrps::thread_group g = cgrps::this_thread_block())
+__device__ bool cpqp(std::uint32_t dim, T *P, T *q, T *A, T *l, T *u, T *x, T *tmp1, T *res, T *tmp3, T *tmp4, T *tmp5,
+                     T *tmp6, T *s_tmp, T *obj_tmp1, T *obj_tmp2, T *obj_res, T alpha,
+                     cgrps::thread_group g = cgrps::this_thread_block())
 
 {
+    T res_obj = objective_function(dim, x, P, q, obj_tmp1, obj_tmp2, obj_res, s_tmp, g);
+    printf("res: %f\n", res_obj);
+    /*
     project(dim, x, u, l, tmp1, res);
     // ***x is res; up to here is fine
 
@@ -99,6 +118,6 @@ __device__ bool cpqp(std::uint32_t dim, T *P, T *q, T *A, T *l, T *u, T *x, T *t
         copy(dim, tmp5, res);
         __syncthreads();
     }
-
+    */
     return false;
 }

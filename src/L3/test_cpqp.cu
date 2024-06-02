@@ -37,9 +37,9 @@ array([4.9239, 4.9239, 4.9239, 4.9239, 4.9239, 4.9239, 4.9239])
 
 template <typename T>
 __global__ void test_cpqp(std::uint32_t dim, T *P, T *q, T *A, T *lb, T *ub, T *tmp1, T *res, T *tmp3, T *tmp4, T *tmp5,
-                          T *tmp6, T *x_0, T alpha = 0.9)
+                          T *tmp6, T *x_0, T *s_tmp, T *obj_tmp1, T *obj_tmp2, T *obj_res, T alpha = 0.9)
 {
-    cpqp<double>(dim, P, q, A, lb, ub, x_0, tmp1, res, tmp3, tmp4, tmp5, tmp6, alpha);
+    cpqp<T>(dim, P, q, A, lb, ub, x_0, tmp1, res, tmp3, tmp4, tmp5, tmp6, s_tmp, obj_tmp1, obj_tmp2, obj_res, alpha);
     __syncthreads();
 }
 
@@ -66,6 +66,8 @@ void cpqp_test_1()
     double x_0[num_control_dims] = {0.0251, -0.0032, -0.0808, 0.0168, -0.0096, 0.0332, -0.0195};
 
     double *d_P, *d_q, *d_A, *d_lb, *d_ub, *d_tmp1, *d_res, *d_tmp3, *d_tmp4, *d_tmp5, *d_tmp6, *d_x_0;
+    double *d_s_tmp, *d_obj_tmp1, *d_obj_tmp2, *d_obj_res;
+
     cudaMalloc(&d_P, num_control_dims * num_control_dims * sizeof(double));
     cudaMalloc(&d_q, num_control_dims * sizeof(double));
     cudaMalloc(&d_A, num_control_dims * num_control_dims * sizeof(double));
@@ -79,6 +81,10 @@ void cpqp_test_1()
     cudaMalloc(&d_tmp6, num_control_dims * sizeof(double));
     cudaMalloc(&d_x_0, num_control_dims * sizeof(double));
     cudaMalloc(&d_res, num_control_dims * sizeof(double));
+    cudaMalloc(&d_s_tmp, FORWARDPASS_THREADS * sizeof(double));
+    cudaMalloc(&d_obj_tmp1, num_control_dims * sizeof(double));
+    cudaMalloc(&d_obj_tmp2, num_control_dims * sizeof(double));
+    cudaMalloc(&d_obj_res, num_control_dims * sizeof(double));
 
     cudaMemcpy(d_P, P, num_control_dims * num_control_dims * sizeof(double), cudaMemcpyHostToDevice);
     cudaMemcpy(d_q, q, num_control_dims * sizeof(double), cudaMemcpyHostToDevice);
@@ -91,7 +97,7 @@ void cpqp_test_1()
     dim3 gridSize(1);
 
     test_cpqp<<<gridSize, blockSize, FORWARDPASS_THREADS>>>(num_control_dims, d_P, d_q, d_A, d_lb, d_ub, d_tmp1, d_res,
-                                                            d_tmp3, d_tmp4, d_tmp5, d_tmp6, d_x_0);
+                                                            d_tmp3, d_tmp4, d_tmp5, d_tmp6, d_x_0, d_s_tmp, d_obj_tmp1, d_obj_tmp2, d_obj_res);
     cudaDeviceSynchronize();
 
     double h_res[num_control_dims];
