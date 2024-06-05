@@ -37,9 +37,9 @@ array([4.9239, 4.9239, 4.9239, 4.9239, 4.9239, 4.9239, 4.9239])
 
 template <typename T>
 __global__ void test_cpqp(std::uint32_t dim, T *P, T *q, T *A, T *lb, T *ub, T *tmp1, T *res, T *tmp3, T *tmp4, T *tmp5,
-                          T *tmp6, T *x_0, T *s_tmp, T *obj_tmp1, T *obj_tmp2, T *obj_res, T alpha = 0.9)
+                          T *tmp6, T *x_0, T *s_tmp, T *obj_tmp1, T *obj_tmp2, T *obj_res, T *x_new)
 {
-    cpqp<T>(dim, P, q, A, lb, ub, x_0, tmp1, res, tmp3, tmp4, tmp5, tmp6, s_tmp, obj_tmp1, obj_tmp2, obj_res, alpha);
+    cpqp<T>(dim, P, q, A, lb, ub, x_0, tmp1, res, tmp3, tmp4, tmp5, tmp6, s_tmp, obj_tmp1, obj_tmp2, obj_res, x_new);
     __syncthreads();
 }
 
@@ -67,6 +67,7 @@ void cpqp_test_1()
 
     double *d_P, *d_q, *d_A, *d_lb, *d_ub, *d_tmp1, *d_res, *d_tmp3, *d_tmp4, *d_tmp5, *d_tmp6, *d_x_0;
     double *d_s_tmp, *d_obj_tmp1, *d_obj_tmp2, *d_obj_res;
+    double *d_x_new;
 
     cudaMalloc(&d_P, num_control_dims * num_control_dims * sizeof(double));
     cudaMalloc(&d_q, num_control_dims * sizeof(double));
@@ -85,6 +86,7 @@ void cpqp_test_1()
     cudaMalloc(&d_obj_tmp1, num_control_dims * sizeof(double));
     cudaMalloc(&d_obj_tmp2, num_control_dims * sizeof(double));
     cudaMalloc(&d_obj_res, num_control_dims * sizeof(double));
+    cudaMalloc(&d_x_new, num_control_dims * sizeof(double));
 
     cudaMemcpy(d_P, P, num_control_dims * num_control_dims * sizeof(double), cudaMemcpyHostToDevice);
     cudaMemcpy(d_q, q, num_control_dims * sizeof(double), cudaMemcpyHostToDevice);
@@ -97,7 +99,7 @@ void cpqp_test_1()
     dim3 gridSize(1);
 
     test_cpqp<<<gridSize, blockSize, FORWARDPASS_THREADS>>>(num_control_dims, d_P, d_q, d_A, d_lb, d_ub, d_tmp1, d_res,
-                                                            d_tmp3, d_tmp4, d_tmp5, d_tmp6, d_x_0, d_s_tmp, d_obj_tmp1, d_obj_tmp2, d_obj_res);
+                                                            d_tmp3, d_tmp4, d_tmp5, d_tmp6, d_x_0, d_s_tmp, d_obj_tmp1, d_obj_tmp2, d_obj_res, d_x_new);
     cudaDeviceSynchronize();
 
     double h_res[num_control_dims];
@@ -118,7 +120,6 @@ void cpqp_test_1()
     cudaFree(d_tmp5);
     cudaFree(d_tmp6);
     cudaFree(d_x_0);
-    cudaFree(d_res);
 }
 
 int main()
