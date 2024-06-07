@@ -17,7 +17,7 @@ __device__
 void dot(uint32_t n, 
           T *x, 
           T *y, 
-          cgrps::thread_group g)
+          cgrps::thread_group g = cgrps::this_thread_block())
 {
     for(uint32_t ind = g.thread_rank(); ind < n; ind += g.size()){
         y[ind] = x[ind] * y[ind];

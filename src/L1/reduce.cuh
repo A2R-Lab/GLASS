@@ -1,3 +1,6 @@
+#ifndef REDUCE_H
+#define REDUCE_H
+
 #include <cstdint>
 #include <cooperative_groups.h>
 namespace cgrps = cooperative_groups;
@@ -44,3 +47,5 @@ void reduce(T *out,
     g.sync();
     reduce(n, out, g);
 }
+
+#endif
