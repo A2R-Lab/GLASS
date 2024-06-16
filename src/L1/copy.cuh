@@ -1,3 +1,6 @@
+#ifndef COPY_H
+#define COPY_H
+
 #include <cstdint>
 #include <cooperative_groups.h>
 namespace cgrps = cooperative_groups;
@@ -63,3 +66,5 @@ void copy(std::uint32_t n,
         y[ind] = alpha * x[ind];
     }
 }
+
+#endif
