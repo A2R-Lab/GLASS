@@ -1,3 +1,6 @@
+#ifndef GEMM_H
+#define GEMM_H
+
 #include <cstdint>
 #include <cooperative_groups.h>
 namespace cgrps = cooperative_groups;
@@ -265,3 +268,6 @@ void matrixAlphaAdd(T alpha,
         C[ind] = alpha * A[ind] + B[ind];
     }
 }
+
+
+#endif

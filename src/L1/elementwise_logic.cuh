@@ -1,3 +1,6 @@
+#ifndef ELEMENT_H
+#define ELEMENT_H
+
 #include <cstdint>
 #include <cooperative_groups.h>
 namespace cgrps = cooperative_groups;
@@ -105,6 +108,15 @@ void elementwise_sub(uint32_t N, T* a, T* b, T* c,
 
 template <typename T>
 __device__
+void elementwise_add(uint32_t N, T* a, T* b, T* c,
+                cgrps::thread_group g = cgrps::this_thread_block()) {
+    for (int i = g.thread_rank(); i < N; i += g.size()) {
+        c[i] = a[i] + b[i];
+    }
+}
+
+template <typename T>
+__device__
 void elementwise_mult_scalar(uint32_t N, T* a, T b, T* c,
                 cgrps::thread_group g = cgrps::this_thread_block()) {
     for (int i = g.thread_rank(); i < N; i += g.size()) {
@@ -129,3 +141,5 @@ void elementwise_min_scalar(uint32_t N, T* a, T b, T* c,
         c[i] = min(a[i], b);
     }
 }
+
+#endif

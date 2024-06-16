@@ -1,3 +1,6 @@
+#ifndef NORM_H
+#define NORM_H
+
 #include "reduce.cuh"
 #include <cooperative_groups.h>
 #include <cstdint>
@@ -22,3 +25,5 @@ __device__ void vector_norm(std::uint32_t N, T *a, T *out, cgrps::thread_group g
     __syncthreads();
     out[0] = sqrt(out[0]);
 }
+
+#endif

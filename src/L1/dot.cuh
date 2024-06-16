@@ -1,3 +1,6 @@
+#ifndef DOT_H
+#define DOT_H
+
 #include <cstdint>
 #include <cooperative_groups.h>
 namespace cgrps = cooperative_groups;
@@ -47,3 +50,5 @@ void dot(T *out,
     g.sync();
     reduce<T>(n, out, g);
 }
+
+#endif
