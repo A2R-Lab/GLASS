@@ -363,6 +363,25 @@ TEST_F(L2Test, gemvMultiBlock){
 	}
 }
 
+TEST_F(L3Test, ldl) {
+double h_d[] = {18, 5, 1.5, 5, 3.5, 1.3, 1.5, 1.3, 8.8};
+double res[] = {18, 0.27777779, 0.083333336, 5, 2.1111112, 0.41842106,1.5, 1.3, 8.3053951};
+
+double *d_d;
+
+cudaMalloc(&d_d, 9 * sizeof(double));
+cudaMemcpy(d_d, h_d, 9 * sizeof(double), cudaMemcpyHostToDevice);
+global_ldlDecomp_InPlace<<<1,5>>>(3, d_d);
+cudaDeviceSynchronize();
+cudaMemcpy(h_d, d_d, 9*sizeof(double), cudaMemcpyDeviceToHost);
+
+for (int i = 0; i < 9; i++) {
+EXPECT_FLOAT_EQ(h_d[i], res[i]);
+}
+
+cudaFree(d_d);
+}
+
 TEST_F(L3Test, chol) {
 	double h_d[] = {10, 5, 2, 5, 3, 2, 2, 2, 3};
 	double res[] = {pow(10,0.5), 5/pow(10,0.5), 2/pow(10,0.5), 5, 

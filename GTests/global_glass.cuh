@@ -203,6 +203,14 @@ void global_cholDecomp_InPlace_c (uint32_t n,
     glass::chol_InPlace<T>(n, s_A);
 }
 
+template <typename T>
+__global__
+void global_ldlDecomp_InPlace (uint32_t n,
+                               T *s_A)
+{
+    glass::ldl_InPlace<T>(n, s_A);
+}
+
 template <typename T, bool TRANSPOSE_B>
 __global__
 void global_gemm(uint32_t m,
