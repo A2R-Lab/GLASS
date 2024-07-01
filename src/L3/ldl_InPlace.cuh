@@ -16,26 +16,33 @@
  *
  */
 
-template <typename T> 
-__device__ 
-void ldl_InPlace(uint32_t n, T *s_A)
-{
+template<typename T>
+__device__
+void ldl_InPlace(uint32_t n, T *s_A, T *s_D) {
     uint32_t ind = threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y;
     uint32_t stride = blockDim.x * blockDim.y * blockDim.z;
 
-    for (uint32_t row = 0; row < n-1; row++) {
+    for (uint32_t row = 0; row < n - 1; row++) {
         // normalization
-        for (uint32_t k = ind+row+1; k < n; k+= stride) {
-            s_A[n*row+k] /= s_A[n*row+row];
+        for (uint32_t k = ind + row + 1; k < n; k += stride) {
+            s_A[n * row + k] /= s_A[n * row + row];
         }
         __syncthreads();
-        
+
         // inner prod subtraction
-        for(uint32_t j = ind+row+1; j < n; j+= stride) {
-            for (uint32_t k = 0; k < row+1; k++) {
-                s_A[n*(row+1)+j] -= s_A[n*k+j]*s_A[n*k+row+1]*s_A[n*k+k];
+        for (uint32_t j = ind + row + 1; j < n; j += stride) {
+            for (uint32_t k = 0; k < row + 1; k++) {
+                s_A[n * (row + 1) + j] -= s_A[n * k + j] * s_A[n * k + row + 1] * s_A[n * k + k];
             }
         }
         __syncthreads();
+    }
+    // in place LDL' is finished
+
+    // read the diagonal entries of s_A to s_D
+    // replace the diagonal entries of s_A to be 1
+    for (uint32_t row = ind; row < n; row += stride) {
+        s_D[row] = s_A[n * row + row];
+        s_A[n * row + row] = static_cast<T>(1);
     }
 }
