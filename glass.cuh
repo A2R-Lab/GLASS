@@ -15,10 +15,12 @@ namespace glass{
 
     /*      L2      */
     #include "./src/L2/gemv.cuh"
+    #include "./src/L2/trmv.cuh"
 
     /*      L3      */
     #include "./src/L3/chol_InPlace.cuh"
     #include "./src/L3/gemm.cuh"
     #include "./src/L3/inv.cuh"
     #include "./src/L3/ldl_InPlace.cuh"
+    #include "./src/L3/trsm.cuh"
 }

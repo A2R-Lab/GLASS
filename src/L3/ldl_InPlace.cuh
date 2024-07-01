@@ -16,6 +16,8 @@
  *
  */
 
+// by Shaohui Yang, 2024.07.01
+
 template<typename T>
 __device__
 void ldl_InPlace(uint32_t n, T *s_A, T *s_D) {

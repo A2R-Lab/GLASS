@@ -154,6 +154,50 @@ class L3InvTest : public ::testing::Test{
 	double *d_temp;
 };
 
+class TriangularTest : public ::testing::Test{
+
+protected:
+    void SetUp() override {
+        n = 3;
+        m = 2;
+        h_A = new double[n*n] {
+                a, b, c,
+                0, d, e,
+                0, 0, f
+        };
+        h_B = new double[m*n] {
+                b11, b21,
+                b12, b22,
+                b13, b23
+        };
+        h_c = new double [n] {c1, c2, c3};
+
+        cudaMalloc(&d_A, n*n * sizeof(*d_A));
+        cudaMalloc(&d_B, m*n * sizeof(*d_B));
+        cudaMalloc(&d_c, n * sizeof(*d_c));
+        cudaMemcpy(d_A, h_A, n*n * sizeof(*d_A), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_B, h_B, m*n * sizeof(*d_B), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_c, h_c, n * sizeof(*d_c), cudaMemcpyHostToDevice);
+        cudaDeviceSynchronize();
+    }
+    void TearDown() override {
+        cudaFree(d_A);
+        cudaFree(d_B);
+        cudaFree(d_c);
+        delete h_A;
+        delete h_B;
+        delete h_c;
+    }
+
+    int n, m;
+    double *h_A, *h_B, *h_c;
+    double *d_A, *d_B, *d_c;
+    // values can be arbitrary
+    double a = 3, b = 2.7, c = 0.8, d = 10, e = 0.4, f = 3.2;
+    double b11 = -2, b12 = 1.8, b13 = -3, b21 = -1.9, b22 = -0.8, b23 = 1.2;
+    double c1 = 2.8, c2 = -0.9, c3 = -2.1;
+};
+
 TEST_F(L1Test, DotProduct){
 	global_dot<<<1, n>>>(d_c, n, d_a, d_b);
 	cudaDeviceSynchronize();
@@ -496,6 +540,112 @@ TEST_F(L3Test, gemmMultiBlock){
 	for(int i=0; i<m*k; i++){
 		EXPECT_EQ(h_c[i], res_transpose[i]);
 	}
+}
+
+TEST_F(TriangularTest, trmv){
+    // test d = A*c, e = A'*c
+    double res_d[] = {a*c1, b*c1+d*c2, c*c1 +e*c2+f*c3};
+    double res_e[] = {a*c1+b*c2+c*c3, d*c2+e*c3, f*c3};
+    double h_d[] = {0,0,0};
+    double h_e[] = {0,0,0};
+    double *d_d, *d_e;
+
+    // test d = A*c
+    cudaMalloc(&d_d, n*sizeof(double));
+//    global_gemv<double, false><<<1,64>>>(n,n,static_cast<double>(1), d_A, d_c, d_d);
+    global_trmv<double, false><<<1,64>>>(n,static_cast<double>(1), d_A, d_c, d_d);
+    cudaDeviceSynchronize();
+    cudaMemcpy(h_d, d_d, n * sizeof(*d_d), cudaMemcpyDeviceToHost);
+    for (int i = 0; i < n; i++) {
+        EXPECT_FLOAT_EQ(h_d[i], res_d[i]);
+    }
+
+    // test e = A'*c
+    cudaMalloc(&d_e, n*sizeof(double));
+//    global_gemv<double, true><<<1,64>>>(n,n,static_cast<double>(1), d_A, d_c, d_e);
+    global_trmv<double, true><<<1,64>>>(n,static_cast<double>(1), d_A, d_c, d_e);
+    cudaDeviceSynchronize();
+    cudaMemcpy(h_e, d_e, n * sizeof(*d_e), cudaMemcpyDeviceToHost);
+    for (int i = 0; i < n; i++) {
+        EXPECT_FLOAT_EQ(h_e[i], res_e[i]);
+    }
+}
+
+TEST_F(TriangularTest, trsv){
+    // there is actually no trsv function, but trsm applied to a single vector IS trsv
+    // test d = inv(A)*c, e = inv(A)'*c
+    double res_d[] = {c1/a, -b*c1/a/d + c2/d, (b*e-c*d)*c1/a/d/f + -e*c2/d/f + c3/f};
+    double res_e[] = {c1/a + -b*c2/a/d + (b*e-c*d)*c3/a/d/f, c2/d - e*c3/d/f, c3/f};
+    double h_d[] = {0,0,0};
+    double h_e[] = {0,0,0};
+    double *d_d, *d_e;
+
+    // test d = inv(A)*c
+    cudaMalloc(&d_d, n*sizeof(double));
+    cudaMemcpy(d_d, h_c, n * sizeof(*d_c), cudaMemcpyHostToDevice);
+    global_trsm_InPlace<double, false><<<1,64>>>(n,1, d_A, d_d);
+    cudaDeviceSynchronize();
+    cudaMemcpy(h_d, d_d, n * sizeof(*d_d), cudaMemcpyDeviceToHost);
+    for (int i = 0; i < n; i++) {
+        EXPECT_FLOAT_EQ(h_d[i], res_d[i]);
+    }
+
+    // test e = inv(A)'*c
+    cudaMalloc(&d_e, n*sizeof(double));
+    cudaMemcpy(d_e, h_c, n * sizeof(*d_c), cudaMemcpyHostToDevice);
+    global_trsm_InPlace<double, true><<<1,64>>>(n,1, d_A, d_e);
+    cudaDeviceSynchronize();
+    cudaMemcpy(h_e, d_e, n * sizeof(*d_e), cudaMemcpyDeviceToHost);
+    for (int i = 0; i < n; i++) {
+        EXPECT_FLOAT_EQ(h_e[i], res_e[i]);
+    }
+}
+
+TEST_F(TriangularTest, trsm){
+    // test C=inv(A)*B, D=inv(A), E = inv(A)'*B, where A is lower triangular
+
+    double res_inv[] = {1/a, -b/a/d, (b*e-c*d)/a/d/f, 0, 1/d, -e/d/f, 0, 0, 1/f};
+    double res_C[] = {0,0,0,0,0,0};
+    double res_D[] = {0,0,0,0,0,0,0,0,0};
+    double *d_inv, *d_C, *d_D;
+
+    cudaMalloc(&d_inv, n*n*sizeof(double));
+    cudaMalloc(&d_C, m*n*sizeof(double));
+    cudaMemcpy(d_inv, res_inv, n*n * sizeof(double), cudaMemcpyHostToDevice);
+
+    global_gemm<double, false><<<1, 64>>>(n, n, m, static_cast<double>(1), d_inv, d_B, d_C);
+    cudaDeviceSynchronize();
+    cudaMemcpy(res_C, d_C, n*m*sizeof(double), cudaMemcpyDeviceToHost);
+
+    // test trsm for C=inv(A)*B
+    global_trsm_InPlace<double, false><<<1, 64>>>(n, m, d_A, d_B);
+    cudaMemcpy(h_B, d_B, m*n * sizeof(*d_B), cudaMemcpyDeviceToHost);
+
+    for (int i = 0; i < n*m; i++) {
+        EXPECT_FLOAT_EQ(h_B[i], res_C[i]);
+    }
+
+    // test trsm for D=inv(A)
+    cudaMalloc(&d_D, n*n*sizeof(double));
+    global_loadIdentity<<<1, 64>>>(n, d_D);
+    cudaDeviceSynchronize();
+
+    global_trsm_InPlace<double, false><<<1, 64>>>(n, n, d_A, d_D);
+    cudaDeviceSynchronize();
+
+    cudaMemcpy(res_D, d_D, n*n * sizeof(*d_B), cudaMemcpyDeviceToHost);
+
+    for (int i = 0; i < n*n; i++) {
+        EXPECT_FLOAT_EQ(res_D[i], res_inv[i]);
+    }
+
+    // test E = inv(A)'*B
+    // not tested because gemm has no corresponding support
+    // but should be working because trsv tested transpose above
+
+    cudaFree(d_inv);
+    cudaFree(d_C);
+    cudaFree(d_D);
 }
 
 int main(){
