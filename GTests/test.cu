@@ -160,10 +160,10 @@ protected:
     void SetUp() override {
         n = 3;
         m = 2;
-        h_A = new double[n*n] {
+        h_A = new double[n*(n+1)/2] {
                 a, b, c,
-                0, d, e,
-                0, 0, f
+                d, e,
+                f
         };
         h_B = new double[m*n] {
                 b11, b21,
@@ -172,10 +172,10 @@ protected:
         };
         h_c = new double [n] {c1, c2, c3};
 
-        cudaMalloc(&d_A, n*n * sizeof(*d_A));
+        cudaMalloc(&d_A, n*(n+1)/2 * sizeof(*d_A));
         cudaMalloc(&d_B, m*n * sizeof(*d_B));
         cudaMalloc(&d_c, n * sizeof(*d_c));
-        cudaMemcpy(d_A, h_A, n*n * sizeof(*d_A), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_A, h_A, n*(n+1)/2  * sizeof(*d_A), cudaMemcpyHostToDevice);
         cudaMemcpy(d_B, h_B, m*n * sizeof(*d_B), cudaMemcpyHostToDevice);
         cudaMemcpy(d_c, h_c, n * sizeof(*d_c), cudaMemcpyHostToDevice);
         cudaDeviceSynchronize();
@@ -410,7 +410,7 @@ TEST_F(L2Test, gemvMultiBlock){
 TEST_F(L3Test, ldl) {
     double h_A[] = {18, 5, 1.5, 5, 3.5, 1.3, 1.5, 1.3, 8.8};
     double h_D[] = {0,0,0};
-    
+
     double res_A[] = {1, 0.27777779, 0.083333336, 5, 1, 0.41842106,1.5, 1.3, 1};
     double res_D[] = {18, 2.1111112, 8.3053951};
 
@@ -439,7 +439,7 @@ TEST_F(L3Test, ldl) {
 
 TEST_F(L3Test, chol) {
 	double h_d[] = {10, 5, 2, 5, 3, 2, 2, 2, 3};
-	double res[] = {pow(10,0.5), 5/pow(10,0.5), 2/pow(10,0.5), 5, 
+	double res[] = {pow(10,0.5), 5/pow(10,0.5), 2/pow(10,0.5), 5,
 					1/pow(2,0.5), pow(2,0.5), 2, 2, pow(3,0.5)/pow(5,0.5)};
 	double *d_d;
 

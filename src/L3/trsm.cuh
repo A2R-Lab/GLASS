@@ -3,10 +3,12 @@
 // this file is for triangular matrix solve AX = B, X = inv(A)*B
 // X will be in place of B
 // it is assumed that A is ALWAYS SQUARE LOWER triangular
-// A is of size n x n, but only its triangular part is used
+// A is of size n(n+1)/2, column major
 // B is of size n x m
 
-// by Shaohui Yang, 2024.07.01
+// by Shaohui Yang
+// version 1: 2024.07.01, A of size n x n.
+// version 1: 2024.07.11, A of size n(n+1)/2.
 
 template<typename T, bool TRANSPOSE_A = false>
 __device__
@@ -26,9 +28,15 @@ void trsm(uint32_t n,
             for (int32_t i = n - 1; i >= 0; i--) {
                 sum = static_cast<T>(0);
                 for (uint32_t j = i + 1; j < n; j++) {
-                    sum += A[i * n + j] * B[col * n + j];
+                    uint32_t offset_i = (2 * n - i + 1) * i / 2;
+                    sum += A[offset_i + j - i] * B[col * n + j];
+                    // if A is n x n, then
+                    // sum += A[i * n + j] * B[col * n + j];
                 }
-                B[col * n + i] = (B[col * n + i] - sum) / A[i * n + i];
+                uint32_t offset = (2 * n - i + 1) * i / 2;
+                B[col * n + i] = (B[col * n + i] - sum) / A[offset];
+                // if A is n x n, then
+                // B[col * n + i] = (B[col * n + i] - sum) / A[i * n + i];
             }
         }
     } else {
@@ -38,9 +46,15 @@ void trsm(uint32_t n,
             for (uint32_t i = 0; i < n; i++) {
                 sum = static_cast<T>(0);
                 for (uint32_t j = 0; j < i; j++) {
-                    sum += A[j * n + i] * B[col * n + j];
+                    uint32_t offset_j = (2 * n - j + 1) * j / 2;
+                    sum += A[offset_j + i - j] * B[col * n + j];
+                    // if A is n x n, then
+                    // sum += A[j * n + i] * B[col * n + j];
                 }
-                B[col * n + i] = (B[col * n + i] - sum) / A[i * n + i];
+                uint32_t offset = (2 * n - i + 1) * i / 2;
+                B[col * n + i] = (B[col * n + i] - sum) / A[offset];
+                // if A is n x n, then
+                // B[col * n + i] = (B[col * n + i] - sum) / A[i * n + i];
             }
         }
     }
