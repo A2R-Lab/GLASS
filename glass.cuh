@@ -23,4 +23,5 @@ namespace glass{
     #include "./src/L3/inv.cuh"
     #include "./src/L3/ldl_InPlace.cuh"
     #include "./src/L3/trsm.cuh"
+    #include "./src/L3/trmm.cuh"
 }

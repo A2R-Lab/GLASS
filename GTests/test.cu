@@ -144,6 +144,7 @@ class L3InvTest : public ::testing::Test{
 		}
 		void TearDown() override {
 			cudaFree(d_a);
+            cudaFree(d_b);
 			cudaFree(d_temp);
 			delete h_a;
 		}
@@ -166,36 +167,45 @@ protected:
                 f
         };
         h_B = new double[m*n] {
-                b11, b21,
-                b12, b22,
-                b13, b23
+                b11, b21, b31,
+                b12, b22, b32
         };
         h_c = new double [n] {c1, c2, c3};
+        h_F = new double[m*n] {
+                f11, f21,
+                f12, f22,
+                f13, f23
+        };
 
         cudaMalloc(&d_A, n*(n+1)/2 * sizeof(*d_A));
         cudaMalloc(&d_B, m*n * sizeof(*d_B));
+        cudaMalloc(&d_F, m*n * sizeof(*d_F));
         cudaMalloc(&d_c, n * sizeof(*d_c));
         cudaMemcpy(d_A, h_A, n*(n+1)/2  * sizeof(*d_A), cudaMemcpyHostToDevice);
         cudaMemcpy(d_B, h_B, m*n * sizeof(*d_B), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_F, h_F, m*n * sizeof(*d_F), cudaMemcpyHostToDevice);
         cudaMemcpy(d_c, h_c, n * sizeof(*d_c), cudaMemcpyHostToDevice);
         cudaDeviceSynchronize();
     }
     void TearDown() override {
         cudaFree(d_A);
         cudaFree(d_B);
+        cudaFree(d_F);
         cudaFree(d_c);
         delete h_A;
         delete h_B;
+        delete h_F;
         delete h_c;
     }
 
     int n, m;
-    double *h_A, *h_B, *h_c;
-    double *d_A, *d_B, *d_c;
+    double *h_A, *h_B, *h_F, *h_c;
+    double *d_A, *d_B, *d_F, *d_c;
     // values can be arbitrary
     double a = 3, b = 2.7, c = 0.8, d = 10, e = 0.4, f = 3.2;
-    double b11 = -2, b12 = 1.8, b13 = -3, b21 = -1.9, b22 = -0.8, b23 = 1.2;
+    double b11 = -2, b21 = 1.8, b31 = -3, b12 = -1.9, b22 = -0.8, b32 = 1.2;
     double c1 = 2.8, c2 = -0.9, c3 = -2.1;
+    double f11 = -2, f21 = 1.8, f12 = -3, f22 = -1.9, f13 = -0.8, f23 = 1.2;
 };
 
 TEST_F(L1Test, DotProduct){
@@ -580,6 +590,71 @@ TEST_F(TriangularTest, trmv){
     for (int i = 0; i < n; i++) {
         EXPECT_FLOAT_EQ(h_e[i], res_e[i]);
     }
+
+    cudaFree(d_d);
+    cudaFree(d_e);
+}
+
+TEST_F(TriangularTest, trmm_left){
+    // test D = A*B, E = A'*B
+    double res_D[] = {a*b11, b*b11+d*b21, c*b11 +e*b21+f*b31, a*b12, b*b12+d*b22, c*b12 +e*b22+f*b32};
+    double res_E[] = {a*b11+b*b21+c*b31, d*b21+e*b31, f*b31, a*b12+b*b22+c*b32, d*b22+e*b32, f*b32};
+    double h_D[] = {0,0,0,0,0,0};
+    double h_E[] = {0,0,0,0,0,0};
+    double *d_D, *d_E;
+
+    // test D = A*B
+    cudaMalloc(&d_D, n*m*sizeof(double));
+    global_trmm_left<double, false><<<1,64>>>(n,m,static_cast<double>(1), d_A, d_B, d_D);
+    cudaDeviceSynchronize();
+    cudaMemcpy(h_D, d_D, n *m* sizeof(*d_D), cudaMemcpyDeviceToHost);
+    for (int i = 0; i < n*m; i++) {
+        EXPECT_FLOAT_EQ(h_D[i], res_D[i]);
+    }
+
+    cudaFree(d_D);
+
+    // test E = A'*B
+    cudaMalloc(&d_E, n*m*sizeof(double));
+    global_trmm_left<double, true><<<1,64>>>(n,m,static_cast<double>(1), d_A, d_B, d_E);
+    cudaDeviceSynchronize();
+    cudaMemcpy(h_E, d_E, n *m* sizeof(*d_D), cudaMemcpyDeviceToHost);
+    for (int i = 0; i < n*m; i++) {
+        EXPECT_FLOAT_EQ(h_E[i], res_E[i]);
+    }
+
+    cudaFree(d_E);
+}
+
+TEST_F(TriangularTest, trmm_right){
+    // test G = F*A, H = F*A'
+    double res_G[] = {f11*a+f12*b+f13*c, f21*a+f22*b+f23*c, f12*d+f13*e,  f22*d+f23*e, f13*f, f23*f};
+    double res_H[] = {f11*a, f21*a, f11*b+f12*d, f21*b+f22*d, f11*c+f12*e+f13*f, f21*c+f22*e+f23*f};
+    double h_G[] = {0,0,0,0,0,0};
+    double h_H[] = {0,0,0,0,0,0};
+    double *d_G, *d_H;
+
+    // test G = F*A
+    cudaMalloc(&d_G, n*m*sizeof(double));
+    global_trmm_right<double, false><<<1,64>>>(n,m,static_cast<double>(1), d_A, d_F, d_G);
+    cudaDeviceSynchronize();
+    cudaMemcpy(h_G, d_G, n *m* sizeof(*d_G), cudaMemcpyDeviceToHost);
+    for (int i = 0; i < n*m; i++) {
+        EXPECT_FLOAT_EQ(h_G[i], res_G[i]);
+    }
+
+    cudaFree(d_G);
+
+    // test H = F*A'
+    cudaMalloc(&d_H, n*m*sizeof(double));
+    global_trmm_right<double, true><<<1,64>>>(n,m,static_cast<double>(1), d_A, d_F, d_H);
+    cudaDeviceSynchronize();
+    cudaMemcpy(h_H, d_H, n *m* sizeof(*d_H), cudaMemcpyDeviceToHost);
+    for (int i = 0; i < n*m; i++) {
+        EXPECT_FLOAT_EQ(h_H[i], res_H[i]);
+    }
+
+    cudaFree(d_H);
 }
 
 TEST_F(TriangularTest, trsv){
@@ -610,6 +685,9 @@ TEST_F(TriangularTest, trsv){
     for (int i = 0; i < n; i++) {
         EXPECT_FLOAT_EQ(h_e[i], res_e[i]);
     }
+
+    cudaFree(d_d);
+    cudaFree(d_e);
 }
 
 TEST_F(TriangularTest, trsm){
