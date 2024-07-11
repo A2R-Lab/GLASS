@@ -200,8 +200,9 @@ template<typename T>
 __global__
 void global_ldlDecomp_InPlace(uint32_t n,
                               T *s_A,
-                              T *s_D) {
-    glass::ldl_InPlace<T>(n, s_A, s_D);
+                              T *s_D,
+                              T *s_L) {
+    glass::ldl_InPlace<T>(n, s_A, s_D, s_L);
 }
 
 template<typename T, bool TRANSPOSE_A>

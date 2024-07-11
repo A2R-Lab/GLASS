@@ -5,14 +5,14 @@
  * 1. LDL' decomposition is also known as square-root free Cholesky decomposition
  * 2. quasi-definite (eigen values are positive or negative, not zero) matrix admits unique LDL' decomposition
  *
- * Performs a LDL' decomposition on the square matrix @p s_A, storing the result in the
- * lower triangular portion of @p s_A.
+ * Performs a LDL' decomposition on the square matrix @p s_A. Entries of s_A will be changed.
+ * Stores the result in lower triangular matrix @p s_L and diagonal matrix @p s_D
  *
- * D = the diagonal entry of s_A.
- * L = lower triangular of s_A with diagonal entries replaced by 1.
  *
  * @param T* s_A: a square symmetric matrix , column - major order.
- * @param  int n: number of cols/rows in a square matrix s_A (n*n)
+ * @param int n: number of cols/rows in a square matrix s_A (n*n).
+ * @param T* s_D: diagonal matrix of size n.
+ * @param T* s_L: lower triangular of size n(n+1)/2 with diagonal entries = 1.
  *
  */
 
@@ -20,7 +20,7 @@
 
 template<typename T>
 __device__
-void ldl_InPlace(uint32_t n, T *s_A, T *s_D) {
+void ldl_InPlace(uint32_t n, T *s_A, T *s_D, T *s_L) {
     uint32_t ind = threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y;
     uint32_t stride = blockDim.x * blockDim.y * blockDim.z;
 
@@ -41,10 +41,16 @@ void ldl_InPlace(uint32_t n, T *s_A, T *s_D) {
     }
     // in place LDL' is finished
 
-    // read the diagonal entries of s_A to s_D
-    // replace the diagonal entries of s_A to be 1
-    for (uint32_t row = ind; row < n; row += stride) {
-        s_D[row] = s_A[n * row + row];
-        s_A[n * row + row] = static_cast<T>(1);
+    for (uint32_t col = ind; col < n; col += stride) {
+        // read the diagonal entries of s_A to s_D
+        s_D[col] = s_A[n * col + col];
+        // replace the diagonal entries of s_A to be 1
+        s_A[n * col + col] = static_cast<T>(1);
+
+        // copy the lower-diagonal entries from s_A to s_L
+        for (uint32_t row = col; row < n; row++) {
+            uint32_t offset_col = (2 * n - col + 1) * col / 2;
+            s_L[offset_col + row - col] = s_A[row + n * col];
+        }
     }
 }

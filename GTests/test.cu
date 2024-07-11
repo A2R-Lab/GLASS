@@ -410,20 +410,26 @@ TEST_F(L2Test, gemvMultiBlock){
 TEST_F(L3Test, ldl) {
     double h_A[] = {18, 5, 1.5, 5, 3.5, 1.3, 1.5, 1.3, 8.8};
     double h_D[] = {0,0,0};
+    double h_L[] = {0,0,0,0,0,0};
 
     double res_A[] = {1, 0.27777779, 0.083333336, 5, 1, 0.41842106,1.5, 1.3, 1};
     double res_D[] = {18, 2.1111112, 8.3053951};
+    double res_L[] = {1, 0.27777779, 0.083333336, 1, 0.41842106,1};
 
     double *d_A;
     double *d_D;
+    double *d_L;
 
     cudaMalloc(&d_A, 9 * sizeof(double));
     cudaMalloc(&d_D, 3 * sizeof(double));
+    cudaMalloc(&d_L, 6 * sizeof(double));
+
     cudaMemcpy(d_A, h_A, 9 * sizeof(double), cudaMemcpyHostToDevice);
-    global_ldlDecomp_InPlace<<<1,5>>>(3, d_A, d_D);
+    global_ldlDecomp_InPlace<<<1,9>>>(3, d_A, d_D, d_L);
     cudaDeviceSynchronize();
     cudaMemcpy(h_A, d_A, 9*sizeof(double), cudaMemcpyDeviceToHost);
     cudaMemcpy(h_D, d_D, 3*sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_L, d_L, 6*sizeof(double), cudaMemcpyDeviceToHost);
 
     for (int i = 0; i < 9; i++) {
         EXPECT_FLOAT_EQ(h_A[i], res_A[i]);
@@ -433,8 +439,13 @@ TEST_F(L3Test, ldl) {
         EXPECT_FLOAT_EQ(h_D[i], res_D[i]);
     }
 
+    for (int i = 0; i < 6; i++) {
+        EXPECT_FLOAT_EQ(h_L[i], res_L[i]);
+    }
+
     cudaFree(d_A);
     cudaFree(d_D);
+    cudaFree(d_L);
 }
 
 TEST_F(L3Test, chol) {
