@@ -669,7 +669,7 @@ TEST_F(TriangularTest, trsv){
     // test d = inv(A)*c
     cudaMalloc(&d_d, n*sizeof(double));
     cudaMemcpy(d_d, h_c, n * sizeof(*d_c), cudaMemcpyHostToDevice);
-    global_trsm_InPlace<double, false><<<1,64>>>(n,1, d_A, d_d);
+    global_trsm_dense_InPlace<double, false><<<1,64>>>(n,1, d_A, d_d);
     cudaDeviceSynchronize();
     cudaMemcpy(h_d, d_d, n * sizeof(*d_d), cudaMemcpyDeviceToHost);
     for (int i = 0; i < n; i++) {
@@ -679,7 +679,7 @@ TEST_F(TriangularTest, trsv){
     // test e = inv(A)'*c
     cudaMalloc(&d_e, n*sizeof(double));
     cudaMemcpy(d_e, h_c, n * sizeof(*d_c), cudaMemcpyHostToDevice);
-    global_trsm_InPlace<double, true><<<1,64>>>(n,1, d_A, d_e);
+    global_trsm_dense_InPlace<double, true><<<1,64>>>(n,1, d_A, d_e);
     cudaDeviceSynchronize();
     cudaMemcpy(h_e, d_e, n * sizeof(*d_e), cudaMemcpyDeviceToHost);
     for (int i = 0; i < n; i++) {
@@ -690,13 +690,12 @@ TEST_F(TriangularTest, trsv){
     cudaFree(d_e);
 }
 
-TEST_F(TriangularTest, trsm){
-    // test C=inv(A)*B, D=inv(A), E = inv(A)'*B, where A is lower triangular
+TEST_F(TriangularTest, trsm_dense){
+    // test C=inv(A)*B, E = inv(A)'*B, where A is lower triangular
 
     double res_inv[] = {1/a, -b/a/d, (b*e-c*d)/a/d/f, 0, 1/d, -e/d/f, 0, 0, 1/f};
     double res_C[] = {0,0,0,0,0,0};
-    double res_D[] = {0,0,0,0,0,0,0,0,0};
-    double *d_inv, *d_C, *d_D;
+    double *d_inv, *d_C;
 
     cudaMalloc(&d_inv, n*n*sizeof(double));
     cudaMalloc(&d_C, m*n*sizeof(double));
@@ -706,26 +705,12 @@ TEST_F(TriangularTest, trsm){
     cudaDeviceSynchronize();
     cudaMemcpy(res_C, d_C, n*m*sizeof(double), cudaMemcpyDeviceToHost);
 
-    // test trsm for C=inv(A)*B
-    global_trsm_InPlace<double, false><<<1, 64>>>(n, m, d_A, d_B);
+    // test trsm_dense for C=inv(A)*B
+    global_trsm_dense_InPlace<double, false><<<1, 64>>>(n, m, d_A, d_B);
     cudaMemcpy(h_B, d_B, m*n * sizeof(*d_B), cudaMemcpyDeviceToHost);
 
     for (int i = 0; i < n*m; i++) {
         EXPECT_FLOAT_EQ(h_B[i], res_C[i]);
-    }
-
-    // test trsm for D=inv(A)
-    cudaMalloc(&d_D, n*n*sizeof(double));
-    global_loadIdentity<<<1, 64>>>(n, d_D);
-    cudaDeviceSynchronize();
-
-    global_trsm_InPlace<double, false><<<1, 64>>>(n, n, d_A, d_D);
-    cudaDeviceSynchronize();
-
-    cudaMemcpy(res_D, d_D, n*n * sizeof(*d_B), cudaMemcpyDeviceToHost);
-
-    for (int i = 0; i < n*n; i++) {
-        EXPECT_FLOAT_EQ(res_D[i], res_inv[i]);
     }
 
     // test E = inv(A)'*B
@@ -734,6 +719,30 @@ TEST_F(TriangularTest, trsm){
 
     cudaFree(d_inv);
     cudaFree(d_C);
+}
+
+TEST_F(TriangularTest, trsm_triangular){
+    // test D=inv(A), where A is lower triangular. The resulting D is also lower triangular.
+
+    double tri_identity[] = {1, 0, 0, 1, 0, 1};
+    double res_inv[] = {1/a, -b/a/d, (b*e-c*d)/a/d/f,  1/d, -e/d/f,1/f};
+    double res_D[] = {0,0,0,0,0,0};
+    double *d_D;
+
+    // test trsm_triangular for D=inv(A)
+    cudaMalloc(&d_D, (n+1)*n/2 * sizeof(double));
+    cudaMemcpy(d_D, tri_identity, (n+1)*n/2 * sizeof(double), cudaMemcpyHostToDevice);
+    cudaDeviceSynchronize();
+
+    global_trsm_triangular_InPlace<double><<<1, 64>>>(n, d_A, d_D);
+    cudaDeviceSynchronize();
+
+    cudaMemcpy(res_D, d_D, (n+1)*n/2 * sizeof(*d_D), cudaMemcpyDeviceToHost);
+
+    for (int i = 0; i < (n+1)*n/2; i++) {
+        EXPECT_FLOAT_EQ(res_D[i], res_inv[i]);
+    }
+
     cudaFree(d_D);
 }
 

@@ -207,11 +207,19 @@ void global_ldlDecomp_InPlace(uint32_t n,
 
 template<typename T, bool TRANSPOSE_A>
 __global__
-void global_trsm_InPlace(uint32_t n,
-                         uint32_t m,
-                         T *s_A,
-                         T *s_B) {
-    glass::trsm<T, TRANSPOSE_A>(n, m, s_A, s_B);
+void global_trsm_dense_InPlace(uint32_t n,
+                               uint32_t m,
+                               T *s_A,
+                               T *s_B) {
+    glass::trsm_dense<T, TRANSPOSE_A>(n, m, s_A, s_B);
+}
+
+template<typename T>
+__global__
+void global_trsm_triangular_InPlace(uint32_t n,
+                                    T *s_A,
+                                    T *s_B) {
+    glass::trsm_triangular<T>(n, s_A, s_B);
 }
 
 template<typename T, bool TRANSPOSE_B>
