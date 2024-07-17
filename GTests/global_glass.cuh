@@ -74,6 +74,13 @@ void global_infnorm(uint32_t n,
 
 template<typename T>
 __global__
+void global_loadIdentityTriangular(uint32_t dimA,
+                                   T *A) {
+    glass::loadIdentityTriangular<T>(dimA, A);
+}
+
+template<typename T>
+__global__
 void global_loadIdentity(uint32_t dimA,
                          T *A) {
     glass::loadIdentity<T>(dimA, A);

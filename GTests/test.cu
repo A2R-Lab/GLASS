@@ -277,6 +277,19 @@ TEST_F(L1Test, scaledCopy) {
 	}
 }
 
+TEST_F(L1Test, loadIdentityTriangular) {
+    int dim = (int)sqrt(n);
+    global_loadIdentityTriangular<<<1,n>>>(dim, d_a);
+    cudaDeviceSynchronize();
+    cudaMemcpy(h_a, d_a, (dim+1)*dim/2 *sizeof(int), cudaMemcpyDeviceToHost);
+    for (int i=0; i< dim; i++) {
+        for (int j=i;j<dim; j++){
+            int offset_i = (2 * dim - i + 1) * i / 2;
+            EXPECT_EQ((i==j), h_a[offset_i+j-i]);
+        }
+    }
+}
+
 TEST_F(L1Test, loadIdentity) {
 	int dim = (int)sqrt(n);
 	global_loadIdentity<<<1,n>>>(dim, d_a);
@@ -724,16 +737,18 @@ TEST_F(TriangularTest, trsm_dense){
 TEST_F(TriangularTest, trsm_triangular){
     // test D=inv(A), where A is lower triangular. The resulting D is also lower triangular.
 
-    double tri_identity[] = {1, 0, 0, 1, 0, 1};
+//    double tri_identity[] = {1, 0, 0, 1, 0, 1};
     double res_inv[] = {1/a, -b/a/d, (b*e-c*d)/a/d/f,  1/d, -e/d/f,1/f};
     double res_D[] = {0,0,0,0,0,0};
     double *d_D;
 
-    // test trsm_triangular for D=inv(A)
+    // load identity matrix to D
     cudaMalloc(&d_D, (n+1)*n/2 * sizeof(double));
-    cudaMemcpy(d_D, tri_identity, (n+1)*n/2 * sizeof(double), cudaMemcpyHostToDevice);
+    global_loadIdentityTriangular<<<1,64>>>(n, d_D);
+//    cudaMemcpy(d_D, tri_identity, (n+1)*n/2 * sizeof(double), cudaMemcpyHostToDevice);
     cudaDeviceSynchronize();
 
+    // test trsm_triangular for D=inv(A)
     global_trsm_triangular_InPlace<double><<<1, 64>>>(n, d_A, d_D);
     cudaDeviceSynchronize();
 
