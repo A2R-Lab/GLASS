@@ -253,6 +253,28 @@ void global_gemm(uint32_t m,
     glass::gemm<T, TRANSPOSE_B>(m, n, k, alpha, A, B, C);
 }
 
+template<typename T>
+__global__
+void global_dimm_left(uint32_t n,
+                      uint32_t k,
+                      T alpha,
+                      T *A,
+                      T *B,
+                      T *C) {
+    glass::dimm_left<T>(n, k, alpha, A, B, C);
+}
+
+template<typename T>
+__global__
+void global_dimm_right(uint32_t n,
+                       uint32_t k,
+                       T alpha,
+                       T *A,
+                       T *B,
+                       T *C) {
+    glass::dimm_right<T>(n, k, alpha, A, B, C);
+}
+
 template<typename T, bool TRANSPOSE_A = false>
 __global__
 void global_trmm_left(uint32_t n,

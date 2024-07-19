@@ -93,18 +93,24 @@ class L3Test : public ::testing::Test{
 			k = 3;
 			h_a = new int[m*n];
 			h_b = new int[n*k];
-			h_c = new int[m*k];
+			h_c = new int[m*n];
+            h_d = new int[n];
 			for(int i = 0; i < m*n; i++){
 					h_a[i] = i;
 			}
 			for(int i = 0; i < n*k; i++){
 					h_b[i] = 2 * i;
 			}
+            for (int i = 0; i < n; i++) {
+                    h_d[i] = i;
+            }
 			cudaMalloc(&d_a, m*n * sizeof(int));
 			cudaMalloc(&d_b, n*k * sizeof(int));
-			cudaMalloc(&d_c, m*k * sizeof(int));
+			cudaMalloc(&d_c, m*n * sizeof(int));
+            cudaMalloc(&d_d, n * sizeof(int));
 			cudaMemcpy(d_a, h_a, m*n * sizeof(int), cudaMemcpyHostToDevice);
 			cudaMemcpy(d_b, h_b, n*k * sizeof(int), cudaMemcpyHostToDevice);
+            cudaMemcpy(d_d, h_d, n * sizeof(int), cudaMemcpyHostToDevice);
 			cudaDeviceSynchronize();
 		}
 		void TearDown() override {
@@ -113,14 +119,16 @@ class L3Test : public ::testing::Test{
 			cudaFree(d_a);
 			cudaFree(d_b);
 			cudaFree(d_c);
+            cudaFree(d_d);
 			delete h_a;
 			delete h_b;
 			delete h_c;
+            delete h_d;
 		}
 
 	int n, m, k;
-	int * h_a, *h_b, *h_c;
-	int * d_a, *d_b, *d_c;
+	int * h_a, *h_b, *h_c, *h_d;
+	int * d_a, *d_b, *d_c, *d_d;
 };
 
 class L3InvTest : public ::testing::Test{
@@ -515,6 +523,25 @@ TEST_F(L3Test, gemm){
 	for(int i=0; i<m*k; i++){
 		EXPECT_EQ(h_c[i], res_transpose[i]);
 	}
+}
+
+TEST_F(L3Test, dimm){
+    int res_left[] = {0,2,8,18,0,10,24,42,0,18,40,66};
+    int res_right[] = {0,0,0,0,0,5,6,7,8,9,20,22,24,26,28,45,48,51,54,57};
+
+    global_dimm_left<int><<<1, 64>>>(n, k, static_cast<int>(1), d_d, d_b, d_c);
+    cudaDeviceSynchronize();
+    cudaMemcpy(h_c, d_c, n*k*sizeof(int), cudaMemcpyDeviceToHost);
+    for(int i=0; i<n*k; i++){
+        EXPECT_EQ(h_c[i], res_left[i]);
+    }
+
+    global_dimm_right<int><<<1, 64>>>(n, m, static_cast<int>(1), d_d, d_a, d_c);
+    cudaDeviceSynchronize();
+    cudaMemcpy(h_c, d_c, m*n*sizeof(int), cudaMemcpyDeviceToHost);
+    for(int i=0; i<m*n; i++){
+        EXPECT_EQ(h_c[i], res_right[i]);
+    }
 }
 
 TEST_F(L3InvTest, invSingle) {
