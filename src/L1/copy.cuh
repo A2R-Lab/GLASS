@@ -1,6 +1,11 @@
 #pragma once
 
+#ifndef COPY_H
+#define COPY_H
 
+#include <cstdint>
+#include <cooperative_groups.h>
+namespace cgrps = cooperative_groups;
 
 /*
     *  copy
@@ -10,7 +15,7 @@
     *
     *  Parameters
     *  ----------
-    *  n : uint32_t
+    *  n : std::uint32_t
     *      The number of elements to copy.
     *  x : T*
     *      The array to copy from.
@@ -21,13 +26,12 @@
     */
 template <typename T>
 __device__
-void copy(const uint32_t n, 
+void copy(std::uint32_t n, 
           T *x, 
-          T *y)
+          T *y, 
+          cgrps::thread_group g = cgrps::this_thread_block())
 {
-    uint32_t ind = threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y;
-    uint32_t stride = blockDim.x * blockDim.y * blockDim.z;
-    for(; ind < n; ind += stride){
+    for(std::uint32_t ind = g.thread_rank(); ind < n; ind += g.size()){
         y[ind] = x[ind];
     }
 }
@@ -41,7 +45,7 @@ void copy(const uint32_t n,
     * 
     * Parameters
     * ----------
-    * n : uint32_t
+    * n : std::uint32_t
     *    The number of elements to copy.
     * alpha : T
     *   The scaling factor
@@ -54,15 +58,15 @@ void copy(const uint32_t n,
 */
 template <typename T>
 __device__
-void copy(uint32_t n,
+void copy(std::uint32_t n,
           T alpha,
           T *x, 
-          T *y)
+          T *y, 
+          cgrps::thread_group g = cgrps::this_thread_block())
 {
-    uint32_t ind = threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y;
-    uint32_t stride = blockDim.x * blockDim.y * blockDim.z;
-
-    for(; ind < n; ind += stride){
+    for(std::uint32_t ind = g.thread_rank(); ind < n; ind += g.size()){
         y[ind] = alpha * x[ind];
     }
 }
+
+#endif

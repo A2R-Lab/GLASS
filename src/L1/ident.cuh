@@ -1,17 +1,28 @@
 #pragma once
 
+#include <cstdint>
+#include <cooperative_groups.h>
+namespace cgrps = cooperative_groups;
 
-// load identity in so memory is [A | I]
+/**
+ * Loads the identity matrix into a specified memory region.
+ *
+ * This function appends an identity matrix to a square matrix `A` of type `T`.
+ * So the result will b [A | I] where `A` is a square matrix of size `dimA` and `I` is the identity matrix of size `dimA`.
+ * The matrix `A` must be stored in device memory
+ *
+ * @tparam T         The type of elements in the matrix `A`.
+ * @param  dimA      The dimension of the square matrix `A`.
+ * @param  A         Pointer next memory address after the memory region representing matrix `A`.
+ * @param  g         (Optional) Thread group specifying the thread block to use for parallel execution.
+ *                   Defaults to the current thread block obtained using `cgrps::this_thread_block()`.
+ */
 template <typename T>
 __device__
 void loadIdentity(uint32_t dimA, 
-                  T *A)
-{
-
-    uint32_t ind = threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y;
-    uint32_t stride = blockDim.x * blockDim.y * blockDim.z;   
-
-    for (; ind < dimA*dimA; ind += stride){
+                  T *A,
+                  cgrps::thread_group g = cgrps::this_thread_block()){
+    for (unsigned ind = g.thread_rank(); ind < dimA*dimA; ind += g.size()){
         unsigned r, c;
         r = ind % dimA; 
         c = ind / dimA;
@@ -25,14 +36,10 @@ __device__
 void loadIdentity(uint32_t dimA, 
                   T *A, 
                   uint32_t dimB, 
-                  T *B)
-{
-    uint32_t ind = threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y;
-    uint32_t stride = blockDim.x * blockDim.y * blockDim.z;
-
-    for (; ind < dimA*dimA+dimB*dimB; ind += stride){
-        unsigned r, c, indAdj; 
-        T *V;
+                  T *B,
+                  cgrps::thread_group g = cgrps::this_thread_block()){
+    for (unsigned ind = g.thread_rank(); ind < dimA*dimA+dimB*dimB; ind += g.size()){
+        unsigned r, c, indAdj; T *V;
         if (ind < dimA*dimA){
             indAdj = ind;
             r = indAdj % dimA; c = indAdj/dimA; V = A;
@@ -45,7 +52,6 @@ void loadIdentity(uint32_t dimA,
     }
 }
 
-
 // load identity in so memory is [V | I]
 template <typename T>
 __device__
@@ -54,12 +60,9 @@ void loadIdentity(uint32_t dimA,
                   uint32_t dimB, 
                   T *B, 
                   uint32_t dimC, 
-                  T *C)
-{
-    uint32_t ind = threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y;
-    uint32_t stride = blockDim.x * blockDim.y * blockDim.z;
-
-    for (; ind < dimA*dimA+dimB*dimB+dimC*dimC; ind += stride){
+                  T *C,
+                  cgrps::thread_group g = cgrps::this_thread_block()){
+    for (unsigned ind = g.thread_rank(); ind < dimA*dimA+dimB*dimB+dimC*dimC; ind += g.size()){
         unsigned r, c, indAdj; T *V;
         if (ind < dimA*dimA){
             indAdj = ind;
@@ -82,12 +85,10 @@ template <typename T>
 __device__
 void addI(uint32_t n,
           T *A,
-          T alpha)
+          T alpha,
+          cgrps::thread_group g = cgrps::this_thread_block())
 {
-    uint32_t ind = threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y;
-    uint32_t stride = blockDim.x * blockDim.y * blockDim.z;
-
-    for(; ind < n * n; ind += stride){
-        if(ind % n == ind / n){ A[ind] += alpha; }
+    for(uint32_t i = g.thread_rank(); i < n * n; i += g.size()){
+        if(i % n == i / n){ A[i] += alpha; }
     }
 }
