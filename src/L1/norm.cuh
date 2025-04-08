@@ -26,4 +26,17 @@ __device__ void vector_norm(std::uint32_t N, T *a, T *out, cgrps::thread_group g
     out[0] = sqrt(out[0]);
 }
 
+template <typename T>
+__device__ void sq_vector_norm(std::uint32_t N, T *a, T *out, cgrps::thread_group g = cgrps::this_thread_block())
+{
+    for (int i = g.thread_rank(); i < N; i += g.size())
+    {
+        out[i] = a[i] * a[i];
+    }
+    __syncthreads();
+    reduce(N, out, g);
+    __syncthreads();
+    out[0] = out[0];
+}
+
 #endif

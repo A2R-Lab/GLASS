@@ -10,7 +10,7 @@ namespace cgrps = cooperative_groups;
 
 // all of these can be played with
 #define TOL 1e-5
-#define MAX_ITER 1000
+#define MAX_ITER_QP 1000
 
 /*
 All inputs are assumed to be in column major order
