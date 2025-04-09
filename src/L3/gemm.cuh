@@ -1,6 +1,3 @@
-#pragma once
-
-
 #ifndef GEMM_H
 #define GEMM_H
 
@@ -103,6 +100,333 @@ void gemm(std::uint32_t m,
             }
 
             C[col*m + row] = alpha * res;
+        }
+    }
+}
+
+// Allows transposing A or B
+template <typename T, bool TRANSPOSE_A = false, bool TRANSPOSE_B = false>
+__device__
+void gemmT(std::uint32_t m,
+          std::uint32_t n,
+          std::uint32_t k,
+          T alpha, 
+          T *A, 
+          T *B,
+          T *C, 
+          cgrps::thread_group g = cgrps::this_thread_block())
+{
+    if(TRANSPOSE_A){
+        const unsigned max = n*k;
+        uint32_t element, ind, row, col;
+        T res;
+
+        for(element = g.thread_rank(); element < max; element += g.size()){
+            res = static_cast<T>(0);
+            row = element % m;
+            col = element / m;
+
+            for(ind = 0; ind < n; ind++){
+                res += A[row*m + ind] * B[col*n + ind];
+            }
+
+            C[col*m + row] = alpha * res;
+        }
+    }
+    if(TRANSPOSE_B){
+        const unsigned max = m*n;
+        uint32_t element, ind, row, col;
+        T res;
+
+        for(element = g.thread_rank(); element < max; element += g.size()){
+            res = static_cast<T>(0);
+            row = element % m;
+            col = element / m;
+
+            for(ind = 0; ind < n; ind++){
+                res += A[ind*m + row] * B[ind*n + col];
+            }
+
+            C[col*m + row] = alpha * res;
+        }
+    }
+    else{
+        const unsigned max = m*k;
+        uint32_t element, ind, row, col;
+        T res;
+
+        for(element = g.thread_rank(); element < max; element += g.size()){
+            res = static_cast<T>(0);
+            row = element % m;
+            col = element / m;
+
+            for(ind = 0; ind < n; ind++){
+                res += A[ind*m + row] * B[col*n + ind];
+            }
+
+            C[col*m + row] = alpha * res;
+        }
+    }
+}
+// Concatenate two vectors in right factor B = [B1, B2]T
+template <typename T, bool TRANSPOSE_B = false>
+__device__
+void gemm_concatenate(std::uint32_t m,
+          std::uint32_t n,
+          std::uint32_t k,
+          std::uint32_t s, // shift value
+          T alpha, 
+          T *A, 
+          T *B1,
+          T *B2,
+          T *C, 
+          cgrps::thread_group g = cgrps::this_thread_block())
+{
+    if(TRANSPOSE_B){
+        const unsigned max = m*n;
+        uint32_t element, ind, row, col;
+        T res;
+
+        for(element = g.thread_rank(); element < max; element += g.size()){
+            res = static_cast<T>(0);
+            row = element % m;
+            col = element / m;
+
+            for(ind = 0; ind < n; ind++){
+                res += A[ind*m + row] * B1[ind*n + col];
+            }
+
+            C[col*m + row] = alpha * res;
+        }
+    }
+    else{
+        const unsigned max = m*k;
+        uint32_t element, ind, row, col;
+        T res;
+        
+        for(element = g.thread_rank(); element < max; element += g.size()){
+            res = static_cast<T>(0);
+            row = element % m;
+            col = element / m;
+
+            for(ind = 0; ind < n; ind++){
+                if(ind < m){
+                    res += A[ind*m + row] * B1[col*n + ind];
+                }
+                else {
+                    res += A[ind*m + row] * B2[col*n + ind - s];
+                }
+                
+            }
+
+            C[col*m + row] = alpha * res;
+        }
+    }
+}
+
+// Distribute computation accros A = [A1, A2; A3 A4]
+// Concatenate two column vectors in right factor B = [B1; B2]
+// C = [A1*B1; A4*B2]
+template <typename T>
+__device__
+void gemm_dist_concatenate(std::uint32_t m,
+          std::uint32_t n,
+          std::uint32_t k,
+          std::uint32_t s, // shift value
+          T alpha, 
+          T *A, 
+          T *B1,
+          T *B2,
+          T *C, 
+          cgrps::thread_group g = cgrps::this_thread_block())
+{
+    const unsigned max = m*k;
+    uint32_t element, ind, row, col;
+    T res;
+    
+    for(element = g.thread_rank(); element < max; element += g.size()){
+        res = static_cast<T>(0);
+        row = element % m;
+        col = element / m;
+
+        for(ind = 0; ind < n; ind++){
+            if(row < s && ind < s){
+                res += A[ind*m + row] * B1[col*n + ind];
+            }
+            else if(row >= s && ind < s){
+                res += static_cast<T>(0);
+            }
+            else if(row < s && ind >= s){
+                res += static_cast<T>(0);
+            }
+            else if(row >= s && ind >= s){
+                res += A[ind*m + row] * B2[col*n + ind - s];
+            }
+        }
+
+        C[col*m + row] = alpha * res;
+    }
+}
+
+// Distribute computation accros A = [A1, A2; A3 A4]
+// Output C = A1*B
+template <typename T, bool TRANSPOSE_B = false>
+__device__
+void gemm2(std::uint32_t m,
+          std::uint32_t n,
+          std::uint32_t k,
+          std::uint32_t s,
+          T alpha, 
+          T *A, 
+          T *B,
+          T *C, 
+          cgrps::thread_group g = cgrps::this_thread_block())
+{
+    if(TRANSPOSE_B){
+        const unsigned max = m*n;
+        uint32_t element, ind, row, col;
+        T res;
+
+        for(element = g.thread_rank(); element < max; element += g.size()){
+            res = static_cast<T>(0);
+            row = element % m;
+            col = element / m;
+
+            for(ind = 0; ind < n; ind++){
+                res += A[ind*m + row + ind*(s-m)] * B[ind*n + col];
+            }
+
+            C[col*m + row] = alpha * res;
+        }
+    }
+    else{
+        const unsigned max = m*k;
+        uint32_t element, ind, row, col;
+        T res;
+
+        for(element = g.thread_rank(); element < max; element += g.size()){
+            res = static_cast<T>(0);
+            row = element % m;
+            col = element / m;
+
+            for(ind = 0; ind < n; ind++){
+                res += A[ind*m + row + ind*(s-m)] * B[col*n + ind];
+            }
+
+            C[col*m + row] = alpha * res;
+        }
+    }
+}
+
+// Distribute computation accros A = [A1, A2; A3 A4]
+// Output C = A4*B
+template <typename T, bool TRANSPOSE_B = false>
+__device__
+void gemm5(std::uint32_t m,
+          std::uint32_t n,
+          std::uint32_t k,
+          std::uint32_t s,
+          T alpha, 
+          T *A, 
+          T *B,
+          T *C, 
+          cgrps::thread_group g = cgrps::this_thread_block())
+{
+    if(TRANSPOSE_B){
+        const unsigned max = m*n;
+        uint32_t element, ind, row, col;
+        T res;
+
+        for(element = g.thread_rank(); element < max; element += g.size()){
+            res = static_cast<T>(0);
+            row = element % m;
+            col = element / m;
+
+            for(ind = 0; ind < n; ind++){
+                res += A[ind*s + row + ((s+1)*(s-m))] * B[ind*n + col];
+            }
+
+            C[col*m + row] = alpha * res;
+        }
+    }
+    else{
+        const unsigned max = m*k;
+        uint32_t element, ind, row, col;
+        T res;
+
+        for(element = g.thread_rank(); element < max; element += g.size()){
+            res = static_cast<T>(0);
+            row = element % m;
+            col = element / m;
+
+            for(ind = 0; ind < n; ind++){
+                res += A[ind*s + row + ((s+1)*(s-m))] * B[col*n + ind];
+            }
+
+            C[col*m + row] = alpha * res;
+        }
+    }
+}
+
+// Debugging version of gemm
+template <typename T, bool TRANSPOSE_B = false>
+__device__
+void gemmD(std::uint32_t m,
+          std::uint32_t n,
+          std::uint32_t k,
+          T alpha, 
+          T *A, 
+          T *B,
+          T *C, 
+          cgrps::thread_group g = cgrps::this_thread_block())
+{
+    if(TRANSPOSE_B){
+        const unsigned max = m*n;
+        uint32_t element, ind, row, col;
+        T res;
+
+        for(element = g.thread_rank(); element < max; element += g.size()){
+            res = static_cast<T>(0);
+            row = element % m;
+            col = element / m;
+
+            for(ind = 0; ind < n; ind++){
+                res += A[ind*m + row] * B[ind*n + col];
+            }
+
+            C[col*m + row] = alpha * res;
+        }
+    }
+    else{
+        const unsigned max = m*k;
+        uint32_t element, ind, row, col;
+        T res;
+        printf("m: %d\n", m);
+        printf("n: %d\n", n);
+        printf("k: %d\n", k);
+        printf("RANK: %d\n", g.thread_rank());
+        printf("max: %d\n", max);
+        printf("alpha: %f\n", alpha);
+        printf("g_size: %d\n", g.size());
+
+        for(element = g.thread_rank(); element < max; element += g.size()){
+            res = static_cast<T>(0);
+            row = element % m;
+            col = element / m;
+
+            for(ind = 0; ind < n; ind++){
+                res += A[ind*m + row] * B[col*n + ind];
+            }
+
+            C[col*m + row] = alpha * res;
+            if (element==g.thread_rank() || element==max-1){
+                printf("rank: %d\n", g.thread_rank());
+                printf("element: %d\n", element);
+                printf("row: %d\n", row);
+                printf("col: %d\n", col );
+                printf("col*m+row: %d\n", col*m+row );
+                printf("C[col*m+row]: %f\n", C[col*m + row] );
+            }
         }
     }
 }

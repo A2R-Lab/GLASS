@@ -1,5 +1,3 @@
-#pragma once
-
 #ifndef REDUCE_H
 #define REDUCE_H
 

@@ -1,5 +1,3 @@
-#pragma once
-
 #include <cstdint>
 #include <cooperative_groups.h>
 namespace cgrps = cooperative_groups;
