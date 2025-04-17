@@ -102,7 +102,7 @@ void dot_concatenate_right(T *out,
         }   
     }
     g.sync();
-    reduce<T>(n, out, g);
+    reduce<T>(m, out, g);
 }
 
 /*
