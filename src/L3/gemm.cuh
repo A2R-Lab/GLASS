@@ -367,6 +367,54 @@ void gemm5(std::uint32_t m,
         }
     }
 }
+// Computes C = [A*B, 0; 0, 0]
+template <typename T, bool TRANSPOSE_B = false>
+__device__
+void gemm_C(std::uint32_t m,
+          std::uint32_t n,
+          std::uint32_t k,
+          std::uint32_t J, // J = number of rows in C > M
+          T alpha, 
+          T *A, 
+          T *B,
+          T *C, 
+          cgrps::thread_group g = cgrps::this_thread_block())
+{
+    if(TRANSPOSE_B){
+        const unsigned max = m*n;
+        uint32_t element, ind, row, col;
+        T res;
+
+        for(element = g.thread_rank(); element < max; element += g.size()){
+            res = static_cast<T>(0);
+            row = element % m;
+            col = element / m;
+
+            for(ind = 0; ind < n; ind++){
+                res += A[ind*m + row] * B[ind*n + col];
+            }
+
+            C[col*J + row] = alpha * res;
+        }
+    }
+    else{
+        const unsigned max = m*k;
+        uint32_t element, ind, row, col;
+        T res;
+
+        for(element = g.thread_rank(); element < max; element += g.size()){
+            res = static_cast<T>(0);
+            row = element % m;
+            col = element / m;
+
+            for(ind = 0; ind < n; ind++){
+                res += A[ind*m + row] * B[col*n + ind];
+            }
+
+            C[col*J + row] = alpha * res;
+        }
+    }
+}
 
 // Debugging version of gemm
 template <typename T, bool TRANSPOSE_B = false>
