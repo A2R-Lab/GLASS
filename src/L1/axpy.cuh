@@ -38,11 +38,11 @@ void axpy_shifted_y(std::uint32_t n,
     int s = 0;
     int ind_y;
     for(std::uint32_t ind = g.thread_rank(); ind < k; ind += g.size()){
-        if((s+1)%m == 0){
-            s += 1;
-        }
         ind_y = ind + (n-m)*s;
         y[ind_y] = alpha * x[ind] + y[ind_y];
+        if((ind+1)%m == 0){
+            s += 1;
+        }
     }
 }
 

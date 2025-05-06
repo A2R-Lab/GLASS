@@ -33,6 +33,36 @@ void invertMatrixA(uint32_t dimA, T *A, T *s_temp, cgrps::thread_group g = cgrps
     }
 }
 
+// template <typename T>
+// __device__
+// void invertMatrixA(uint32_t dimA, T *A, T *s_temp){ 
+// // we are going to guassian elimination walking down the matrix (assuming no leading 0s)
+// // we therefore use the columns in order as the pivot column for each pivot we need to rescale 
+// // that row so that the pivot value (pv) is 1 THEN for all other row values (orv) we need to add a multiple 
+// // of the NEW pivot row value (prv) such that we transorm the other row pivot column value (orpcv) to 0
+// // pr *= 1/pv   orv -= orpcv*prv == orv -= orpcv*1/pv*prvOld
+//     for (unsigned pivRC = 0; pivRC < dimA; pivRC++){
+//         unsigned pivColOffset = pivRC*dimA;
+//         // save the pivot and pivot column and row
+//         T pvInv = static_cast<T>(1)/A[pivRC + pivColOffset];
+//         for (unsigned ind = 0; ind < 2*dimA+1; ind++){
+//             unsigned AInd;
+//             if (ind < dimA){AInd = ind + pivColOffset;}
+//             else{AInd = pivRC + pivColOffset + (ind-dimA)*dimA;}
+//             s_temp[ind] = A[AInd];
+//         }
+//         // g.sync();
+//         // make the pivot update
+//         for (unsigned ind = 0; ind < dimA*(dimA+1); ind ++){
+//             unsigned row = ind % dimA; unsigned col = ind / dimA; unsigned colOffset = ind - row;
+//             // s_temp = orpcvs|prvOld
+//             if (row == pivRC){A[row + pivColOffset + colOffset] *= pvInv;}
+//             else{A[row + pivColOffset + colOffset] -= s_temp[row]*pvInv*s_temp[dimA+col];}
+//         }
+//         // g.sync();
+//     }
+// }
+
 
 template <typename T>
 __device__
