@@ -19,4 +19,5 @@ namespace glass{
     #include "./src/L3/gemm.cuh"
     #include "./src/L3/inv.cuh"
     #include "./src/L3/cpqp.cuh"
+    #include "./src/L3/chol_InPlace.cuh"
 }
