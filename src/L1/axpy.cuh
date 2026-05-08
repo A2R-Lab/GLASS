@@ -49,11 +49,11 @@ void axpy(std::uint32_t n,
 */
 template <typename T>
 __device__
-void axpby(uint32_t n, 
-          T alpha, 
+void axpby(uint32_t n,
+          T alpha,
           T *x,
-		  T beta, 
-          T *y, 
+		  T beta,
+          T *y,
           T *z)
 {
     uint32_t ind = threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y;
@@ -63,3 +63,34 @@ void axpby(uint32_t n,
         z[ind] = alpha * x[ind] + beta * y[ind];
     }
 }
+
+// === glass::simple variants ===
+namespace simple {
+    // y = alpha * x + y
+    template <typename T>
+    __device__ void axpy(uint32_t n, T alpha, T *x, T *y)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        for (uint32_t i = rank; i < n; i += size) y[i] = alpha * x[i] + y[i];
+    }
+
+    // z = alpha * x + y
+    template <typename T>
+    __device__ void axpy(uint32_t n, T alpha, T *x, T *y, T *z)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        for (uint32_t i = rank; i < n; i += size) z[i] = alpha * x[i] + y[i];
+    }
+
+    // z = alpha * x + beta * y
+    template <typename T>
+    __device__ void axpby(uint32_t n, T alpha, T *x, T beta, T *y, T *z)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        for (uint32_t i = rank; i < n; i += size) z[i] = alpha * x[i] + beta * y[i];
+    }
+}
+// ===

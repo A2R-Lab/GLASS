@@ -69,4 +69,26 @@ void copy(std::uint32_t n,
     }
 }
 
+// === glass::simple variants ===
+namespace simple {
+    // y = x
+    template <typename T>
+    __device__ void copy(uint32_t n, T *x, T *y)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        for (uint32_t i = rank; i < n; i += size) y[i] = x[i];
+    }
+
+    // y = alpha * x
+    template <typename T>
+    __device__ void copy(uint32_t n, T alpha, T *x, T *y)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        for (uint32_t i = rank; i < n; i += size) y[i] = alpha * x[i];
+    }
+}
+// ===
+
 #endif

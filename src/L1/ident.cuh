@@ -92,3 +92,29 @@ void addI(uint32_t n,
         if(i % n == i / n){ A[i] += alpha; }
     }
 }
+
+// === glass::simple variants ===
+namespace simple {
+    template <typename T>
+    __device__ void loadIdentity(uint32_t dimA, T *A)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        for (uint32_t ind = rank; ind < dimA * dimA; ind += size) {
+            uint32_t r = ind % dimA;
+            uint32_t c = ind / dimA;
+            A[ind] = static_cast<T>(r == c);
+        }
+    }
+
+    template <typename T>
+    __device__ void addI(uint32_t n, T *A, T alpha)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        for (uint32_t i = rank; i < n * n; i += size) {
+            if (i % n == i / n) A[i] += alpha;
+        }
+    }
+}
+// ===

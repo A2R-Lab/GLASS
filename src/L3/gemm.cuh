@@ -254,23 +254,68 @@ __device__ void simple_submatrix_gemm(T *s_C, const T *s_A, const T *s_B, int su
 more convenient than blas routine sometimes*/
 template <typename T>
 __device__
-void matrixAlphaAdd(T alpha, 
-                    T *A, 
-                    T *B, 
-                    T *C, 
-                    std::uint32_t rows, 
+void matrixAlphaAdd(T alpha,
+                    T *A,
+                    T *B,
+                    T *C,
+                    std::uint32_t rows,
                     std::uint32_t cols,
                     cgrps::thread_group g = cgrps::this_thread_block())
 {
     std::uint32_t n = rows * cols;
 
     for (std::uint32_t ind = g.thread_rank(); ind < n; ind += g.size()) {
-        std::uint32_t row = ind % rows;
-        std::uint32_t col = ind / rows;
-
         C[ind] = alpha * A[ind] + B[ind];
     }
 }
+
+// === glass::simple variants ===
+namespace simple {
+    // C = alpha * A * B + beta * C  (TRANSPOSE_B=false) or alpha * A * B^T + beta * C
+    template <typename T, bool TRANSPOSE_B = false>
+    __device__
+    void gemm(uint32_t m, uint32_t n, uint32_t k, T alpha, T *A, T *B, T beta, T *C)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        if (TRANSPOSE_B) {
+            for (uint32_t el = rank; el < m * n; el += size) {
+                uint32_t row = el % m; uint32_t col = el / m; T res = static_cast<T>(0);
+                for (uint32_t i = 0; i < n; i++) res += A[i * m + row] * B[i * n + col];
+                C[col * m + row] = alpha * res + beta * C[col * m + row];
+            }
+        } else {
+            for (uint32_t el = rank; el < m * k; el += size) {
+                uint32_t row = el % m; uint32_t col = el / m; T res = static_cast<T>(0);
+                for (uint32_t i = 0; i < n; i++) res += A[i * m + row] * B[col * n + i];
+                C[col * m + row] = alpha * res + beta * C[col * m + row];
+            }
+        }
+    }
+
+    // C = alpha * A * B  (no beta)
+    template <typename T, bool TRANSPOSE_B = false>
+    __device__
+    void gemm(uint32_t m, uint32_t n, uint32_t k, T alpha, T *A, T *B, T *C)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        if (TRANSPOSE_B) {
+            for (uint32_t el = rank; el < m * n; el += size) {
+                uint32_t row = el % m; uint32_t col = el / m; T res = static_cast<T>(0);
+                for (uint32_t i = 0; i < n; i++) res += A[i * m + row] * B[i * n + col];
+                C[col * m + row] = alpha * res;
+            }
+        } else {
+            for (uint32_t el = rank; el < m * k; el += size) {
+                uint32_t row = el % m; uint32_t col = el / m; T res = static_cast<T>(0);
+                for (uint32_t i = 0; i < n; i++) res += A[i * m + row] * B[col * n + i];
+                C[col * m + row] = alpha * res;
+            }
+        }
+    }
+}
+// ===
 
 
 #endif

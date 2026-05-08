@@ -1,3 +1,4 @@
+#pragma once
 #include <cstdint>
 #include <cooperative_groups.h>
 namespace cgrps = cooperative_groups;
@@ -8,7 +9,7 @@ Assumes that the size of input/output is <= block size
 Handles odd size arrays
 Could use some more optimizations
 */
-template <typename T> 
+template <typename T>
 __device__ void prefix_sum_exclusive(T* s_input, T* s_output, int n) {
     int tid = threadIdx.x;
 
@@ -34,8 +35,8 @@ __device__ void prefix_sum_exclusive(T* s_input, T* s_output, int n) {
     }
 }
 
-template <typename T> 
-__device__ 
+template <typename T>
+__device__
 void prefix_sum_inclusive(T* s_input, T* s_output, int n) {
     int tid = threadIdx.x;
 
@@ -62,3 +63,39 @@ void prefix_sum_inclusive(T* s_input, T* s_output, int n) {
         }
     }
 }
+
+// === glass::simple variants ===
+// prefix_sum already uses threadIdx.x; namespace wrapper for API uniformity.
+namespace simple {
+    template <typename T>
+    __device__ void prefix_sum_exclusive(T* s_input, T* s_output, int n)
+    {
+        int tid = threadIdx.x;
+        if (tid < n) { s_output[tid] = (tid > 0) ? s_input[tid - 1] : 0; }
+        else { s_output[tid] = 0; }
+        __syncthreads();
+        T temp;
+        for (int d = 1; d < n; d *= 2) {
+            __syncthreads();
+            if (tid < n && tid >= d) { temp = s_output[tid] + s_output[tid - d]; }
+            __syncthreads();
+            if (tid < n && tid >= d) { s_output[tid] = temp; }
+        }
+    }
+
+    template <typename T>
+    __device__ void prefix_sum_inclusive(T* s_input, T* s_output, int n)
+    {
+        int tid = threadIdx.x;
+        if (tid < n) { s_output[tid] = s_input[tid]; }
+        __syncthreads();
+        T temp;
+        for (int d = 1; d < n; d *= 2) {
+            __syncthreads();
+            if (tid < n && tid >= d) { temp = s_output[tid - d] + s_output[tid]; }
+            __syncthreads();
+            if (tid < n && tid >= d) { s_output[tid] = temp; }
+        }
+    }
+}
+// ===

@@ -184,3 +184,35 @@ void invertSubMatrixColumnMajor2(uint32_t dimA, uint32_t dimSub, T *A, T *s_temp
         __syncthreads();
     }
 }
+
+// === glass::simple variants ===
+namespace simple {
+    // Invert dimA x dimA matrix A in-place. s_temp: (2*dimA+1) * sizeof(T) bytes.
+    template <typename T>
+    __device__
+    void invertMatrix(uint32_t dimA, T *A, T *s_temp)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+
+        for (unsigned pivRC = 0; pivRC < dimA; pivRC++) {
+            unsigned pivColOffset = pivRC * dimA;
+            T pvInv = static_cast<T>(1) / A[pivRC + pivColOffset];
+            for (unsigned ind = rank; ind < 2 * dimA + 1; ind++) {
+                unsigned AInd;
+                if (ind < dimA) { AInd = ind + pivColOffset; }
+                else { AInd = pivRC + pivColOffset + (ind - dimA) * dimA; }
+                s_temp[ind] = A[AInd];
+            }
+            __syncthreads();
+            for (unsigned ind = rank; ind < dimA * (dimA + 1); ind += size) {
+                unsigned row = ind % dimA; unsigned col = ind / dimA;
+                unsigned colOffset = ind - row;
+                if (row == pivRC) { A[row + pivColOffset + colOffset] *= pvInv; }
+                else { A[row + pivColOffset + colOffset] -= s_temp[row] * pvInv * s_temp[dimA + col]; }
+            }
+            __syncthreads();
+        }
+    }
+}
+// ===
