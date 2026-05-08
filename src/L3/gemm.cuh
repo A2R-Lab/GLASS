@@ -314,6 +314,82 @@ namespace simple {
             }
         }
     }
+
+    // Tiled GEMM: C(m×k) = alpha * A(m×n) * B(n×k) + beta * C(m×k), column-major.
+    //
+    // Uses shared-memory staging to coalesce global loads. Within a tile, all threads
+    // load a contiguous strip of A and B into shared memory, then multiply from there.
+    // This removes the stride-n non-coalesced B access that appears when m < 32.
+    //
+    // Requires m*k <= blockDim (one C element per thread). Threads with rank >= m*k
+    // participate only in cooperative tile loading. For m*k > blockDim, use plain gemm.
+    //
+    // TILE: compile-time tile width (default 8). All three matrices are tiled along the
+    //   inner dimension n in TILE-wide strips.
+    // s_A: caller-provided shared memory, size (m * TILE) * sizeof(T)
+    // s_B: caller-provided shared memory, size (TILE * k) * sizeof(T)
+    // Total scratch: (m * TILE + TILE * k) * sizeof(T) bytes
+    template <typename T, int TILE = 8>
+    __device__
+    void gemm_tiled(uint32_t m, uint32_t n, uint32_t k,
+                    T alpha, T *A, T *B, T beta, T *C,
+                    T *s_A, T *s_B)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        uint32_t mk   = m * k;
+
+        // One C element per thread; threads with rank >= mk are helpers for tile loading only.
+        bool valid  = (rank < mk);
+        uint32_t crow = valid ? (rank % m) : 0;
+        uint32_t ccol = valid ? (rank / m) : 0;
+        T acc = static_cast<T>(0);
+
+        // Tile loop is outermost so ALL threads hit every __syncthreads().
+        for (uint32_t t = 0; t < n; t += TILE) {
+            uint32_t tile_end = (t + TILE < n) ? (t + TILE) : n;
+            uint32_t tile_w   = tile_end - t;
+
+            // ALL threads cooperate on tile loading.
+            // Load tile of A (m × tile_w) column-major: A[row + col*m]
+            for (uint32_t i = rank; i < m * tile_w; i += size) {
+                uint32_t ar = i % m;
+                uint32_t ac = i / m;
+                s_A[ar + ac * m] = A[ar + (t + ac) * m];
+            }
+            // Load tile of B (tile_w × k) column-major: B[row + col*n]
+            for (uint32_t i = rank; i < tile_w * k; i += size) {
+                uint32_t br = i % tile_w;
+                uint32_t bc = i / tile_w;
+                s_B[br + bc * tile_w] = B[(t + br) + bc * n];
+            }
+            __syncthreads();
+
+            // Only valid threads accumulate; helpers sit out.
+            if (valid) {
+                for (uint32_t i = 0; i < tile_w; i++) {
+                    acc += s_A[crow + i * m] * s_B[i + ccol * tile_w];
+                }
+            }
+            __syncthreads();
+        }
+
+        if (valid) {
+            C[crow + ccol * m] = alpha * acc + beta * C[crow + ccol * m];
+        }
+    }
+
+    namespace high_speed {
+        // Convenience alias that matches the high_speed naming convention.
+        template <typename T, int TILE = 8>
+        __device__
+        void gemm(uint32_t m, uint32_t n, uint32_t k,
+                  T alpha, T *A, T *B, T beta, T *C,
+                  T *s_A, T *s_B)
+        {
+            simple::gemm_tiled<T, TILE>(m, n, k, alpha, A, B, beta, C, s_A, s_B);
+        }
+    }
 }
 // ===
 

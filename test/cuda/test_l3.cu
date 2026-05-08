@@ -50,6 +50,14 @@ __global__ void k_trsm_simple(int n, float* L, float* b) {
     glass::simple::trsm(n, L, b);
 }
 
+// ─── gemm_tiled kernels ───────────────────────────────────────────────────────
+__global__ void k_gemm_tiled(int m, int n, int k, float alpha, float* A, float* B, float beta, float* C) {
+    extern __shared__ float smem[];
+    float* s_A = smem;
+    float* s_B = smem + m * 8;
+    glass::simple::gemm_tiled<float, 8>(m, n, k, alpha, A, B, beta, C, s_A, s_B);
+}
+
 // ─── main ────────────────────────────────────────────────────────────────────
 
 int main(int argc, char** argv) {
@@ -123,6 +131,22 @@ int main(int argc, char** argv) {
         else    k_trsm_simple<<<1, THREADS>>>(n, dL, db);
         cudaDeviceSynchronize();
         print_device_vec(db, n);
+
+    } else if (strcmp(op, "gemm_tiled") == 0) {
+        // argv: op ver m n k alpha beta A.bin B.bin C.bin
+        // ver must be "simple" (only one variant)
+        int m = atoi(argv[3]);
+        int n = atoi(argv[4]);
+        int k = atoi(argv[5]);
+        float alpha = atof(argv[6]);
+        float beta  = atof(argv[7]);
+        float* dA = read_device_vec(argv[8], m * n);
+        float* dB = read_device_vec(argv[9], n * k);
+        float* dC = read_device_vec(argv[10], m * k);
+        int smem_bytes = (m * 8 + 8 * k) * sizeof(float);
+        k_gemm_tiled<<<1, THREADS, smem_bytes>>>(m, n, k, alpha, dA, dB, beta, dC);
+        cudaDeviceSynchronize();
+        print_device_vec(dC, m * k);
 
     } else {
         fprintf(stderr, "Unknown op: %s\n", op);

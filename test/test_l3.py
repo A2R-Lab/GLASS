@@ -65,6 +65,25 @@ def test_gemm_t(bins, m, n, version):
     assert np.allclose(mat, expected, rtol=RTOL, atol=ATOL)
 
 
+# ─── gemm_tiled ───────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("m,n,k", [(4, 6, 5), (8, 8, 8), (12, 4, 6), (6, 10, 7), (4, 3, 4)])
+def test_gemm_tiled(bins, m, n, k):
+    alpha, beta = 1.5, 0.3
+    A = RNG.random((m, n)).astype(np.float32)
+    B = RNG.random((n, k)).astype(np.float32)
+    C = RNG.random((m, k)).astype(np.float32)
+    C0 = C.copy()
+    result = run_op(bins["l3"], "gemm_tiled", "simple",
+                    args=[m, n, k, alpha, beta],
+                    inputs=[np.asfortranarray(A).ravel(order='F'),
+                            np.asfortranarray(B).ravel(order='F'),
+                            np.asfortranarray(C).ravel(order='F')])
+    expected = (alpha * A @ B + beta * C0).astype(np.float32)
+    mat = result.reshape(m, k, order='F')
+    assert np.allclose(mat, expected, rtol=RTOL, atol=ATOL)
+
+
 # ─── inv ──────────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("n", [3, 4, 6])
