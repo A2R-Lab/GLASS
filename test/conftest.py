@@ -44,7 +44,8 @@ CUDA_ARCH = detect_arch()
 
 def _hash_sources(cu_path: pathlib.Path) -> str:
     h = hashlib.sha256()
-    for p in [cu_path, CUDA_DIR / "helpers.cuh", GLASS_DIR / "glass.cuh"]:
+    for p in [cu_path, CUDA_DIR / "helpers.cuh",
+              GLASS_DIR / "glass.cuh", GLASS_DIR / "glass-cgrps.cuh"]:
         if p.exists():
             h.update(p.read_bytes())
     return h.hexdigest()[:16]
@@ -66,7 +67,7 @@ def compile_binary(name: str, build_dir: pathlib.Path, arch: str) -> pathlib.Pat
     build_dir.mkdir(parents=True, exist_ok=True)
     cmd = [
         "nvcc",
-        "-std=c++14",
+        "-std=c++17",
         f"-arch={arch}",
         "-I", str(GLASS_DIR),
         "-I", str(GLASS_DIR / "src"),

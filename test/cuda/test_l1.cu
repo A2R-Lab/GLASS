@@ -1,166 +1,170 @@
 // test_l1.cu — dispatch L1 GLASS operations and print float32 results to stdout
 // Usage: ./test_l1 <op> <cg|simple|simple_lm|simple_hs> <n> [extra args] [input.bin ...]
+//
+// Versions:
+//   cg        — glass::cgrps:: (cooperative groups)
+//   simple    — glass::        (threadIdx, default)
+//   simple_lm — glass::low_memory::
+//   simple_hs — glass::high_speed::
 
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <cmath>
-#include <cooperative_groups.h>
-namespace cgrps = cooperative_groups;
 
 #include "helpers.cuh"
-#include "../../glass.cuh"
+#include "../../glass-cgrps.cuh"
 
 // ─── kernel wrappers ─────────────────────────────────────────────────────────
 
-// Each kernel takes all arguments it needs; caller sets up blocks=1, threads=256.
-
 __global__ void k_axpy_cg(int n, float alpha, float* x, float* y) {
-    glass::axpy(n, alpha, x, y);
+    glass::cgrps::axpy(n, alpha, x, y);
 }
 __global__ void k_axpy_simple(int n, float alpha, float* x, float* y) {
-    glass::simple::axpy(n, alpha, x, y);
+    glass::axpy(n, alpha, x, y);
 }
 __global__ void k_axpy3_cg(int n, float alpha, float* x, float* y, float* z) {
-    glass::axpy(n, alpha, x, y, z);
+    glass::cgrps::axpy(n, alpha, x, y, z);
 }
 __global__ void k_axpy3_simple(int n, float alpha, float* x, float* y, float* z) {
-    glass::simple::axpy(n, alpha, x, y, z);
+    glass::axpy(n, alpha, x, y, z);
 }
 __global__ void k_axpby_cg(int n, float alpha, float* x, float beta, float* y, float* z) {
-    glass::axpby(n, alpha, x, beta, y, z);
+    glass::cgrps::axpby(n, alpha, x, beta, y, z);
 }
 __global__ void k_axpby_simple(int n, float alpha, float* x, float beta, float* y, float* z) {
-    glass::simple::axpby(n, alpha, x, beta, y, z);
+    glass::axpby(n, alpha, x, beta, y, z);
 }
 
-__global__ void k_copy_cg(int n, float* x, float* y) { glass::copy(n, x, y); }
-__global__ void k_copy_simple(int n, float* x, float* y) { glass::simple::copy(n, x, y); }
+__global__ void k_copy_cg(int n, float* x, float* y) { glass::cgrps::copy(n, x, y); }
+__global__ void k_copy_simple(int n, float* x, float* y) { glass::copy(n, x, y); }
 
-__global__ void k_scal_cg(int n, float alpha, float* x) { glass::scal(n, alpha, x); }
-__global__ void k_scal_simple(int n, float alpha, float* x) { glass::simple::scal(n, alpha, x); }
+__global__ void k_scal_cg(int n, float alpha, float* x) { glass::cgrps::scal(n, alpha, x); }
+__global__ void k_scal_simple(int n, float alpha, float* x) { glass::scal(n, alpha, x); }
 
-__global__ void k_swap_cg(int n, float* x, float* y) { glass::swap(n, x, y); }
-__global__ void k_swap_simple(int n, float* x, float* y) { glass::simple::swap(n, x, y); }
+__global__ void k_swap_cg(int n, float* x, float* y) { glass::cgrps::swap(n, x, y); }
+__global__ void k_swap_simple(int n, float* x, float* y) { glass::swap(n, x, y); }
 
-__global__ void k_dot_cg(int n, float* x, float* y) { glass::dot(n, x, y); }
+__global__ void k_dot_cg(int n, float* x, float* y) {
+    glass::cgrps::dot(n, x, y);
+}
 __global__ void k_dot_simple_lm(int n, float* x, float* y, float* out) {
-    glass::simple::low_memory::dot(n, x, y, out);
+    glass::low_memory::dot(n, x, y, out);
 }
 __global__ void k_dot_simple_hs(int n, float* x, float* y, float* out, float* scratch) {
-    glass::simple::high_speed::dot(n, x, y, out, scratch);
+    glass::high_speed::dot(n, x, y, out, scratch);
 }
 
-__global__ void k_reduce_cg(int n, float* x) { glass::reduce(n, x, cgrps::this_thread_block()); }
-__global__ void k_reduce_simple_lm(int n, float* x) { glass::simple::low_memory::reduce(n, x); }
+__global__ void k_reduce_cg(int n, float* x) { glass::cgrps::reduce(n, x); }
+__global__ void k_reduce_simple_lm(int n, float* x) { glass::low_memory::reduce(n, x); }
 __global__ void k_reduce_simple_hs(int n, float* x, float* scratch) {
-    glass::simple::high_speed::reduce(n, x, scratch);
+    glass::high_speed::reduce(n, x, scratch);
 }
 
-__global__ void k_l2norm_cg(int n, float* x) { glass::l2norm(n, x); }
-__global__ void k_l2norm_simple_lm(int n, float* x) { glass::simple::low_memory::l2norm(n, x); }
+__global__ void k_l2norm_cg(int n, float* x) { glass::cgrps::l2norm(n, x); }
+__global__ void k_l2norm_simple_lm(int n, float* x) { glass::low_memory::l2norm(n, x); }
 __global__ void k_l2norm_simple_hs(int n, float* x, float* scratch) {
-    glass::simple::high_speed::l2norm(n, x, scratch);
+    glass::high_speed::l2norm(n, x, scratch);
 }
 
-__global__ void k_infnorm_cg(int n, float* x) { glass::infnorm(n, x); }
-__global__ void k_infnorm_simple(int n, float* x) { glass::simple::infnorm(n, x); }
+__global__ void k_infnorm_cg(int n, float* x) { glass::cgrps::infnorm(n, x); }
+__global__ void k_infnorm_simple(int n, float* x) { glass::infnorm(n, x); }
 
-__global__ void k_asum_cg(int n, float* x, float* out) { glass::asum(n, x, out); }
+__global__ void k_asum_cg(int n, float* x, float* out) { glass::cgrps::asum(n, x, out); }
 __global__ void k_asum_simple_lm(int n, float* x, float* out) {
-    glass::simple::low_memory::asum(n, x, out);
+    glass::low_memory::asum(n, x, out);
 }
 __global__ void k_asum_simple_hs(int n, float* x, float* scratch) {
-    glass::simple::high_speed::asum(n, x, scratch);
+    glass::high_speed::asum(n, x, scratch);
 }
 
-__global__ void k_clip_cg(int n, float* x, float* l, float* u) { glass::clip(n, x, l, u); }
+__global__ void k_clip_cg(int n, float* x, float* l, float* u) { glass::cgrps::clip(n, x, l, u); }
 __global__ void k_clip_simple(int n, float* x, float* l, float* u) {
-    glass::simple::clip(n, x, l, u);
+    glass::clip(n, x, l, u);
 }
 
-__global__ void k_set_const_cg(int n, float alpha, float* x) { glass::set_const(n, alpha, x); }
+__global__ void k_set_const_cg(int n, float alpha, float* x) { glass::cgrps::set_const(n, alpha, x); }
 __global__ void k_set_const_simple(int n, float alpha, float* x) {
-    glass::simple::set_const(n, alpha, x);
+    glass::set_const(n, alpha, x);
 }
 
-__global__ void k_loadIdentity_cg(int n, float* A) { glass::loadIdentity(n, A); }
-__global__ void k_loadIdentity_simple(int n, float* A) { glass::simple::loadIdentity(n, A); }
+__global__ void k_loadIdentity_cg(int n, float* A) { glass::cgrps::loadIdentity(n, A); }
+__global__ void k_loadIdentity_simple(int n, float* A) { glass::loadIdentity(n, A); }
 
-__global__ void k_addI_cg(int n, float alpha, float* A) { glass::addI(n, A, alpha); }
-__global__ void k_addI_simple(int n, float alpha, float* A) { glass::simple::addI(n, A, alpha); }
+__global__ void k_addI_cg(int n, float alpha, float* A) { glass::cgrps::addI(n, A, alpha); }
+__global__ void k_addI_simple(int n, float alpha, float* A) { glass::addI(n, A, alpha); }
 
 __global__ void k_transpose_cg(int N, int M, float* a, float* b) {
-    glass::transpose(N, M, a, b);
+    glass::cgrps::transpose(N, M, a, b);
 }
 __global__ void k_transpose_simple(int N, int M, float* a, float* b) {
-    glass::simple::transpose(N, M, a, b);
+    glass::transpose(N, M, a, b);
 }
 
 __global__ void k_elementwise_add_cg(int n, float* a, float* b, float* c) {
-    glass::elementwise_add(n, a, b, c);
+    glass::cgrps::elementwise_add(n, a, b, c);
 }
 __global__ void k_elementwise_add_simple(int n, float* a, float* b, float* c) {
-    glass::simple::elementwise_add(n, a, b, c);
+    glass::elementwise_add(n, a, b, c);
 }
 
 __global__ void k_elementwise_sub_cg(int n, float* a, float* b, float* c) {
-    glass::elementwise_sub(n, a, b, c);
+    glass::cgrps::elementwise_sub(n, a, b, c);
 }
 __global__ void k_elementwise_sub_simple(int n, float* a, float* b, float* c) {
-    glass::simple::elementwise_sub(n, a, b, c);
+    glass::elementwise_sub(n, a, b, c);
 }
 
 __global__ void k_elementwise_mult_cg(int n, float* a, float* b, float* c) {
-    glass::elementwise_mult(n, a, b, c);
+    glass::cgrps::elementwise_mult(n, a, b, c);
 }
 __global__ void k_elementwise_mult_simple(int n, float* a, float* b, float* c) {
-    glass::simple::elementwise_mult(n, a, b, c);
+    glass::elementwise_mult(n, a, b, c);
 }
 
 __global__ void k_elementwise_abs_cg(int n, float* a, float* b) {
-    glass::elementwise_abs(n, a, b);
+    glass::cgrps::elementwise_abs(n, a, b);
 }
 __global__ void k_elementwise_abs_simple(int n, float* a, float* b) {
-    glass::simple::elementwise_abs(n, a, b);
+    glass::elementwise_abs(n, a, b);
 }
 
 __global__ void k_elementwise_max_cg(int n, float* a, float* b, float* c) {
-    glass::elementwise_max(n, a, b, c);
+    glass::cgrps::elementwise_max(n, a, b, c);
 }
 __global__ void k_elementwise_max_simple(int n, float* a, float* b, float* c) {
-    glass::simple::elementwise_max(n, a, b, c);
+    glass::elementwise_max(n, a, b, c);
 }
 
 __global__ void k_elementwise_min_cg(int n, float* a, float* b, float* c) {
-    glass::elementwise_min(n, a, b, c);
+    glass::cgrps::elementwise_min(n, a, b, c);
 }
 __global__ void k_elementwise_min_simple(int n, float* a, float* b, float* c) {
-    glass::simple::elementwise_min(n, a, b, c);
+    glass::elementwise_min(n, a, b, c);
 }
 
 __global__ void k_prefix_sum_excl_cg(int n, float* x, float* out) {
     glass::prefix_sum_exclusive(x, out, n);
 }
 __global__ void k_prefix_sum_excl_simple(int n, float* x, float* out) {
-    glass::simple::prefix_sum_exclusive(x, out, n);
+    glass::prefix_sum_exclusive(x, out, n);
 }
 
 __global__ void k_prefix_sum_incl_cg(int n, float* x, float* out) {
     glass::prefix_sum_inclusive(x, out, n);
 }
 __global__ void k_prefix_sum_incl_simple(int n, float* x, float* out) {
-    glass::simple::prefix_sum_inclusive(x, out, n);
+    glass::prefix_sum_inclusive(x, out, n);
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 static int THREADS = 256;
 
-static bool is_cg(const char* v)       { return strcmp(v, "cg") == 0; }
-static bool is_simple(const char* v)   { return strcmp(v, "simple") == 0; }
-static bool is_lm(const char* v)       { return strcmp(v, "simple_lm") == 0; }
-static bool is_hs(const char* v)       { return strcmp(v, "simple_hs") == 0; }
+static bool is_cg(const char* v)     { return strcmp(v, "cg") == 0; }
+static bool is_simple(const char* v) { return strcmp(v, "simple") == 0; }
+static bool is_lm(const char* v)     { return strcmp(v, "simple_lm") == 0; }
+static bool is_hs(const char* v)     { return strcmp(v, "simple_hs") == 0; }
 
 // ─── main ────────────────────────────────────────────────────────────────────
 
@@ -173,11 +177,9 @@ int main(int argc, char** argv) {
     const char* ver = argv[2];
     int n = atoi(argv[3]);
 
-    // Shared scratch for hs variants (max 32 warps).
     float* d_scratch = alloc_device_vec(32);
 
     if (strcmp(op, "axpy") == 0) {
-        // argv: op ver n alpha x.bin y.bin
         float alpha = atof(argv[4]);
         float* dx = read_device_vec(argv[5], n);
         float* dy = read_device_vec(argv[6], n);
@@ -219,7 +221,6 @@ int main(int argc, char** argv) {
         if (is_cg(ver))  k_swap_cg<<<1, THREADS>>>(n, dx, dy);
         else             k_swap_simple<<<1, THREADS>>>(n, dx, dy);
         cudaDeviceSynchronize();
-        // print both
         print_device_vec(dx, n);
         print_device_vec(dy, n);
 
@@ -228,7 +229,6 @@ int main(int argc, char** argv) {
         float* dy = read_device_vec(argv[5], n);
         float* dout = alloc_device_vec(n);
         if (is_cg(ver)) {
-            // cg version: result in dy[0] after in-place multiply+reduce
             k_dot_cg<<<1, THREADS>>>(n, dx, dy);
             cudaDeviceSynchronize();
             print_device_vec(dy, 1);
@@ -323,7 +323,6 @@ int main(int argc, char** argv) {
         print_device_vec(dA, n * n);
 
     } else if (strcmp(op, "transpose") == 0) {
-        // n = N (rows), m = M (cols) from argv[4]
         int m = atoi(argv[4]);
         float* dA = read_device_vec(argv[5], n * m);
         float* dB = alloc_device_vec(n * m);

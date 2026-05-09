@@ -212,14 +212,13 @@ def main():
         binaries[name] = compile_binary(name, arch, sms, mathdx_root, pathlib.Path("/usr/local/cuda"))
     print("Done.\n")
 
-    # Robot-dynamics sizes to sweep
-    sizes = [4, 6, 8, 12, 14, 24]
+    sizes = [4, 6, 8, 12, 14, 24, 64]
     all_results = {}
 
-    # bench_reduce (L1): n = 64, 128, 256 (vector reduction sizes)
+    # bench_reduce (L1): powers-of-2 vector sizes up to block limit (256)
     print("Running L1 reductions (reduce, dot, l2norm vs CUB)...")
     reduce_rows = []
-    for n in [64, 128, 256]:
+    for n in [8, 16, 32, 64, 128, 256]:
         print(f"  n={n} ...", end=" ", flush=True)
         reduce_rows += run_binary(binaries["bench_reduce"], [str(n), str(args.iters)])
         print("done")
