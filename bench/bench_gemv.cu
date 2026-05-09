@@ -1,4 +1,12 @@
-// bench_gemv.cu — L2 benchmarks: glass::simple::gemv vs. cuBLASDx
+// bench_gemv.cu — L2 benchmarks: glass::gemv vs. cuBLASDx
+// Variants per size:
+//   glass (global)    — reads A,x from global memory each call
+//   glass (shared)    — data pre-loaded in shared; measures pure compute
+//   glass<CT>(global) — compile-time M/N; reads from global memory
+//   glass<CT>(shared) — compile-time M/N; data pre-loaded in shared
+//   cuBLASDx (global) — full round-trip: global→shared→execute→global per call
+//   cuBLASDx (shared) — data pre-loaded in shared; measures pure execute
+//
 // Compilation (with cuBLASDx):
 //   nvcc -std=c++17 -arch=sm_XX -O3
 //        -I.. -I../src
@@ -24,22 +32,83 @@ static double elapsed_us(struct timespec a, struct timespec b) {
          + (double)(b.tv_nsec - a.tv_nsec) * 1e-3;
 }
 
-// ─── GLASS gemv kernel ────────────────────────────────────────────────────────
-__global__ void k_glass_gemv(float* A, float* x, float* y, int m, int n, int iters) {
+// ─── GLASS kernels ────────────────────────────────────────────────────────────
+
+// (global): reads A, x from global memory each call
+__global__ void k_glass_gemv_global(float* A, float* x, float* y, int m, int n, int iters) {
     for (int rep = 0; rep < iters; rep++) {
-        glass::simple::gemv<float>(m, n, 1.f, A, x, 0.f, y);
+        glass::gemv<float>(m, n, 1.f, A, x, 0.f, y);
     }
 }
 
-// ─── cuBLASDx gemv kernels (one per size, compile-time M/N) ──────────────────
+// (shared): data pre-loaded into shared once; measures pure compute
+__global__ void k_glass_gemv_shared(float* A, float* x, float* y, int m, int n, int iters) {
+    extern __shared__ float smem[];
+    float* s_A = smem;           // m*n floats
+    float* s_x = smem + m * n;   // n floats
+    float* s_y = smem + m * n + n; // m floats
+    for (int i = threadIdx.x; i < m * n; i += blockDim.x) s_A[i] = A[i];
+    for (int i = threadIdx.x; i < n;     i += blockDim.x) s_x[i] = x[i];
+    __syncthreads();
+    for (int rep = 0; rep < iters; rep++) {
+        glass::gemv<float>(m, n, 1.f, s_A, s_x, 0.f, s_y);
+    }
+    if (threadIdx.x == 0) y[0] = s_y[0]; // prevent DCE
+}
+
+// ─── GLASS compile-time kernels (compile-time M/N) ───────────────────────────
+
+#define DEFINE_GLASS_GEMV_CT(M, N)                                                           \
+    namespace glass_gemv_ct_##M##x##N {                                                     \
+        static const int smem_size = (M*N + N + M) * sizeof(float);                         \
+        __global__ void kernel_global(float* A, float* x, float* y, int iters) {             \
+            for (int rep = 0; rep < iters; rep++)                                             \
+                glass::gemv<float, M, N>(1.f, A, x, 0.f, y);                                \
+        }                                                                                     \
+        __global__ void kernel_smem(float* A, float* x, float* y, int iters) {               \
+            extern __shared__ float smem[];                                                   \
+            float* s_A = smem;                                                               \
+            float* s_x = smem + M*N;                                                         \
+            float* s_y = smem + M*N + N;                                                     \
+            for (int i = threadIdx.x; i < M*N; i += blockDim.x) s_A[i] = A[i];             \
+            for (int i = threadIdx.x; i < N;   i += blockDim.x) s_x[i] = x[i];             \
+            __syncthreads();                                                                  \
+            for (int rep = 0; rep < iters; rep++)                                             \
+                glass::gemv<float, M, N>(1.f, s_A, s_x, 0.f, s_y);                         \
+            if (threadIdx.x == 0) y[0] = s_y[0];                                            \
+        }                                                                                     \
+    }
+
+DEFINE_GLASS_GEMV_CT(4,  4)
+DEFINE_GLASS_GEMV_CT(6,  6)
+DEFINE_GLASS_GEMV_CT(8,  8)
+DEFINE_GLASS_GEMV_CT(12, 12)
+DEFINE_GLASS_GEMV_CT(14, 14)
+DEFINE_GLASS_GEMV_CT(24, 24)
+DEFINE_GLASS_GEMV_CT(64, 64)
+
+#define RUN_GLASS_GEMV_CT(M, N, dA, dx, dy, iters, t0, t1)                                  \
+    clock_gettime(CLOCK_MONOTONIC, &(t0));                                                    \
+    glass_gemv_ct_##M##x##N::kernel_global<<<1, THREADS>>>(dA, dx, dy, iters);              \
+    cudaDeviceSynchronize();                                                                  \
+    clock_gettime(CLOCK_MONOTONIC, &(t1));                                                    \
+    printf("glass::gemv<CT> (global) m=%2d n=%2d  %.3f us/op\n",                            \
+           M, N, elapsed_us(t0, t1) / iters);                                                \
+    clock_gettime(CLOCK_MONOTONIC, &(t0));                                                    \
+    glass_gemv_ct_##M##x##N::kernel_smem<<<1, THREADS,                                       \
+        glass_gemv_ct_##M##x##N::smem_size>>>(dA, dx, dy, iters);                           \
+    cudaDeviceSynchronize();                                                                  \
+    clock_gettime(CLOCK_MONOTONIC, &(t1));                                                    \
+    printf("glass::gemv<CT> (shared) m=%2d n=%2d  %.3f us/op\n",                            \
+           M, N, elapsed_us(t0, t1) / iters);
+
+// ─── cuBLASDx kernels (compile-time M/N) ─────────────────────────────────────
 #ifdef GLASS_BENCH_CUBLASDX
 
 #ifndef SMS
-#define SMS 860  // default: sm_86 (Ampere A100 / RTX 30xx)
+#define SMS 860
 #endif
 
-// cuBLASDx 25.x API: data loaded global→shared before execute(); iters loop
-// benchmarks the execute() call with data already resident in shared memory.
 #define DEFINE_CUBLASDX_GEMV(M, N)                                                          \
     namespace cublasdx_gemv_##M##x##N {                                                     \
         using GEMM = decltype(                                                              \
@@ -49,8 +118,30 @@ __global__ void k_glass_gemv(float* A, float* x, float* y, int m, int n, int ite
             + cublasdx::Function<cublasdx::function::MM>()                                  \
             + cublasdx::SM<SMS>()                                                            \
             + cublasdx::Block());                                                            \
+        /* (global): full round-trip global→shared→execute→global per iteration */         \
         __launch_bounds__(GEMM::max_threads_per_block)                                      \
-        __global__ void kernel(float* A, float* x, float* y, int iters) {                  \
+        __global__ void kernel_global(float* A, float* x, float* y, int iters) {           \
+            extern __shared__ __align__(16) char smem[];                                    \
+            using align = cublasdx::alignment_of<GEMM>;                                    \
+            auto [smem_a, smem_b, smem_c] = cublasdx::slice_shared_memory<GEMM>(smem);     \
+            auto a_smem = cublasdx::make_tensor(smem_a, GEMM::get_layout_smem_a());        \
+            auto b_smem = cublasdx::make_tensor(smem_b, GEMM::get_layout_smem_b());        \
+            auto c_smem = cublasdx::make_tensor(smem_c, GEMM::get_layout_smem_c());        \
+            for (int rep = 0; rep < iters; rep++) {                                         \
+                cublasdx::copy<GEMM, align::a>(                                             \
+                    cublasdx::make_tensor(A, GEMM::get_layout_gmem_a()), a_smem);          \
+                cublasdx::copy<GEMM, align::b>(                                             \
+                    cublasdx::make_tensor(x, GEMM::get_layout_gmem_b()), b_smem);          \
+                cublasdx::copy_wait();                                                      \
+                GEMM().execute(1.f, a_smem, b_smem, 0.f, c_smem);                          \
+                cublasdx::copy<GEMM, align::c>(                                             \
+                    c_smem, cublasdx::make_tensor(y, GEMM::get_layout_gmem_c()));          \
+                __syncthreads();                                                            \
+            }                                                                               \
+        }                                                                                   \
+        /* (shared): data pre-loaded once; measures pure execute */                         \
+        __launch_bounds__(GEMM::max_threads_per_block)                                      \
+        __global__ void kernel_smem(float* A, float* x, float* y, int iters) {             \
             extern __shared__ __align__(16) char smem[];                                    \
             using align = cublasdx::alignment_of<GEMM>;                                    \
             auto [smem_a, smem_b, smem_c] = cublasdx::slice_shared_memory<GEMM>(smem);     \
@@ -78,15 +169,24 @@ DEFINE_CUBLASDX_GEMV(8,  8)
 DEFINE_CUBLASDX_GEMV(12, 12)
 DEFINE_CUBLASDX_GEMV(14, 14)
 DEFINE_CUBLASDX_GEMV(24, 24)
+DEFINE_CUBLASDX_GEMV(64, 64)
 
-#define RUN_CUBLASDX_GEMV(M, N, dA, dx, dy, iters, t0, t1)                      \
-    clock_gettime(CLOCK_MONOTONIC, &(t0));                                       \
-    cublasdx_gemv_##M##x##N::kernel<<<1,                                         \
-        cublasdx_gemv_##M##x##N::GEMM::block_dim,                                \
-        cublasdx_gemv_##M##x##N::smem_size>>>(dA, dx, dy, iters);               \
-    cudaDeviceSynchronize();                                                     \
-    clock_gettime(CLOCK_MONOTONIC, &(t1));                                       \
-    printf("cuBLASDx gemv                m=%2d n=%2d  %.3f us/op\n",            \
+#define RUN_CUBLASDX_GEMV(M, N, dA, dx, dy, iters, t0, t1)                          \
+    clock_gettime(CLOCK_MONOTONIC, &(t0));                                           \
+    cublasdx_gemv_##M##x##N::kernel_global<<<1,                                      \
+        cublasdx_gemv_##M##x##N::GEMM::block_dim,                                    \
+        cublasdx_gemv_##M##x##N::smem_size>>>(dA, dx, dy, iters);                   \
+    cudaDeviceSynchronize();                                                         \
+    clock_gettime(CLOCK_MONOTONIC, &(t1));                                           \
+    printf("cuBLASDx gemv (global)       m=%2d n=%2d  %.3f us/op\n",               \
+           M, N, elapsed_us(t0, t1) / iters);                                        \
+    clock_gettime(CLOCK_MONOTONIC, &(t0));                                           \
+    cublasdx_gemv_##M##x##N::kernel_smem<<<1,                                        \
+        cublasdx_gemv_##M##x##N::GEMM::block_dim,                                    \
+        cublasdx_gemv_##M##x##N::smem_size>>>(dA, dx, dy, iters);                   \
+    cudaDeviceSynchronize();                                                         \
+    clock_gettime(CLOCK_MONOTONIC, &(t1));                                           \
+    printf("cuBLASDx gemv (shared)       m=%2d n=%2d  %.3f us/op\n",               \
            M, N, elapsed_us(t0, t1) / iters);
 
 #endif // GLASS_BENCH_CUBLASDX
@@ -101,17 +201,37 @@ static void bench_size(int m, int n, int iters) {
 
     struct timespec t0, t1;
 
-    // GLASS
+    // glass (global)
     clock_gettime(CLOCK_MONOTONIC, &t0);
-    k_glass_gemv<<<1, THREADS>>>(dA, dx, dy, m, n, iters);
+    k_glass_gemv_global<<<1, THREADS>>>(dA, dx, dy, m, n, iters);
     cudaDeviceSynchronize();
     clock_gettime(CLOCK_MONOTONIC, &t1);
-    printf("glass::simple::gemv          m=%2d n=%2d  %.3f us/op\n",
+    printf("glass::gemv (global) m=%2d n=%2d  %.3f us/op\n",
            m, n, elapsed_us(t0, t1) / iters);
 
+    // glass (shared)
+    int glass_smem = (m * n + n + m) * sizeof(float);
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    k_glass_gemv_shared<<<1, THREADS, glass_smem>>>(dA, dx, dy, m, n, iters);
+    cudaDeviceSynchronize();
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    printf("glass::gemv (shared) m=%2d n=%2d  %.3f us/op\n",
+           m, n, elapsed_us(t0, t1) / iters);
+
+    // glass compile-time variants (only for pre-instantiated sizes)
+    #define MAYBE_GLASS_GEMV_CT(M, N)                                           \
+        if (m == M && n == N) { RUN_GLASS_GEMV_CT(M, N, dA, dx, dy, iters, t0, t1); }
+    MAYBE_GLASS_GEMV_CT(4,  4)
+    MAYBE_GLASS_GEMV_CT(6,  6)
+    MAYBE_GLASS_GEMV_CT(8,  8)
+    MAYBE_GLASS_GEMV_CT(12, 12)
+    MAYBE_GLASS_GEMV_CT(14, 14)
+    MAYBE_GLASS_GEMV_CT(24, 24)
+    MAYBE_GLASS_GEMV_CT(64, 64)
+    #undef MAYBE_GLASS_GEMV_CT
+
 #ifdef GLASS_BENCH_CUBLASDX
-    // cuBLASDx — dispatch by size (only benchmarked sizes are defined above)
-    #define MAYBE_CUBLASDX_GEMV(M, N)                                       \
+    #define MAYBE_CUBLASDX_GEMV(M, N)                                           \
         if (m == M && n == N) { RUN_CUBLASDX_GEMV(M, N, dA, dx, dy, iters, t0, t1); }
     MAYBE_CUBLASDX_GEMV(4,  4)
     MAYBE_CUBLASDX_GEMV(6,  6)
@@ -119,6 +239,7 @@ static void bench_size(int m, int n, int iters) {
     MAYBE_CUBLASDX_GEMV(12, 12)
     MAYBE_CUBLASDX_GEMV(14, 14)
     MAYBE_CUBLASDX_GEMV(24, 24)
+    MAYBE_CUBLASDX_GEMV(64, 64)
     #undef MAYBE_CUBLASDX_GEMV
 #endif
 
@@ -128,13 +249,12 @@ static void bench_size(int m, int n, int iters) {
 int main(int argc, char** argv) {
     int m     = (argc > 1) ? atoi(argv[1]) : 0;
     int n     = (argc > 2) ? atoi(argv[2]) : 0;
-    int iters = (argc > 3) ? atoi(argv[3]) : 10000;
+    int iters = (argc > 3) ? atoi(argv[3]) : 100000;
 
     if (m > 0 && n > 0) {
         bench_size(m, n, iters);
     } else {
-        // Sweep robot-dynamics-motivated sizes
-        int sizes[] = {4, 6, 8, 12, 14, 24};
+        int sizes[] = {4, 6, 8, 12, 14, 24, 64};
         for (int s : sizes) bench_size(s, s, iters);
     }
 

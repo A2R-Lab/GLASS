@@ -6,213 +6,618 @@
   "results": {
     "reduce": [
       {
-        "label": "glass::simple::hs::reduce    n= 64",
-        "us_per_op": 0.803,
-        "raw": "glass::simple::hs::reduce    n= 64  0.803 us/op"
+        "label": "glass::high_speed::reduce    n=  8",
+        "us_per_op": 0.784,
+        "raw": "glass::high_speed::reduce    n=  8  0.784 us/op"
       },
       {
-        "label": "glass::simple::hs::dot       n= 64",
-        "us_per_op": 0.325,
-        "raw": "glass::simple::hs::dot       n= 64  0.325 us/op"
+        "label": "glass::high_speed::dot       n=  8",
+        "us_per_op": 0.332,
+        "raw": "glass::high_speed::dot       n=  8  0.332 us/op"
       },
       {
-        "label": "glass::simple::hs::l2norm    n= 64",
-        "us_per_op": 0.383,
-        "raw": "glass::simple::hs::l2norm    n= 64  0.383 us/op"
+        "label": "glass::high_speed::l2norm    n=  8",
+        "us_per_op": 0.389,
+        "raw": "glass::high_speed::l2norm    n=  8  0.389 us/op"
+      },
+      {
+        "label": "cub::BlockReduce             n=  8",
+        "us_per_op": 0.198,
+        "raw": "cub::BlockReduce             n=  8  0.198 us/op"
+      },
+      {
+        "label": "glass::hs::reduce<CT>        n=  8",
+        "us_per_op": 0.344,
+        "raw": "glass::hs::reduce<CT>        n=  8  0.344 us/op"
+      },
+      {
+        "label": "glass::hs::dot<CT>           n=  8",
+        "us_per_op": 0.354,
+        "raw": "glass::hs::dot<CT>           n=  8  0.354 us/op"
+      },
+      {
+        "label": "glass::hs::l2norm<CT>        n=  8",
+        "us_per_op": 0.41,
+        "raw": "glass::hs::l2norm<CT>        n=  8  0.410 us/op"
+      },
+      {
+        "label": "glass::high_speed::reduce    n= 16",
+        "us_per_op": 0.758,
+        "raw": "glass::high_speed::reduce    n= 16  0.758 us/op"
+      },
+      {
+        "label": "glass::high_speed::dot       n= 16",
+        "us_per_op": 0.329,
+        "raw": "glass::high_speed::dot       n= 16  0.329 us/op"
+      },
+      {
+        "label": "glass::high_speed::l2norm    n= 16",
+        "us_per_op": 0.39,
+        "raw": "glass::high_speed::l2norm    n= 16  0.390 us/op"
+      },
+      {
+        "label": "cub::BlockReduce             n= 16",
+        "us_per_op": 0.204,
+        "raw": "cub::BlockReduce             n= 16  0.204 us/op"
+      },
+      {
+        "label": "glass::high_speed::reduce    n= 32",
+        "us_per_op": 0.792,
+        "raw": "glass::high_speed::reduce    n= 32  0.792 us/op"
+      },
+      {
+        "label": "glass::high_speed::dot       n= 32",
+        "us_per_op": 0.284,
+        "raw": "glass::high_speed::dot       n= 32  0.284 us/op"
+      },
+      {
+        "label": "glass::high_speed::l2norm    n= 32",
+        "us_per_op": 0.336,
+        "raw": "glass::high_speed::l2norm    n= 32  0.336 us/op"
+      },
+      {
+        "label": "cub::BlockReduce             n= 32",
+        "us_per_op": 0.227,
+        "raw": "cub::BlockReduce             n= 32  0.227 us/op"
+      },
+      {
+        "label": "glass::high_speed::reduce    n= 64",
+        "us_per_op": 0.807,
+        "raw": "glass::high_speed::reduce    n= 64  0.807 us/op"
+      },
+      {
+        "label": "glass::high_speed::dot       n= 64",
+        "us_per_op": 0.328,
+        "raw": "glass::high_speed::dot       n= 64  0.328 us/op"
+      },
+      {
+        "label": "glass::high_speed::l2norm    n= 64",
+        "us_per_op": 0.347,
+        "raw": "glass::high_speed::l2norm    n= 64  0.347 us/op"
       },
       {
         "label": "cub::BlockReduce             n= 64",
-        "us_per_op": 0.208,
-        "raw": "cub::BlockReduce             n= 64  0.208 us/op"
+        "us_per_op": 0.171,
+        "raw": "cub::BlockReduce             n= 64  0.171 us/op"
       },
       {
-        "label": "glass::simple::hs::reduce    n=128",
-        "us_per_op": 0.648,
-        "raw": "glass::simple::hs::reduce    n=128  0.648 us/op"
+        "label": "glass::hs::reduce<CT>        n= 64",
+        "us_per_op": 0.307,
+        "raw": "glass::hs::reduce<CT>        n= 64  0.307 us/op"
       },
       {
-        "label": "glass::simple::hs::dot       n=128",
-        "us_per_op": 0.299,
-        "raw": "glass::simple::hs::dot       n=128  0.299 us/op"
+        "label": "glass::hs::dot<CT>           n= 64",
+        "us_per_op": 0.321,
+        "raw": "glass::hs::dot<CT>           n= 64  0.321 us/op"
       },
       {
-        "label": "glass::simple::hs::l2norm    n=128",
-        "us_per_op": 0.348,
-        "raw": "glass::simple::hs::l2norm    n=128  0.348 us/op"
+        "label": "glass::hs::l2norm<CT>        n= 64",
+        "us_per_op": 0.367,
+        "raw": "glass::hs::l2norm<CT>        n= 64  0.367 us/op"
+      },
+      {
+        "label": "glass::high_speed::reduce    n=128",
+        "us_per_op": 0.875,
+        "raw": "glass::high_speed::reduce    n=128  0.875 us/op"
+      },
+      {
+        "label": "glass::high_speed::dot       n=128",
+        "us_per_op": 0.287,
+        "raw": "glass::high_speed::dot       n=128  0.287 us/op"
+      },
+      {
+        "label": "glass::high_speed::l2norm    n=128",
+        "us_per_op": 0.344,
+        "raw": "glass::high_speed::l2norm    n=128  0.344 us/op"
       },
       {
         "label": "cub::BlockReduce             n=128",
-        "us_per_op": 0.197,
-        "raw": "cub::BlockReduce             n=128  0.197 us/op"
+        "us_per_op": 0.18,
+        "raw": "cub::BlockReduce             n=128  0.180 us/op"
       },
       {
-        "label": "glass::simple::hs::reduce    n=256",
-        "us_per_op": 1.011,
-        "raw": "glass::simple::hs::reduce    n=256  1.011 us/op"
+        "label": "glass::high_speed::reduce    n=256",
+        "us_per_op": 0.695,
+        "raw": "glass::high_speed::reduce    n=256  0.695 us/op"
       },
       {
-        "label": "glass::simple::hs::dot       n=256",
-        "us_per_op": 0.326,
-        "raw": "glass::simple::hs::dot       n=256  0.326 us/op"
+        "label": "glass::high_speed::dot       n=256",
+        "us_per_op": 0.294,
+        "raw": "glass::high_speed::dot       n=256  0.294 us/op"
       },
       {
-        "label": "glass::simple::hs::l2norm    n=256",
-        "us_per_op": 0.364,
-        "raw": "glass::simple::hs::l2norm    n=256  0.364 us/op"
+        "label": "glass::high_speed::l2norm    n=256",
+        "us_per_op": 0.325,
+        "raw": "glass::high_speed::l2norm    n=256  0.325 us/op"
       },
       {
         "label": "cub::BlockReduce             n=256",
-        "us_per_op": 0.203,
-        "raw": "cub::BlockReduce             n=256  0.203 us/op"
+        "us_per_op": 0.166,
+        "raw": "cub::BlockReduce             n=256  0.166 us/op"
+      },
+      {
+        "label": "glass::hs::reduce<CT>        n=256",
+        "us_per_op": 0.292,
+        "raw": "glass::hs::reduce<CT>        n=256  0.292 us/op"
+      },
+      {
+        "label": "glass::hs::dot<CT>           n=256",
+        "us_per_op": 0.313,
+        "raw": "glass::hs::dot<CT>           n=256  0.313 us/op"
+      },
+      {
+        "label": "glass::hs::l2norm<CT>        n=256",
+        "us_per_op": 0.351,
+        "raw": "glass::hs::l2norm<CT>        n=256  0.351 us/op"
       }
     ],
     "gemv": [
       {
-        "label": "glass::simple::gemv          m= 4 n= 4",
-        "us_per_op": 0.83,
-        "raw": "glass::simple::gemv          m= 4 n= 4  0.830 us/op"
+        "label": "glass::gemv (global) m= 4 n= 4",
+        "us_per_op": 0.589,
+        "raw": "glass::gemv (global) m= 4 n= 4  0.589 us/op"
       },
       {
-        "label": "cuBLASDx gemv                m= 4 n= 4",
-        "us_per_op": 0.02,
-        "raw": "cuBLASDx gemv                m= 4 n= 4  0.020 us/op"
+        "label": "glass::gemv (shared) m= 4 n= 4",
+        "us_per_op": 0.143,
+        "raw": "glass::gemv (shared) m= 4 n= 4  0.143 us/op"
       },
       {
-        "label": "glass::simple::gemv          m= 6 n= 6",
-        "us_per_op": 0.795,
-        "raw": "glass::simple::gemv          m= 6 n= 6  0.795 us/op"
+        "label": "glass::gemv<CT> (global) m= 4 n= 4",
+        "us_per_op": 0.087,
+        "raw": "glass::gemv<CT> (global) m= 4 n= 4  0.087 us/op"
       },
       {
-        "label": "cuBLASDx gemv                m= 6 n= 6",
-        "us_per_op": 0.025,
-        "raw": "cuBLASDx gemv                m= 6 n= 6  0.025 us/op"
+        "label": "glass::gemv<CT> (shared) m= 4 n= 4",
+        "us_per_op": 0.088,
+        "raw": "glass::gemv<CT> (shared) m= 4 n= 4  0.088 us/op"
       },
       {
-        "label": "glass::simple::gemv          m= 8 n= 8",
-        "us_per_op": 0.974,
-        "raw": "glass::simple::gemv          m= 8 n= 8  0.974 us/op"
+        "label": "cuBLASDx gemv (global)       m= 4 n= 4",
+        "us_per_op": 0.012,
+        "raw": "cuBLASDx gemv (global)       m= 4 n= 4  0.012 us/op"
       },
       {
-        "label": "cuBLASDx gemv                m= 8 n= 8",
+        "label": "cuBLASDx gemv (shared)       m= 4 n= 4",
+        "us_per_op": 0.008,
+        "raw": "cuBLASDx gemv (shared)       m= 4 n= 4  0.008 us/op"
+      },
+      {
+        "label": "glass::gemv (global) m= 6 n= 6",
+        "us_per_op": 0.602,
+        "raw": "glass::gemv (global) m= 6 n= 6  0.602 us/op"
+      },
+      {
+        "label": "glass::gemv (shared) m= 6 n= 6",
+        "us_per_op": 0.172,
+        "raw": "glass::gemv (shared) m= 6 n= 6  0.172 us/op"
+      },
+      {
+        "label": "glass::gemv<CT> (global) m= 6 n= 6",
+        "us_per_op": 0.098,
+        "raw": "glass::gemv<CT> (global) m= 6 n= 6  0.098 us/op"
+      },
+      {
+        "label": "glass::gemv<CT> (shared) m= 6 n= 6",
+        "us_per_op": 0.087,
+        "raw": "glass::gemv<CT> (shared) m= 6 n= 6  0.087 us/op"
+      },
+      {
+        "label": "cuBLASDx gemv (global)       m= 6 n= 6",
+        "us_per_op": 0.032,
+        "raw": "cuBLASDx gemv (global)       m= 6 n= 6  0.032 us/op"
+      },
+      {
+        "label": "cuBLASDx gemv (shared)       m= 6 n= 6",
+        "us_per_op": 0.012,
+        "raw": "cuBLASDx gemv (shared)       m= 6 n= 6  0.012 us/op"
+      },
+      {
+        "label": "glass::gemv (global) m= 8 n= 8",
+        "us_per_op": 0.494,
+        "raw": "glass::gemv (global) m= 8 n= 8  0.494 us/op"
+      },
+      {
+        "label": "glass::gemv (shared) m= 8 n= 8",
+        "us_per_op": 0.135,
+        "raw": "glass::gemv (shared) m= 8 n= 8  0.135 us/op"
+      },
+      {
+        "label": "glass::gemv<CT> (global) m= 8 n= 8",
+        "us_per_op": 0.141,
+        "raw": "glass::gemv<CT> (global) m= 8 n= 8  0.141 us/op"
+      },
+      {
+        "label": "glass::gemv<CT> (shared) m= 8 n= 8",
+        "us_per_op": 0.116,
+        "raw": "glass::gemv<CT> (shared) m= 8 n= 8  0.116 us/op"
+      },
+      {
+        "label": "cuBLASDx gemv (global)       m= 8 n= 8",
+        "us_per_op": 0.035,
+        "raw": "cuBLASDx gemv (global)       m= 8 n= 8  0.035 us/op"
+      },
+      {
+        "label": "cuBLASDx gemv (shared)       m= 8 n= 8",
+        "us_per_op": 0.077,
+        "raw": "cuBLASDx gemv (shared)       m= 8 n= 8  0.077 us/op"
+      },
+      {
+        "label": "glass::gemv (global) m=12 n=12",
+        "us_per_op": 0.574,
+        "raw": "glass::gemv (global) m=12 n=12  0.574 us/op"
+      },
+      {
+        "label": "glass::gemv (shared) m=12 n=12",
+        "us_per_op": 0.183,
+        "raw": "glass::gemv (shared) m=12 n=12  0.183 us/op"
+      },
+      {
+        "label": "glass::gemv<CT> (global) m=12 n=12",
+        "us_per_op": 0.143,
+        "raw": "glass::gemv<CT> (global) m=12 n=12  0.143 us/op"
+      },
+      {
+        "label": "glass::gemv<CT> (shared) m=12 n=12",
+        "us_per_op": 0.124,
+        "raw": "glass::gemv<CT> (shared) m=12 n=12  0.124 us/op"
+      },
+      {
+        "label": "cuBLASDx gemv (global)       m=12 n=12",
+        "us_per_op": 0.013,
+        "raw": "cuBLASDx gemv (global)       m=12 n=12  0.013 us/op"
+      },
+      {
+        "label": "cuBLASDx gemv (shared)       m=12 n=12",
+        "us_per_op": 0.006,
+        "raw": "cuBLASDx gemv (shared)       m=12 n=12  0.006 us/op"
+      },
+      {
+        "label": "glass::gemv (global) m=14 n=14",
+        "us_per_op": 0.821,
+        "raw": "glass::gemv (global) m=14 n=14  0.821 us/op"
+      },
+      {
+        "label": "glass::gemv (shared) m=14 n=14",
+        "us_per_op": 0.226,
+        "raw": "glass::gemv (shared) m=14 n=14  0.226 us/op"
+      },
+      {
+        "label": "glass::gemv<CT> (global) m=14 n=14",
+        "us_per_op": 0.182,
+        "raw": "glass::gemv<CT> (global) m=14 n=14  0.182 us/op"
+      },
+      {
+        "label": "glass::gemv<CT> (shared) m=14 n=14",
+        "us_per_op": 0.133,
+        "raw": "glass::gemv<CT> (shared) m=14 n=14  0.133 us/op"
+      },
+      {
+        "label": "cuBLASDx gemv (global)       m=14 n=14",
+        "us_per_op": 0.031,
+        "raw": "cuBLASDx gemv (global)       m=14 n=14  0.031 us/op"
+      },
+      {
+        "label": "cuBLASDx gemv (shared)       m=14 n=14",
         "us_per_op": 0.026,
-        "raw": "cuBLASDx gemv                m= 8 n= 8  0.026 us/op"
+        "raw": "cuBLASDx gemv (shared)       m=14 n=14  0.026 us/op"
       },
       {
-        "label": "glass::simple::gemv          m=12 n=12",
-        "us_per_op": 0.665,
-        "raw": "glass::simple::gemv          m=12 n=12  0.665 us/op"
+        "label": "glass::gemv (global) m=24 n=24",
+        "us_per_op": 0.73,
+        "raw": "glass::gemv (global) m=24 n=24  0.730 us/op"
       },
       {
-        "label": "cuBLASDx gemv                m=12 n=12",
-        "us_per_op": 0.022,
-        "raw": "cuBLASDx gemv                m=12 n=12  0.022 us/op"
+        "label": "glass::gemv (shared) m=24 n=24",
+        "us_per_op": 0.242,
+        "raw": "glass::gemv (shared) m=24 n=24  0.242 us/op"
       },
       {
-        "label": "glass::simple::gemv          m=14 n=14",
-        "us_per_op": 0.96,
-        "raw": "glass::simple::gemv          m=14 n=14  0.960 us/op"
+        "label": "glass::gemv<CT> (global) m=24 n=24",
+        "us_per_op": 0.192,
+        "raw": "glass::gemv<CT> (global) m=24 n=24  0.192 us/op"
       },
       {
-        "label": "cuBLASDx gemv                m=14 n=14",
-        "us_per_op": 0.018,
-        "raw": "cuBLASDx gemv                m=14 n=14  0.018 us/op"
+        "label": "glass::gemv<CT> (shared) m=24 n=24",
+        "us_per_op": 0.137,
+        "raw": "glass::gemv<CT> (shared) m=24 n=24  0.137 us/op"
       },
       {
-        "label": "glass::simple::gemv          m=24 n=24",
-        "us_per_op": 0.74,
-        "raw": "glass::simple::gemv          m=24 n=24  0.740 us/op"
+        "label": "cuBLASDx gemv (global)       m=24 n=24",
+        "us_per_op": 0.013,
+        "raw": "cuBLASDx gemv (global)       m=24 n=24  0.013 us/op"
       },
       {
-        "label": "cuBLASDx gemv                m=24 n=24",
-        "us_per_op": 0.043,
-        "raw": "cuBLASDx gemv                m=24 n=24  0.043 us/op"
+        "label": "cuBLASDx gemv (shared)       m=24 n=24",
+        "us_per_op": 0.009,
+        "raw": "cuBLASDx gemv (shared)       m=24 n=24  0.009 us/op"
+      },
+      {
+        "label": "glass::gemv (global) m=64 n=64",
+        "us_per_op": 1.057,
+        "raw": "glass::gemv (global) m=64 n=64  1.057 us/op"
+      },
+      {
+        "label": "glass::gemv (shared) m=64 n=64",
+        "us_per_op": 0.487,
+        "raw": "glass::gemv (shared) m=64 n=64  0.487 us/op"
+      },
+      {
+        "label": "glass::gemv<CT> (global) m=64 n=64",
+        "us_per_op": 0.386,
+        "raw": "glass::gemv<CT> (global) m=64 n=64  0.386 us/op"
+      },
+      {
+        "label": "glass::gemv<CT> (shared) m=64 n=64",
+        "us_per_op": 0.218,
+        "raw": "glass::gemv<CT> (shared) m=64 n=64  0.218 us/op"
+      },
+      {
+        "label": "cuBLASDx gemv (global)       m=64 n=64",
+        "us_per_op": 0.012,
+        "raw": "cuBLASDx gemv (global)       m=64 n=64  0.012 us/op"
+      },
+      {
+        "label": "cuBLASDx gemv (shared)       m=64 n=64",
+        "us_per_op": 0.104,
+        "raw": "cuBLASDx gemv (shared)       m=64 n=64  0.104 us/op"
       }
     ],
     "gemm": [
       {
-        "label": "glass::simple::gemm (plain)  m= 4 n= 4 k= 4",
-        "us_per_op": 0.978,
-        "raw": "glass::simple::gemm (plain)  m= 4 n= 4 k= 4  0.978 us/op"
+        "label": "glass::gemm (global) m= 4 n= 4 k= 4",
+        "us_per_op": 0.593,
+        "raw": "glass::gemm (global) m= 4 n= 4 k= 4  0.593 us/op"
       },
       {
-        "label": "glass::simple::gemm (tiled)  m= 4 n= 4 k= 4",
-        "us_per_op": 0.5,
-        "raw": "glass::simple::gemm (tiled)  m= 4 n= 4 k= 4  0.500 us/op"
+        "label": "glass::gemm (shared) m= 4 n= 4 k= 4",
+        "us_per_op": 0.209,
+        "raw": "glass::gemm (shared) m= 4 n= 4 k= 4  0.209 us/op"
       },
       {
-        "label": "cuBLASDx gemm                m= 4 n= 4 k= 4",
-        "us_per_op": 0.03,
-        "raw": "cuBLASDx gemm                m= 4 n= 4 k= 4  0.030 us/op"
+        "label": "glass::gemm (tiled)  m= 4 n= 4 k= 4",
+        "us_per_op": 0.45,
+        "raw": "glass::gemm (tiled)  m= 4 n= 4 k= 4  0.450 us/op"
       },
       {
-        "label": "glass::simple::gemm (plain)  m= 6 n= 6 k= 6",
-        "us_per_op": 0.688,
-        "raw": "glass::simple::gemm (plain)  m= 6 n= 6 k= 6  0.688 us/op"
+        "label": "glass::gemm<CT> (global) m= 4 n= 4 k= 4",
+        "us_per_op": 0.112,
+        "raw": "glass::gemm<CT> (global) m= 4 n= 4 k= 4  0.112 us/op"
       },
       {
-        "label": "glass::simple::gemm (tiled)  m= 6 n= 6 k= 6",
-        "us_per_op": 0.571,
-        "raw": "glass::simple::gemm (tiled)  m= 6 n= 6 k= 6  0.571 us/op"
+        "label": "glass::gemm<CT> (shared) m= 4 n= 4 k= 4",
+        "us_per_op": 0.1,
+        "raw": "glass::gemm<CT> (shared) m= 4 n= 4 k= 4  0.100 us/op"
       },
       {
-        "label": "cuBLASDx gemm                m= 6 n= 6 k= 6",
-        "us_per_op": 0.019,
-        "raw": "cuBLASDx gemm                m= 6 n= 6 k= 6  0.019 us/op"
+        "label": "cuBLASDx gemm (global)       m= 4 n= 4 k= 4",
+        "us_per_op": 0.018,
+        "raw": "cuBLASDx gemm (global)       m= 4 n= 4 k= 4  0.018 us/op"
       },
       {
-        "label": "glass::simple::gemm (plain)  m= 8 n= 8 k= 8",
-        "us_per_op": 0.65,
-        "raw": "glass::simple::gemm (plain)  m= 8 n= 8 k= 8  0.650 us/op"
+        "label": "cuBLASDx gemm (shared)       m= 4 n= 4 k= 4",
+        "us_per_op": 0.026,
+        "raw": "cuBLASDx gemm (shared)       m= 4 n= 4 k= 4  0.026 us/op"
       },
       {
-        "label": "glass::simple::gemm (tiled)  m= 8 n= 8 k= 8",
-        "us_per_op": 0.457,
-        "raw": "glass::simple::gemm (tiled)  m= 8 n= 8 k= 8  0.457 us/op"
+        "label": "glass::gemm (global) m= 6 n= 6 k= 6",
+        "us_per_op": 0.698,
+        "raw": "glass::gemm (global) m= 6 n= 6 k= 6  0.698 us/op"
       },
       {
-        "label": "cuBLASDx gemm                m= 8 n= 8 k= 8",
-        "us_per_op": 0.019,
-        "raw": "cuBLASDx gemm                m= 8 n= 8 k= 8  0.019 us/op"
+        "label": "glass::gemm (shared) m= 6 n= 6 k= 6",
+        "us_per_op": 0.258,
+        "raw": "glass::gemm (shared) m= 6 n= 6 k= 6  0.258 us/op"
       },
       {
-        "label": "glass::simple::gemm (plain)  m=12 n=12 k=12",
-        "us_per_op": 1.201,
-        "raw": "glass::simple::gemm (plain)  m=12 n=12 k=12  1.201 us/op"
+        "label": "glass::gemm (tiled)  m= 6 n= 6 k= 6",
+        "us_per_op": 0.504,
+        "raw": "glass::gemm (tiled)  m= 6 n= 6 k= 6  0.504 us/op"
       },
       {
-        "label": "glass::simple::gemm (tiled)  m=12 n=12 k=12",
-        "us_per_op": 0.838,
-        "raw": "glass::simple::gemm (tiled)  m=12 n=12 k=12  0.838 us/op"
+        "label": "glass::gemm<CT> (global) m= 6 n= 6 k= 6",
+        "us_per_op": 0.126,
+        "raw": "glass::gemm<CT> (global) m= 6 n= 6 k= 6  0.126 us/op"
       },
       {
-        "label": "cuBLASDx gemm                m=12 n=12 k=12",
-        "us_per_op": 0.033,
-        "raw": "cuBLASDx gemm                m=12 n=12 k=12  0.033 us/op"
+        "label": "glass::gemm<CT> (shared) m= 6 n= 6 k= 6",
+        "us_per_op": 0.106,
+        "raw": "glass::gemm<CT> (shared) m= 6 n= 6 k= 6  0.106 us/op"
       },
       {
-        "label": "glass::simple::gemm (plain)  m=14 n=14 k=14",
-        "us_per_op": 1.188,
-        "raw": "glass::simple::gemm (plain)  m=14 n=14 k=14  1.188 us/op"
+        "label": "cuBLASDx gemm (global)       m= 6 n= 6 k= 6",
+        "us_per_op": 0.027,
+        "raw": "cuBLASDx gemm (global)       m= 6 n= 6 k= 6  0.027 us/op"
       },
       {
-        "label": "glass::simple::gemm (tiled)  m=14 n=14 k=14",
-        "us_per_op": 0.924,
-        "raw": "glass::simple::gemm (tiled)  m=14 n=14 k=14  0.924 us/op"
+        "label": "cuBLASDx gemm (shared)       m= 6 n= 6 k= 6",
+        "us_per_op": 0.023,
+        "raw": "cuBLASDx gemm (shared)       m= 6 n= 6 k= 6  0.023 us/op"
       },
       {
-        "label": "cuBLASDx gemm                m=14 n=14 k=14",
-        "us_per_op": 0.033,
-        "raw": "cuBLASDx gemm                m=14 n=14 k=14  0.033 us/op"
+        "label": "glass::gemm (global) m= 8 n= 8 k= 8",
+        "us_per_op": 0.546,
+        "raw": "glass::gemm (global) m= 8 n= 8 k= 8  0.546 us/op"
       },
       {
-        "label": "glass::simple::gemm (plain)  m=24 n=24 k=24",
-        "us_per_op": 1.691,
-        "raw": "glass::simple::gemm (plain)  m=24 n=24 k=24  1.691 us/op"
+        "label": "glass::gemm (shared) m= 8 n= 8 k= 8",
+        "us_per_op": 0.186,
+        "raw": "glass::gemm (shared) m= 8 n= 8 k= 8  0.186 us/op"
       },
       {
-        "label": "cuBLASDx gemm                m=24 n=24 k=24",
-        "us_per_op": 0.045,
-        "raw": "cuBLASDx gemm                m=24 n=24 k=24  0.045 us/op"
+        "label": "glass::gemm (tiled)  m= 8 n= 8 k= 8",
+        "us_per_op": 0.419,
+        "raw": "glass::gemm (tiled)  m= 8 n= 8 k= 8  0.419 us/op"
+      },
+      {
+        "label": "glass::gemm<CT> (global) m= 8 n= 8 k= 8",
+        "us_per_op": 0.114,
+        "raw": "glass::gemm<CT> (global) m= 8 n= 8 k= 8  0.114 us/op"
+      },
+      {
+        "label": "glass::gemm<CT> (shared) m= 8 n= 8 k= 8",
+        "us_per_op": 0.089,
+        "raw": "glass::gemm<CT> (shared) m= 8 n= 8 k= 8  0.089 us/op"
+      },
+      {
+        "label": "cuBLASDx gemm (global)       m= 8 n= 8 k= 8",
+        "us_per_op": 0.011,
+        "raw": "cuBLASDx gemm (global)       m= 8 n= 8 k= 8  0.011 us/op"
+      },
+      {
+        "label": "cuBLASDx gemm (shared)       m= 8 n= 8 k= 8",
+        "us_per_op": 0.013,
+        "raw": "cuBLASDx gemm (shared)       m= 8 n= 8 k= 8  0.013 us/op"
+      },
+      {
+        "label": "glass::gemm (global) m=12 n=12 k=12",
+        "us_per_op": 0.654,
+        "raw": "glass::gemm (global) m=12 n=12 k=12  0.654 us/op"
+      },
+      {
+        "label": "glass::gemm (shared) m=12 n=12 k=12",
+        "us_per_op": 0.256,
+        "raw": "glass::gemm (shared) m=12 n=12 k=12  0.256 us/op"
+      },
+      {
+        "label": "glass::gemm (tiled)  m=12 n=12 k=12",
+        "us_per_op": 0.779,
+        "raw": "glass::gemm (tiled)  m=12 n=12 k=12  0.779 us/op"
+      },
+      {
+        "label": "glass::gemm<CT> (global) m=12 n=12 k=12",
+        "us_per_op": 0.18,
+        "raw": "glass::gemm<CT> (global) m=12 n=12 k=12  0.180 us/op"
+      },
+      {
+        "label": "glass::gemm<CT> (shared) m=12 n=12 k=12",
+        "us_per_op": 0.141,
+        "raw": "glass::gemm<CT> (shared) m=12 n=12 k=12  0.141 us/op"
+      },
+      {
+        "label": "cuBLASDx gemm (global)       m=12 n=12 k=12",
+        "us_per_op": 0.029,
+        "raw": "cuBLASDx gemm (global)       m=12 n=12 k=12  0.029 us/op"
+      },
+      {
+        "label": "cuBLASDx gemm (shared)       m=12 n=12 k=12",
+        "us_per_op": 0.034,
+        "raw": "cuBLASDx gemm (shared)       m=12 n=12 k=12  0.034 us/op"
+      },
+      {
+        "label": "glass::gemm (global) m=14 n=14 k=14",
+        "us_per_op": 0.879,
+        "raw": "glass::gemm (global) m=14 n=14 k=14  0.879 us/op"
+      },
+      {
+        "label": "glass::gemm (shared) m=14 n=14 k=14",
+        "us_per_op": 0.319,
+        "raw": "glass::gemm (shared) m=14 n=14 k=14  0.319 us/op"
+      },
+      {
+        "label": "glass::gemm (tiled)  m=14 n=14 k=14",
+        "us_per_op": 0.854,
+        "raw": "glass::gemm (tiled)  m=14 n=14 k=14  0.854 us/op"
+      },
+      {
+        "label": "glass::gemm<CT> (global) m=14 n=14 k=14",
+        "us_per_op": 0.201,
+        "raw": "glass::gemm<CT> (global) m=14 n=14 k=14  0.201 us/op"
+      },
+      {
+        "label": "glass::gemm<CT> (shared) m=14 n=14 k=14",
+        "us_per_op": 0.159,
+        "raw": "glass::gemm<CT> (shared) m=14 n=14 k=14  0.159 us/op"
+      },
+      {
+        "label": "cuBLASDx gemm (global)       m=14 n=14 k=14",
+        "us_per_op": 0.032,
+        "raw": "cuBLASDx gemm (global)       m=14 n=14 k=14  0.032 us/op"
+      },
+      {
+        "label": "cuBLASDx gemm (shared)       m=14 n=14 k=14",
+        "us_per_op": 0.032,
+        "raw": "cuBLASDx gemm (shared)       m=14 n=14 k=14  0.032 us/op"
+      },
+      {
+        "label": "glass::gemm (global) m=24 n=24 k=24",
+        "us_per_op": 1.591,
+        "raw": "glass::gemm (global) m=24 n=24 k=24  1.591 us/op"
+      },
+      {
+        "label": "glass::gemm (shared) m=24 n=24 k=24",
+        "us_per_op": 0.911,
+        "raw": "glass::gemm (shared) m=24 n=24 k=24  0.911 us/op"
+      },
+      {
+        "label": "glass::gemm<CT> (global) m=24 n=24 k=24",
+        "us_per_op": 0.763,
+        "raw": "glass::gemm<CT> (global) m=24 n=24 k=24  0.763 us/op"
+      },
+      {
+        "label": "glass::gemm<CT> (shared) m=24 n=24 k=24",
+        "us_per_op": 0.534,
+        "raw": "glass::gemm<CT> (shared) m=24 n=24 k=24  0.534 us/op"
+      },
+      {
+        "label": "cuBLASDx gemm (global)       m=24 n=24 k=24",
+        "us_per_op": 0.024,
+        "raw": "cuBLASDx gemm (global)       m=24 n=24 k=24  0.024 us/op"
+      },
+      {
+        "label": "cuBLASDx gemm (shared)       m=24 n=24 k=24",
+        "us_per_op": 0.012,
+        "raw": "cuBLASDx gemm (shared)       m=24 n=24 k=24  0.012 us/op"
+      },
+      {
+        "label": "glass::gemm (global) m=64 n=64 k=64",
+        "us_per_op": 15.806,
+        "raw": "glass::gemm (global) m=64 n=64 k=64  15.806 us/op"
+      },
+      {
+        "label": "glass::gemm (shared) m=64 n=64 k=64",
+        "us_per_op": 12.058,
+        "raw": "glass::gemm (shared) m=64 n=64 k=64  12.058 us/op"
+      },
+      {
+        "label": "glass::gemm<CT> (global) m=64 n=64 k=64",
+        "us_per_op": 11.84,
+        "raw": "glass::gemm<CT> (global) m=64 n=64 k=64  11.840 us/op"
+      },
+      {
+        "label": "glass::gemm<CT> (shared) m=64 n=64 k=64",
+        "us_per_op": 7.403,
+        "raw": "glass::gemm<CT> (shared) m=64 n=64 k=64  7.403 us/op"
+      },
+      {
+        "label": "cuBLASDx gemm (global)       m=64 n=64 k=64",
+        "us_per_op": 0.037,
+        "raw": "cuBLASDx gemm (global)       m=64 n=64 k=64  0.037 us/op"
+      },
+      {
+        "label": "cuBLASDx gemm (shared)       m=64 n=64 k=64",
+        "us_per_op": 0.014,
+        "raw": "cuBLASDx gemm (shared)       m=64 n=64 k=64  0.014 us/op"
       }
     ]
   }
