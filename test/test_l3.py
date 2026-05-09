@@ -65,6 +65,43 @@ def test_gemm_t(bins, m, n, version):
     assert np.allclose(mat, expected, rtol=RTOL, atol=ATOL)
 
 
+# ─── gemm row-major ───────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("m,n,k", [(4, 6, 5), (8, 8, 8), (12, 4, 6)])
+def test_gemm_rowmajor(bins, m, n, k):
+    """All matrices row-major (C-contiguous): C = alpha*A*B + beta*C."""
+    alpha, beta = 1.5, 0.3
+    A = RNG.random((m, n)).astype(np.float32)   # C-order = row-major
+    B = RNG.random((n, k)).astype(np.float32)
+    C = RNG.random((m, k)).astype(np.float32)
+    C0 = C.copy()
+    result = run_op(bins["l3"], "gemm_rowmajor", "simple",
+                    args=[m, n, k, alpha, beta],
+                    inputs=[A.ravel(), B.ravel(), C.ravel()])
+    expected = (alpha * A @ B + beta * C0).astype(np.float32)
+    # result is row-major flat: reshape with C order
+    mat = result.reshape(m, k)
+    assert np.allclose(mat, expected, rtol=RTOL, atol=ATOL)
+
+
+@pytest.mark.parametrize("m,n,k", [(4, 6, 5), (8, 8, 8)])
+def test_gemm_ex(bins, m, n, k):
+    """gemm_ex mixed layout: row-major A, col-major B, row-major C."""
+    alpha, beta = 1.5, 0.3
+    A = RNG.random((m, n)).astype(np.float32)       # row-major
+    B_col = RNG.random((n, k)).astype(np.float32)   # will be passed col-major
+    C = RNG.random((m, k)).astype(np.float32)       # row-major
+    C0 = C.copy()
+    result = run_op(bins["l3"], "gemm_ex", "simple",
+                    args=[m, n, k, alpha, beta],
+                    inputs=[A.ravel(),
+                            np.asfortranarray(B_col).ravel(order='F'),  # col-major flat
+                            C.ravel()])
+    expected = (alpha * A @ B_col + beta * C0).astype(np.float32)
+    mat = result.reshape(m, k)
+    assert np.allclose(mat, expected, rtol=RTOL, atol=ATOL)
+
+
 # ─── gemm_tiled ───────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("m,n,k", [(4, 6, 5), (8, 8, 8), (12, 4, 6), (6, 10, 7), (4, 3, 4)])

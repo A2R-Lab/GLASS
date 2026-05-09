@@ -48,6 +48,38 @@ def test_gemv_t(bins, m, n, version):
     assert np.allclose(result, expected, rtol=RTOL, atol=ATOL)
 
 
+# ─── gemv row-major ────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("m,n", [(8, 6), (12, 4), (16, 12)])
+def test_gemv_rowmajor(bins, m, n):
+    """Row-major A (C-contiguous): y = alpha*A*x + beta*y."""
+    alpha, beta = 1.5, 0.3
+    A = RNG.random((m, n)).astype(np.float32)   # C-order = row-major
+    x = RNG.random(n).astype(np.float32)
+    y = RNG.random(m).astype(np.float32)
+    y0 = y.copy()
+    result = run_op(bins["l2"], "gemv_rowmajor", "simple",
+                    args=[m, n, alpha, beta],
+                    inputs=[A.ravel(), x, y])    # ravel of C-order is row-major flat
+    expected = (alpha * A @ x + beta * y0).astype(np.float32)
+    assert np.allclose(result, expected, rtol=RTOL, atol=ATOL)
+
+
+@pytest.mark.parametrize("m,n", [(8, 6), (12, 4), (16, 12)])
+def test_gemv_ex(bins, m, n):
+    """gemv_ex per-matrix flag (ROW_MAJOR_A=true) — same result as gemv_rowmajor."""
+    alpha, beta = 2.0, 0.5
+    A = RNG.random((m, n)).astype(np.float32)
+    x = RNG.random(n).astype(np.float32)
+    y = RNG.random(m).astype(np.float32)
+    y0 = y.copy()
+    result = run_op(bins["l2"], "gemv_ex", "simple",
+                    args=[m, n, alpha, beta],
+                    inputs=[A.ravel(), x, y])
+    expected = (alpha * A @ x + beta * y0).astype(np.float32)
+    assert np.allclose(result, expected, rtol=RTOL, atol=ATOL)
+
+
 # ─── ger ──────────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("m,n", [(4, 6), (8, 8), (16, 12)])

@@ -50,6 +50,16 @@ __global__ void k_trsm_simple(int n, float* L, float* b) {
     glass::simple::trsm(n, L, b);
 }
 
+// ─── gemm row-major kernels ───────────────────────────────────────────────────
+// ROW_MAJOR=true applies to all matrices (A, B, C)
+__global__ void k_gemm_rowmajor(int m, int n, int k, float alpha, float* A, float* B, float beta, float* C) {
+    glass::simple::gemm<float, false, true>(m, n, k, alpha, A, B, beta, C);
+}
+// gemm_ex: row-major A only, col-major B, row-major C  (mixed layout)
+__global__ void k_gemm_ex_mixed(int m, int n, int k, float alpha, float* A, float* B, float beta, float* C) {
+    glass::simple::gemm_ex<float, false, true, false, true>(m, n, k, alpha, A, B, beta, C);
+}
+
 // ─── gemm_tiled kernels ───────────────────────────────────────────────────────
 __global__ void k_gemm_tiled(int m, int n, int k, float alpha, float* A, float* B, float beta, float* C) {
     extern __shared__ float smem[];
@@ -145,6 +155,34 @@ int main(int argc, char** argv) {
         float* dC = read_device_vec(argv[10], m * k);
         int smem_bytes = (m * 8 + 8 * k) * sizeof(float);
         k_gemm_tiled<<<1, THREADS, smem_bytes>>>(m, n, k, alpha, dA, dB, beta, dC);
+        cudaDeviceSynchronize();
+        print_device_vec(dC, m * k);
+
+    } else if (strcmp(op, "gemm_rowmajor") == 0) {
+        // Row-major A, B, C: C = alpha * A * B + beta * C (all row-major)
+        int m = atoi(argv[3]);
+        int n = atoi(argv[4]);
+        int k = atoi(argv[5]);
+        float alpha = atof(argv[6]);
+        float beta  = atof(argv[7]);
+        float* dA = read_device_vec(argv[8], m * n);
+        float* dB = read_device_vec(argv[9], n * k);
+        float* dC = read_device_vec(argv[10], m * k);
+        k_gemm_rowmajor<<<1, THREADS>>>(m, n, k, alpha, dA, dB, beta, dC);
+        cudaDeviceSynchronize();
+        print_device_vec(dC, m * k);
+
+    } else if (strcmp(op, "gemm_ex") == 0) {
+        // Mixed layout: row-major A and C, col-major B
+        int m = atoi(argv[3]);
+        int n = atoi(argv[4]);
+        int k = atoi(argv[5]);
+        float alpha = atof(argv[6]);
+        float beta  = atof(argv[7]);
+        float* dA = read_device_vec(argv[8], m * n);
+        float* dB = read_device_vec(argv[9], n * k);
+        float* dC = read_device_vec(argv[10], m * k);
+        k_gemm_ex_mixed<<<1, THREADS>>>(m, n, k, alpha, dA, dB, beta, dC);
         cudaDeviceSynchronize();
         print_device_vec(dC, m * k);
 
