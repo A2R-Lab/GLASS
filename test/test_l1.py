@@ -245,6 +245,37 @@ def test_elementwise_min(bins, n, version):
     assert np.allclose(result, np.minimum(a, b), rtol=RTOL, atol=ATOL)
 
 
+# ─── dot_strided ──────────────────────────────────────────────────────────────
+
+DOT_STRIDED_SHAPES = [
+    (4, 4, 1),   # x_size=16, y_size=4
+    (6, 1, 1),   # x_size=6,  y_size=6
+    (6, 6, 1),   # x_size=36, y_size=6
+    (6, 6, 6),   # x_size=36, y_size=36
+]
+
+
+def _make_test_vec(size, case):
+    if case == "positive": return RNG.random(size).astype(np.float32)
+    if case == "negative": return -RNG.random(size).astype(np.float32)
+    if case == "mixed":    return (RNG.random(size) - 0.5).astype(np.float32)
+    if case == "zero":     return np.zeros(size, dtype=np.float32)
+    if case == "tiny":     return (RNG.random(size) * 1e-6).astype(np.float32)
+    raise ValueError(case)
+
+
+@pytest.mark.parametrize("n,sx,sy", DOT_STRIDED_SHAPES)
+@pytest.mark.parametrize("case", ["positive", "negative", "mixed", "zero", "tiny"])
+def test_dot_strided(bins, n, sx, sy, case):
+    x = _make_test_vec(n * sx, case)
+    y = _make_test_vec(n * sy, case)
+    # argv[3] is the required <n> positional arg in test_l1; unused by dot_strided dispatch
+    result = run_op(bins["l1"], f"dot_strided_{n}_{sx}_{sy}", "simple",
+                    args=[0], inputs=[x, y])
+    expected = sum(float(x[i * sx]) * float(y[i * sy]) for i in range(n))
+    assert np.isclose(float(result[0]), expected, rtol=RTOL, atol=ATOL)
+
+
 # ─── prefix sum ───────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("n", [8, 32, 64])

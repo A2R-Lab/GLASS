@@ -91,3 +91,40 @@ constexpr std::size_t gemm_smem_size() { return 0; }
 
 template <typename T, uint32_t M, uint32_t N, uint32_t K>
 constexpr uint32_t gemm_threads() { return 256; }
+
+// row_strided_gemm: packs strided A and B into compact shared scratch, then
+// delegates to the standard nvidia::gemm<T,M,N,K> (requires DEFINE_NVIDIA_GEMM(M,N,K)).
+//
+// smem layout: [A_compact: M*N*sizeof(T)] [B_compact: N*K*sizeof(T)] [cuBLASDx smem]
+// Total bytes: row_strided_gemm_smem_size<T,M,N,K>()
+//
+// A_RS = leading dimension of column-major A: A[i][j] = A[i + j*A_RS].
+// B_RS = leading dimension of column-major B: B[j][l] = B[j + l*B_RS].
+// C is written as standard column-major with LDC=M (no strided output support).
+// When A_RS==M and B_RS==N this degenerates to standard gemm with one pack pass.
+template <typename T, uint32_t M, uint32_t N, uint32_t K,
+          uint32_t A_RS = M, uint32_t B_RS = N>
+__device__ void row_strided_gemm(T alpha, T* A, T* B, T beta, T* C, char* smem)
+{
+    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    T* A_compact = reinterpret_cast<T*>(smem);
+    T* B_compact = reinterpret_cast<T*>(smem + M * N * sizeof(T));
+    char* cublas_smem = smem + (M * N + N * K) * sizeof(T);
+    for (uint32_t i = rank; i < M * N; i += size) {
+        uint32_t r = i % M, c = i / M;
+        A_compact[r + c*M] = A[r + c*A_RS];
+    }
+    for (uint32_t i = rank; i < N * K; i += size) {
+        uint32_t r = i % N, c = i / N;
+        B_compact[r + c*N] = B[r + c*B_RS];
+    }
+    __syncthreads();
+    gemm<T, M, N, K>(alpha, A_compact, B_compact, beta, C, cublas_smem);
+}
+
+template <typename T, uint32_t M, uint32_t N, uint32_t K>
+constexpr std::size_t row_strided_gemm_smem_size()
+{
+    return (M * N + N * K) * sizeof(T) + gemm_smem_size<T, M, N, K>();
+}

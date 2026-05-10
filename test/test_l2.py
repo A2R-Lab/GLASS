@@ -80,6 +80,30 @@ def test_gemv_ex(bins, m, n):
     assert np.allclose(result, expected, rtol=RTOL, atol=ATOL)
 
 
+# ─── gemv_strided ─────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("alpha,beta", [(1.5, 0.3), (1.0, 0.0)])
+@pytest.mark.parametrize("op,m,n,rs", [
+    ("gemv_strided_6x6_6", 6, 6, 6),
+    ("gemv_strided_6x6_8", 6, 6, 8),
+    ("gemv_strided_4x4_4", 4, 4, 4),
+    ("gemv_strided_4x4_6", 4, 4, 6),
+])
+def test_gemv_strided(bins, op, m, n, rs, alpha, beta):
+    # A stored column-major with LDA=rs: A[i][j] = A_flat[i + j*rs]
+    # Allocate rs×n storage; only first m rows are used by the kernel.
+    A_storage = np.zeros((rs, n), dtype=np.float32)
+    A_storage[:m, :] = RNG.random((m, n)).astype(np.float32)
+    x = RNG.random(n).astype(np.float32)
+    y = RNG.random(m).astype(np.float32)
+    y0 = y.copy()
+    A_flat = np.asfortranarray(A_storage).ravel(order='F')
+    result = run_op(bins["l2"], op, "simple",
+                    args=[m, n, alpha, beta], inputs=[A_flat, x, y])
+    expected = (alpha * A_storage[:m, :] @ x + beta * y0).astype(np.float32)
+    assert np.allclose(result, expected, rtol=RTOL, atol=ATOL)
+
+
 # ─── ger ──────────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("m,n", [(4, 6), (8, 8), (16, 12)])

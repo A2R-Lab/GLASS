@@ -60,6 +60,64 @@ __device__ void gemm_impl(uint32_t rank, uint32_t size,
     }
 }
 
+// compile-time impl: M, N, K as template params so el%M and el/M use
+// cheap compiler-generated magic-number multiply instead of MUFU.RCP
+template <typename T, uint32_t M, uint32_t N, uint32_t K, bool TRANSPOSE_B,
+          bool ROW_MAJOR_A, bool ROW_MAJOR_B, bool ROW_MAJOR_C>
+__device__ void gemm_impl_ct(uint32_t rank, uint32_t size,
+                              T alpha, T *A, T *B, T beta, T *C)
+{
+    constexpr uint32_t C_cols = TRANSPOSE_B ? N : K;
+    constexpr uint32_t maxel  = M * C_cols;
+    for (uint32_t el = rank; el < maxel; el += size) {
+        uint32_t row = el % M, col = el / M;
+        T res = static_cast<T>(0);
+        if (TRANSPOSE_B) {
+            for (uint32_t ind = 0; ind < N; ind++) {
+                T a = ROW_MAJOR_A ? A[row*N + ind] : A[ind*M + row];
+                T b = ROW_MAJOR_B ? B[col*N + ind] : B[ind*N + col];
+                res += a * b;
+            }
+        } else {
+            for (uint32_t ind = 0; ind < N; ind++) {
+                T a = ROW_MAJOR_A ? A[row*N + ind] : A[ind*M + row];
+                T b = ROW_MAJOR_B ? B[ind*K + col] : B[col*N + ind];
+                res += a * b;
+            }
+        }
+        uint32_t cidx = ROW_MAJOR_C ? (row*C_cols + col) : (col*M + row);
+        C[cidx] = alpha*res + beta*C[cidx];
+    }
+}
+
+template <typename T, uint32_t M, uint32_t N, uint32_t K, bool TRANSPOSE_B,
+          bool ROW_MAJOR_A, bool ROW_MAJOR_B, bool ROW_MAJOR_C>
+__device__ void gemm_impl_ct(uint32_t rank, uint32_t size,
+                              T alpha, T *A, T *B, T *C)
+{
+    constexpr uint32_t C_cols = TRANSPOSE_B ? N : K;
+    constexpr uint32_t maxel  = M * C_cols;
+    for (uint32_t el = rank; el < maxel; el += size) {
+        uint32_t row = el % M, col = el / M;
+        T res = static_cast<T>(0);
+        if (TRANSPOSE_B) {
+            for (uint32_t ind = 0; ind < N; ind++) {
+                T a = ROW_MAJOR_A ? A[row*N + ind] : A[ind*M + row];
+                T b = ROW_MAJOR_B ? B[col*N + ind] : B[ind*N + col];
+                res += a * b;
+            }
+        } else {
+            for (uint32_t ind = 0; ind < N; ind++) {
+                T a = ROW_MAJOR_A ? A[row*N + ind] : A[ind*M + row];
+                T b = ROW_MAJOR_B ? B[ind*K + col] : B[col*N + ind];
+                res += a * b;
+            }
+        }
+        uint32_t cidx = ROW_MAJOR_C ? (row*C_cols + col) : (col*M + row);
+        C[cidx] = alpha*res;
+    }
+}
+
 // ─── runtime variants ─────────────────────────────────────────────────────────
 
 template <typename T, bool TRANSPOSE_B = false, bool ROW_MAJOR = false>
@@ -108,7 +166,7 @@ __device__ void gemm(T alpha, T *A, T *B, T beta, T *C)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    gemm_impl<T, TRANSPOSE_B, ROW_MAJOR, ROW_MAJOR, ROW_MAJOR>(rank, size, M, N, K, alpha, A, B, beta, C);
+    gemm_impl_ct<T, M, N, K, TRANSPOSE_B, ROW_MAJOR, ROW_MAJOR, ROW_MAJOR>(rank, size, alpha, A, B, beta, C);
 }
 
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
@@ -117,7 +175,7 @@ __device__ void gemm(T alpha, T *A, T *B, T *C)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    gemm_impl<T, TRANSPOSE_B, ROW_MAJOR, ROW_MAJOR, ROW_MAJOR>(rank, size, M, N, K, alpha, A, B, C);
+    gemm_impl_ct<T, M, N, K, TRANSPOSE_B, ROW_MAJOR, ROW_MAJOR, ROW_MAJOR>(rank, size, alpha, A, B, C);
 }
 
 // ─── tiled GEMM (shared-memory staging, column-major only) ───────────────────

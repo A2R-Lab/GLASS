@@ -90,3 +90,32 @@ constexpr std::size_t gemv_smem_size() { return 0; }
 
 template <typename T, uint32_t M, uint32_t N>
 constexpr uint32_t gemv_threads() { return 256; }
+
+// row_strided_gemv: packs strided A into compact shared scratch, then delegates
+// to the standard nvidia::gemv<T,M,N> (which requires DEFINE_NVIDIA_GEMV(M,N)).
+//
+// smem layout: [A_compact: M*N*sizeof(T)] [cuBLASDx smem for gemv<T,M,N>]
+// Total bytes: row_strided_gemv_smem_size<T,M,N>()
+//
+// ROW_STRIDE = leading dimension of column-major A: A[i][j] = A[i + j*ROW_STRIDE].
+// When ROW_STRIDE == M this degenerates to standard gemv with no overhead.
+template <typename T, uint32_t M, uint32_t N, uint32_t ROW_STRIDE = M>
+__device__ void row_strided_gemv(T alpha, T* A, T* x, T beta, T* y, char* smem)
+{
+    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    T* A_compact = reinterpret_cast<T*>(smem);
+    char* cublas_smem = smem + M * N * sizeof(T);
+    for (uint32_t i = rank; i < M * N; i += size) {
+        uint32_t r = i % M, c = i / M;
+        A_compact[r + c*M] = A[r + c*ROW_STRIDE];
+    }
+    __syncthreads();
+    gemv<T, M, N>(alpha, A_compact, x, beta, y, cublas_smem);
+}
+
+template <typename T, uint32_t M, uint32_t N>
+constexpr std::size_t row_strided_gemv_smem_size()
+{
+    return M * N * sizeof(T) + gemv_smem_size<T, M, N>();
+}

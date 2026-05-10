@@ -60,6 +60,32 @@ __global__ void k_gemm_ex_mixed(int m, int n, int k, float alpha, float* A, floa
     glass::gemm_ex<float, false, true, false, true>(m, n, k, alpha, A, B, beta, C);
 }
 
+// ─── row_strided_gemm kernels (compile-time M, N, K, A_RS, B_RS) ─────────────
+// A[i][j] = A[i + j*A_RS] (col-major), B[j][l] = B[j + l*B_RS] (col-major), C standard.
+__global__ void k_gemm_strided_6x6x6_6_6(float alpha, float* A, float* B, float beta, float* C) {
+    glass::row_strided_gemm<float, 6, 6, 6, 6, 6>(A, B, C, alpha, beta);
+}
+__global__ void k_gemm_strided_6x6x6_8_8(float alpha, float* A, float* B, float beta, float* C) {
+    glass::row_strided_gemm<float, 6, 6, 6, 8, 8>(A, B, C, alpha, beta);
+}
+__global__ void k_gemm_strided_4x4x4_4_4(float alpha, float* A, float* B, float beta, float* C) {
+    glass::row_strided_gemm<float, 4, 4, 4, 4, 4>(A, B, C, alpha, beta);
+}
+__global__ void k_gemm_strided_4x4x4_6_6(float alpha, float* A, float* B, float beta, float* C) {
+    glass::row_strided_gemm<float, 4, 4, 4, 6, 6>(A, B, C, alpha, beta);
+}
+
+// ─── packed GEMM CT kernels (4×4×{16,32,48,64}) ──────────────────────────────
+#define DEFINE_PACKED_GEMM_KERNEL(M, N, K)                                              \
+    __global__ void k_packed_gemm_##M##x##N##x##K(                                     \
+            float alpha, float* A, float* B, float beta, float* C) {                   \
+        glass::gemm<float, M, N, K>(alpha, A, B, beta, C);                             \
+    }
+DEFINE_PACKED_GEMM_KERNEL(4, 4, 16)
+DEFINE_PACKED_GEMM_KERNEL(4, 4, 32)
+DEFINE_PACKED_GEMM_KERNEL(4, 4, 48)
+DEFINE_PACKED_GEMM_KERNEL(4, 4, 64)
+
 // ─── gemm_tiled kernels ───────────────────────────────────────────────────────
 __global__ void k_gemm_tiled(int m, int n, int k, float alpha, float* A, float* B, float beta, float* C) {
     extern __shared__ float smem[];
@@ -173,6 +199,86 @@ int main(int argc, char** argv) {
         k_gemm_ex_mixed<<<1, THREADS>>>(m, n, k, alpha, dA, dB, beta, dC);
         cudaDeviceSynchronize();
         print_device_vec(dC, m * k);
+
+    } else if (strcmp(op, "gemm_strided_6x6x6_6_6") == 0) {
+        float alpha = atof(argv[3]);
+        float beta  = atof(argv[4]);
+        float* dA = read_device_vec(argv[5], 6 * 6);
+        float* dB = read_device_vec(argv[6], 6 * 6);
+        float* dC = read_device_vec(argv[7], 6 * 6);
+        k_gemm_strided_6x6x6_6_6<<<1, THREADS>>>(alpha, dA, dB, beta, dC);
+        cudaDeviceSynchronize();
+        print_device_vec(dC, 6 * 6);
+
+    } else if (strcmp(op, "gemm_strided_6x6x6_8_8") == 0) {
+        float alpha = atof(argv[3]);
+        float beta  = atof(argv[4]);
+        float* dA = read_device_vec(argv[5], 6 * 8);   // LDA_A=8
+        float* dB = read_device_vec(argv[6], 6 * 8);   // LDA_B=8 (N*B_RS where N=6, B_RS=8)
+        float* dC = read_device_vec(argv[7], 6 * 6);
+        k_gemm_strided_6x6x6_8_8<<<1, THREADS>>>(alpha, dA, dB, beta, dC);
+        cudaDeviceSynchronize();
+        print_device_vec(dC, 6 * 6);
+
+    } else if (strcmp(op, "gemm_strided_4x4x4_4_4") == 0) {
+        float alpha = atof(argv[3]);
+        float beta  = atof(argv[4]);
+        float* dA = read_device_vec(argv[5], 4 * 4);
+        float* dB = read_device_vec(argv[6], 4 * 4);
+        float* dC = read_device_vec(argv[7], 4 * 4);
+        k_gemm_strided_4x4x4_4_4<<<1, THREADS>>>(alpha, dA, dB, beta, dC);
+        cudaDeviceSynchronize();
+        print_device_vec(dC, 4 * 4);
+
+    } else if (strcmp(op, "gemm_strided_4x4x4_6_6") == 0) {
+        float alpha = atof(argv[3]);
+        float beta  = atof(argv[4]);
+        float* dA = read_device_vec(argv[5], 4 * 6);   // LDA_A=6
+        float* dB = read_device_vec(argv[6], 4 * 6);   // LDA_B=6
+        float* dC = read_device_vec(argv[7], 4 * 4);
+        k_gemm_strided_4x4x4_6_6<<<1, THREADS>>>(alpha, dA, dB, beta, dC);
+        cudaDeviceSynchronize();
+        print_device_vec(dC, 4 * 4);
+
+    } else if (strcmp(op, "packed_gemm_4x4x16") == 0) {
+        float alpha = atof(argv[3]);
+        float beta  = atof(argv[4]);
+        float* dA = read_device_vec(argv[5], 4 * 4);
+        float* dB = read_device_vec(argv[6], 4 * 16);
+        float* dC = read_device_vec(argv[7], 4 * 16);
+        k_packed_gemm_4x4x16<<<1, THREADS>>>(alpha, dA, dB, beta, dC);
+        cudaDeviceSynchronize();
+        print_device_vec(dC, 4 * 16);
+
+    } else if (strcmp(op, "packed_gemm_4x4x32") == 0) {
+        float alpha = atof(argv[3]);
+        float beta  = atof(argv[4]);
+        float* dA = read_device_vec(argv[5], 4 * 4);
+        float* dB = read_device_vec(argv[6], 4 * 32);
+        float* dC = read_device_vec(argv[7], 4 * 32);
+        k_packed_gemm_4x4x32<<<1, THREADS>>>(alpha, dA, dB, beta, dC);
+        cudaDeviceSynchronize();
+        print_device_vec(dC, 4 * 32);
+
+    } else if (strcmp(op, "packed_gemm_4x4x48") == 0) {
+        float alpha = atof(argv[3]);
+        float beta  = atof(argv[4]);
+        float* dA = read_device_vec(argv[5], 4 * 4);
+        float* dB = read_device_vec(argv[6], 4 * 48);
+        float* dC = read_device_vec(argv[7], 4 * 48);
+        k_packed_gemm_4x4x48<<<1, THREADS>>>(alpha, dA, dB, beta, dC);
+        cudaDeviceSynchronize();
+        print_device_vec(dC, 4 * 48);
+
+    } else if (strcmp(op, "packed_gemm_4x4x64") == 0) {
+        float alpha = atof(argv[3]);
+        float beta  = atof(argv[4]);
+        float* dA = read_device_vec(argv[5], 4 * 4);
+        float* dB = read_device_vec(argv[6], 4 * 64);
+        float* dC = read_device_vec(argv[7], 4 * 64);
+        k_packed_gemm_4x4x64<<<1, THREADS>>>(alpha, dA, dB, beta, dC);
+        cudaDeviceSynchronize();
+        print_device_vec(dC, 4 * 64);
 
     } else {
         fprintf(stderr, "Unknown op: %s\n", op);

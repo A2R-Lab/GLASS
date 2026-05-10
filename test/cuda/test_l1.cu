@@ -157,6 +157,18 @@ __global__ void k_prefix_sum_incl_simple(int n, float* x, float* out) {
     glass::prefix_sum_inclusive(x, out, n);
 }
 
+// ─── dot_strided kernels (compile-time N, SX, SY; per-thread, no reduction) ──
+// x has N*SX elements, y has N*SY elements; result = sum(x[i*SX]*y[i*SY]).
+// Launch with 1 thread — the operation is intentionally not block-parallel.
+#define DEFINE_DOT_STRIDED_KERNEL(N, SX, SY)                                           \
+    __global__ void k_dot_strided_##N##_##SX##_##SY(float* x, float* y, float* out) { \
+        glass::dot_strided<float, N, SX, SY>(x, y, out);                               \
+    }
+DEFINE_DOT_STRIDED_KERNEL(4, 4, 1)
+DEFINE_DOT_STRIDED_KERNEL(6, 1, 1)
+DEFINE_DOT_STRIDED_KERNEL(6, 6, 1)
+DEFINE_DOT_STRIDED_KERNEL(6, 6, 6)
+
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 static int THREADS = 256;
@@ -399,6 +411,38 @@ int main(int argc, char** argv) {
         else             k_prefix_sum_incl_simple<<<1, THREADS>>>(n, dx, dout);
         cudaDeviceSynchronize();
         print_device_vec(dout, n);
+
+    } else if (strcmp(op, "dot_strided_4_4_1") == 0) {
+        float* dx = read_device_vec(argv[4], 4 * 4);  // x: N*SX = 16 elements
+        float* dy = read_device_vec(argv[5], 4 * 1);  // y: N*SY = 4 elements
+        float* dout = alloc_device_vec(1);
+        k_dot_strided_4_4_1<<<1, 1>>>(dx, dy, dout);
+        cudaDeviceSynchronize();
+        print_device_vec(dout, 1);
+
+    } else if (strcmp(op, "dot_strided_6_1_1") == 0) {
+        float* dx = read_device_vec(argv[4], 6 * 1);  // x: 6 elements
+        float* dy = read_device_vec(argv[5], 6 * 1);  // y: 6 elements
+        float* dout = alloc_device_vec(1);
+        k_dot_strided_6_1_1<<<1, 1>>>(dx, dy, dout);
+        cudaDeviceSynchronize();
+        print_device_vec(dout, 1);
+
+    } else if (strcmp(op, "dot_strided_6_6_1") == 0) {
+        float* dx = read_device_vec(argv[4], 6 * 6);  // x: N*SX = 36 elements
+        float* dy = read_device_vec(argv[5], 6 * 1);  // y: N*SY = 6 elements
+        float* dout = alloc_device_vec(1);
+        k_dot_strided_6_6_1<<<1, 1>>>(dx, dy, dout);
+        cudaDeviceSynchronize();
+        print_device_vec(dout, 1);
+
+    } else if (strcmp(op, "dot_strided_6_6_6") == 0) {
+        float* dx = read_device_vec(argv[4], 6 * 6);  // x: N*SX = 36 elements
+        float* dy = read_device_vec(argv[5], 6 * 6);  // y: N*SY = 36 elements
+        float* dout = alloc_device_vec(1);
+        k_dot_strided_6_6_6<<<1, 1>>>(dx, dy, dout);
+        cudaDeviceSynchronize();
+        print_device_vec(dout, 1);
 
     } else {
         fprintf(stderr, "Unknown op: %s\n", op);

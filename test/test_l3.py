@@ -121,6 +121,65 @@ def test_gemm_tiled(bins, m, n, k):
     assert np.allclose(mat, expected, rtol=RTOL, atol=ATOL)
 
 
+# ─── gemm_strided ─────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("alpha,beta", [(1.5, 0.3), (1.0, 0.0)])
+@pytest.mark.parametrize("op,m,n,k,a_rs,b_rs", [
+    ("gemm_strided_6x6x6_6_6", 6, 6, 6, 6, 6),
+    ("gemm_strided_6x6x6_8_8", 6, 6, 6, 8, 8),
+    ("gemm_strided_4x4x4_4_4", 4, 4, 4, 4, 4),
+    ("gemm_strided_4x4x4_6_6", 4, 4, 4, 6, 6),
+])
+def test_gemm_strided(bins, op, m, n, k, a_rs, b_rs, alpha, beta):
+    # A[i][j] = A_flat[i + j*a_rs]; B[j][l] = B_flat[j + l*b_rs]; C standard col-major.
+    A_storage = np.zeros((a_rs, n), dtype=np.float32)
+    A_storage[:m, :] = RNG.random((m, n)).astype(np.float32)
+    B_storage = np.zeros((b_rs, k), dtype=np.float32)
+    B_storage[:n, :] = RNG.random((n, k)).astype(np.float32)
+    C = RNG.random((m, k)).astype(np.float32)
+    C0 = C.copy()
+    A_flat = np.asfortranarray(A_storage).ravel(order='F')
+    B_flat = np.asfortranarray(B_storage).ravel(order='F')
+    C_flat = np.asfortranarray(C).ravel(order='F')
+    # gemm_strided dispatch uses args=[alpha, beta] directly (no m/n/k positional args)
+    result = run_op(bins["l3"], op, "simple",
+                    args=[alpha, beta], inputs=[A_flat, B_flat, C_flat])
+    expected = (alpha * A_storage[:m, :] @ B_storage[:n, :] + beta * C0).astype(np.float32)
+    mat = result.reshape(m, k, order='F')
+    assert np.allclose(mat, expected, rtol=RTOL, atol=ATOL)
+
+
+# ─── packed_gemm ──────────────────────────────────────────────────────────────
+
+def _make_packed_vec(size, case):
+    if case == "positive": return RNG.random(size).astype(np.float32)
+    if case == "negative": return -RNG.random(size).astype(np.float32)
+    if case == "mixed":    return (RNG.random(size) - 0.5).astype(np.float32)
+    if case == "zero":     return np.zeros(size, dtype=np.float32)
+    if case == "tiny":     return (RNG.random(size) * 1e-6).astype(np.float32)
+    raise ValueError(case)
+
+
+@pytest.mark.parametrize("case", ["positive", "negative", "mixed", "zero", "tiny"])
+@pytest.mark.parametrize("k", [16, 32, 48, 64])
+def test_packed_gemm(bins, k, case):
+    # glass::gemm<float,4,4,K>: C(4×K) = alpha * A(4×4) * B(4×K) + beta * C(4×K), col-major
+    m, n = 4, 4
+    alpha, beta = 1.5, 0.3
+    A = _make_packed_vec(m * n, case).reshape(m, n)
+    B = _make_packed_vec(n * k, case).reshape(n, k)
+    C = _make_packed_vec(m * k, case).reshape(m, k)
+    C0 = C.copy()
+    result = run_op(bins["l3"], f"packed_gemm_4x4x{k}", "simple",
+                    args=[alpha, beta],
+                    inputs=[np.asfortranarray(A).ravel(order='F'),
+                            np.asfortranarray(B).ravel(order='F'),
+                            np.asfortranarray(C).ravel(order='F')])
+    expected = (alpha * A @ B + beta * C0).astype(np.float32)
+    mat = result.reshape(m, k, order='F')
+    assert np.allclose(mat, expected, rtol=RTOL, atol=ATOL)
+
+
 # ─── inv ──────────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("n", [3, 4, 6])

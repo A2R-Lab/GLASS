@@ -39,7 +39,7 @@ static double elapsed_us(struct timespec a, struct timespec b) {
 // (global): reads A, B, C from global memory each call
 __global__ void k_glass_gemm_global(float* A, float* B, float* C, int m, int n, int k, int iters) {
     for (int rep = 0; rep < iters; rep++) {
-        glass::gemm<float>(m, n, k, 1.f, A, B, 0.f, C);
+        glass::gemm<float>(m, n, k, 1.f, A, B, 1.f, C);
     }
 }
 
@@ -54,7 +54,7 @@ __global__ void k_glass_gemm_shared(float* A, float* B, float* C, int m, int n, 
     for (int i = threadIdx.x; i < m * k; i += blockDim.x) s_C[i] = C[i];
     __syncthreads();
     for (int rep = 0; rep < iters; rep++) {
-        glass::gemm<float>(m, n, k, 1.f, s_A, s_B, 0.f, s_C);
+        glass::gemm<float>(m, n, k, 1.f, s_A, s_B, 1.f, s_C);
     }
     if (threadIdx.x == 0) C[0] = s_C[0]; // prevent DCE
 }
@@ -65,7 +65,7 @@ __global__ void k_glass_gemm_tiled(float* A, float* B, float* C, int m, int n, i
     float* s_A = smem;
     float* s_B = smem + m * TILE;
     for (int rep = 0; rep < iters; rep++) {
-        glass::gemm_tiled<float, TILE>(m, n, k, 1.f, A, B, 0.f, C, s_A, s_B);
+        glass::gemm_tiled<float, TILE>(m, n, k, 1.f, A, B, 1.f, C, s_A, s_B);
     }
 }
 
@@ -76,7 +76,7 @@ __global__ void k_glass_gemm_tiled(float* A, float* B, float* C, int m, int n, i
         static const int smem_size = (M*N + N*K + M*K) * sizeof(float);                     \
         __global__ void kernel_global(float* A, float* B, float* C, int iters) {             \
             for (int rep = 0; rep < iters; rep++)                                             \
-                glass::gemm<float, M, N, K>(1.f, A, B, 0.f, C);                             \
+                glass::gemm<float, M, N, K>(1.f, A, B, 1.f, C);                             \
         }                                                                                     \
         __global__ void kernel_smem(float* A, float* B, float* C, int iters) {               \
             extern __shared__ float smem[];                                                   \
@@ -88,7 +88,7 @@ __global__ void k_glass_gemm_tiled(float* A, float* B, float* C, int m, int n, i
             for (int i = threadIdx.x; i < M*K; i += blockDim.x) s_C[i] = C[i];             \
             __syncthreads();                                                                  \
             for (int rep = 0; rep < iters; rep++)                                             \
-                glass::gemm<float, M, N, K>(1.f, s_A, s_B, 0.f, s_C);                      \
+                glass::gemm<float, M, N, K>(1.f, s_A, s_B, 1.f, s_C);                      \
             if (threadIdx.x == 0) C[0] = s_C[0];                                            \
         }                                                                                     \
     }
@@ -100,14 +100,21 @@ DEFINE_GLASS_GEMM_CT(12, 12, 12)
 DEFINE_GLASS_GEMM_CT(14, 14, 14)
 DEFINE_GLASS_GEMM_CT(24, 24, 24)
 DEFINE_GLASS_GEMM_CT(64, 64, 64)
+// packed: A(4×4) * B(4×K) = C(4×K)
+DEFINE_GLASS_GEMM_CT(4,  4,  16)
+DEFINE_GLASS_GEMM_CT(4,  4,  32)
+DEFINE_GLASS_GEMM_CT(4,  4,  48)
+DEFINE_GLASS_GEMM_CT(4,  4,  64)
 
 #define RUN_GLASS_GEMM_CT(M, N, K, dA, dB, dC, iters, t0, t1)                               \
+    cudaMemset(dC, 0, (size_t)M*K*sizeof(float));                                             \
     clock_gettime(CLOCK_MONOTONIC, &(t0));                                                    \
     glass_gemm_ct_##M##x##N##x##K::kernel_global<<<1, THREADS>>>(dA, dB, dC, iters);        \
     cudaDeviceSynchronize();                                                                  \
     clock_gettime(CLOCK_MONOTONIC, &(t1));                                                    \
     printf("glass::gemm<CT> (global) m=%2d n=%2d k=%2d  %.3f us/op\n",                      \
            M, N, K, elapsed_us(t0, t1) / iters);                                              \
+    cudaMemset(dC, 0, (size_t)M*K*sizeof(float));                                             \
     clock_gettime(CLOCK_MONOTONIC, &(t0));                                                    \
     glass_gemm_ct_##M##x##N##x##K::kernel_smem<<<1, THREADS,                                 \
         glass_gemm_ct_##M##x##N##x##K::smem_size>>>(dA, dB, dC, iters);                     \
@@ -126,7 +133,7 @@ DEFINE_GLASS_GEMM_CT(64, 64, 64)
 #define DEFINE_CUBLASDX_GEMM(M, N, K)                                                       \
     namespace cublasdx_gemm_##M##x##N##x##K {                                               \
         using GEMM = decltype(                                                               \
-            cublasdx::Size<M, K, N>()                                                        \
+            cublasdx::Size<M, N, K>()                                                        \
             + cublasdx::Precision<float>()                                                   \
             + cublasdx::Type<cublasdx::type::real>()                                         \
             + cublasdx::Function<cublasdx::function::MM>()                                   \
@@ -149,7 +156,7 @@ DEFINE_GLASS_GEMM_CT(64, 64, 64)
                 cublasdx::copy<GEMM, align::c>(                                              \
                     cublasdx::make_tensor(C, GEMM::get_layout_gmem_c()), c_smem);           \
                 cublasdx::copy_wait();                                                       \
-                GEMM().execute(1.f, a_smem, b_smem, 0.f, c_smem);                           \
+                GEMM().execute(1.f, a_smem, b_smem, 1.f, c_smem);                           \
                 cublasdx::copy<GEMM, align::c>(                                              \
                     c_smem, cublasdx::make_tensor(C, GEMM::get_layout_gmem_c()));           \
                 __syncthreads();                                                             \
@@ -172,7 +179,7 @@ DEFINE_GLASS_GEMM_CT(64, 64, 64)
                 cublasdx::make_tensor(C, GEMM::get_layout_gmem_c()), c_smem);               \
             cublasdx::copy_wait();                                                           \
             for (int rep = 0; rep < iters; rep++) {                                          \
-                GEMM().execute(1.f, a_smem, b_smem, 0.f, c_smem);                           \
+                GEMM().execute(1.f, a_smem, b_smem, 1.f, c_smem);                           \
                 __syncthreads();                                                             \
             }                                                                                \
             cublasdx::copy<GEMM, align::c>(                                                  \
@@ -188,8 +195,14 @@ DEFINE_CUBLASDX_GEMM(12, 12, 12)
 DEFINE_CUBLASDX_GEMM(14, 14, 14)
 DEFINE_CUBLASDX_GEMM(24, 24, 24)
 DEFINE_CUBLASDX_GEMM(64, 64, 64)
+// packed: A(4×4) * B(4×K) = C(4×K)
+DEFINE_CUBLASDX_GEMM(4,  4,  16)
+DEFINE_CUBLASDX_GEMM(4,  4,  32)
+DEFINE_CUBLASDX_GEMM(4,  4,  48)
+DEFINE_CUBLASDX_GEMM(4,  4,  64)
 
 #define RUN_CUBLASDX_GEMM(M, N, K, dA, dB, dC, iters, t0, t1)                        \
+    cudaMemset(dC, 0, (size_t)M*K*sizeof(float));                                     \
     clock_gettime(CLOCK_MONOTONIC, &(t0));                                             \
     cublasdx_gemm_##M##x##N##x##K::kernel_global<<<1,                                 \
         cublasdx_gemm_##M##x##N##x##K::GEMM::block_dim,                               \
@@ -198,6 +211,7 @@ DEFINE_CUBLASDX_GEMM(64, 64, 64)
     clock_gettime(CLOCK_MONOTONIC, &(t1));                                             \
     printf("cuBLASDx gemm (global)       m=%2d n=%2d k=%2d  %.3f us/op\n",           \
            M, N, K, elapsed_us(t0, t1) / iters);                                      \
+    cudaMemset(dC, 0, (size_t)M*K*sizeof(float));                                     \
     clock_gettime(CLOCK_MONOTONIC, &(t0));                                             \
     cublasdx_gemm_##M##x##N##x##K::kernel_smem<<<1,                                   \
         cublasdx_gemm_##M##x##N##x##K::GEMM::block_dim,                               \
@@ -218,8 +232,10 @@ static void bench_size(int m, int n, int k, int iters) {
     cudaMalloc(&dC, m * k * sizeof(float));
 
     struct timespec t0, t1;
+    size_t c_bytes = (size_t)m * k * sizeof(float);
 
     // glass plain (global)
+    cudaMemset(dC, 0, c_bytes);
     clock_gettime(CLOCK_MONOTONIC, &t0);
     k_glass_gemm_global<<<1, THREADS>>>(dA, dB, dC, m, n, k, iters);
     cudaDeviceSynchronize();
@@ -229,6 +245,7 @@ static void bench_size(int m, int n, int k, int iters) {
 
     // glass plain (shared)
     int glass_smem = (m * n + n * k + m * k) * sizeof(float);
+    cudaMemset(dC, 0, c_bytes);
     clock_gettime(CLOCK_MONOTONIC, &t0);
     k_glass_gemm_shared<<<1, THREADS, glass_smem>>>(dA, dB, dC, m, n, k, iters);
     cudaDeviceSynchronize();
@@ -239,6 +256,7 @@ static void bench_size(int m, int n, int k, int iters) {
     // glass tiled (only when m*k <= THREADS; already uses shared scratch)
     if (m * k <= THREADS) {
         int tiled_smem = (m * TILE + TILE * k) * sizeof(float);
+        cudaMemset(dC, 0, c_bytes);
         clock_gettime(CLOCK_MONOTONIC, &t0);
         k_glass_gemm_tiled<<<1, THREADS, tiled_smem>>>(dA, dB, dC, m, n, k, iters);
         cudaDeviceSynchronize();
@@ -257,6 +275,10 @@ static void bench_size(int m, int n, int k, int iters) {
     MAYBE_GLASS_GEMM_CT(14, 14, 14)
     MAYBE_GLASS_GEMM_CT(24, 24, 24)
     MAYBE_GLASS_GEMM_CT(64, 64, 64)
+    MAYBE_GLASS_GEMM_CT(4,  4,  16)
+    MAYBE_GLASS_GEMM_CT(4,  4,  32)
+    MAYBE_GLASS_GEMM_CT(4,  4,  48)
+    MAYBE_GLASS_GEMM_CT(4,  4,  64)
     #undef MAYBE_GLASS_GEMM_CT
 
 #ifdef GLASS_BENCH_CUBLASDX
@@ -269,6 +291,10 @@ static void bench_size(int m, int n, int k, int iters) {
     MAYBE_CUBLASDX_GEMM(14, 14, 14)
     MAYBE_CUBLASDX_GEMM(24, 24, 24)
     MAYBE_CUBLASDX_GEMM(64, 64, 64)
+    MAYBE_CUBLASDX_GEMM(4,  4,  16)
+    MAYBE_CUBLASDX_GEMM(4,  4,  32)
+    MAYBE_CUBLASDX_GEMM(4,  4,  48)
+    MAYBE_CUBLASDX_GEMM(4,  4,  64)
     #undef MAYBE_CUBLASDX_GEMM
 #endif
 
@@ -286,6 +312,9 @@ int main(int argc, char** argv) {
     } else {
         int sizes[] = {4, 6, 8, 12, 14, 24, 64};
         for (int s : sizes) bench_size(s, s, s, iters);
+        // packed rectangular sweep: A(4×4) * B(4×K) = C(4×K)
+        int packed_k[] = {16, 32, 48, 64};
+        for (int pk : packed_k) bench_size(4, 4, pk, iters);
     }
 
     return 0;

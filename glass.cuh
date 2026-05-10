@@ -10,6 +10,7 @@ namespace glass {
     #include "./src/base/L1/axpy.cuh"
     #include "./src/base/L1/copy.cuh"
     #include "./src/base/L1/dot.cuh"
+    #include "./src/base/L1/dot_strided.cuh"
     #include "./src/base/L1/ident.cuh"
     #include "./src/base/L1/scal.cuh"
     #include "./src/base/L1/swap.cuh"
@@ -26,9 +27,11 @@ namespace glass {
     /*      L2      */
     #include "./src/base/L2/gemv.cuh"
     #include "./src/base/L2/ger.cuh"
+    #include "./src/base/L2/gemv_strided.cuh"
 
     /*      L3      */
     #include "./src/base/L3/gemm.cuh"
+    #include "./src/base/L3/gemm_strided.cuh"
     #include "./src/base/L3/inv.cuh"
     #include "./src/base/L3/chol_InPlace.cuh"
     #include "./src/base/L3/trsm.cuh"

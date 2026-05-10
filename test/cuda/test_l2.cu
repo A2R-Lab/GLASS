@@ -36,6 +36,21 @@ __global__ void k_gemv_ex_rowA(int m, int n, float alpha, float* A, float* x, fl
     glass::gemv_ex<float, false, true>(m, n, alpha, A, x, beta, y);
 }
 
+// ─── row_strided_gemv kernels (compile-time M, N, ROW_STRIDE) ────────────────
+// A has M*ROW_STRIDE elements; A[i][j] = A[i + j*ROW_STRIDE] (col-major, LDA=ROW_STRIDE)
+__global__ void k_gemv_strided_6x6_6(float alpha, float* A, float* x, float beta, float* y) {
+    glass::row_strided_gemv<float, 6, 6, 6>(A, x, y, alpha, beta);
+}
+__global__ void k_gemv_strided_6x6_8(float alpha, float* A, float* x, float beta, float* y) {
+    glass::row_strided_gemv<float, 6, 6, 8>(A, x, y, alpha, beta);
+}
+__global__ void k_gemv_strided_4x4_4(float alpha, float* A, float* x, float beta, float* y) {
+    glass::row_strided_gemv<float, 4, 4, 4>(A, x, y, alpha, beta);
+}
+__global__ void k_gemv_strided_4x4_6(float alpha, float* A, float* x, float beta, float* y) {
+    glass::row_strided_gemv<float, 4, 4, 6>(A, x, y, alpha, beta);
+}
+
 // ─── ger kernels ──────────────────────────────────────────────────────────────
 __global__ void k_ger_cg(int m, int n, float alpha, float* x, float* y, float* A) {
     glass::cgrps::ger(m, n, alpha, x, y, A);
@@ -109,6 +124,46 @@ int main(int argc, char** argv) {
         k_gemv_ex_rowA<<<1, THREADS>>>(m, n, alpha, dA, dx, beta, dy);
         cudaDeviceSynchronize();
         print_device_vec(dy, m);
+
+    } else if (strcmp(op, "gemv_strided_6x6_6") == 0) {
+        float alpha = atof(argv[5]);
+        float beta  = atof(argv[6]);
+        float* dA = read_device_vec(argv[7], 6 * 6);
+        float* dx = read_device_vec(argv[8], 6);
+        float* dy = read_device_vec(argv[9], 6);
+        k_gemv_strided_6x6_6<<<1, THREADS>>>(alpha, dA, dx, beta, dy);
+        cudaDeviceSynchronize();
+        print_device_vec(dy, 6);
+
+    } else if (strcmp(op, "gemv_strided_6x6_8") == 0) {
+        float alpha = atof(argv[5]);
+        float beta  = atof(argv[6]);
+        float* dA = read_device_vec(argv[7], 6 * 8);  // LDA=8
+        float* dx = read_device_vec(argv[8], 6);
+        float* dy = read_device_vec(argv[9], 6);
+        k_gemv_strided_6x6_8<<<1, THREADS>>>(alpha, dA, dx, beta, dy);
+        cudaDeviceSynchronize();
+        print_device_vec(dy, 6);
+
+    } else if (strcmp(op, "gemv_strided_4x4_4") == 0) {
+        float alpha = atof(argv[5]);
+        float beta  = atof(argv[6]);
+        float* dA = read_device_vec(argv[7], 4 * 4);
+        float* dx = read_device_vec(argv[8], 4);
+        float* dy = read_device_vec(argv[9], 4);
+        k_gemv_strided_4x4_4<<<1, THREADS>>>(alpha, dA, dx, beta, dy);
+        cudaDeviceSynchronize();
+        print_device_vec(dy, 4);
+
+    } else if (strcmp(op, "gemv_strided_4x4_6") == 0) {
+        float alpha = atof(argv[5]);
+        float beta  = atof(argv[6]);
+        float* dA = read_device_vec(argv[7], 4 * 6);  // LDA=6
+        float* dx = read_device_vec(argv[8], 4);
+        float* dy = read_device_vec(argv[9], 4);
+        k_gemv_strided_4x4_6<<<1, THREADS>>>(alpha, dA, dx, beta, dy);
+        cudaDeviceSynchronize();
+        print_device_vec(dy, 4);
 
     } else {
         fprintf(stderr, "Unknown op: %s\n", op);
