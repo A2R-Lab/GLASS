@@ -1,22 +1,54 @@
 # GLASS
 
-**GPU Linear Algebra for Single-block Systems** — a header-only CUDA library of BLAS-like device functions designed for use within a single thread block.
+**GPU Linear Algebra for Single-block Systems** — a header-only CUDA library of BLAS- and LAPACK-like device functions designed for use within a single thread block.
 
 ## Overview
 
 GLASS functions are `__device__` helpers that operate on data in shared or device memory. Every function assumes it runs within **one CUDA block** — the caller is responsible for launching one block per independent data item. This design enables composable GPU kernels for applications like model-predictive control and rigid-body dynamics.
 
+GLASS started as a small set of hand-rolled SIMT subroutines (`glass::`, `glass::cgrps::`) tuned for very small matrices where the launch and dispatch overhead of a vendor library would dominate the actual work. It has since grown into a **unified single-block linear-algebra surface** that wraps NVIDIA's state-of-the-art device-side libraries — CUB (L1 reductions), cuBLASDx (L2/L3 GEMV/GEMM, including batched), and cuSOLVERDx (LAPACK: Cholesky, LU, QR, triangular and least-squares solves) — under the same `__device__` calling convention. The intent is to give callers one consistent API across the full block-size compute scale: pure-SIMT for tiny matrices where the vendor path can't beat unrolled SIMT, and tensor-core-tuned vendor kernels for everything large enough to benefit from them.
+
 Three namespaces are provided:
 
-| Namespace | Thread source | Header |
-|-----------|--------------|--------|
-| `glass::` | `threadIdx.{x,y,z}` / `blockDim.*` — no cgrps dep | `glass.cuh` |
-| `glass::cgrps::` | `g.thread_rank()` / `g.size()` — cooperative groups | `glass-cgrps.cuh` |
-| `glass::nvidia::` | CUB (L1) or cuBLASDx (L2/L3) — compile-time sizes only | `glass-nvidia.cuh` |
+| Namespace | Backend | Header |
+|-----------|---------|--------|
+| `glass::` | Hand-rolled SIMT, `threadIdx.{x,y,z}` / `blockDim.*` — no cgrps dep | `glass.cuh` |
+| `glass::cgrps::` | Hand-rolled SIMT, `g.thread_rank()` / `g.size()` — cooperative groups | `glass-cgrps.cuh` |
+| `glass::nvidia::` | CUB (L1) + cuBLASDx (L2/L3, batched) + cuSOLVERDx (LAPACK) — compile-time sizes only | `glass-nvidia.cuh` |
 
-Both `glass::` and `glass::cgrps::` offer **runtime** (size as function arg) and **compile-time** (size as template arg) overloads for every function.
+Both `glass::` and `glass::cgrps::` offer **runtime** (size as function arg) and **compile-time** (size as template arg) overloads for every function. The `glass::nvidia::` wrappers preserve the same one-block, `__device__` calling convention so a single kernel can mix hand-rolled and vendor-backed primitives without leaving the block — and switch between them by changing the namespace prefix when profiling shows one is faster than the other at a given size.
 
 Reduction operations additionally offer `glass::low_memory::` (no scratch, thread 0 accumulates) and `glass::high_speed::` (warp-shuffle + shared-memory inter-warp reduction) sub-namespaces.
+
+---
+
+## Choosing the right backend
+
+Three questions decide which API to call:
+
+1. **Are sizes known at compile time?**
+2. **Is matrix size large enough that vendor-tuned tensor-core kernels matter?**
+3. **Can you launch with the thread count the backend wants?**
+
+| Scenario | Use | Reason |
+|----------|-----|--------|
+| Sizes only known at runtime | `glass::gemm(m, n, k, ...)` | Pure-SIMT, accepts dynamic args |
+| Compile-time sizes, small matrices (≤ ~8×8), simple kernel | `glass::gemm<float, M, N, K>(...)` | Compiler unrolls inner loops; ~1 µs/op overhead is hard to beat for tiny sizes |
+| Compile-time sizes, larger matrices, tensor-core hardware | `glass::nvidia::gemm<float, M, N, K>(...)` | cuBLASDx generates SM-specific tensor-core code |
+| Compile-time sizes inside an existing kernel that uses a different thread count (e.g. GRiD's 352-thread launches) | `glass::nvidia::gemm<float, M, N, K, TC>(...)` with `DEFINE_NVIDIA_GEMM_BLOCKDIM(M,N,K,TC)` | Pins cuBLASDx's `BlockDim<TC,1,1>`; lets you launch with any thread count ≥ TC ([P0-1 in the proposal](VARIABLE_BLOCKDIM_PROPOSAL.md)) |
+| Need a transposed B (or row-major A/B/C) in the NVIDIA path | `glass::nvidia::gemm<...,LA,LB,LC>` with `DEFINE_NVIDIA_GEMM_BLOCKDIM_LAYOUT(...)` or `_TRANSB` alias | cuBLASDx Arrangement; pure-SIMT fallback no longer needed |
+| Linear solve (`Mx = b` for SPD `M`) | `glass::nvidia::posv<float, N, NRHS>(...)` | cuSOLVERDx fused factor + solve; faster than chol+trsm at N ≥ 8 |
+| Cholesky alone (factor only, custom solve) | `glass::nvidia::chol_inplace<float, N>(...)` | cuSOLVERDx potrf |
+| General linear solve (non-SPD) | `glass::nvidia::gesv_no_pivot<float, N, NRHS>(...)` | cuSOLVERDx LU + solve |
+| Least-squares / over- or under-determined | `glass::nvidia::gels<float, M, N, NRHS>(...)` | cuSOLVERDx QR (or LQ for under-det) + solve |
+| `BATCH` independent GEMMs of the same shape, want to amortize launch | `glass::nvidia::gemm_batched<...,BATCH,TC>` | Single block, all batches active via `threadIdx.y` |
+
+**Heuristic for `glass<CT>` vs `glass::nvidia` GEMM/GEMV at the same compile-time size:** for square sizes ≤ 12 the pure-SIMT compile-time variant is usually within 2× of cuBLASDx and avoids the cuBLASDx compile-time cost (instantiation can add 30 s to a build). For sizes ≥ 16 (or any rectangular shape that maps cleanly to tensor cores) `glass::nvidia` typically wins. The benchmark suite (`bench/run_bench.py`) prints both side by side — measure on your target SM before committing.
+
+**When NOT to use `glass::nvidia`**:
+- Sizes only known at runtime (the templates require compile-time `M`, `N`, `K`).
+- You can't add a `DEFINE_NVIDIA_GEMM*` macro for the size you need (e.g. you want every conceivable `(M, N, K)` triple — the macro instantiation cost grows fast).
+- You're stuck on an SM cuBLASDx doesn't tune for (it falls back to a generic config; the pure-SIMT compile-time path is often competitive there).
 
 ---
 
@@ -97,21 +129,151 @@ __global__ void k(float* x, int n) {
 
 ### 5. NVIDIA-optimized path (`glass::nvidia::`)
 
+#### 5a. Default — let cuBLASDx pick the thread count
+
 ```cpp
 #include "glass-nvidia.cuh"
 
-// Host: query required smem and thread count (all constexpr)
+// Host: query required smem and thread count (both constexpr)
 constexpr auto smem    = glass::nvidia::gemm_smem_size<float, 6, 6, 6>();
 constexpr auto threads = glass::nvidia::gemm_threads<float, 6, 6, 6>();
 
 __global__ void k(float* A, float* B, float* C) {
-    glass::nvidia::gemm<float, 6, 6, 6>(1.f, A, B, 0.f, C,
-        reinterpret_cast<char*>(smem_ptr));
+    extern __shared__ __align__(16) char smem_buf[];
+    glass::nvidia::gemm<float, 6, 6, 6>(1.f, A, B, 0.f, C, smem_buf);
 }
 
-// Launch:
+// Launch with the EXACT thread count cuBLASDx wants — mismatch deadlocks.
 k<<<1, threads, smem>>>(dA, dB, dC);
 ```
+
+#### 5b. Caller-pinned `BlockDim<TC>` — launch with any TC ≥ what cuBLASDx needs
+
+The default form forces every kernel that touches `glass::nvidia::gemm` to launch with the exact thread count cuBLASDx picked for that GEMM size. When the rest of your kernel needs a different launch (e.g. GRiD codegen launches with 352 threads for the surrounding RNEA/CRBA work), use the BlockDim form:
+
+```cpp
+namespace glass { namespace nvidia {
+    DEFINE_NVIDIA_GEMM_BLOCKDIM(6, 6, 6, 352)   // pin BlockDim<352,1,1>
+}}
+
+__global__ void k(float* A, float* B, float* C) {
+    extern __shared__ __align__(16) char smem_buf[];
+    // OK to launch with 352 threads — extras go idle inside the GEMM.
+    glass::nvidia::gemm<float, 6, 6, 6, 352>(1.f, A, B, 0.f, C, smem_buf);
+}
+
+constexpr auto smem = glass::nvidia::gemm_smem_size<float, 6, 6, 6, 352>();
+k<<<1, 352, smem>>>(dA, dB, dC);
+```
+
+The query API tells you the smallest TC cuBLASDx will accept for a `(T, M, N, K, SM)` tuple:
+
+```cpp
+static_assert(glass::nvidia::gemm_block_threads_valid<float, 6, 6, 6, 352>(),
+              "352 threads should be enough for 6x6x6 on this SM");
+
+constexpr uint32_t MIN = glass::nvidia::gemm_min_block_threads<float, 6, 6, 6>();
+// MIN is the natural BlockDim cuBLASDx picks; pin TC >= MIN.
+```
+
+#### 5c. Layout / transpose (NVIDIA path)
+
+`glass::nvidia::gemm` accepts `layout LA`, `LB`, `LC` template parameters — these mirror cuBLASDx's `Arrangement<>` and let you express transpose / row-major storage without falling back to the pure-SIMT path:
+
+```cpp
+namespace glass { namespace nvidia {
+    // A · Bᵀ  (B is row-major, equivalent to "transposed col-major")
+    DEFINE_NVIDIA_GEMM_BLOCKDIM_TRANSB(6, 6, 6, 352)        // alias for LB=row_major
+    // Or fully explicit (LA=row, LB=col, LC=col):
+    DEFINE_NVIDIA_GEMM_BLOCKDIM_LAYOUT(6, 6, 6, 352, 1, 0, 0)
+}}
+
+__global__ void k(float* A, float* B, float* C) {
+    extern __shared__ __align__(16) char smem_buf[];
+    using L = glass::nvidia::layout;
+    glass::nvidia::gemm<float, 6, 6, 6, 352,
+                        L::col_major, L::row_major, L::col_major>(
+        1.f, A, B, 0.f, C, smem_buf);
+}
+```
+
+#### 5d. Multi-arch builds (per-SM dispatch)
+
+Pin the SM at the call site so a single fatbinary can ship tuned code for multiple architectures:
+
+```cpp
+namespace glass { namespace nvidia {
+    DEFINE_NVIDIA_GEMM_BLOCKDIM_SM(6, 6, 6, 352, 890)
+    DEFINE_NVIDIA_GEMM_BLOCKDIM_SM(6, 6, 6, 352, 1200)
+}}
+
+__global__ void k(float* A, float* B, float* C) {
+    extern __shared__ __align__(16) char smem_buf[];
+    using L = glass::nvidia::layout;
+    glass::nvidia::gemm<float, 6, 6, 6, 352,
+        L::col_major, L::col_major, L::col_major,
+        #if __CUDA_ARCH__ >= 1200
+            1200
+        #else
+            890
+        #endif
+    >(1.f, A, B, 0.f, C, smem_buf);
+}
+```
+
+#### 5e. Linear solvers (cuSOLVERDx — `chol_inplace`, `trsm`, `posv`, …)
+
+```cpp
+#include "glass-nvidia.cuh"
+
+namespace glass { namespace nvidia {
+    DEFINE_NVIDIA_POSV_BLOCKDIM(7, 1, 256)   // 7×7 SPD, 1 RHS, BlockDim<256>
+}}
+
+__global__ void k(float* A, float* b) {
+    extern __shared__ __align__(16) char smem_buf[];
+    // Solves A·x = b in place: A := L (lower Cholesky), b := x
+    glass::nvidia::posv<float, 7, 1, 256>(A, b, smem_buf);
+}
+
+constexpr auto smem = glass::nvidia::posv_smem_size<float, 7, 1, 256>();
+k<<<1, 256, smem>>>(dA, db);
+```
+
+Available cuSOLVERDx wrappers (all follow the same `DEFINE_NVIDIA_<NAME>` / `_BLOCKDIM` / `_SM` / `_BLOCKDIM_SM` macro pattern):
+
+| Function | Signature | NumPy / SciPy equivalent |
+|----------|-----------|--------------------------|
+| `chol_inplace<T, N>` | `(A, smem)` | `np.linalg.cholesky(A)` (lower) |
+| `trsm<T, M, N>` | `(alpha, L, B, smem)` | `scipy.linalg.solve_triangular(L, alpha*B, lower=True)` |
+| `posv<T, N, NRHS>` | `(A, B, smem)` | `np.linalg.solve(A, B)` (SPD A; A is destroyed) |
+| `potrs<T, N, NRHS>` | `(L, B, smem)` | `scipy.linalg.cho_solve((L, True), B)` |
+| `getrf_no_pivot<T, N>` | `(A, smem)` | `scipy.linalg.lu_factor(A)` (no pivoting; A := LU) |
+| `getrs_no_pivot<T, N, NRHS>` | `(LU, B, smem)` | `scipy.linalg.lu_solve((LU, ...), B)` |
+| `gesv_no_pivot<T, N, NRHS>` | `(A, B, smem)` | `np.linalg.solve(A, B)` (general A; A is destroyed) |
+| `geqrf<T, M, N>` | `(A, tau, smem)` | `scipy.linalg.qr(A, mode='raw')` |
+| `gels<T, M, N, NRHS>` | `(A, tau, B, smem)` | `np.linalg.lstsq(A, B)` |
+
+Linking note: cuSOLVERDx ships a precompiled device library. Add `-rdc=true -dlto -L$MATHDX_ROOT/lib -lcusolverdx -lcublas -lcusolver -lcudart` to your nvcc command (the `bench/run_bench.py` driver does this automatically when `cusolverdx.hpp` is present).
+
+#### 5f. Batched GEMM (single block, BATCH GEMMs in parallel)
+
+```cpp
+namespace glass { namespace nvidia {
+    DEFINE_NVIDIA_GEMM_BATCHED_BLOCKDIM(6, 6, 6, /*BATCH=*/16, /*TC=*/64)
+}}
+
+__global__ void k(float* const* A, float* const* B, float* const* C) {
+    extern __shared__ __align__(16) char smem_buf[];
+    glass::nvidia::gemm_batched<float, 6, 6, 6, 16, 64>(
+        1.f, A, B, 0.f, C, smem_buf);
+}
+
+constexpr auto smem = glass::nvidia::gemm_batched_smem_size<float, 6, 6, 6, 16, 64>();
+k<<<1, dim3(64, 16), smem>>>(dA_ptrs, dB_ptrs, dC_ptrs);
+```
+
+Each batch element is identified by `threadIdx.y`; each per-batch GEMM uses TC threads in `threadIdx.x`. Total launch is `dim3(TC, BATCH)`. See `bench/bench_gemm_batched.cu` for a full working example with `T**` pointer arrays.
 
 ### 6. Tiled GEMM (scratch in shared memory)
 
@@ -134,14 +296,16 @@ k<<<1, 256, smem>>>(A, B, C, m, n, k);
 
 ## Requirements
 
-| Component | C++ Standard |
-|-----------|-------------|
-| `glass.cuh`, `glass-cgrps.cuh` | C++17 (`nvcc -std=c++17`) |
-| `glass-nvidia.cuh` | C++17 + CUB + cuBLASDx |
-| Test suite | C++17 |
-| Benchmark suite | C++17 |
+| Component | C++ Standard | Optional deps |
+|-----------|-------------|---------------|
+| `glass.cuh`, `glass-cgrps.cuh` | C++17 (`nvcc -std=c++17`) | — |
+| `glass-nvidia.cuh` (L1 only) | C++17 | CUB (bundled with CUDA 11+) |
+| `glass-nvidia.cuh` (L2/L3 GEMM/GEMV/batched) | C++17 + `--expt-relaxed-constexpr` | cuBLASDx |
+| `glass-nvidia.cuh` (LAPACK: chol/trsm/posv/getrf/gesv/geqrf/gels) | C++17 + `--expt-relaxed-constexpr` + `-rdc=true -dlto -lcusolverdx -lcublas -lcusolver -lcudart` | cuSOLVERDx |
+| Test suite | C++17 | — |
+| Benchmark suite | C++17 | (matches the variants you opt in) |
 
-CUB is bundled with CUDA 11+. cuBLASDx requires a separate installation (see [`bench/INSTALL.md`](bench/INSTALL.md)).
+The wrappers gate themselves with `GLASS_HAVE_CUBLASDX` / `GLASS_HAVE_CUSOLVERDX`, both auto-detected from include order. To force-enable when including `glass-nvidia.cuh` from a TU that hasn't pre-included the headers, define `GLASS_BENCH_CUBLASDX` and/or `GLASS_BENCH_CUSOLVERDX` (the bench harness sets these). See [`bench/INSTALL.md`](bench/INSTALL.md) for download + linking instructions.
 
 ---
 
@@ -283,37 +447,84 @@ glass::gemm_ex<float, false, true, false, true>(m, n, k, 1.f, A, B, 0.f, C);
 
 ---
 
-### `glass::nvidia::` L2/L3 (cuBLASDx)
+### `glass::nvidia::` L2/L3 (cuBLASDx + cuSOLVERDx)
 
-cuBLASDx computes at warp/tensor-core level and requires compile-time matrix sizes. Include `glass-nvidia.cuh` (which includes `cublasdx.hpp`) to get pre-instantiated sizes.
+cuBLASDx computes at warp/tensor-core level and requires compile-time matrix sizes. cuSOLVERDx (factorizations + solves) likewise requires compile-time sizes and additionally requires linking against a precompiled device library. Include `glass-nvidia.cuh` to get pre-instantiated sizes; both backends are auto-detected.
 
-**Pre-instantiated sizes** (square): `4, 6, 8, 12, 14, 24, 64`
+**Pre-instantiated GEMM/GEMV sizes** (square): `4, 6, 8, 12, 14, 24, 64`. cuSOLVERDx wrappers are not pre-instantiated; you must call the appropriate `DEFINE_NVIDIA_*` macro per size in your `.cu` file (inside `namespace glass::nvidia`).
+
+#### Public template parameters
 
 ```cpp
-#include "glass-nvidia.cuh"
-
-// Host: query required smem and thread count
-constexpr auto smem    = glass::nvidia::gemm_smem_size<float, 6, 6, 6>();
-constexpr auto threads = glass::nvidia::gemm_threads<float, 6, 6, 6>();
-
-__global__ void k(float* A, float* B, float* C) {
-    extern __shared__ __align__(16) char smem_buf[];
-    glass::nvidia::gemm<float, 6, 6, 6>(1.f, A, B, 0.f, C, smem_buf);
-}
-
-// Launch:
-k<<<1, threads, smem>>>(dA, dB, dC);
+// Common parameter pack for gemm / gemv (and gemm_batched, with extra BATCH):
+template <typename T,
+          uint32_t M, uint32_t N, uint32_t K,
+          uint32_t BLOCK_THREADS = 0,                      // 0 = let cuBLASDx pick
+          layout LA = layout::col_major,                   // arrangement of A
+          layout LB = layout::col_major,                   // arrangement of B
+          layout LC = layout::col_major,                   // arrangement of C
+          uint32_t SM_VAL = SMS>                            // SM arch (default = SMS macro)
+__device__ void gemm(T alpha, T* A, T* B, T beta, T* C, char* smem);
 ```
 
-To add a custom size, call `DEFINE_NVIDIA_GEMM(M, N, K)` in your `.cu` file **inside `namespace glass::nvidia`** before first use:
+`SMS` defaults to `860` and may be overridden with `-DSMS=XXX` at compile time. See sections 5b–5d above for usage examples (BlockDim, layout, multi-arch).
+
+#### DEFINE-macro family (cuBLASDx wrappers)
+
+Every wrapper exposes the same family of compile-time DEFINE macros. Substitute `GEMM` / `GEMV` / `GEMM_BATCHED` / `CHOL` / `TRSM` / `POSV` / `POTRS` / `GETRF` / `GETRS` / `GESV` / `GEQRF` / `GELS`:
+
+| Macro form | Specializes |
+|------------|------------|
+| `DEFINE_NVIDIA_<NAME>(...)` | default block_dim, all `col_major`, SM = `SMS` |
+| `DEFINE_NVIDIA_<NAME>_BLOCKDIM(..., TC)` | pinned `BlockDim<TC,1,1>`, all `col_major`, SM = `SMS` |
+| `DEFINE_NVIDIA_<NAME>_LAYOUT(..., LA, LB, LC)` *(GEMM only)* | default block_dim, custom layouts, SM = `SMS` |
+| `DEFINE_NVIDIA_<NAME>_BLOCKDIM_LAYOUT(..., TC, LA, LB, LC)` | pinned + custom layouts |
+| `DEFINE_NVIDIA_<NAME>_SM(..., SM)` | explicit SM, default block_dim, all `col_major` |
+| `DEFINE_NVIDIA_<NAME>_BLOCKDIM_SM(..., TC, SM)` | pinned + explicit SM |
+| `DEFINE_NVIDIA_<NAME>_LAYOUT_SM(..., LA, LB, LC, SM)` *(GEMM only)* | custom layouts + explicit SM |
+| `DEFINE_NVIDIA_<NAME>_BLOCKDIM_LAYOUT_SM(..., TC, LA, LB, LC, SM)` | every parameter explicit |
+
+Layout arguments (`LA, LB, LC`) are integer literals: `0` = `col_major`, `1` = `row_major`. GRiD-flag aliases for the common transpose case:
+
+```cpp
+#define DEFINE_NVIDIA_GEMM_TRANSB(M, N, K)               // alias for LAYOUT(M, N, K, 0, 1, 0)
+#define DEFINE_NVIDIA_GEMM_BLOCKDIM_TRANSB(M, N, K, TC)  // alias for BLOCKDIM_LAYOUT(M, N, K, TC, 0, 1, 0)
+```
+
+To add a custom size, place the macro inside `namespace glass::nvidia` in your `.cu` file:
 
 ```cpp
 #include "glass-nvidia.cuh"
 namespace glass { namespace nvidia {
     DEFINE_NVIDIA_GEMM(16, 16, 16)
     DEFINE_NVIDIA_GEMV(16, 16)
-} }
+    DEFINE_NVIDIA_GEMM_BLOCKDIM(16, 16, 16, 256)         // pinned thread count
+    DEFINE_NVIDIA_GEMM_BLOCKDIM_TRANSB(16, 16, 16, 256)  // pinned + B is row-major
+    DEFINE_NVIDIA_POSV_BLOCKDIM(16, 4, 256)              // SPD solve, 4 RHS
+}}
 ```
+
+#### Host-side query API
+
+```cpp
+// Smallest BlockDim cuBLASDx accepts for (T, M, N, K, SM). All constexpr.
+template <typename T, uint32_t M, uint32_t N, uint32_t K, uint32_t SM_VAL = SMS>
+constexpr uint32_t glass::nvidia::gemm_min_block_threads();
+
+// True iff BLOCK_THREADS >= the minimum.
+template <typename T, uint32_t M, uint32_t N, uint32_t K, uint32_t BT, uint32_t SM_VAL = SMS>
+constexpr bool glass::nvidia::gemm_block_threads_valid();
+
+// Same for gemv (Size<M, 1, N>):
+constexpr uint32_t glass::nvidia::gemv_min_block_threads<T, M, N, SM_VAL>();
+constexpr bool     glass::nvidia::gemv_block_threads_valid<T, M, N, BT, SM_VAL>();
+```
+
+These do **not** require a `DEFINE_NVIDIA_*` macro — they construct the GEMM type inline and read `block_dim` directly. Useful for codegen that wants to pick `SUGGESTED_THREADS` at generation time.
+
+#### Debug assertions (P1-4)
+
+Compile without `-DNDEBUG` and the wrappers `assert(blockDim >= GEMM::block_dim)` inside every `run()`. Misconfigured launches now fail with a clean assertion message rather than silently deadlocking. The assertions compile out under `-DNDEBUG`.
 
 ---
 
@@ -338,15 +549,18 @@ pytest test_l1.py -k "simple_hs"   # high_speed warp-shuffle variants
 
 ## Benchmarks
 
-The benchmark suite compares GLASS against block-level CUDA library baselines:
+The benchmark suite compares GLASS variants against block-level CUDA library baselines AND against each other:
 
-| Level | GLASS | Baseline |
-|-------|-------|----------|
-| L1 reduce/dot/l2norm | `glass::high_speed::*` | CUB `BlockReduce` |
-| L2 gemv | `glass::gemv` | cuBLASDx |
-| L3 gemm | `glass::gemm` (plain + tiled) | cuBLASDx |
+| File | Comparison |
+|------|-----------|
+| `bench_reduce.cu` | `glass::*::reduce/dot/l2norm` (plain, low_memory, high_speed, compile-time) vs CUB `BlockReduce` vs `glass::nvidia::reduce` (CUB-backed) |
+| `bench_gemv.cu` | `glass::gemv` (runtime + compile-time) vs raw cuBLASDx vs `glass::nvidia::gemv` (default block_dim + caller-pinned `BlockDim<256>`) |
+| `bench_gemm.cu` | `glass::gemm` (plain, tiled, compile-time) vs raw cuBLASDx vs `glass::nvidia::gemm` (default + caller-pinned) |
+| `bench_blockdim.cu` | `glass::nvidia::gemm` with cuBLASDx-chosen block_dim vs caller-pinned `BlockDim<128>` vs `BlockDim<352>` (the GRiD iiwa14 launch that pre-fix would have deadlocked) |
+| `bench_gemm_batched.cu` | `glass::nvidia::gemm_batched<...,BATCH>` vs naive `for(b)` loop calling `gemm` BATCH times, for BATCH ∈ {4, 8, 16, 32} |
+| `bench_lapack.cu` *(needs cuSOLVERDx)* | pure-SIMT `glass::cholDecomp_InPlace` / `glass::trsm` vs `glass::nvidia::chol_inplace` / `trsm` / `posv` (fused) |
 
-CUB is bundled with CUDA 11+. cuBLASDx requires a separate installation (see [`bench/INSTALL.md`](bench/INSTALL.md)).
+CUB is bundled with CUDA 11+. cuBLASDx and cuSOLVERDx ship together in NVIDIA MathDx (see [`bench/INSTALL.md`](bench/INSTALL.md)).
 
 ```bash
 # Set MATHDX_ROOT to your MathDx installation, then:
@@ -354,7 +568,14 @@ python3 bench/run_bench.py
 
 # Custom iteration count (default: 10000):
 python3 bench/run_bench.py --iters 50000
+
+# Skip cuBLASDx (bench_gemv/gemm/blockdim/batched/lapack will not run):
+python3 bench/run_bench.py --no-cublasdx
 ```
+
+`bench_lapack` is automatically skipped if `cusolverdx.hpp` is not present under `$MATHDX_ROOT/include/`.
+
+**Anti-optimization safeguards** are baked into every bench loop: per-iteration writes to a `volatile` sink defeat dead-store elimination; destructive inputs (Cholesky, LU, QR all overwrite their input) are reloaded from a master copy each iteration; `nvcc -Xptxas -O1` is enforced. Numbers below ~0.1 µs/op for a non-trivial kernel almost always indicate the bench was elided — recheck the safeguards if you see that.
 
 Timing uses the GRiD pattern — the iteration loop runs inside the kernel to amortize launch overhead. Results are printed as a Markdown table and saved to `bench/results/bench_<hostname>.json`.
 
@@ -362,8 +583,9 @@ Timing uses the GRiD pattern — the iteration loop runs inside the kernel to am
 
 ## Notes
 
-- Matrices default to **column-major** (Fortran) order, consistent with cuBLAS. Use `ROW_MAJOR=true` template parameter for row-major.
+- Matrices default to **column-major** (Fortran) order, consistent with cuBLAS. Pure-SIMT `glass::` uses a `ROW_MAJOR=true` template parameter; `glass::nvidia::` uses the `layout` enum (`col_major` / `row_major`) per matrix via `LA`, `LB`, `LC` template arguments.
 - `dot` and reduction variants modify the input array in-place (result in `x[0]`); `l2norm` squares elements before reducing.
 - `cholDecomp_InPlace` only fills the **lower triangle** of the matrix; the upper triangle retains input values.
-- `gemm` with `TRANSPOSE_B=true` currently requires B to be square (n×n).
-- `glass::nvidia::` functions require exactly the thread count returned by `gemm_threads<T,M,N,K>()`. Launching with the wrong thread count produces incorrect results.
+- `glass::gemm` (pure-SIMT) with `TRANSPOSE_B=true` currently requires B to be square (n×n). The `glass::nvidia::gemm` path has no such restriction — use `LB = layout::row_major` (or `DEFINE_NVIDIA_GEMM_BLOCKDIM_TRANSB`).
+- `glass::nvidia::*` (default form) requires exactly the thread count returned by `gemm_threads<T,M,N,K>()`. Use the `BLOCK_THREADS` template parameter (with `DEFINE_NVIDIA_<NAME>_BLOCKDIM`) to launch with any thread count `≥ gemm_min_block_threads<T,M,N,K>()` — extras go idle inside the GEMM. Compile without `-DNDEBUG` to get a clean assertion if the launch is too small instead of a silent deadlock.
+- `glass::nvidia::trsm` does not accept a non-1.0 `alpha` natively (cuSOLVERDx's `trsm` has no alpha); the wrapper pre-multiplies `B` by `alpha` in shared memory before calling execute.

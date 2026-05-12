@@ -29,7 +29,15 @@ GLASS_DIR   = BENCH_DIR.parent
 BUILD_DIR   = BENCH_DIR / "build"
 RESULTS_DIR = BENCH_DIR / "results"
 
-BENCH_NAMES = ["bench_reduce", "bench_gemv", "bench_gemm"]
+BENCH_NAMES = [
+    "bench_reduce", "bench_gemv", "bench_gemm",
+    "bench_blockdim",        # gated on cuBLASDx
+    "bench_gemm_batched",    # gated on cuBLASDx
+    "bench_lapack",          # gated on cuSOLVERDx (skipped at runtime if absent)
+]
+
+# Which benches require cuSOLVERDx (skipped if cusolverdx.hpp missing).
+CUSOLVERDX_REQUIRED = {"bench_lapack"}
 
 
 # ─── GPU detection ────────────────────────────────────────────────────────────
@@ -78,6 +86,14 @@ def check_cublasdx() -> pathlib.Path | None:
     return None
 
 
+def check_cusolverdx(mathdx_root) -> bool:
+    """Return True if both cusolverdx.hpp AND cusolverdx_io.hpp are available."""
+    if mathdx_root is None:
+        return False
+    return ((mathdx_root / "include" / "cusolverdx.hpp").exists()
+        and (mathdx_root / "include" / "cusolverdx_io.hpp").exists())
+
+
 # ─── Compilation ──────────────────────────────────────────────────────────────
 
 def source_hash(cu_file: pathlib.Path, extra_files: list[pathlib.Path]) -> str:
@@ -88,7 +104,8 @@ def source_hash(cu_file: pathlib.Path, extra_files: list[pathlib.Path]) -> str:
     return h.hexdigest()[:16]
 
 
-def compile_binary(name: str, arch: str, sms: int, mathdx_root, cuda_root: pathlib.Path) -> pathlib.Path:
+def compile_binary(name: str, arch: str, sms: int, mathdx_root,
+                   have_cusolverdx: bool, cuda_root: pathlib.Path) -> pathlib.Path:
     cu_src    = BENCH_DIR / f"{name}.cu"
     out_bin   = BUILD_DIR / name
     hash_file = BUILD_DIR / f"{name}.hash"
@@ -96,6 +113,13 @@ def compile_binary(name: str, arch: str, sms: int, mathdx_root, cuda_root: pathl
     watch_files = [
         cu_src,
         GLASS_DIR / "glass.cuh",
+        GLASS_DIR / "glass-nvidia.cuh",
+        GLASS_DIR / "src" / "nvidia" / "types.cuh",
+        GLASS_DIR / "src" / "nvidia" / "l1.cuh",
+        GLASS_DIR / "src" / "nvidia" / "l2.cuh",
+        GLASS_DIR / "src" / "nvidia" / "l3.cuh",
+        GLASS_DIR / "src" / "nvidia" / "lapack.cuh",
+        GLASS_DIR / "src" / "nvidia" / "query.cuh",
         BENCH_DIR / "INSTALL.md",
     ]
     cur_hash = source_hash(cu_src, watch_files)
@@ -123,7 +147,21 @@ def compile_binary(name: str, arch: str, sms: int, mathdx_root, cuda_root: pathl
             f"-I{mathdx_root / 'external' / 'cutlass' / 'include'}",
             "-DGLASS_BENCH_CUBLASDX",
             f"-DSMS={sms}",
-            "-Xptxas", "-O1",   # workaround for CUDA 12.9 bug
+            "--expt-relaxed-constexpr",  # silence cuBLASDx constexpr/host/device warnings
+            "-Xptxas", "-O1",            # workaround for CUDA 12.9 bug + anti-DSE for benches
+        ]
+
+    if have_cusolverdx and name in CUSOLVERDX_REQUIRED:
+        cmd += [
+            "-DGLASS_BENCH_CUSOLVERDX",
+            "-DCUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT",
+            # cuSOLVERDx requires relocatable device code (-rdc=true) so ptxas
+            # can resolve the precompiled cuSOLVERDx device-side symbols. The
+            # libcusolverdx.a fatbin uses LTO, so nvlink needs -dlto.
+            "-rdc=true",
+            "-dlto",
+            f"-L{mathdx_root / 'lib'}",
+            "-lcusolverdx", "-lcublas", "-lcusolver", "-lcudart",
         ]
 
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -201,15 +239,21 @@ def main():
         sys.exit(1)
 
     arch, sms = detect_arch()
+    have_cusolverdx = check_cusolverdx(mathdx_root)
     print(f"GPU arch: {arch} (SM{sms})")
     print(f"cuBLASDx: {'enabled (' + str(mathdx_root) + ')' if mathdx_root else 'disabled'}")
+    print(f"cuSOLVERDx: {'enabled' if have_cusolverdx else 'disabled (skipping bench_lapack)'}")
     print(f"Iterations: {args.iters}\n")
 
-    # Compile
+    # Compile (skip bench_lapack if cuSOLVERDx is unavailable).
     print("Compiling benchmarks...")
     binaries = {}
     for name in BENCH_NAMES:
-        binaries[name] = compile_binary(name, arch, sms, mathdx_root, pathlib.Path("/usr/local/cuda"))
+        if name in CUSOLVERDX_REQUIRED and not have_cusolverdx:
+            print(f"  Skipping {name} (cuSOLVERDx not available)")
+            continue
+        binaries[name] = compile_binary(name, arch, sms, mathdx_root,
+                                         have_cusolverdx, pathlib.Path("/usr/local/cuda"))
     print("Done.\n")
 
     sizes = [4, 6, 8, 12, 14, 24, 64]
@@ -236,7 +280,7 @@ def main():
     all_results["gemv"] = gemv_rows
 
     # bench_gemm (L3): square sizes
-    print("\nRunning L3 GEMM (glass plain + tiled vs cuBLASDx)...")
+    print("\nRunning L3 GEMM (glass plain + tiled vs cuBLASDx vs glass::nvidia)...")
     gemm_rows = []
     for s in sizes:
         print(f"  {s}x{s}x{s} ...", end=" ", flush=True)
@@ -244,6 +288,31 @@ def main():
         print("done")
     print_table("L3 GEMM", gemm_rows)
     all_results["gemm"] = gemm_rows
+
+    # bench_blockdim: P0-1 BlockDim deadlock-fix demo (default vs pinned-128 vs pinned-352)
+    if "bench_blockdim" in binaries:
+        print("\nRunning bench_blockdim (default vs caller-pinned BlockDim)...")
+        blockdim_rows = run_binary(binaries["bench_blockdim"], [str(args.iters)])
+        print_table("BlockDim Comparison", blockdim_rows)
+        all_results["blockdim"] = blockdim_rows
+
+    # bench_gemm_batched: P2-7 single-block batched GEMM vs naive loop
+    if "bench_gemm_batched" in binaries:
+        print("\nRunning bench_gemm_batched (naive loop vs gemm_batched)...")
+        batched_rows = run_binary(binaries["bench_gemm_batched"], [str(args.iters)])
+        print_table("Batched GEMM", batched_rows)
+        all_results["gemm_batched"] = batched_rows
+
+    # bench_lapack: cuSOLVERDx-backed chol_inplace / trsm / posv vs pure-SIMT
+    if "bench_lapack" in binaries:
+        print("\nRunning bench_lapack (chol/trsm/posv: pure-SIMT vs cuSOLVERDx)...")
+        lapack_rows = []
+        for s in sizes:
+            print(f"  n={s} ...", end=" ", flush=True)
+            lapack_rows += run_binary(binaries["bench_lapack"], [str(s), str(args.iters)])
+            print("done")
+        print_table("LAPACK", lapack_rows)
+        all_results["lapack"] = lapack_rows
 
     # Save JSON
     RESULTS_DIR.mkdir(exist_ok=True)

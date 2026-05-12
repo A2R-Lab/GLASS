@@ -1,18 +1,34 @@
 #pragma once
 #include <cstdint>
+#include <cassert>
 #include <cub/cub.cuh>
 
 // glass::nvidia L1 — CUB-backed reduce / dot / l2norm
 // All functions are compile-time only: T, N, THREADS must be template parameters.
 // THREADS defaults to 256; set it to match your kernel's blockDim.x.
 //
+// CUB contract: blockDim.x must equal THREADS exactly. Mismatch is silent
+// (CUB does not assert), so we add a debug-only assertion below.
+//
 // Example:
 //   extern __shared__ float scratch[];   // must be >= sizeof(T) * THREADS
 //   glass::nvidia::reduce<float, 64, 256>(x, scratch);
 
+// Debug-only check that the launched blockDim.x matches CUB's THREADS template
+// arg. Mismatch (in either direction) silently corrupts the BlockReduce result.
+#ifdef NDEBUG
+#define _GLASS_ASSERT_THREADS_EQ(THREADS) /* nothing */
+#else
+#define _GLASS_ASSERT_THREADS_EQ(THREADS)                                        \
+    assert(blockDim.x == (THREADS) && blockDim.y == 1 && blockDim.z == 1 &&      \
+           "glass::nvidia L1: blockDim must be (THREADS, 1, 1) exactly — "       \
+           "CUB BlockReduce does not tolerate mismatch");
+#endif
+
 template <typename T, uint32_t N, uint32_t THREADS = 256>
 __device__ void reduce(T *x, T *s_scratch)
 {
+    _GLASS_ASSERT_THREADS_EQ(THREADS)
     using BlockReduce = cub::BlockReduce<T, THREADS>;
     T thread_sum = static_cast<T>(0);
     for (uint32_t i = threadIdx.x; i < N; i += THREADS)
@@ -27,6 +43,7 @@ __device__ void reduce(T *x, T *s_scratch)
 template <typename T, uint32_t N, uint32_t THREADS = 256>
 __device__ void dot(T *x, T *y, T *out, T *s_scratch)
 {
+    _GLASS_ASSERT_THREADS_EQ(THREADS)
     using BlockReduce = cub::BlockReduce<T, THREADS>;
     T thread_sum = static_cast<T>(0);
     for (uint32_t i = threadIdx.x; i < N; i += THREADS)
@@ -41,6 +58,7 @@ __device__ void dot(T *x, T *y, T *out, T *s_scratch)
 template <typename T, uint32_t N, uint32_t THREADS = 256>
 __device__ void l2norm(T *x, T *out, T *s_scratch)
 {
+    _GLASS_ASSERT_THREADS_EQ(THREADS)
     using BlockReduce = cub::BlockReduce<T, THREADS>;
     T thread_sum = static_cast<T>(0);
     for (uint32_t i = threadIdx.x; i < N; i += THREADS)

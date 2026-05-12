@@ -20,10 +20,14 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
-#include "../glass.cuh"
 
+// Bring in cuBLASDx FIRST at global scope so glass-nvidia.cuh's namespace block
+// doesn't nest its symbols. glass-nvidia.cuh includes glass.cuh transitively.
 #ifdef GLASS_BENCH_CUBLASDX
 #include <cublasdx.hpp>
+#include "../glass-nvidia.cuh"
+#else
+#include "../glass.cuh"
 #endif
 
 static const int THREADS = 256;
@@ -221,15 +225,90 @@ DEFINE_CUBLASDX_GEMM(4,  4,  64)
     printf("cuBLASDx gemm (shared)       m=%2d n=%2d k=%2d  %.3f us/op\n",           \
            M, N, K, elapsed_us(t0, t1) / iters);
 
+// ─── glass::nvidia kernels (compile-time M/N/K, alongside raw cuBLASDx) ──────
+// Two variants per size:
+//   _nv_default — uses glass::nvidia::gemm<T,M,N,K>(...)            (no BlockDim)
+//   _nv_blockdim — uses glass::nvidia::gemm<T,M,N,K,THREADS>(...)   (BlockDim<THREADS>)
+//
+// Both write to a volatile sink each iteration to defeat dead-store elimination.
+
+namespace glass { namespace nvidia {
+    // BlockDim<THREADS> variants for all sizes (default-block_dim variants for
+    // the square sizes 4..64 are already pre-instantiated in glass-nvidia.cuh).
+    DEFINE_NVIDIA_GEMM_BLOCKDIM(4,  4,  4,  THREADS)
+    DEFINE_NVIDIA_GEMM_BLOCKDIM(6,  6,  6,  THREADS)
+    DEFINE_NVIDIA_GEMM_BLOCKDIM(8,  8,  8,  THREADS)
+    DEFINE_NVIDIA_GEMM_BLOCKDIM(12, 12, 12, THREADS)
+    DEFINE_NVIDIA_GEMM_BLOCKDIM(14, 14, 14, THREADS)
+    DEFINE_NVIDIA_GEMM_BLOCKDIM(24, 24, 24, THREADS)
+    DEFINE_NVIDIA_GEMM_BLOCKDIM(64, 64, 64, THREADS)
+    DEFINE_NVIDIA_GEMM_BLOCKDIM(4,  4,  16, THREADS)
+    DEFINE_NVIDIA_GEMM_BLOCKDIM(4,  4,  32, THREADS)
+    DEFINE_NVIDIA_GEMM_BLOCKDIM(4,  4,  48, THREADS)
+    DEFINE_NVIDIA_GEMM_BLOCKDIM(4,  4,  64, THREADS)
+    // Default-block_dim variants for the rectangular 4×4×K shapes (square ones
+    // already pre-instantiated in glass-nvidia.cuh).
+    DEFINE_NVIDIA_GEMM(4, 4, 16)
+    DEFINE_NVIDIA_GEMM(4, 4, 32)
+    DEFINE_NVIDIA_GEMM(4, 4, 48)
+    DEFINE_NVIDIA_GEMM(4, 4, 64)
+}} // namespace glass::nvidia
+
+template<int M, int N, int K>
+__global__ void k_nv_gemm_default(float* A, float* B, float* C, volatile float* sink, int iters) {
+    extern __shared__ __align__(16) char nv_smem[];
+    for (int rep = 0; rep < iters; rep++) {
+        glass::nvidia::gemm<float, M, N, K>(1.f, A, B, 0.f, C, nv_smem);
+        __syncthreads();
+        if (threadIdx.x == 0) sink[rep & 0xFF] = C[0];
+        __syncthreads();
+    }
+}
+
+template<int M, int N, int K, int TC>
+__global__ void k_nv_gemm_blockdim(float* A, float* B, float* C, volatile float* sink, int iters) {
+    extern __shared__ __align__(16) char nv_smem[];
+    for (int rep = 0; rep < iters; rep++) {
+        glass::nvidia::gemm<float, M, N, K, TC>(1.f, A, B, 0.f, C, nv_smem);
+        __syncthreads();
+        if (threadIdx.x == 0) sink[rep & 0xFF] = C[0];
+        __syncthreads();
+    }
+}
+
+#define RUN_NVIDIA_GEMM(M, N, K, dA, dB, dC, sink, iters, t0, t1)                            \
+    {                                                                                         \
+        constexpr auto smem_def = glass::nvidia::gemm_smem_size<float, M, N, K>();           \
+        constexpr auto thr_def  = glass::nvidia::gemm_threads<float, M, N, K>();             \
+        cudaMemset(dC, 0, (size_t)M*K*sizeof(float));                                         \
+        clock_gettime(CLOCK_MONOTONIC, &(t0));                                                 \
+        k_nv_gemm_default<M, N, K><<<1, thr_def, smem_def>>>(dA, dB, dC, sink, iters);       \
+        cudaDeviceSynchronize();                                                               \
+        clock_gettime(CLOCK_MONOTONIC, &(t1));                                                 \
+        printf("glass::nvidia gemm (default) m=%2d n=%2d k=%2d  %.3f us/op\n",               \
+               M, N, K, elapsed_us(t0, t1) / iters);                                          \
+        constexpr auto smem_bd = glass::nvidia::gemm_smem_size<float, M, N, K, THREADS>();   \
+        cudaMemset(dC, 0, (size_t)M*K*sizeof(float));                                         \
+        clock_gettime(CLOCK_MONOTONIC, &(t0));                                                 \
+        k_nv_gemm_blockdim<M, N, K, THREADS><<<1, THREADS, smem_bd>>>(dA, dB, dC, sink, iters); \
+        cudaDeviceSynchronize();                                                               \
+        clock_gettime(CLOCK_MONOTONIC, &(t1));                                                 \
+        printf("glass::nvidia gemm (TC=%d)  m=%2d n=%2d k=%2d  %.3f us/op\n",                \
+               THREADS, M, N, K, elapsed_us(t0, t1) / iters);                                 \
+    }
+
 #endif // GLASS_BENCH_CUBLASDX
 
 // ─── Benchmark runner ─────────────────────────────────────────────────────────
 
 static void bench_size(int m, int n, int k, int iters) {
     float *dA, *dB, *dC;
+    float *dSink;
     cudaMalloc(&dA, m * n * sizeof(float));
     cudaMalloc(&dB, n * k * sizeof(float));
     cudaMalloc(&dC, m * k * sizeof(float));
+    cudaMalloc(&dSink, 256 * sizeof(float));   // for anti-DSE writes
+    (void)dSink;
 
     struct timespec t0, t1;
     size_t c_bytes = (size_t)m * k * sizeof(float);
@@ -296,9 +375,25 @@ static void bench_size(int m, int n, int k, int iters) {
     MAYBE_CUBLASDX_GEMM(4,  4,  48)
     MAYBE_CUBLASDX_GEMM(4,  4,  64)
     #undef MAYBE_CUBLASDX_GEMM
+
+    // glass::nvidia variants (default block_dim + caller-pinned BlockDim<THREADS>)
+    #define MAYBE_NVIDIA_GEMM(M, N, K)                                             \
+        if (m == M && n == N && k == K) { RUN_NVIDIA_GEMM(M, N, K, dA, dB, dC, dSink, iters, t0, t1); }
+    MAYBE_NVIDIA_GEMM(4,  4,  4)
+    MAYBE_NVIDIA_GEMM(6,  6,  6)
+    MAYBE_NVIDIA_GEMM(8,  8,  8)
+    MAYBE_NVIDIA_GEMM(12, 12, 12)
+    MAYBE_NVIDIA_GEMM(14, 14, 14)
+    MAYBE_NVIDIA_GEMM(24, 24, 24)
+    MAYBE_NVIDIA_GEMM(64, 64, 64)
+    MAYBE_NVIDIA_GEMM(4,  4,  16)
+    MAYBE_NVIDIA_GEMM(4,  4,  32)
+    MAYBE_NVIDIA_GEMM(4,  4,  48)
+    MAYBE_NVIDIA_GEMM(4,  4,  64)
+    #undef MAYBE_NVIDIA_GEMM
 #endif
 
-    cudaFree(dA); cudaFree(dB); cudaFree(dC);
+    cudaFree(dA); cudaFree(dB); cudaFree(dC); cudaFree(dSink);
 }
 
 int main(int argc, char** argv) {

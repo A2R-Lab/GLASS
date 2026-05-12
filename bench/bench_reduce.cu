@@ -8,8 +8,50 @@
 #include <cmath>
 #include <cub/cub.cuh>
 #include "../glass.cuh"
+#include "../glass-nvidia.cuh"  // pulls in glass::nvidia::reduce/dot/l2norm (CUB-backed)
 
 static const int THREADS = 256;
+
+// ─── glass::nvidia kernels (CUB-backed via glass-nvidia.cuh) ─────────────────
+// One variant: glass::nvidia::reduce<float,N,THREADS>. Writes a per-iter sink
+// to defeat dead-store elimination.
+template<int N>
+__global__ void k_nv_reduce(float* x, volatile float* sink, int iters) {
+    extern __shared__ float scratch[];
+    for (int rep = 0; rep < iters; rep++) {
+        // reload x into a temp inside scratch each iter (don't overwrite x[0])
+        for (int i = threadIdx.x; i < N; i += blockDim.x) scratch[N + i] = x[i];
+        __syncthreads();
+        glass::nvidia::reduce<float, N, THREADS>(scratch + N, scratch);
+        __syncthreads();
+        if (threadIdx.x == 0) sink[rep & 0xFF] = scratch[N];
+        __syncthreads();
+    }
+}
+
+template<int N>
+__global__ void k_nv_dot(float* x, float* y, volatile float* sink, int iters) {
+    extern __shared__ float scratch[];
+    for (int rep = 0; rep < iters; rep++) {
+        float out;
+        glass::nvidia::dot<float, N, THREADS>(x, y, &out, scratch);
+        __syncthreads();
+        if (threadIdx.x == 0) sink[rep & 0xFF] = out;
+        __syncthreads();
+    }
+}
+
+template<int N>
+__global__ void k_nv_l2norm(float* x, volatile float* sink, int iters) {
+    extern __shared__ float scratch[];
+    for (int rep = 0; rep < iters; rep++) {
+        float out;
+        glass::nvidia::l2norm<float, N, THREADS>(x, &out, scratch);
+        __syncthreads();
+        if (threadIdx.x == 0) sink[rep & 0xFF] = out;
+        __syncthreads();
+    }
+}
 
 // ─── GLASS kernels ────────────────────────────────────────────────────────────
 
@@ -209,6 +251,42 @@ int main(int argc, char** argv) {
     MAYBE_GLASS_REDUCE_CT(256)
     #undef MAYBE_GLASS_REDUCE_CT
 
-    cudaFree(dx); cudaFree(dy); cudaFree(dout);
+    // ─── glass::nvidia (CUB-backed) — only for pre-instantiated sizes ────────
+    float *dSink;
+    cudaMalloc(&dSink, 256 * sizeof(float));
+    constexpr size_t nv_smem = glass::nvidia::reduce_smem_size<float, THREADS>();
+    #define MAYBE_NV_REDUCE_CT(N)                                                            \
+        if (n == N) {                                                                         \
+            constexpr size_t nv_smem_total = nv_smem + 2 * N * sizeof(float);                \
+            clock_gettime(CLOCK_MONOTONIC, &t0);                                              \
+            k_nv_reduce<N><<<1, THREADS, nv_smem_total>>>(dx, dSink, iters);                 \
+            cudaDeviceSynchronize();                                                          \
+            clock_gettime(CLOCK_MONOTONIC, &t1);                                              \
+            printf("glass::nvidia::reduce<CT>    n=%3d  %.3f us/op\n",                       \
+                   N, elapsed_us(t0, t1) / iters);                                            \
+            clock_gettime(CLOCK_MONOTONIC, &t0);                                              \
+            k_nv_dot<N><<<1, THREADS, nv_smem>>>(dx, dy, dSink, iters);                      \
+            cudaDeviceSynchronize();                                                          \
+            clock_gettime(CLOCK_MONOTONIC, &t1);                                              \
+            printf("glass::nvidia::dot<CT>       n=%3d  %.3f us/op\n",                       \
+                   N, elapsed_us(t0, t1) / iters);                                            \
+            clock_gettime(CLOCK_MONOTONIC, &t0);                                              \
+            k_nv_l2norm<N><<<1, THREADS, nv_smem>>>(dx, dSink, iters);                       \
+            cudaDeviceSynchronize();                                                          \
+            clock_gettime(CLOCK_MONOTONIC, &t1);                                              \
+            printf("glass::nvidia::l2norm<CT>    n=%3d  %.3f us/op\n",                       \
+                   N, elapsed_us(t0, t1) / iters);                                            \
+        }
+    MAYBE_NV_REDUCE_CT(4)
+    MAYBE_NV_REDUCE_CT(6)
+    MAYBE_NV_REDUCE_CT(8)
+    MAYBE_NV_REDUCE_CT(12)
+    MAYBE_NV_REDUCE_CT(14)
+    MAYBE_NV_REDUCE_CT(24)
+    MAYBE_NV_REDUCE_CT(64)
+    MAYBE_NV_REDUCE_CT(256)
+    #undef MAYBE_NV_REDUCE_CT
+
+    cudaFree(dx); cudaFree(dy); cudaFree(dout); cudaFree(dSink);
     return 0;
 }

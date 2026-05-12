@@ -1,623 +1,1058 @@
 {
   "host": "plancher-asus25",
   "arch": "sm_120",
-  "iters": 10000,
+  "iters": 100,
   "cublasdx": "/opt/nvidia/mathdx/25.12",
   "results": {
     "reduce": [
       {
         "label": "glass::high_speed::reduce    n=  8",
-        "us_per_op": 1.068,
-        "raw": "glass::high_speed::reduce    n=  8  1.068 us/op"
+        "us_per_op": 222.613,
+        "raw": "glass::high_speed::reduce    n=  8  222.613 us/op"
       },
       {
         "label": "glass::high_speed::dot       n=  8",
-        "us_per_op": 0.365,
-        "raw": "glass::high_speed::dot       n=  8  0.365 us/op"
+        "us_per_op": 2.724,
+        "raw": "glass::high_speed::dot       n=  8  2.724 us/op"
       },
       {
         "label": "glass::high_speed::l2norm    n=  8",
-        "us_per_op": 0.427,
-        "raw": "glass::high_speed::l2norm    n=  8  0.427 us/op"
+        "us_per_op": 3.588,
+        "raw": "glass::high_speed::l2norm    n=  8  3.588 us/op"
       },
       {
         "label": "cub::BlockReduce             n=  8",
-        "us_per_op": 0.217,
-        "raw": "cub::BlockReduce             n=  8  0.217 us/op"
+        "us_per_op": 3.706,
+        "raw": "cub::BlockReduce             n=  8  3.706 us/op"
       },
       {
         "label": "glass::hs::reduce<CT>        n=  8",
-        "us_per_op": 0.374,
-        "raw": "glass::hs::reduce<CT>        n=  8  0.374 us/op"
+        "us_per_op": 1.364,
+        "raw": "glass::hs::reduce<CT>        n=  8  1.364 us/op"
       },
       {
         "label": "glass::hs::dot<CT>           n=  8",
-        "us_per_op": 0.388,
-        "raw": "glass::hs::dot<CT>           n=  8  0.388 us/op"
+        "us_per_op": 1.344,
+        "raw": "glass::hs::dot<CT>           n=  8  1.344 us/op"
       },
       {
         "label": "glass::hs::l2norm<CT>        n=  8",
-        "us_per_op": 0.448,
-        "raw": "glass::hs::l2norm<CT>        n=  8  0.448 us/op"
+        "us_per_op": 1.318,
+        "raw": "glass::hs::l2norm<CT>        n=  8  1.318 us/op"
+      },
+      {
+        "label": "glass::nvidia::reduce<CT>    n=  8",
+        "us_per_op": 110.965,
+        "raw": "glass::nvidia::reduce<CT>    n=  8  110.965 us/op"
+      },
+      {
+        "label": "glass::nvidia::dot<CT>       n=  8",
+        "us_per_op": 2.483,
+        "raw": "glass::nvidia::dot<CT>       n=  8  2.483 us/op"
+      },
+      {
+        "label": "glass::nvidia::l2norm<CT>    n=  8",
+        "us_per_op": 1.878,
+        "raw": "glass::nvidia::l2norm<CT>    n=  8  1.878 us/op"
       },
       {
         "label": "glass::high_speed::reduce    n= 16",
-        "us_per_op": 0.859,
-        "raw": "glass::high_speed::reduce    n= 16  0.859 us/op"
+        "us_per_op": 211.335,
+        "raw": "glass::high_speed::reduce    n= 16  211.335 us/op"
       },
       {
         "label": "glass::high_speed::dot       n= 16",
-        "us_per_op": 0.335,
-        "raw": "glass::high_speed::dot       n= 16  0.335 us/op"
+        "us_per_op": 4.833,
+        "raw": "glass::high_speed::dot       n= 16  4.833 us/op"
       },
       {
         "label": "glass::high_speed::l2norm    n= 16",
-        "us_per_op": 0.383,
-        "raw": "glass::high_speed::l2norm    n= 16  0.383 us/op"
+        "us_per_op": 1.66,
+        "raw": "glass::high_speed::l2norm    n= 16  1.660 us/op"
       },
       {
         "label": "cub::BlockReduce             n= 16",
-        "us_per_op": 0.195,
-        "raw": "cub::BlockReduce             n= 16  0.195 us/op"
+        "us_per_op": 1.112,
+        "raw": "cub::BlockReduce             n= 16  1.112 us/op"
       },
       {
         "label": "glass::high_speed::reduce    n= 32",
-        "us_per_op": 0.916,
-        "raw": "glass::high_speed::reduce    n= 32  0.916 us/op"
+        "us_per_op": 181.173,
+        "raw": "glass::high_speed::reduce    n= 32  181.173 us/op"
       },
       {
         "label": "glass::high_speed::dot       n= 32",
-        "us_per_op": 0.327,
-        "raw": "glass::high_speed::dot       n= 32  0.327 us/op"
+        "us_per_op": 2.896,
+        "raw": "glass::high_speed::dot       n= 32  2.896 us/op"
       },
       {
         "label": "glass::high_speed::l2norm    n= 32",
-        "us_per_op": 0.408,
-        "raw": "glass::high_speed::l2norm    n= 32  0.408 us/op"
+        "us_per_op": 2.044,
+        "raw": "glass::high_speed::l2norm    n= 32  2.044 us/op"
       },
       {
         "label": "cub::BlockReduce             n= 32",
-        "us_per_op": 0.199,
-        "raw": "cub::BlockReduce             n= 32  0.199 us/op"
+        "us_per_op": 1.239,
+        "raw": "cub::BlockReduce             n= 32  1.239 us/op"
       },
       {
         "label": "glass::high_speed::reduce    n= 64",
-        "us_per_op": 0.792,
-        "raw": "glass::high_speed::reduce    n= 64  0.792 us/op"
+        "us_per_op": 188.988,
+        "raw": "glass::high_speed::reduce    n= 64  188.988 us/op"
       },
       {
         "label": "glass::high_speed::dot       n= 64",
-        "us_per_op": 0.307,
-        "raw": "glass::high_speed::dot       n= 64  0.307 us/op"
+        "us_per_op": 3.141,
+        "raw": "glass::high_speed::dot       n= 64  3.141 us/op"
       },
       {
         "label": "glass::high_speed::l2norm    n= 64",
-        "us_per_op": 0.381,
-        "raw": "glass::high_speed::l2norm    n= 64  0.381 us/op"
+        "us_per_op": 2.035,
+        "raw": "glass::high_speed::l2norm    n= 64  2.035 us/op"
       },
       {
         "label": "cub::BlockReduce             n= 64",
-        "us_per_op": 0.209,
-        "raw": "cub::BlockReduce             n= 64  0.209 us/op"
+        "us_per_op": 2.141,
+        "raw": "cub::BlockReduce             n= 64  2.141 us/op"
       },
       {
         "label": "glass::hs::reduce<CT>        n= 64",
-        "us_per_op": 0.326,
-        "raw": "glass::hs::reduce<CT>        n= 64  0.326 us/op"
+        "us_per_op": 2.894,
+        "raw": "glass::hs::reduce<CT>        n= 64  2.894 us/op"
       },
       {
         "label": "glass::hs::dot<CT>           n= 64",
-        "us_per_op": 0.348,
-        "raw": "glass::hs::dot<CT>           n= 64  0.348 us/op"
+        "us_per_op": 2.292,
+        "raw": "glass::hs::dot<CT>           n= 64  2.292 us/op"
       },
       {
         "label": "glass::hs::l2norm<CT>        n= 64",
-        "us_per_op": 0.397,
-        "raw": "glass::hs::l2norm<CT>        n= 64  0.397 us/op"
+        "us_per_op": 2.034,
+        "raw": "glass::hs::l2norm<CT>        n= 64  2.034 us/op"
+      },
+      {
+        "label": "glass::nvidia::reduce<CT>    n= 64",
+        "us_per_op": 99.182,
+        "raw": "glass::nvidia::reduce<CT>    n= 64  99.182 us/op"
+      },
+      {
+        "label": "glass::nvidia::dot<CT>       n= 64",
+        "us_per_op": 3.211,
+        "raw": "glass::nvidia::dot<CT>       n= 64  3.211 us/op"
+      },
+      {
+        "label": "glass::nvidia::l2norm<CT>    n= 64",
+        "us_per_op": 1.472,
+        "raw": "glass::nvidia::l2norm<CT>    n= 64  1.472 us/op"
       },
       {
         "label": "glass::high_speed::reduce    n=128",
-        "us_per_op": 0.788,
-        "raw": "glass::high_speed::reduce    n=128  0.788 us/op"
+        "us_per_op": 262.134,
+        "raw": "glass::high_speed::reduce    n=128  262.134 us/op"
       },
       {
         "label": "glass::high_speed::dot       n=128",
-        "us_per_op": 0.319,
-        "raw": "glass::high_speed::dot       n=128  0.319 us/op"
+        "us_per_op": 2.836,
+        "raw": "glass::high_speed::dot       n=128  2.836 us/op"
       },
       {
         "label": "glass::high_speed::l2norm    n=128",
-        "us_per_op": 0.368,
-        "raw": "glass::high_speed::l2norm    n=128  0.368 us/op"
+        "us_per_op": 2.477,
+        "raw": "glass::high_speed::l2norm    n=128  2.477 us/op"
       },
       {
         "label": "cub::BlockReduce             n=128",
-        "us_per_op": 0.194,
-        "raw": "cub::BlockReduce             n=128  0.194 us/op"
+        "us_per_op": 4.218,
+        "raw": "cub::BlockReduce             n=128  4.218 us/op"
       },
       {
         "label": "glass::high_speed::reduce    n=256",
-        "us_per_op": 1.175,
-        "raw": "glass::high_speed::reduce    n=256  1.175 us/op"
+        "us_per_op": 233.916,
+        "raw": "glass::high_speed::reduce    n=256  233.916 us/op"
       },
       {
         "label": "glass::high_speed::dot       n=256",
-        "us_per_op": 0.322,
-        "raw": "glass::high_speed::dot       n=256  0.322 us/op"
+        "us_per_op": 3.76,
+        "raw": "glass::high_speed::dot       n=256  3.760 us/op"
       },
       {
         "label": "glass::high_speed::l2norm    n=256",
-        "us_per_op": 0.381,
-        "raw": "glass::high_speed::l2norm    n=256  0.381 us/op"
+        "us_per_op": 1.598,
+        "raw": "glass::high_speed::l2norm    n=256  1.598 us/op"
       },
       {
         "label": "cub::BlockReduce             n=256",
-        "us_per_op": 0.19,
-        "raw": "cub::BlockReduce             n=256  0.190 us/op"
+        "us_per_op": 1.676,
+        "raw": "cub::BlockReduce             n=256  1.676 us/op"
       },
       {
         "label": "glass::hs::reduce<CT>        n=256",
-        "us_per_op": 0.322,
-        "raw": "glass::hs::reduce<CT>        n=256  0.322 us/op"
+        "us_per_op": 3.15,
+        "raw": "glass::hs::reduce<CT>        n=256  3.150 us/op"
       },
       {
         "label": "glass::hs::dot<CT>           n=256",
-        "us_per_op": 0.348,
-        "raw": "glass::hs::dot<CT>           n=256  0.348 us/op"
+        "us_per_op": 3.109,
+        "raw": "glass::hs::dot<CT>           n=256  3.109 us/op"
       },
       {
         "label": "glass::hs::l2norm<CT>        n=256",
-        "us_per_op": 0.4,
-        "raw": "glass::hs::l2norm<CT>        n=256  0.400 us/op"
+        "us_per_op": 2.064,
+        "raw": "glass::hs::l2norm<CT>        n=256  2.064 us/op"
+      },
+      {
+        "label": "glass::nvidia::reduce<CT>    n=256",
+        "us_per_op": 112.994,
+        "raw": "glass::nvidia::reduce<CT>    n=256  112.994 us/op"
+      },
+      {
+        "label": "glass::nvidia::dot<CT>       n=256",
+        "us_per_op": 3.625,
+        "raw": "glass::nvidia::dot<CT>       n=256  3.625 us/op"
+      },
+      {
+        "label": "glass::nvidia::l2norm<CT>    n=256",
+        "us_per_op": 1.938,
+        "raw": "glass::nvidia::l2norm<CT>    n=256  1.938 us/op"
       }
     ],
     "gemv": [
       {
         "label": "glass::gemv (global) m= 4 n= 4",
-        "us_per_op": 0.698,
-        "raw": "glass::gemv (global) m= 4 n= 4  0.698 us/op"
+        "us_per_op": 209.834,
+        "raw": "glass::gemv (global) m= 4 n= 4  209.834 us/op"
       },
       {
         "label": "glass::gemv (shared) m= 4 n= 4",
-        "us_per_op": 0.156,
-        "raw": "glass::gemv (shared) m= 4 n= 4  0.156 us/op"
+        "us_per_op": 2.202,
+        "raw": "glass::gemv (shared) m= 4 n= 4  2.202 us/op"
       },
       {
         "label": "glass::gemv<CT> (global) m= 4 n= 4",
-        "us_per_op": 0.095,
-        "raw": "glass::gemv<CT> (global) m= 4 n= 4  0.095 us/op"
+        "us_per_op": 1.257,
+        "raw": "glass::gemv<CT> (global) m= 4 n= 4  1.257 us/op"
       },
       {
         "label": "glass::gemv<CT> (shared) m= 4 n= 4",
-        "us_per_op": 0.103,
-        "raw": "glass::gemv<CT> (shared) m= 4 n= 4  0.103 us/op"
+        "us_per_op": 2.142,
+        "raw": "glass::gemv<CT> (shared) m= 4 n= 4  2.142 us/op"
       },
       {
         "label": "cuBLASDx gemv (global)       m= 4 n= 4",
-        "us_per_op": 0.021,
-        "raw": "cuBLASDx gemv (global)       m= 4 n= 4  0.021 us/op"
+        "us_per_op": 109.348,
+        "raw": "cuBLASDx gemv (global)       m= 4 n= 4  109.348 us/op"
       },
       {
         "label": "cuBLASDx gemv (shared)       m= 4 n= 4",
-        "us_per_op": 0.013,
-        "raw": "cuBLASDx gemv (shared)       m= 4 n= 4  0.013 us/op"
+        "us_per_op": 1.535,
+        "raw": "cuBLASDx gemv (shared)       m= 4 n= 4  1.535 us/op"
+      },
+      {
+        "label": "glass::nvidia gemv (default) m= 4 n= 4",
+        "us_per_op": 2.423,
+        "raw": "glass::nvidia gemv (default) m= 4 n= 4  2.423 us/op"
+      },
+      {
+        "label": "glass::nvidia gemv (TC=256)  m= 4 n= 4",
+        "us_per_op": 2.715,
+        "raw": "glass::nvidia gemv (TC=256)  m= 4 n= 4  2.715 us/op"
       },
       {
         "label": "glass::gemv (global) m= 6 n= 6",
-        "us_per_op": 1.069,
-        "raw": "glass::gemv (global) m= 6 n= 6  1.069 us/op"
+        "us_per_op": 209.073,
+        "raw": "glass::gemv (global) m= 6 n= 6  209.073 us/op"
       },
       {
         "label": "glass::gemv (shared) m= 6 n= 6",
-        "us_per_op": 0.201,
-        "raw": "glass::gemv (shared) m= 6 n= 6  0.201 us/op"
+        "us_per_op": 2.181,
+        "raw": "glass::gemv (shared) m= 6 n= 6  2.181 us/op"
       },
       {
         "label": "glass::gemv<CT> (global) m= 6 n= 6",
-        "us_per_op": 0.103,
-        "raw": "glass::gemv<CT> (global) m= 6 n= 6  0.103 us/op"
+        "us_per_op": 1.634,
+        "raw": "glass::gemv<CT> (global) m= 6 n= 6  1.634 us/op"
       },
       {
         "label": "glass::gemv<CT> (shared) m= 6 n= 6",
-        "us_per_op": 0.117,
-        "raw": "glass::gemv<CT> (shared) m= 6 n= 6  0.117 us/op"
+        "us_per_op": 1.432,
+        "raw": "glass::gemv<CT> (shared) m= 6 n= 6  1.432 us/op"
       },
       {
         "label": "cuBLASDx gemv (global)       m= 6 n= 6",
-        "us_per_op": 0.03,
-        "raw": "cuBLASDx gemv (global)       m= 6 n= 6  0.030 us/op"
+        "us_per_op": 90.556,
+        "raw": "cuBLASDx gemv (global)       m= 6 n= 6  90.556 us/op"
       },
       {
         "label": "cuBLASDx gemv (shared)       m= 6 n= 6",
-        "us_per_op": 0.011,
-        "raw": "cuBLASDx gemv (shared)       m= 6 n= 6  0.011 us/op"
+        "us_per_op": 2.977,
+        "raw": "cuBLASDx gemv (shared)       m= 6 n= 6  2.977 us/op"
+      },
+      {
+        "label": "glass::nvidia gemv (default) m= 6 n= 6",
+        "us_per_op": 2.633,
+        "raw": "glass::nvidia gemv (default) m= 6 n= 6  2.633 us/op"
+      },
+      {
+        "label": "glass::nvidia gemv (TC=256)  m= 6 n= 6",
+        "us_per_op": 1.839,
+        "raw": "glass::nvidia gemv (TC=256)  m= 6 n= 6  1.839 us/op"
       },
       {
         "label": "glass::gemv (global) m= 8 n= 8",
-        "us_per_op": 0.708,
-        "raw": "glass::gemv (global) m= 8 n= 8  0.708 us/op"
+        "us_per_op": 216.566,
+        "raw": "glass::gemv (global) m= 8 n= 8  216.566 us/op"
       },
       {
         "label": "glass::gemv (shared) m= 8 n= 8",
-        "us_per_op": 0.152,
-        "raw": "glass::gemv (shared) m= 8 n= 8  0.152 us/op"
+        "us_per_op": 1.422,
+        "raw": "glass::gemv (shared) m= 8 n= 8  1.422 us/op"
       },
       {
         "label": "glass::gemv<CT> (global) m= 8 n= 8",
-        "us_per_op": 0.173,
-        "raw": "glass::gemv<CT> (global) m= 8 n= 8  0.173 us/op"
+        "us_per_op": 1.177,
+        "raw": "glass::gemv<CT> (global) m= 8 n= 8  1.177 us/op"
       },
       {
         "label": "glass::gemv<CT> (shared) m= 8 n= 8",
-        "us_per_op": 0.127,
-        "raw": "glass::gemv<CT> (shared) m= 8 n= 8  0.127 us/op"
+        "us_per_op": 0.998,
+        "raw": "glass::gemv<CT> (shared) m= 8 n= 8  0.998 us/op"
       },
       {
         "label": "cuBLASDx gemv (global)       m= 8 n= 8",
-        "us_per_op": 0.03,
-        "raw": "cuBLASDx gemv (global)       m= 8 n= 8  0.030 us/op"
+        "us_per_op": 64.52,
+        "raw": "cuBLASDx gemv (global)       m= 8 n= 8  64.520 us/op"
       },
       {
         "label": "cuBLASDx gemv (shared)       m= 8 n= 8",
-        "us_per_op": 0.012,
-        "raw": "cuBLASDx gemv (shared)       m= 8 n= 8  0.012 us/op"
+        "us_per_op": 4.075,
+        "raw": "cuBLASDx gemv (shared)       m= 8 n= 8  4.075 us/op"
+      },
+      {
+        "label": "glass::nvidia gemv (default) m= 8 n= 8",
+        "us_per_op": 3.536,
+        "raw": "glass::nvidia gemv (default) m= 8 n= 8  3.536 us/op"
+      },
+      {
+        "label": "glass::nvidia gemv (TC=256)  m= 8 n= 8",
+        "us_per_op": 2.156,
+        "raw": "glass::nvidia gemv (TC=256)  m= 8 n= 8  2.156 us/op"
       },
       {
         "label": "glass::gemv (global) m=12 n=12",
-        "us_per_op": 0.721,
-        "raw": "glass::gemv (global) m=12 n=12  0.721 us/op"
+        "us_per_op": 211.131,
+        "raw": "glass::gemv (global) m=12 n=12  211.131 us/op"
       },
       {
         "label": "glass::gemv (shared) m=12 n=12",
-        "us_per_op": 0.204,
-        "raw": "glass::gemv (shared) m=12 n=12  0.204 us/op"
+        "us_per_op": 4.647,
+        "raw": "glass::gemv (shared) m=12 n=12  4.647 us/op"
       },
       {
         "label": "glass::gemv<CT> (global) m=12 n=12",
-        "us_per_op": 0.165,
-        "raw": "glass::gemv<CT> (global) m=12 n=12  0.165 us/op"
+        "us_per_op": 1.285,
+        "raw": "glass::gemv<CT> (global) m=12 n=12  1.285 us/op"
       },
       {
         "label": "glass::gemv<CT> (shared) m=12 n=12",
-        "us_per_op": 0.146,
-        "raw": "glass::gemv<CT> (shared) m=12 n=12  0.146 us/op"
+        "us_per_op": 1.126,
+        "raw": "glass::gemv<CT> (shared) m=12 n=12  1.126 us/op"
       },
       {
         "label": "cuBLASDx gemv (global)       m=12 n=12",
-        "us_per_op": 0.023,
-        "raw": "cuBLASDx gemv (global)       m=12 n=12  0.023 us/op"
+        "us_per_op": 77.327,
+        "raw": "cuBLASDx gemv (global)       m=12 n=12  77.327 us/op"
       },
       {
         "label": "cuBLASDx gemv (shared)       m=12 n=12",
-        "us_per_op": 0.011,
-        "raw": "cuBLASDx gemv (shared)       m=12 n=12  0.011 us/op"
+        "us_per_op": 2.771,
+        "raw": "cuBLASDx gemv (shared)       m=12 n=12  2.771 us/op"
+      },
+      {
+        "label": "glass::nvidia gemv (default) m=12 n=12",
+        "us_per_op": 1.995,
+        "raw": "glass::nvidia gemv (default) m=12 n=12  1.995 us/op"
+      },
+      {
+        "label": "glass::nvidia gemv (TC=256)  m=12 n=12",
+        "us_per_op": 1.5,
+        "raw": "glass::nvidia gemv (TC=256)  m=12 n=12  1.500 us/op"
       },
       {
         "label": "glass::gemv (global) m=14 n=14",
-        "us_per_op": 0.869,
-        "raw": "glass::gemv (global) m=14 n=14  0.869 us/op"
+        "us_per_op": 257.254,
+        "raw": "glass::gemv (global) m=14 n=14  257.254 us/op"
       },
       {
         "label": "glass::gemv (shared) m=14 n=14",
-        "us_per_op": 0.272,
-        "raw": "glass::gemv (shared) m=14 n=14  0.272 us/op"
+        "us_per_op": 1.555,
+        "raw": "glass::gemv (shared) m=14 n=14  1.555 us/op"
       },
       {
         "label": "glass::gemv<CT> (global) m=14 n=14",
-        "us_per_op": 0.166,
-        "raw": "glass::gemv<CT> (global) m=14 n=14  0.166 us/op"
+        "us_per_op": 1.607,
+        "raw": "glass::gemv<CT> (global) m=14 n=14  1.607 us/op"
       },
       {
         "label": "glass::gemv<CT> (shared) m=14 n=14",
-        "us_per_op": 0.338,
-        "raw": "glass::gemv<CT> (shared) m=14 n=14  0.338 us/op"
+        "us_per_op": 2.315,
+        "raw": "glass::gemv<CT> (shared) m=14 n=14  2.315 us/op"
       },
       {
         "label": "cuBLASDx gemv (global)       m=14 n=14",
-        "us_per_op": 0.036,
-        "raw": "cuBLASDx gemv (global)       m=14 n=14  0.036 us/op"
+        "us_per_op": 110.307,
+        "raw": "cuBLASDx gemv (global)       m=14 n=14  110.307 us/op"
       },
       {
         "label": "cuBLASDx gemv (shared)       m=14 n=14",
-        "us_per_op": 0.033,
-        "raw": "cuBLASDx gemv (shared)       m=14 n=14  0.033 us/op"
+        "us_per_op": 4.27,
+        "raw": "cuBLASDx gemv (shared)       m=14 n=14  4.270 us/op"
+      },
+      {
+        "label": "glass::nvidia gemv (default) m=14 n=14",
+        "us_per_op": 2.481,
+        "raw": "glass::nvidia gemv (default) m=14 n=14  2.481 us/op"
+      },
+      {
+        "label": "glass::nvidia gemv (TC=256)  m=14 n=14",
+        "us_per_op": 1.512,
+        "raw": "glass::nvidia gemv (TC=256)  m=14 n=14  1.512 us/op"
       },
       {
         "label": "glass::gemv (global) m=24 n=24",
-        "us_per_op": 1.056,
-        "raw": "glass::gemv (global) m=24 n=24  1.056 us/op"
+        "us_per_op": 200.629,
+        "raw": "glass::gemv (global) m=24 n=24  200.629 us/op"
       },
       {
         "label": "glass::gemv (shared) m=24 n=24",
-        "us_per_op": 0.271,
-        "raw": "glass::gemv (shared) m=24 n=24  0.271 us/op"
+        "us_per_op": 5.569,
+        "raw": "glass::gemv (shared) m=24 n=24  5.569 us/op"
       },
       {
         "label": "glass::gemv<CT> (global) m=24 n=24",
-        "us_per_op": 0.231,
-        "raw": "glass::gemv<CT> (global) m=24 n=24  0.231 us/op"
+        "us_per_op": 2.743,
+        "raw": "glass::gemv<CT> (global) m=24 n=24  2.743 us/op"
       },
       {
         "label": "glass::gemv<CT> (shared) m=24 n=24",
-        "us_per_op": 0.166,
-        "raw": "glass::gemv<CT> (shared) m=24 n=24  0.166 us/op"
+        "us_per_op": 2.335,
+        "raw": "glass::gemv<CT> (shared) m=24 n=24  2.335 us/op"
       },
       {
         "label": "cuBLASDx gemv (global)       m=24 n=24",
-        "us_per_op": 0.026,
-        "raw": "cuBLASDx gemv (global)       m=24 n=24  0.026 us/op"
+        "us_per_op": 58.272,
+        "raw": "cuBLASDx gemv (global)       m=24 n=24  58.272 us/op"
       },
       {
         "label": "cuBLASDx gemv (shared)       m=24 n=24",
-        "us_per_op": 0.026,
-        "raw": "cuBLASDx gemv (shared)       m=24 n=24  0.026 us/op"
+        "us_per_op": 2.833,
+        "raw": "cuBLASDx gemv (shared)       m=24 n=24  2.833 us/op"
+      },
+      {
+        "label": "glass::nvidia gemv (default) m=24 n=24",
+        "us_per_op": 2.411,
+        "raw": "glass::nvidia gemv (default) m=24 n=24  2.411 us/op"
+      },
+      {
+        "label": "glass::nvidia gemv (TC=256)  m=24 n=24",
+        "us_per_op": 2.163,
+        "raw": "glass::nvidia gemv (TC=256)  m=24 n=24  2.163 us/op"
       },
       {
         "label": "glass::gemv (global) m=64 n=64",
-        "us_per_op": 1.219,
-        "raw": "glass::gemv (global) m=64 n=64  1.219 us/op"
+        "us_per_op": 263.454,
+        "raw": "glass::gemv (global) m=64 n=64  263.454 us/op"
       },
       {
         "label": "glass::gemv (shared) m=64 n=64",
-        "us_per_op": 0.539,
-        "raw": "glass::gemv (shared) m=64 n=64  0.539 us/op"
+        "us_per_op": 2.745,
+        "raw": "glass::gemv (shared) m=64 n=64  2.745 us/op"
       },
       {
         "label": "glass::gemv<CT> (global) m=64 n=64",
-        "us_per_op": 0.439,
-        "raw": "glass::gemv<CT> (global) m=64 n=64  0.439 us/op"
+        "us_per_op": 5.16,
+        "raw": "glass::gemv<CT> (global) m=64 n=64  5.160 us/op"
       },
       {
         "label": "glass::gemv<CT> (shared) m=64 n=64",
-        "us_per_op": 0.248,
-        "raw": "glass::gemv<CT> (shared) m=64 n=64  0.248 us/op"
+        "us_per_op": 1.732,
+        "raw": "glass::gemv<CT> (shared) m=64 n=64  1.732 us/op"
       },
       {
         "label": "cuBLASDx gemv (global)       m=64 n=64",
-        "us_per_op": 0.041,
-        "raw": "cuBLASDx gemv (global)       m=64 n=64  0.041 us/op"
+        "us_per_op": 104.578,
+        "raw": "cuBLASDx gemv (global)       m=64 n=64  104.578 us/op"
       },
       {
         "label": "cuBLASDx gemv (shared)       m=64 n=64",
-        "us_per_op": 0.051,
-        "raw": "cuBLASDx gemv (shared)       m=64 n=64  0.051 us/op"
+        "us_per_op": 4.943,
+        "raw": "cuBLASDx gemv (shared)       m=64 n=64  4.943 us/op"
+      },
+      {
+        "label": "glass::nvidia gemv (default) m=64 n=64",
+        "us_per_op": 3.365,
+        "raw": "glass::nvidia gemv (default) m=64 n=64  3.365 us/op"
+      },
+      {
+        "label": "glass::nvidia gemv (TC=256)  m=64 n=64",
+        "us_per_op": 4.349,
+        "raw": "glass::nvidia gemv (TC=256)  m=64 n=64  4.349 us/op"
       }
     ],
     "gemm": [
       {
         "label": "glass::gemm (global) m= 4 n= 4 k= 4",
-        "us_per_op": 0.887,
-        "raw": "glass::gemm (global) m= 4 n= 4 k= 4  0.887 us/op"
+        "us_per_op": 234.038,
+        "raw": "glass::gemm (global) m= 4 n= 4 k= 4  234.038 us/op"
       },
       {
         "label": "glass::gemm (shared) m= 4 n= 4 k= 4",
-        "us_per_op": 0.196,
-        "raw": "glass::gemm (shared) m= 4 n= 4 k= 4  0.196 us/op"
+        "us_per_op": 3.113,
+        "raw": "glass::gemm (shared) m= 4 n= 4 k= 4  3.113 us/op"
       },
       {
         "label": "glass::gemm (tiled)  m= 4 n= 4 k= 4",
-        "us_per_op": 0.484,
-        "raw": "glass::gemm (tiled)  m= 4 n= 4 k= 4  0.484 us/op"
+        "us_per_op": 2.291,
+        "raw": "glass::gemm (tiled)  m= 4 n= 4 k= 4  2.291 us/op"
       },
       {
         "label": "glass::gemm<CT> (global) m= 4 n= 4 k= 4",
-        "us_per_op": 0.163,
-        "raw": "glass::gemm<CT> (global) m= 4 n= 4 k= 4  0.163 us/op"
+        "us_per_op": 2.83,
+        "raw": "glass::gemm<CT> (global) m= 4 n= 4 k= 4  2.830 us/op"
       },
       {
         "label": "glass::gemm<CT> (shared) m= 4 n= 4 k= 4",
-        "us_per_op": 0.103,
-        "raw": "glass::gemm<CT> (shared) m= 4 n= 4 k= 4  0.103 us/op"
+        "us_per_op": 3.803,
+        "raw": "glass::gemm<CT> (shared) m= 4 n= 4 k= 4  3.803 us/op"
       },
       {
         "label": "cuBLASDx gemm (global)       m= 4 n= 4 k= 4",
-        "us_per_op": 0.019,
-        "raw": "cuBLASDx gemm (global)       m= 4 n= 4 k= 4  0.019 us/op"
+        "us_per_op": 117.247,
+        "raw": "cuBLASDx gemm (global)       m= 4 n= 4 k= 4  117.247 us/op"
       },
       {
         "label": "cuBLASDx gemm (shared)       m= 4 n= 4 k= 4",
-        "us_per_op": 0.018,
-        "raw": "cuBLASDx gemm (shared)       m= 4 n= 4 k= 4  0.018 us/op"
+        "us_per_op": 2.564,
+        "raw": "cuBLASDx gemm (shared)       m= 4 n= 4 k= 4  2.564 us/op"
+      },
+      {
+        "label": "glass::nvidia gemm (default) m= 4 n= 4 k= 4",
+        "us_per_op": 1.665,
+        "raw": "glass::nvidia gemm (default) m= 4 n= 4 k= 4  1.665 us/op"
+      },
+      {
+        "label": "glass::nvidia gemm (TC=256)  m= 4 n= 4 k= 4",
+        "us_per_op": 1.383,
+        "raw": "glass::nvidia gemm (TC=256)  m= 4 n= 4 k= 4  1.383 us/op"
       },
       {
         "label": "glass::gemm (global) m= 6 n= 6 k= 6",
-        "us_per_op": 0.819,
-        "raw": "glass::gemm (global) m= 6 n= 6 k= 6  0.819 us/op"
+        "us_per_op": 199.747,
+        "raw": "glass::gemm (global) m= 6 n= 6 k= 6  199.747 us/op"
       },
       {
         "label": "glass::gemm (shared) m= 6 n= 6 k= 6",
-        "us_per_op": 0.258,
-        "raw": "glass::gemm (shared) m= 6 n= 6 k= 6  0.258 us/op"
+        "us_per_op": 2.189,
+        "raw": "glass::gemm (shared) m= 6 n= 6 k= 6  2.189 us/op"
       },
       {
         "label": "glass::gemm (tiled)  m= 6 n= 6 k= 6",
-        "us_per_op": 0.554,
-        "raw": "glass::gemm (tiled)  m= 6 n= 6 k= 6  0.554 us/op"
+        "us_per_op": 2.204,
+        "raw": "glass::gemm (tiled)  m= 6 n= 6 k= 6  2.204 us/op"
       },
       {
         "label": "glass::gemm<CT> (global) m= 6 n= 6 k= 6",
-        "us_per_op": 0.141,
-        "raw": "glass::gemm<CT> (global) m= 6 n= 6 k= 6  0.141 us/op"
+        "us_per_op": 1.973,
+        "raw": "glass::gemm<CT> (global) m= 6 n= 6 k= 6  1.973 us/op"
       },
       {
         "label": "glass::gemm<CT> (shared) m= 6 n= 6 k= 6",
-        "us_per_op": 0.108,
-        "raw": "glass::gemm<CT> (shared) m= 6 n= 6 k= 6  0.108 us/op"
+        "us_per_op": 1.529,
+        "raw": "glass::gemm<CT> (shared) m= 6 n= 6 k= 6  1.529 us/op"
       },
       {
         "label": "cuBLASDx gemm (global)       m= 6 n= 6 k= 6",
-        "us_per_op": 0.028,
-        "raw": "cuBLASDx gemm (global)       m= 6 n= 6 k= 6  0.028 us/op"
+        "us_per_op": 158.891,
+        "raw": "cuBLASDx gemm (global)       m= 6 n= 6 k= 6  158.891 us/op"
       },
       {
         "label": "cuBLASDx gemm (shared)       m= 6 n= 6 k= 6",
-        "us_per_op": 0.041,
-        "raw": "cuBLASDx gemm (shared)       m= 6 n= 6 k= 6  0.041 us/op"
+        "us_per_op": 2.258,
+        "raw": "cuBLASDx gemm (shared)       m= 6 n= 6 k= 6  2.258 us/op"
+      },
+      {
+        "label": "glass::nvidia gemm (default) m= 6 n= 6 k= 6",
+        "us_per_op": 1.846,
+        "raw": "glass::nvidia gemm (default) m= 6 n= 6 k= 6  1.846 us/op"
+      },
+      {
+        "label": "glass::nvidia gemm (TC=256)  m= 6 n= 6 k= 6",
+        "us_per_op": 1.868,
+        "raw": "glass::nvidia gemm (TC=256)  m= 6 n= 6 k= 6  1.868 us/op"
       },
       {
         "label": "glass::gemm (global) m= 8 n= 8 k= 8",
-        "us_per_op": 0.9,
-        "raw": "glass::gemm (global) m= 8 n= 8 k= 8  0.900 us/op"
+        "us_per_op": 244.318,
+        "raw": "glass::gemm (global) m= 8 n= 8 k= 8  244.318 us/op"
       },
       {
         "label": "glass::gemm (shared) m= 8 n= 8 k= 8",
-        "us_per_op": 0.217,
-        "raw": "glass::gemm (shared) m= 8 n= 8 k= 8  0.217 us/op"
+        "us_per_op": 2.902,
+        "raw": "glass::gemm (shared) m= 8 n= 8 k= 8  2.902 us/op"
       },
       {
         "label": "glass::gemm (tiled)  m= 8 n= 8 k= 8",
-        "us_per_op": 0.471,
-        "raw": "glass::gemm (tiled)  m= 8 n= 8 k= 8  0.471 us/op"
+        "us_per_op": 2.296,
+        "raw": "glass::gemm (tiled)  m= 8 n= 8 k= 8  2.296 us/op"
       },
       {
         "label": "glass::gemm<CT> (global) m= 8 n= 8 k= 8",
-        "us_per_op": 0.124,
-        "raw": "glass::gemm<CT> (global) m= 8 n= 8 k= 8  0.124 us/op"
+        "us_per_op": 1.958,
+        "raw": "glass::gemm<CT> (global) m= 8 n= 8 k= 8  1.958 us/op"
       },
       {
         "label": "glass::gemm<CT> (shared) m= 8 n= 8 k= 8",
-        "us_per_op": 0.133,
-        "raw": "glass::gemm<CT> (shared) m= 8 n= 8 k= 8  0.133 us/op"
+        "us_per_op": 2.112,
+        "raw": "glass::gemm<CT> (shared) m= 8 n= 8 k= 8  2.112 us/op"
       },
       {
         "label": "cuBLASDx gemm (global)       m= 8 n= 8 k= 8",
-        "us_per_op": 0.025,
-        "raw": "cuBLASDx gemm (global)       m= 8 n= 8 k= 8  0.025 us/op"
+        "us_per_op": 49.582,
+        "raw": "cuBLASDx gemm (global)       m= 8 n= 8 k= 8  49.582 us/op"
       },
       {
         "label": "cuBLASDx gemm (shared)       m= 8 n= 8 k= 8",
-        "us_per_op": 0.03,
-        "raw": "cuBLASDx gemm (shared)       m= 8 n= 8 k= 8  0.030 us/op"
+        "us_per_op": 4.974,
+        "raw": "cuBLASDx gemm (shared)       m= 8 n= 8 k= 8  4.974 us/op"
+      },
+      {
+        "label": "glass::nvidia gemm (default) m= 8 n= 8 k= 8",
+        "us_per_op": 3.625,
+        "raw": "glass::nvidia gemm (default) m= 8 n= 8 k= 8  3.625 us/op"
+      },
+      {
+        "label": "glass::nvidia gemm (TC=256)  m= 8 n= 8 k= 8",
+        "us_per_op": 3.925,
+        "raw": "glass::nvidia gemm (TC=256)  m= 8 n= 8 k= 8  3.925 us/op"
       },
       {
         "label": "glass::gemm (global) m=12 n=12 k=12",
-        "us_per_op": 0.889,
-        "raw": "glass::gemm (global) m=12 n=12 k=12  0.889 us/op"
+        "us_per_op": 275.27,
+        "raw": "glass::gemm (global) m=12 n=12 k=12  275.270 us/op"
       },
       {
         "label": "glass::gemm (shared) m=12 n=12 k=12",
-        "us_per_op": 0.29,
-        "raw": "glass::gemm (shared) m=12 n=12 k=12  0.290 us/op"
+        "us_per_op": 2.592,
+        "raw": "glass::gemm (shared) m=12 n=12 k=12  2.592 us/op"
       },
       {
         "label": "glass::gemm (tiled)  m=12 n=12 k=12",
-        "us_per_op": 0.838,
-        "raw": "glass::gemm (tiled)  m=12 n=12 k=12  0.838 us/op"
+        "us_per_op": 4.352,
+        "raw": "glass::gemm (tiled)  m=12 n=12 k=12  4.352 us/op"
       },
       {
         "label": "glass::gemm<CT> (global) m=12 n=12 k=12",
-        "us_per_op": 0.192,
-        "raw": "glass::gemm<CT> (global) m=12 n=12 k=12  0.192 us/op"
+        "us_per_op": 1.274,
+        "raw": "glass::gemm<CT> (global) m=12 n=12 k=12  1.274 us/op"
       },
       {
         "label": "glass::gemm<CT> (shared) m=12 n=12 k=12",
-        "us_per_op": 0.131,
-        "raw": "glass::gemm<CT> (shared) m=12 n=12 k=12  0.131 us/op"
+        "us_per_op": 1.213,
+        "raw": "glass::gemm<CT> (shared) m=12 n=12 k=12  1.213 us/op"
       },
       {
         "label": "cuBLASDx gemm (global)       m=12 n=12 k=12",
-        "us_per_op": 0.011,
-        "raw": "cuBLASDx gemm (global)       m=12 n=12 k=12  0.011 us/op"
+        "us_per_op": 96.898,
+        "raw": "cuBLASDx gemm (global)       m=12 n=12 k=12  96.898 us/op"
       },
       {
         "label": "cuBLASDx gemm (shared)       m=12 n=12 k=12",
-        "us_per_op": 0.009,
-        "raw": "cuBLASDx gemm (shared)       m=12 n=12 k=12  0.009 us/op"
+        "us_per_op": 2.611,
+        "raw": "cuBLASDx gemm (shared)       m=12 n=12 k=12  2.611 us/op"
+      },
+      {
+        "label": "glass::nvidia gemm (default) m=12 n=12 k=12",
+        "us_per_op": 3.637,
+        "raw": "glass::nvidia gemm (default) m=12 n=12 k=12  3.637 us/op"
+      },
+      {
+        "label": "glass::nvidia gemm (TC=256)  m=12 n=12 k=12",
+        "us_per_op": 3.061,
+        "raw": "glass::nvidia gemm (TC=256)  m=12 n=12 k=12  3.061 us/op"
       },
       {
         "label": "glass::gemm (global) m=14 n=14 k=14",
-        "us_per_op": 0.991,
-        "raw": "glass::gemm (global) m=14 n=14 k=14  0.991 us/op"
+        "us_per_op": 291.221,
+        "raw": "glass::gemm (global) m=14 n=14 k=14  291.221 us/op"
       },
       {
         "label": "glass::gemm (shared) m=14 n=14 k=14",
-        "us_per_op": 0.331,
-        "raw": "glass::gemm (shared) m=14 n=14 k=14  0.331 us/op"
+        "us_per_op": 2.629,
+        "raw": "glass::gemm (shared) m=14 n=14 k=14  2.629 us/op"
       },
       {
         "label": "glass::gemm (tiled)  m=14 n=14 k=14",
-        "us_per_op": 0.914,
-        "raw": "glass::gemm (tiled)  m=14 n=14 k=14  0.914 us/op"
+        "us_per_op": 3.78,
+        "raw": "glass::gemm (tiled)  m=14 n=14 k=14  3.780 us/op"
       },
       {
         "label": "glass::gemm<CT> (global) m=14 n=14 k=14",
-        "us_per_op": 0.207,
-        "raw": "glass::gemm<CT> (global) m=14 n=14 k=14  0.207 us/op"
+        "us_per_op": 2.351,
+        "raw": "glass::gemm<CT> (global) m=14 n=14 k=14  2.351 us/op"
       },
       {
         "label": "glass::gemm<CT> (shared) m=14 n=14 k=14",
-        "us_per_op": 0.169,
-        "raw": "glass::gemm<CT> (shared) m=14 n=14 k=14  0.169 us/op"
+        "us_per_op": 2.677,
+        "raw": "glass::gemm<CT> (shared) m=14 n=14 k=14  2.677 us/op"
       },
       {
         "label": "cuBLASDx gemm (global)       m=14 n=14 k=14",
-        "us_per_op": 0.013,
-        "raw": "cuBLASDx gemm (global)       m=14 n=14 k=14  0.013 us/op"
+        "us_per_op": 133.341,
+        "raw": "cuBLASDx gemm (global)       m=14 n=14 k=14  133.341 us/op"
       },
       {
         "label": "cuBLASDx gemm (shared)       m=14 n=14 k=14",
-        "us_per_op": 0.008,
-        "raw": "cuBLASDx gemm (shared)       m=14 n=14 k=14  0.008 us/op"
+        "us_per_op": 2.351,
+        "raw": "cuBLASDx gemm (shared)       m=14 n=14 k=14  2.351 us/op"
+      },
+      {
+        "label": "glass::nvidia gemm (default) m=14 n=14 k=14",
+        "us_per_op": 1.574,
+        "raw": "glass::nvidia gemm (default) m=14 n=14 k=14  1.574 us/op"
+      },
+      {
+        "label": "glass::nvidia gemm (TC=256)  m=14 n=14 k=14",
+        "us_per_op": 1.692,
+        "raw": "glass::nvidia gemm (TC=256)  m=14 n=14 k=14  1.692 us/op"
       },
       {
         "label": "glass::gemm (global) m=24 n=24 k=24",
-        "us_per_op": 2.105,
-        "raw": "glass::gemm (global) m=24 n=24 k=24  2.105 us/op"
+        "us_per_op": 468.198,
+        "raw": "glass::gemm (global) m=24 n=24 k=24  468.198 us/op"
       },
       {
         "label": "glass::gemm (shared) m=24 n=24 k=24",
-        "us_per_op": 1.022,
-        "raw": "glass::gemm (shared) m=24 n=24 k=24  1.022 us/op"
+        "us_per_op": 4.242,
+        "raw": "glass::gemm (shared) m=24 n=24 k=24  4.242 us/op"
       },
       {
         "label": "glass::gemm<CT> (global) m=24 n=24 k=24",
-        "us_per_op": 0.819,
-        "raw": "glass::gemm<CT> (global) m=24 n=24 k=24  0.819 us/op"
+        "us_per_op": 4.86,
+        "raw": "glass::gemm<CT> (global) m=24 n=24 k=24  4.860 us/op"
       },
       {
         "label": "glass::gemm<CT> (shared) m=24 n=24 k=24",
-        "us_per_op": 0.56,
-        "raw": "glass::gemm<CT> (shared) m=24 n=24 k=24  0.560 us/op"
+        "us_per_op": 2.291,
+        "raw": "glass::gemm<CT> (shared) m=24 n=24 k=24  2.291 us/op"
       },
       {
         "label": "cuBLASDx gemm (global)       m=24 n=24 k=24",
-        "us_per_op": 0.025,
-        "raw": "cuBLASDx gemm (global)       m=24 n=24 k=24  0.025 us/op"
+        "us_per_op": 59.162,
+        "raw": "cuBLASDx gemm (global)       m=24 n=24 k=24  59.162 us/op"
       },
       {
         "label": "cuBLASDx gemm (shared)       m=24 n=24 k=24",
-        "us_per_op": 0.017,
-        "raw": "cuBLASDx gemm (shared)       m=24 n=24 k=24  0.017 us/op"
+        "us_per_op": 2.725,
+        "raw": "cuBLASDx gemm (shared)       m=24 n=24 k=24  2.725 us/op"
+      },
+      {
+        "label": "glass::nvidia gemm (default) m=24 n=24 k=24",
+        "us_per_op": 2.16,
+        "raw": "glass::nvidia gemm (default) m=24 n=24 k=24  2.160 us/op"
+      },
+      {
+        "label": "glass::nvidia gemm (TC=256)  m=24 n=24 k=24",
+        "us_per_op": 2.178,
+        "raw": "glass::nvidia gemm (TC=256)  m=24 n=24 k=24  2.178 us/op"
       },
       {
         "label": "glass::gemm (global) m=64 n=64 k=64",
-        "us_per_op": 17.187,
-        "raw": "glass::gemm (global) m=64 n=64 k=64  17.187 us/op"
+        "us_per_op": 317.212,
+        "raw": "glass::gemm (global) m=64 n=64 k=64  317.212 us/op"
       },
       {
         "label": "glass::gemm (shared) m=64 n=64 k=64",
-        "us_per_op": 13.031,
-        "raw": "glass::gemm (shared) m=64 n=64 k=64  13.031 us/op"
+        "us_per_op": 14.895,
+        "raw": "glass::gemm (shared) m=64 n=64 k=64  14.895 us/op"
       },
       {
         "label": "glass::gemm<CT> (global) m=64 n=64 k=64",
-        "us_per_op": 12.792,
-        "raw": "glass::gemm<CT> (global) m=64 n=64 k=64  12.792 us/op"
+        "us_per_op": 14.63,
+        "raw": "glass::gemm<CT> (global) m=64 n=64 k=64  14.630 us/op"
       },
       {
         "label": "glass::gemm<CT> (shared) m=64 n=64 k=64",
-        "us_per_op": 8.025,
-        "raw": "glass::gemm<CT> (shared) m=64 n=64 k=64  8.025 us/op"
+        "us_per_op": 10.208,
+        "raw": "glass::gemm<CT> (shared) m=64 n=64 k=64  10.208 us/op"
       },
       {
         "label": "cuBLASDx gemm (global)       m=64 n=64 k=64",
-        "us_per_op": 0.095,
-        "raw": "cuBLASDx gemm (global)       m=64 n=64 k=64  0.095 us/op"
+        "us_per_op": 84.931,
+        "raw": "cuBLASDx gemm (global)       m=64 n=64 k=64  84.931 us/op"
       },
       {
         "label": "cuBLASDx gemm (shared)       m=64 n=64 k=64",
-        "us_per_op": 0.041,
-        "raw": "cuBLASDx gemm (shared)       m=64 n=64 k=64  0.041 us/op"
+        "us_per_op": 9.72,
+        "raw": "cuBLASDx gemm (shared)       m=64 n=64 k=64  9.720 us/op"
+      },
+      {
+        "label": "glass::nvidia gemm (default) m=64 n=64 k=64",
+        "us_per_op": 6.715,
+        "raw": "glass::nvidia gemm (default) m=64 n=64 k=64  6.715 us/op"
+      },
+      {
+        "label": "glass::nvidia gemm (TC=256)  m=64 n=64 k=64",
+        "us_per_op": 5.375,
+        "raw": "glass::nvidia gemm (TC=256)  m=64 n=64 k=64  5.375 us/op"
+      }
+    ],
+    "blockdim": [
+      {
+        "label": "M= 4 N= 4 K= 4  default(TC=64 )",
+        "us_per_op": 364.479,
+        "raw": "M= 4 N= 4 K= 4  default(TC=64 )  364.479 us/op"
+      },
+      {
+        "label": "M= 4 N= 4 K= 4  pinned(TC=128)",
+        "us_per_op": 3.837,
+        "raw": "M= 4 N= 4 K= 4  pinned(TC=128)   3.837 us/op"
+      },
+      {
+        "label": "M= 6 N= 6 K= 6  default(TC=64 )",
+        "us_per_op": 37.469,
+        "raw": "M= 6 N= 6 K= 6  default(TC=64 )  37.469 us/op"
+      },
+      {
+        "label": "M= 6 N= 6 K= 6  pinned(TC=128)",
+        "us_per_op": 2.642,
+        "raw": "M= 6 N= 6 K= 6  pinned(TC=128)   2.642 us/op"
+      },
+      {
+        "label": "M= 8 N= 8 K= 8  default(TC=64 )",
+        "us_per_op": 4.742,
+        "raw": "M= 8 N= 8 K= 8  default(TC=64 )  4.742 us/op"
+      },
+      {
+        "label": "M= 8 N= 8 K= 8  pinned(TC=128)",
+        "us_per_op": 2.104,
+        "raw": "M= 8 N= 8 K= 8  pinned(TC=128)   2.104 us/op"
+      },
+      {
+        "label": "M=12 N=12 K=12  default(TC=64 )",
+        "us_per_op": 3.094,
+        "raw": "M=12 N=12 K=12  default(TC=64 )  3.094 us/op"
+      },
+      {
+        "label": "M=12 N=12 K=12  pinned(TC=128)",
+        "us_per_op": 3.022,
+        "raw": "M=12 N=12 K=12  pinned(TC=128)   3.022 us/op"
+      },
+      {
+        "label": "M=14 N=14 K=14  default(TC=64 )",
+        "us_per_op": 5.35,
+        "raw": "M=14 N=14 K=14  default(TC=64 )  5.350 us/op"
+      },
+      {
+        "label": "M=14 N=14 K=14  pinned(TC=128)",
+        "us_per_op": 3.166,
+        "raw": "M=14 N=14 K=14  pinned(TC=128)   3.166 us/op"
+      },
+      {
+        "label": "M=24 N=24 K=24  default(TC=64 )",
+        "us_per_op": 3.369,
+        "raw": "M=24 N=24 K=24  default(TC=64 )  3.369 us/op"
+      },
+      {
+        "label": "M=24 N=24 K=24  pinned(TC=128)",
+        "us_per_op": 3.739,
+        "raw": "M=24 N=24 K=24  pinned(TC=128)   3.739 us/op"
+      },
+      {
+        "label": "M=64 N=64 K=64  default(TC=128)",
+        "us_per_op": 6.619,
+        "raw": "M=64 N=64 K=64  default(TC=128)  6.619 us/op"
+      },
+      {
+        "label": "M=64 N=64 K=64  pinned(TC=128)",
+        "us_per_op": 4.729,
+        "raw": "M=64 N=64 K=64  pinned(TC=128)   4.729 us/op"
+      }
+    ],
+    "gemm_batched": [],
+    "lapack": [
+      {
+        "label": "glass::cholDecomp_InPlace    n= 4",
+        "us_per_op": 248.799,
+        "raw": "glass::cholDecomp_InPlace    n= 4  248.799 us/op"
+      },
+      {
+        "label": "glass::chol+trsm             n= 4",
+        "us_per_op": 3.89,
+        "raw": "glass::chol+trsm             n= 4  3.890 us/op"
+      },
+      {
+        "label": "glass::nvidia::chol_inplace  n= 4",
+        "us_per_op": 75.044,
+        "raw": "glass::nvidia::chol_inplace  n= 4  75.044 us/op"
+      },
+      {
+        "label": "glass::nvidia::chol+trsm     n= 4",
+        "us_per_op": 4.162,
+        "raw": "glass::nvidia::chol+trsm     n= 4  4.162 us/op"
+      },
+      {
+        "label": "glass::nvidia::posv (fused)  n= 4",
+        "us_per_op": 3.02,
+        "raw": "glass::nvidia::posv (fused)  n= 4  3.020 us/op"
+      },
+      {
+        "label": "glass::cholDecomp_InPlace    n= 6",
+        "us_per_op": 301.795,
+        "raw": "glass::cholDecomp_InPlace    n= 6  301.795 us/op"
+      },
+      {
+        "label": "glass::chol+trsm             n= 6",
+        "us_per_op": 8.287,
+        "raw": "glass::chol+trsm             n= 6  8.287 us/op"
+      },
+      {
+        "label": "glass::nvidia::chol_inplace  n= 6",
+        "us_per_op": 79.8,
+        "raw": "glass::nvidia::chol_inplace  n= 6  79.800 us/op"
+      },
+      {
+        "label": "glass::nvidia::chol+trsm     n= 6",
+        "us_per_op": 4.063,
+        "raw": "glass::nvidia::chol+trsm     n= 6  4.063 us/op"
+      },
+      {
+        "label": "glass::nvidia::posv (fused)  n= 6",
+        "us_per_op": 3.922,
+        "raw": "glass::nvidia::posv (fused)  n= 6  3.922 us/op"
+      },
+      {
+        "label": "glass::cholDecomp_InPlace    n= 8",
+        "us_per_op": 279.234,
+        "raw": "glass::cholDecomp_InPlace    n= 8  279.234 us/op"
+      },
+      {
+        "label": "glass::chol+trsm             n= 8",
+        "us_per_op": 7.298,
+        "raw": "glass::chol+trsm             n= 8  7.298 us/op"
+      },
+      {
+        "label": "glass::nvidia::chol_inplace  n= 8",
+        "us_per_op": 133.974,
+        "raw": "glass::nvidia::chol_inplace  n= 8  133.974 us/op"
+      },
+      {
+        "label": "glass::nvidia::chol+trsm     n= 8",
+        "us_per_op": 4.796,
+        "raw": "glass::nvidia::chol+trsm     n= 8  4.796 us/op"
+      },
+      {
+        "label": "glass::nvidia::posv (fused)  n= 8",
+        "us_per_op": 4.347,
+        "raw": "glass::nvidia::posv (fused)  n= 8  4.347 us/op"
+      },
+      {
+        "label": "glass::cholDecomp_InPlace    n=12",
+        "us_per_op": 275.268,
+        "raw": "glass::cholDecomp_InPlace    n=12  275.268 us/op"
+      },
+      {
+        "label": "glass::chol+trsm             n=12",
+        "us_per_op": 12.532,
+        "raw": "glass::chol+trsm             n=12  12.532 us/op"
+      },
+      {
+        "label": "glass::nvidia::chol_inplace  n=12",
+        "us_per_op": 75.256,
+        "raw": "glass::nvidia::chol_inplace  n=12  75.256 us/op"
+      },
+      {
+        "label": "glass::nvidia::chol+trsm     n=12",
+        "us_per_op": 4.633,
+        "raw": "glass::nvidia::chol+trsm     n=12  4.633 us/op"
+      },
+      {
+        "label": "glass::nvidia::posv (fused)  n=12",
+        "us_per_op": 5.457,
+        "raw": "glass::nvidia::posv (fused)  n=12  5.457 us/op"
+      },
+      {
+        "label": "glass::cholDecomp_InPlace    n=14",
+        "us_per_op": 293.268,
+        "raw": "glass::cholDecomp_InPlace    n=14  293.268 us/op"
+      },
+      {
+        "label": "glass::chol+trsm             n=14",
+        "us_per_op": 9.88,
+        "raw": "glass::chol+trsm             n=14  9.880 us/op"
+      },
+      {
+        "label": "glass::nvidia::chol_inplace  n=14",
+        "us_per_op": 118.729,
+        "raw": "glass::nvidia::chol_inplace  n=14  118.729 us/op"
+      },
+      {
+        "label": "glass::nvidia::chol+trsm     n=14",
+        "us_per_op": 6.352,
+        "raw": "glass::nvidia::chol+trsm     n=14  6.352 us/op"
+      },
+      {
+        "label": "glass::nvidia::posv (fused)  n=14",
+        "us_per_op": 5.372,
+        "raw": "glass::nvidia::posv (fused)  n=14  5.372 us/op"
+      },
+      {
+        "label": "glass::cholDecomp_InPlace    n=24",
+        "us_per_op": 298.731,
+        "raw": "glass::cholDecomp_InPlace    n=24  298.731 us/op"
+      },
+      {
+        "label": "glass::chol+trsm             n=24",
+        "us_per_op": 16.807,
+        "raw": "glass::chol+trsm             n=24  16.807 us/op"
+      },
+      {
+        "label": "glass::nvidia::chol_inplace  n=24",
+        "us_per_op": 89.518,
+        "raw": "glass::nvidia::chol_inplace  n=24  89.518 us/op"
+      },
+      {
+        "label": "glass::nvidia::chol+trsm     n=24",
+        "us_per_op": 7.377,
+        "raw": "glass::nvidia::chol+trsm     n=24  7.377 us/op"
+      },
+      {
+        "label": "glass::nvidia::posv (fused)  n=24",
+        "us_per_op": 8.809,
+        "raw": "glass::nvidia::posv (fused)  n=24  8.809 us/op"
+      },
+      {
+        "label": "glass::cholDecomp_InPlace    n=64",
+        "us_per_op": 360.392,
+        "raw": "glass::cholDecomp_InPlace    n=64  360.392 us/op"
+      },
+      {
+        "label": "glass::chol+trsm             n=64",
+        "us_per_op": 59.0,
+        "raw": "glass::chol+trsm             n=64  59.000 us/op"
+      },
+      {
+        "label": "glass::nvidia::chol_inplace  n=64",
+        "us_per_op": 88.944,
+        "raw": "glass::nvidia::chol_inplace  n=64  88.944 us/op"
+      },
+      {
+        "label": "glass::nvidia::chol+trsm     n=64",
+        "us_per_op": 22.731,
+        "raw": "glass::nvidia::chol+trsm     n=64  22.731 us/op"
+      },
+      {
+        "label": "glass::nvidia::posv (fused)  n=64",
+        "us_per_op": 31.603,
+        "raw": "glass::nvidia::posv (fused)  n=64  31.603 us/op"
       }
     ]
   }
