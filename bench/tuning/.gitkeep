@@ -1,0 +1,2 @@
+# Keep this directory tracked; per-host tuning_*.cuh files are gitignored.
+# See bench/TUNING.md.

@@ -93,6 +93,65 @@ namespace nvidia {
     // needed. To force cuBLASDx for any of those shapes, add an explicit
     // DEFINE_NVIDIA_GEMM(M,N,K) in your .cu file (it will override the SIMT
     // fallback in the primary template).
+
+    // ---------------------------------------------------------------------
+    // required_smem_for_dispatch_*<> — explicit-intent aliases (round-2).
+    //
+    // The *_smem_size<> functions already encode the dispatch decision
+    // (return 0 for SIMT-routed shapes, cuBLASDx scratch size otherwise),
+    // but these aliases make consumer code self-documenting:
+    //
+    //   constexpr std::size_t smem =
+    //       glass::nvidia::required_smem_for_dispatch_gemm<float, M, N, K>();
+    //   __shared__ char buf[smem];  // 0 bytes if the call SIMT-routes
+    //
+    // Codegen that accumulates scratch across many call sites can take
+    // max() of these constexprs and either emit an `extern __shared__` only
+    // when nonzero, or skip the buffer entirely.
+    // ---------------------------------------------------------------------
+
+    template <typename T, uint32_t M, uint32_t N, uint32_t K,
+              uint32_t BLOCK_THREADS = 0,
+              layout LA = layout::col_major,
+              layout LB = layout::col_major,
+              layout LC = layout::col_major,
+              uint32_t SM_VAL = SMS>
+    constexpr std::size_t required_smem_for_dispatch_gemm() {
+        return gemm_smem_size<T, M, N, K, BLOCK_THREADS, LA, LB, LC, SM_VAL>();
+    }
+
+    template <typename T, uint32_t M, uint32_t N,
+              uint32_t BLOCK_THREADS = 0,
+              layout LA = layout::col_major,
+              layout LB = layout::col_major,
+              layout LC = layout::col_major,
+              uint32_t SM_VAL = SMS>
+    constexpr std::size_t required_smem_for_dispatch_gemv() {
+        return gemv_smem_size<T, M, N, BLOCK_THREADS, LA, LB, LC, SM_VAL>();
+    }
+
+    template <typename T, uint32_t M, uint32_t N, uint32_t K,
+              uint32_t A_RS = M, uint32_t B_RS = N,
+              uint32_t BLOCK_THREADS = 0,
+              layout LA = layout::col_major,
+              layout LB = layout::col_major,
+              layout LC = layout::col_major,
+              uint32_t SM_VAL = SMS>
+    constexpr std::size_t required_smem_for_dispatch_row_strided_gemm() {
+        return row_strided_gemm_smem_size<T, M, N, K, A_RS, B_RS,
+                                          BLOCK_THREADS, LA, LB, LC, SM_VAL>();
+    }
+
+    template <typename T, uint32_t M, uint32_t N, uint32_t ROW_STRIDE = M,
+              uint32_t BLOCK_THREADS = 0,
+              layout LA = layout::col_major,
+              layout LB = layout::col_major,
+              layout LC = layout::col_major,
+              uint32_t SM_VAL = SMS>
+    constexpr std::size_t required_smem_for_dispatch_row_strided_gemv() {
+        return row_strided_gemv_smem_size<T, M, N, ROW_STRIDE,
+                                          BLOCK_THREADS, LA, LB, LC, SM_VAL>();
+    }
 #endif // GLASS_HAVE_CUBLASDX
 
 #if GLASS_HAVE_CUSOLVERDX

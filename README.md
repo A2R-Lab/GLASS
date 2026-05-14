@@ -43,7 +43,28 @@ Three questions decide which API to call:
 | Least-squares / over- or under-determined | `glass::nvidia::gels<float, M, N, NRHS>(...)` | cuSOLVERDx QR (or LQ for under-det) + solve |
 | `BATCH` independent GEMMs of the same shape, want to amortize launch | `glass::nvidia::gemm_batched<...,BATCH,TC>` | Single block, all batches active via `threadIdx.y` |
 
-**Heuristic for `glass<CT>` vs `glass::nvidia` GEMM/GEMV at the same compile-time size:** for square sizes ≤ 12 the pure-SIMT compile-time variant is usually within 2× of cuBLASDx and avoids the cuBLASDx compile-time cost (instantiation can add 30 s to a build). For sizes ≥ 16 (or any rectangular shape that maps cleanly to tensor cores) `glass::nvidia` typically wins. The benchmark suite (`bench/run_bench.py`) prints both side by side — measure on your target SM before committing.
+**Auto-dispatch.** As of round-2, `glass::nvidia::gemm<>`, `gemv<>`,
+`row_strided_*`, and `gemm_batched_1d<>` are **auto-dispatching primary
+templates** that route to the pure-SIMT path (`::glass::*`) for shapes
+where SIMT wins, and to cuBLASDx via the `DEFINE_NVIDIA_*` macros for
+shapes where the vendor library wins. The decision is made at compile
+time by `should_use_cublasdx*<T,M,N,K,SM>()` (see `src/nvidia/query.cuh`),
+which consults — in order — a per-build local table, the shipped global
+table (`src/nvidia/tuning_table.cuh`), and a fallback static heuristic.
+
+This means: calling `glass::nvidia::gemm<float, 6, 6, 6>(...)` "just works"
+without any DEFINE macro — small shapes route to SIMT automatically.
+Calling `glass::nvidia::gemm<float, 32, 32, 32>(...)` still requires a
+`DEFINE_NVIDIA_GEMM(32, 32, 32)` in scope, but produces a clean
+compile-time message when missing.
+
+**Heuristic baseline** (when no tuning-table entry matches): for `gemm`,
+`max(M,N,K) >= 16 AND min(M,N,K) >= 4` → cuBLASDx; otherwise SIMT. For
+`gemv`, `max(M,N) >= 32` → cuBLASDx. For `gemm_batched_1d`,
+`BATCH >= 8 AND max(M,N,K) >= 8` → cuBLASDx. The benchmark suite
+(`bench/run_bench.py`) measures both side by side on your hardware so
+you can override these defaults via the tuning table — see
+"Tuning your local build" below.
 
 > **As of P1-4** (the auto-fallback PR), you can always write
 > `glass::nvidia::gemm<float, M, N, K>(...)` regardless of size. The primary
@@ -646,6 +667,7 @@ The benchmark suite compares GLASS variants against block-level CUDA library bas
 | `bench_gemm.cu` | `glass::gemm` (plain, tiled, compile-time) vs raw cuBLASDx vs `glass::nvidia::gemm` (default + caller-pinned) |
 | `bench_blockdim.cu` | `glass::nvidia::gemm` with cuBLASDx-chosen block_dim vs caller-pinned `BlockDim<128>` vs `BlockDim<352>` (the GRiD iiwa14 launch that pre-fix would have deadlocked) |
 | `bench_gemm_batched.cu` | `glass::nvidia::gemm_batched<...,BATCH>` vs naive `for(b)` loop calling `gemm` BATCH times, for BATCH ∈ {4, 8, 16, 32} |
+| `bench_gemm_batched_1d.cu` | New 1D-launch `glass::nvidia::gemm_batched_1d` (SIMT vs cuBLASDx), for BATCH ∈ {4, 8, 16, 32} — feeds the autotune table |
 | `bench_lapack.cu` *(needs cuSOLVERDx)* | pure-SIMT `glass::cholDecomp_InPlace` / `glass::trsm` vs `glass::nvidia::chol_inplace` / `trsm` / `posv` (fused) |
 
 CUB is bundled with CUDA 11+. cuBLASDx and cuSOLVERDx ship together in NVIDIA MathDx (see [`bench/INSTALL.md`](bench/INSTALL.md)).
@@ -664,6 +686,31 @@ python3 bench/run_bench.py --no-cublasdx
 `bench_lapack` is automatically skipped if `cusolverdx.hpp` is not present under `$MATHDX_ROOT/include/`.
 
 **Anti-optimization safeguards** are baked into every bench loop: per-iteration writes to a `volatile` sink defeat dead-store elimination; destructive inputs (Cholesky, LU, QR all overwrite their input) are reloaded from a master copy each iteration; `nvcc -Xptxas -O1` is enforced. Numbers below ~0.1 µs/op for a non-trivial kernel almost always indicate the bench was elided — recheck the safeguards if you see that.
+
+### Tuning your local build
+
+The `glass::nvidia::*` auto-dispatch picks SIMT-vs-cuBLASDx per shape via
+the heuristic in `should_use_cublasdx*<>()`. To override that heuristic
+with **actual measurements on your hardware**:
+
+```bash
+python3 bench/autotune.py
+# → runs the bench, picks the faster path per shape, writes
+#   bench/tuning/tuning_<your-host>_sm<NN>.cuh
+#
+# Compile your project with:
+#   nvcc ... -DGLASS_TUNING_TABLE_LOCAL='"bench/tuning/tuning_<your-host>_sm<NN>.cuh"' ...
+#
+# Per-host files are gitignored — only the shipped global table is
+# tracked in version control. Want to PR your measurements upstream?
+# See bench/TUNING.md.
+```
+
+The shipped global table (`src/nvidia/tuning_table.cuh`) is grown
+collaboratively — contributions are welcomed via PR. See
+[`bench/TUNING.md`](bench/TUNING.md) for the contributor workflow,
+including how to use `autotune.py --emit-pr-diff` to generate the patch
+text.
 
 Timing uses the GRiD pattern — the iteration loop runs inside the kernel to amortize launch overhead. Results are printed as a Markdown table and saved to `bench/results/bench_<hostname>.json`.
 

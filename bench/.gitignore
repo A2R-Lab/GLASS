@@ -1,0 +1,4 @@
+build/
+results/*.json
+tuning/tuning_*.cuh
+__pycache__/

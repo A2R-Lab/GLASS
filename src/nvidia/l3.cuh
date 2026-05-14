@@ -88,13 +88,24 @@ template <typename T, uint32_t M, uint32_t N, uint32_t K,
 __device__ void gemm(T alpha, T* A, T* B, T beta, T* C, char* smem)
 {
     if constexpr (!should_use_cublasdx<T, M, N, K, SM_VAL>()) {
-        static_assert(LA == LB && LB == LC,
-            "glass::nvidia::gemm SIMT fallback requires uniform layouts "
-            "(LA == LB == LC). For mixed layouts, use "
-            "DEFINE_NVIDIA_GEMM_LAYOUT to specialize cuBLASDx, or call "
-            "::glass::gemm_ex directly.");
-        constexpr bool ROW_MAJOR = (LA == layout::row_major);
-        ::glass::gemm<T, M, N, K, /*TRANSPOSE_B=*/false, ROW_MAJOR>(
+        // Map layout flags onto SIMT (TRANSPOSE_B, ROW_MAJOR). SIMT supports:
+        //   (col, col, col) → (false, false)   standard col-major
+        //   (col, row, col) → (true,  false)   col-major A·Bᵀ      (Gap D, round-2)
+        //   (row, row, row) → (false, true )   standard row-major
+        //   (row, col, row) → (true,  true )   row-major A·Bᵀ
+        // Other combinations are mixed layouts SIMT can't express directly;
+        // those require DEFINE_NVIDIA_GEMM_LAYOUT* to force cuBLASDx routing.
+        constexpr bool LA_ROW = (LA == layout::row_major);
+        constexpr bool LB_ROW = (LB == layout::row_major);
+        constexpr bool LC_ROW = (LC == layout::row_major);
+        static_assert(LA_ROW == LC_ROW,
+            "glass::nvidia::gemm SIMT fallback requires LA == LC (A and C "
+            "share the row/col-major convention). Use "
+            "DEFINE_NVIDIA_GEMM_LAYOUT to specialize cuBLASDx for mixed "
+            "layouts, or call ::glass::gemm_ex directly.");
+        constexpr bool ROW_MAJOR   = LA_ROW;
+        constexpr bool TRANSPOSE_B = (LB_ROW != LA_ROW);
+        ::glass::gemm<T, M, N, K, TRANSPOSE_B, ROW_MAJOR>(
             alpha, A, B, beta, C);
     } else {
         static_assert(sizeof(T) == 0,
@@ -362,25 +373,36 @@ template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t SM_VAL = SMS>
 __device__ void row_strided_gemm(T alpha, T* A, T* B, T beta, T* C, char* smem)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    T* A_compact = reinterpret_cast<T*>(smem);
-    T* B_compact = reinterpret_cast<T*>(smem + M * N * sizeof(T));
-    char* cublas_smem = smem + (M * N + N * K) * sizeof(T);
-    for (uint32_t i = rank; i < M * N; i += size) {
-        uint32_t r = i % M, c = i / M;
-        A_compact[r + c*M] = A[r + c*A_RS];
+    // Round-2 Gap C: auto-dispatch. On the SIMT route we use the strides
+    // directly (no packing), saving the M*N + N*K scratch and two pack
+    // passes. On the cuBLASDx route we pack into compact scratch and
+    // delegate to gemm<> (which will hit the cuBLASDx specialization).
+    if constexpr (!should_use_cublasdx<T, M, N, K, SM_VAL>()) {
+        ::glass::row_strided_gemm<T, M, N, K, A_RS, B_RS>(A, B, C, alpha, beta);
+    } else {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        T* A_compact = reinterpret_cast<T*>(smem);
+        T* B_compact = reinterpret_cast<T*>(smem + M * N * sizeof(T));
+        char* cublas_smem = smem + (M * N + N * K) * sizeof(T);
+        for (uint32_t i = rank; i < M * N; i += size) {
+            uint32_t r = i % M, c = i / M;
+            A_compact[r + c*M] = A[r + c*A_RS];
+        }
+        for (uint32_t i = rank; i < N * K; i += size) {
+            uint32_t r = i % N, c = i / N;
+            B_compact[r + c*N] = B[r + c*B_RS];
+        }
+        __syncthreads();
+        gemm<T, M, N, K, BLOCK_THREADS, LA, LB, LC, SM_VAL>(
+            alpha, A_compact, B_compact, beta, C, cublas_smem);
     }
-    for (uint32_t i = rank; i < N * K; i += size) {
-        uint32_t r = i % N, c = i / N;
-        B_compact[r + c*N] = B[r + c*B_RS];
-    }
-    __syncthreads();
-    gemm<T, M, N, K, BLOCK_THREADS, LA, LB, LC, SM_VAL>(
-        alpha, A_compact, B_compact, beta, C, cublas_smem);
 }
 
+// Returns the cuBLASDx scratch + packing scratch the cuBLASDx route needs,
+// or 0 when the auto-dispatch would route to SIMT (which skips packing).
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
+          uint32_t A_RS = M, uint32_t B_RS = N,
           uint32_t BLOCK_THREADS = 0,
           layout LA = layout::col_major,
           layout LB = layout::col_major,
@@ -388,8 +410,11 @@ template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t SM_VAL = SMS>
 constexpr std::size_t row_strided_gemm_smem_size()
 {
-    return (M * N + N * K) * sizeof(T)
-         + gemm_smem_size<T, M, N, K, BLOCK_THREADS, LA, LB, LC, SM_VAL>();
+    if constexpr (!should_use_cublasdx<T, M, N, K, SM_VAL>())
+        return 0;
+    else
+        return (M * N + N * K) * sizeof(T)
+             + gemm_smem_size<T, M, N, K, BLOCK_THREADS, LA, LB, LC, SM_VAL>();
 }
 
 // ---------------------------------------------------------------------------

@@ -34,6 +34,13 @@
 
 // ---------------------------------------------------------------------------
 // Primary templates — instantiated by the DEFINE_NVIDIA_GEMV* macros below.
+//
+// AUTO-DISPATCH: like glass::nvidia::gemm<>, the gemv<> primary template now
+// consults should_use_cublasdx_gemv<T, M, N, SM_VAL>():
+//   - returns false → routes to ::glass::gemv<T, M, N, false, ROW_MAJOR>
+//                     (SIMT, no scratch). Layout LA maps to SIMT's ROW_MAJOR
+//                     flag; LB/LC are degenerate for vectors and ignored.
+//   - returns true  → static_assert that a DEFINE_NVIDIA_GEMV* macro was used.
 // ---------------------------------------------------------------------------
 
 template <typename T, uint32_t M, uint32_t N,
@@ -44,12 +51,21 @@ template <typename T, uint32_t M, uint32_t N,
           uint32_t SM_VAL = SMS>
 __device__ void gemv(T alpha, T* A, T* x, T beta, T* y, char* smem)
 {
-    static_assert(sizeof(T) == 0,
-        "glass::nvidia::gemv<T,M,N,BLOCK_THREADS,LA,LB,LC,SM_VAL> is not "
-        "available for this signature. Add a DEFINE_NVIDIA_GEMV* macro in your "
-        ".cu file (see VARIABLE_BLOCKDIM_PROPOSAL.md for the full set).");
+    if constexpr (!should_use_cublasdx_gemv<T, M, N, SM_VAL>()) {
+        constexpr bool ROW_MAJOR = (LA == layout::row_major);
+        ::glass::gemv<T, M, N, /*TRANSPOSE=*/false, ROW_MAJOR>(
+            alpha, A, x, beta, y);
+    } else {
+        static_assert(sizeof(T) == 0,
+            "glass::nvidia::gemv<T,M,N,BLOCK_THREADS,LA,LB,LC,SM_VAL>: "
+            "should_use_cublasdx_gemv<> returned true for this shape but no "
+            "DEFINE_NVIDIA_GEMV* macro is in scope. Add one in your .cu, or "
+            "override the dispatch via tuning_table.cuh / GLASS_TUNING_TABLE_LOCAL.");
+    }
 }
 
+// Returns the cuBLASDx scratch size for this signature; 0 when the auto-
+// dispatch would route to SIMT.
 template <typename T, uint32_t M, uint32_t N,
           uint32_t BLOCK_THREADS = 0,
           layout LA = layout::col_major,
@@ -270,20 +286,28 @@ template <typename T, uint32_t M, uint32_t N, uint32_t ROW_STRIDE = M,
           uint32_t SM_VAL = SMS>
 __device__ void row_strided_gemv(T alpha, T* A, T* x, T beta, T* y, char* smem)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    T* A_compact = reinterpret_cast<T*>(smem);
-    char* cublas_smem = smem + M * N * sizeof(T);
-    for (uint32_t i = rank; i < M * N; i += size) {
-        uint32_t r = i % M, c = i / M;
-        A_compact[r + c*M] = A[r + c*ROW_STRIDE];
+    if constexpr (!should_use_cublasdx_row_strided_gemv<T, M, N, ROW_STRIDE, SM_VAL>()) {
+        // SIMT path: ::glass::row_strided_gemv uses the stride directly,
+        // no packing required. Arg order shuffles to match SIMT convention.
+        ::glass::row_strided_gemv<T, M, N, ROW_STRIDE>(A, x, y, alpha, beta);
+    } else {
+        // cuBLASDx path: pack strided A into compact scratch, then delegate
+        // to the cuBLASDx-specialized gemv<>.
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        T* A_compact = reinterpret_cast<T*>(smem);
+        char* cublas_smem = smem + M * N * sizeof(T);
+        for (uint32_t i = rank; i < M * N; i += size) {
+            uint32_t r = i % M, c = i / M;
+            A_compact[r + c*M] = A[r + c*ROW_STRIDE];
+        }
+        __syncthreads();
+        gemv<T, M, N, BLOCK_THREADS, LA, LB, LC, SM_VAL>(
+            alpha, A_compact, x, beta, y, cublas_smem);
     }
-    __syncthreads();
-    gemv<T, M, N, BLOCK_THREADS, LA, LB, LC, SM_VAL>(
-        alpha, A_compact, x, beta, y, cublas_smem);
 }
 
-template <typename T, uint32_t M, uint32_t N,
+template <typename T, uint32_t M, uint32_t N, uint32_t ROW_STRIDE = M,
           uint32_t BLOCK_THREADS = 0,
           layout LA = layout::col_major,
           layout LB = layout::col_major,
@@ -291,6 +315,9 @@ template <typename T, uint32_t M, uint32_t N,
           uint32_t SM_VAL = SMS>
 constexpr std::size_t row_strided_gemv_smem_size()
 {
-    return M * N * sizeof(T)
-         + gemv_smem_size<T, M, N, BLOCK_THREADS, LA, LB, LC, SM_VAL>();
+    if constexpr (!should_use_cublasdx_row_strided_gemv<T, M, N, ROW_STRIDE, SM_VAL>())
+        return 0;
+    else
+        return M * N * sizeof(T)
+             + gemv_smem_size<T, M, N, BLOCK_THREADS, LA, LB, LC, SM_VAL>();
 }

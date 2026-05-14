@@ -109,6 +109,24 @@ def bins(tmp_path_factory):
         out["l3_nvidia"] = compile_binary("test_l3_nvidia", build_dir, CUDA_ARCH)
     except Exception as e:
         print(f"\nSkipping test_l3_nvidia (compile failed): {e}", file=sys.stderr)
+
+    # test_nvidia_dispatch.cu exercises round-2 auto-dispatch features
+    # (Gap A/B/C/D, gemv + row_strided_* + gemm-with-TRANSPOSE_B, dispatch
+    # query helpers). Requires cuBLASDx for the gemm cuBLASDx-route test,
+    # so it needs MATHDX_ROOT to compile; otherwise skipped at the fixture.
+    mathdx = os.environ.get("MATHDX_ROOT")
+    if mathdx and (pathlib.Path(mathdx) / "include" / "cublasdx.hpp").exists():
+        try:
+            out["nvidia_dispatch"] = compile_binary(
+                "test_nvidia_dispatch", build_dir, CUDA_ARCH,
+                extra_flags=[
+                    "--expt-relaxed-constexpr",
+                    "-DGLASS_BENCH_CUBLASDX",
+                    "-I", str(pathlib.Path(mathdx) / "include"),
+                    "-I", str(pathlib.Path(mathdx) / "external" / "cutlass" / "include"),
+                ])
+        except Exception as e:
+            print(f"\nSkipping test_nvidia_dispatch (compile failed): {e}", file=sys.stderr)
     return out
 
 
@@ -118,6 +136,15 @@ def bin_l3_nvidia(bins):
     if "l3_nvidia" not in bins:
         pytest.skip("test_l3_nvidia.cu failed to compile")
     return bins["l3_nvidia"]
+
+
+@pytest.fixture(scope="session")
+def bin_nvidia_dispatch(bins):
+    """Round-2 auto-dispatch tests; skip if MATHDX_ROOT isn't configured or
+    the test failed to compile."""
+    if "nvidia_dispatch" not in bins:
+        pytest.skip("test_nvidia_dispatch needs MATHDX_ROOT (cuBLASDx)")
+    return bins["nvidia_dispatch"]
 
 
 # ─── run_op helper ────────────────────────────────────────────────────────────
