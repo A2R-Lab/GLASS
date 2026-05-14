@@ -31,9 +31,10 @@ RESULTS_DIR = BENCH_DIR / "results"
 
 BENCH_NAMES = [
     "bench_reduce", "bench_gemv", "bench_gemm",
-    "bench_blockdim",        # gated on cuBLASDx
-    "bench_gemm_batched",    # gated on cuBLASDx
-    "bench_lapack",          # gated on cuSOLVERDx (skipped at runtime if absent)
+    "bench_blockdim",          # gated on cuBLASDx
+    "bench_gemm_batched",      # gated on cuBLASDx (2D-launch path)
+    "bench_gemm_batched_1d",   # SIMT-only 1D-launch (no cuBLASDx required)
+    "bench_lapack",            # gated on cuSOLVERDx (skipped at runtime if absent)
 ]
 
 # Which benches require cuSOLVERDx (skipped if cusolverdx.hpp missing).
@@ -118,6 +119,7 @@ def compile_binary(name: str, arch: str, sms: int, mathdx_root,
         GLASS_DIR / "src" / "nvidia" / "l1.cuh",
         GLASS_DIR / "src" / "nvidia" / "l2.cuh",
         GLASS_DIR / "src" / "nvidia" / "l3.cuh",
+        GLASS_DIR / "src" / "nvidia" / "l3_simt.cuh",
         GLASS_DIR / "src" / "nvidia" / "lapack.cuh",
         GLASS_DIR / "src" / "nvidia" / "query.cuh",
         BENCH_DIR / "INSTALL.md",
@@ -302,6 +304,14 @@ def main():
         batched_rows = run_binary(binaries["bench_gemm_batched"], [str(args.iters)])
         print_table("Batched GEMM", batched_rows)
         all_results["gemm_batched"] = batched_rows
+
+    # bench_gemm_batched_1d: P0-1/P0-2 1D-launch SIMT batched GEMM vs naive loop.
+    # Uses no cuBLASDx — runs even with --no-cublasdx.
+    if "bench_gemm_batched_1d" in binaries:
+        print("\nRunning bench_gemm_batched_1d (naive 1D loop vs gemm_batched_1d vs strided)...")
+        batched_1d_rows = run_binary(binaries["bench_gemm_batched_1d"], [str(args.iters)])
+        print_table("Batched GEMM (1D launch)", batched_1d_rows)
+        all_results["gemm_batched_1d"] = batched_1d_rows
 
     # bench_lapack: cuSOLVERDx-backed chol_inplace / trsm / posv vs pure-SIMT
     if "bench_lapack" in binaries:

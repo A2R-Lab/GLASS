@@ -49,6 +49,14 @@ namespace nvidia {
     // L1: CUB-backed reduce / dot / l2norm
     #include "./src/nvidia/l1.cuh"
 
+    // SIMT-only query helpers: should_use_cublasdx<>, print_dispatch<>,
+    // gemm_batched_1d_block_threads_valid<>. No cuBLASDx dependency.
+    #include "./src/nvidia/query_simt.cuh"
+
+    // L3 SIMT-only: 1D-launch batched GEMMs (no cuBLASDx dependency, so
+    // available even in builds that don't link cuBLASDx).
+    #include "./src/nvidia/l3_simt.cuh"
+
 #if GLASS_HAVE_CUBLASDX
     // L2: cuBLASDx-backed gemv  (primary templates + DEFINE_NVIDIA_GEMV* macros)
     #include "./src/nvidia/l2.cuh"
@@ -60,7 +68,7 @@ namespace nvidia {
     // Host-side BlockDim query API (constexpr — no DEFINE macro required).
     #include "./src/nvidia/query.cuh"
 
-    // Pre-instantiated standard sizes (matches benchmark suite)
+    // Pre-instantiated standard sizes for the GEMV benches.
     DEFINE_NVIDIA_GEMV(4,   4)
     DEFINE_NVIDIA_GEMV(6,   6)
     DEFINE_NVIDIA_GEMV(8,   8)
@@ -69,13 +77,22 @@ namespace nvidia {
     DEFINE_NVIDIA_GEMV(24, 24)
     DEFINE_NVIDIA_GEMV(64, 64)
 
-    DEFINE_NVIDIA_GEMM(4,   4,  4)
-    DEFINE_NVIDIA_GEMM(6,   6,  6)
-    DEFINE_NVIDIA_GEMM(8,   8,  8)
-    DEFINE_NVIDIA_GEMM(12, 12, 12)
-    DEFINE_NVIDIA_GEMM(14, 14, 14)
+    // GEMM pre-instantiations: only emit cuBLASDx specializations for shapes
+    // where should_use_cublasdx<float,M,N,K,SMS>() returns true. Smaller
+    // shapes are SIMT-dispatched by the primary template (P1-4) and don't
+    // need a cuBLASDx specialization. The shape list below mirrors what
+    // bench/autotune.py would emit; regenerate src/nvidia/tuning_table.cuh
+    // and update this list to retune for a particular SM.
+    //
+    // Default heuristic (max(M,N,K) >= 16): all shapes below qualify.
+    DEFINE_NVIDIA_GEMM(16, 16, 16)
     DEFINE_NVIDIA_GEMM(24, 24, 24)
+    DEFINE_NVIDIA_GEMM(32, 32, 32)
     DEFINE_NVIDIA_GEMM(64, 64, 64)
+    // Shapes (4×4×4) through (14×14×14) are now SIMT-dispatched — no DEFINE
+    // needed. To force cuBLASDx for any of those shapes, add an explicit
+    // DEFINE_NVIDIA_GEMM(M,N,K) in your .cu file (it will override the SIMT
+    // fallback in the primary template).
 #endif // GLASS_HAVE_CUBLASDX
 
 #if GLASS_HAVE_CUSOLVERDX

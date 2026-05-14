@@ -8,6 +8,10 @@
 // callers (e.g. a code-generator) pick a SUGGESTED_THREADS value at generation
 // time and emit the matching DEFINE_NVIDIA_GEMM_BLOCKDIM call.
 //
+// For dispatch/diagnostic helpers that work without cuBLASDx (e.g.
+// should_use_cublasdx, print_dispatch, gemm_batched_1d_block_threads_valid),
+// see query_simt.cuh (included unconditionally by glass-nvidia.cuh).
+//
 // Example:
 //   static_assert(glass::nvidia::min_block_threads<float, 6, 6, 6>() > 0);
 //   constexpr uint32_t TC = glass::nvidia::min_block_threads<float, 6, 6, 6>();
@@ -69,3 +73,4 @@ constexpr bool gemv_block_threads_valid()
 {
     return BLOCK_THREADS >= gemv_min_block_threads<T, M, N, SM_VAL>();
 }
+

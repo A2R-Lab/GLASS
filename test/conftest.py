@@ -45,7 +45,10 @@ CUDA_ARCH = detect_arch()
 def _hash_sources(cu_path: pathlib.Path) -> str:
     h = hashlib.sha256()
     for p in [cu_path, CUDA_DIR / "helpers.cuh",
-              GLASS_DIR / "glass.cuh", GLASS_DIR / "glass-cgrps.cuh"]:
+              GLASS_DIR / "glass.cuh", GLASS_DIR / "glass-cgrps.cuh",
+              GLASS_DIR / "glass-nvidia.cuh",
+              GLASS_DIR / "src" / "nvidia" / "types.cuh",
+              GLASS_DIR / "src" / "nvidia" / "l3_simt.cuh"]:
         if p.exists():
             h.update(p.read_bytes())
     return h.hexdigest()[:16]
@@ -53,7 +56,8 @@ def _hash_sources(cu_path: pathlib.Path) -> str:
 
 # ─── compilation ──────────────────────────────────────────────────────────────
 
-def compile_binary(name: str, build_dir: pathlib.Path, arch: str) -> pathlib.Path:
+def compile_binary(name: str, build_dir: pathlib.Path, arch: str,
+                   extra_flags: list = None) -> pathlib.Path:
     """Compile a CUDA test binary, skipping if the source hash is unchanged."""
     cu_src    = CUDA_DIR / f"{name}.cu"
     out_bin   = build_dir / name
@@ -75,6 +79,8 @@ def compile_binary(name: str, build_dir: pathlib.Path, arch: str) -> pathlib.Pat
         "-o", str(out_bin),
         str(cu_src),
     ]
+    if extra_flags:
+        cmd += extra_flags
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         print(f"\nCompilation failed for {name}:\n{result.stderr}", file=sys.stderr)
@@ -87,13 +93,31 @@ def compile_binary(name: str, build_dir: pathlib.Path, arch: str) -> pathlib.Pat
 
 @pytest.fixture(scope="session")
 def bins(tmp_path_factory):
-    """Compile all three test binaries once per pytest session."""
+    """Compile all test binaries once per pytest session."""
     build_dir = BUILD_DIR
-    return {
+    out = {
         "l1": compile_binary("test_l1", build_dir, CUDA_ARCH),
         "l2": compile_binary("test_l2", build_dir, CUDA_ARCH),
         "l3": compile_binary("test_l3", build_dir, CUDA_ARCH),
     }
+    # test_l3_nvidia.cu includes glass-nvidia.cuh and exercises the SIMT-only
+    # batched APIs (gemm_batched_1d, gemm_strided_batched_1d). It does NOT
+    # require cuBLASDx — l3_simt.cuh has no cuBLASDx dependency. If compilation
+    # fails for any reason (e.g. a non-cuBLASDx-related toolchain issue), tests
+    # that depend on it will be skipped via the `bin_l3_nvidia` fixture below.
+    try:
+        out["l3_nvidia"] = compile_binary("test_l3_nvidia", build_dir, CUDA_ARCH)
+    except Exception as e:
+        print(f"\nSkipping test_l3_nvidia (compile failed): {e}", file=sys.stderr)
+    return out
+
+
+@pytest.fixture(scope="session")
+def bin_l3_nvidia(bins):
+    """Yield the test_l3_nvidia binary, or skip the test if it didn't compile."""
+    if "l3_nvidia" not in bins:
+        pytest.skip("test_l3_nvidia.cu failed to compile")
+    return bins["l3_nvidia"]
 
 
 # ─── run_op helper ────────────────────────────────────────────────────────────

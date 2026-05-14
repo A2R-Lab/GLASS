@@ -56,9 +56,27 @@
 
 // ---------------------------------------------------------------------------
 // Primary templates — instantiated by the DEFINE_NVIDIA_GEMM* macros below.
+//
+// BACKEND DISPATCH (P1-4):
+//   The primary template body checks `should_use_cublasdx<T,M,N,K,SM_VAL>()`
+//   from query_simt.cuh:
+//     - false (heuristic + tuning_table.cuh say SIMT wins): silently fall
+//       through to the SIMT base path `::glass::gemm<T,M,N,K,...>`. No
+//       DEFINE_NVIDIA_GEMM* macro is required for these shapes.
+//     - true (heuristic says cuBLASDx wins): trigger the static_assert below
+//       directing the user to call DEFINE_NVIDIA_GEMM*. The cuBLASDx
+//       specialization the macro emits will override this primary body.
+//
+//   Net effect: callers can always write `glass::nvidia::gemm<T,M,N,K>(...)`.
+//   Small shapes "just work" via SIMT; large shapes guide you to the macro.
+//
+//   To force a particular backend regardless of the heuristic:
+//     - cuBLASDx: call DEFINE_NVIDIA_GEMM(M,N,K) — the explicit specialization
+//                 always wins over the primary template.
+//     - SIMT:     call ::glass::gemm<T,M,N,K>(...) directly.
+//
 // Default arguments make existing callers `gemm<float, M, N, K>(...)` resolve
-// to `gemm<float, M, N, K, 0, col_major, col_major, col_major, SMS>(...)`,
-// which the original DEFINE_NVIDIA_GEMM(M,N,K) macro specializes.
+// to `gemm<float, M, N, K, 0, col_major, col_major, col_major, SMS>(...)`.
 // ---------------------------------------------------------------------------
 
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
@@ -69,10 +87,22 @@ template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t SM_VAL = SMS>
 __device__ void gemm(T alpha, T* A, T* B, T beta, T* C, char* smem)
 {
-    static_assert(sizeof(T) == 0,
-        "glass::nvidia::gemm<T,M,N,K,BLOCK_THREADS,LA,LB,LC,SM_VAL> is not "
-        "available for this signature. Add a DEFINE_NVIDIA_GEMM* macro in your "
-        ".cu file (see VARIABLE_BLOCKDIM_PROPOSAL.md for the full set).");
+    if constexpr (!should_use_cublasdx<T, M, N, K, SM_VAL>()) {
+        static_assert(LA == LB && LB == LC,
+            "glass::nvidia::gemm SIMT fallback requires uniform layouts "
+            "(LA == LB == LC). For mixed layouts, use "
+            "DEFINE_NVIDIA_GEMM_LAYOUT to specialize cuBLASDx, or call "
+            "::glass::gemm_ex directly.");
+        constexpr bool ROW_MAJOR = (LA == layout::row_major);
+        ::glass::gemm<T, M, N, K, /*TRANSPOSE_B=*/false, ROW_MAJOR>(
+            alpha, A, B, beta, C);
+    } else {
+        static_assert(sizeof(T) == 0,
+            "glass::nvidia::gemm<T,M,N,K,BLOCK_THREADS,LA,LB,LC,SM_VAL> is not "
+            "available — should_use_cublasdx<> says cuBLASDx wins for this "
+            "shape, so add a DEFINE_NVIDIA_GEMM* macro in your .cu file. "
+            "(See VARIABLE_BLOCKDIM_PROPOSAL.md and bench/autotune.py.)");
+    }
 }
 
 template <typename T, uint32_t M, uint32_t N, uint32_t K,

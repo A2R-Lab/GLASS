@@ -45,10 +45,77 @@ Three questions decide which API to call:
 
 **Heuristic for `glass<CT>` vs `glass::nvidia` GEMM/GEMV at the same compile-time size:** for square sizes ≤ 12 the pure-SIMT compile-time variant is usually within 2× of cuBLASDx and avoids the cuBLASDx compile-time cost (instantiation can add 30 s to a build). For sizes ≥ 16 (or any rectangular shape that maps cleanly to tensor cores) `glass::nvidia` typically wins. The benchmark suite (`bench/run_bench.py`) prints both side by side — measure on your target SM before committing.
 
+> **As of P1-4** (the auto-fallback PR), you can always write
+> `glass::nvidia::gemm<float, M, N, K>(...)` regardless of size. The primary
+> template consults `should_use_cublasdx<T,M,N,K,SM>()` (see [Backend dispatch](#backend-dispatch--when-does-glassnvidiagemm-run-cublasdx-vs-simt)
+> below) and silently falls through to `glass::gemm<...>` for shapes the
+> heuristic flags as SIMT territory. Only larger shapes still need a
+> `DEFINE_NVIDIA_GEMM*` macro.
+
 **When NOT to use `glass::nvidia`**:
 - Sizes only known at runtime (the templates require compile-time `M`, `N`, `K`).
 - You can't add a `DEFINE_NVIDIA_GEMM*` macro for the size you need (e.g. you want every conceivable `(M, N, K)` triple — the macro instantiation cost grows fast).
 - You're stuck on an SM cuBLASDx doesn't tune for (it falls back to a generic config; the pure-SIMT compile-time path is often competitive there).
+
+---
+
+## Backend dispatch — when does `glass::nvidia::gemm` run cuBLASDx vs SIMT?
+
+As of [P1-4](VARIABLE_BLOCKDIM_PROPOSAL.md), the primary `glass::nvidia::gemm<T,M,N,K,...>` template auto-dispatches:
+
+```
+                  caller writes:  glass::nvidia::gemm<float, M, N, K>(...)
+                                         │
+                                         ▼
+                       should_use_cublasdx<float, M, N, K, SMS>()
+                                         │
+                  ┌──────────────────────┴──────────────────────┐
+                  ▼                                             ▼
+                false                                          true
+                  │                                             │
+       ────────── ▼ ──────────              ────────── ▼ ──────────
+       SIMT fallback:                       Need a DEFINE_NVIDIA_GEMM*
+       ::glass::gemm<T,M,N,K>(...)          to specialize for cuBLASDx;
+       (no DEFINE needed; no smem)          else: static_assert error.
+```
+
+**The decision lives in `src/nvidia/tuning_table.cuh`.** The shipped table covers `sm_86` (Ampere consumer) and `sm_120` (Blackwell-class) for square shapes from 3×3×3 up to 64×64×64. For unmeasured shapes a conservative heuristic kicks in:
+
+```
+should_use_cublasdx = (T == float) && (max(M,N,K) >= 16) && (min(M,N,K) >= 4)
+```
+
+#### Inspecting at runtime
+
+```cpp
+glass::nvidia::print_dispatch<float, 4, 4, 4>();
+// → glass::nvidia::gemm<T,4,4,4,SM=860>: SIMT fallback
+
+glass::nvidia::print_dispatch<float, 32, 32, 32>();
+// → glass::nvidia::gemm<T,32,32,32,SM=860>: cuBLASDx (needs DEFINE_NVIDIA_GEMM*)
+```
+
+#### Overriding the dispatch
+
+| Goal | How |
+|------|-----|
+| Force cuBLASDx for a shape the heuristic puts in SIMT | Add `DEFINE_NVIDIA_GEMM(M,N,K)` in your `.cu` file. The explicit specialization always overrides the primary template. |
+| Force SIMT for a shape the heuristic puts in cuBLASDx | Call `::glass::gemm<T,M,N,K>(...)` directly (skip the `nvidia::` path). |
+| Different shapes / different SM | Edit `src/nvidia/tuning_table.cuh` by hand, or regenerate it with autotune (next section). |
+
+#### Auto-tune for your hardware
+
+The shipped values are sensible defaults but small-GEMM perf is highly SM-dependent. To regenerate the table on your machine:
+
+```bash
+# Detect SM, measure all default shapes, overwrite tuning_table.cuh
+python bench/autotune.py --sm AUTO --out src/nvidia/tuning_table.cuh
+
+# Custom shape list, longer iterations, dry-run first
+python bench/autotune.py --shapes '4,4,4;6,6,6;16,16,16' --iters 20000 --dry-run
+```
+
+The script compiles and runs a small SIMT-vs-cuBLASDx microbench per shape, takes the median over `--iters` iterations after a warm-up, and emits a fresh `tuning_table.cuh` plus a human-readable `tuning_table_results.md`. Ties (within `--margin`, default ±5 %) default to SIMT. Requires `MATHDX_ROOT` set.
 
 ---
 
@@ -274,6 +341,27 @@ k<<<1, dim3(64, 16), smem>>>(dA_ptrs, dB_ptrs, dC_ptrs);
 ```
 
 Each batch element is identified by `threadIdx.y`; each per-batch GEMM uses TC threads in `threadIdx.x`. Total launch is `dim3(TC, BATCH)`. See `bench/bench_gemm_batched.cu` for a full working example with `T**` pointer arrays.
+
+#### 5g. Batched GEMM with **1D launch** (`gemm_batched_1d`)
+
+If the surrounding kernel was launched 1D (e.g. `dim3(TC*BATCH, 1, 1)` because every other block-level helper uses `threadIdx.x`), the cuBLASDx-backed `gemm_batched` above won't work — it requires the 2D launch. The SIMT-only `gemm_batched_1d` (and the shared-A variant `gemm_strided_batched_1d`) partition a single 1D block of `TC*BATCH` threads into BATCH groups of TC threads each:
+
+```cpp
+__global__ void k(float* const* A, float* const* B, float* const* C) {
+    // No DEFINE macro needed — fully templated on T.
+    glass::nvidia::gemm_batched_1d<float, 4, 4, 4, /*BATCH=*/8, /*TC=*/32>(
+        1.f, A, B, 0.f, C);
+}
+k<<<1, dim3(32 * 8, 1, 1)>>>(dA_ptrs, dB_ptrs, dC_ptrs);   // no smem
+
+// Shared-A variant: one A applied to BATCH packed (B,C) pairs.
+__global__ void k_shared(float* A_shared, float* B_base, float* C_base) {
+    glass::nvidia::gemm_strided_batched_1d<float, 4, 4, 4, 8, 32>(
+        1.f, A_shared, B_base, 0.f, C_base);   // tightly packed: B_STRIDE=N*K, C_STRIDE=M*K
+}
+```
+
+These run pure SIMT; they need no shared memory and no `DEFINE_NVIDIA_GEMM_BATCHED_*` macro. Best for the small shapes (`max(M,N,K) ≲ 8`) where cuBLASDx's tile-load overhead dominates anyway. See `bench/bench_gemm_batched_1d.cu`.
 
 ### 6. Tiled GEMM (scratch in shared memory)
 

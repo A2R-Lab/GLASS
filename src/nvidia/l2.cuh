@@ -256,6 +256,11 @@ constexpr uint32_t gemv_threads() { return 256; }
 // smem layout: [A_compact: M*N*sizeof(T)] [cuBLASDx smem for gemv<...>]
 // ROW_STRIDE = leading dimension of column-major A: A[i][j] = A[i + j*ROW_STRIDE].
 // When ROW_STRIDE == M this degenerates to standard gemv with no overhead.
+//
+// 1D-launch compatible (P1-5): the rank/size flattening below makes this
+// kernel work with any launch geometry — 1D <<<grid, dim3(N,1,1)>>>, 2D, or
+// 3D — as long as the total thread count is the BLOCK_THREADS value passed
+// to the inner cuBLASDx gemv. No 2D-only batched-style assumption.
 // ---------------------------------------------------------------------------
 template <typename T, uint32_t M, uint32_t N, uint32_t ROW_STRIDE = M,
           uint32_t BLOCK_THREADS = 0,
