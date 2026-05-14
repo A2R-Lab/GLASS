@@ -32,6 +32,7 @@ namespace glass {
     /*      L3      */
     #include "./src/base/L3/gemm.cuh"
     #include "./src/base/L3/gemm_strided.cuh"
+    #include "./src/base/L3/gemm_batched.cuh"
     #include "./src/base/L3/inv.cuh"
     #include "./src/base/L3/chol_InPlace.cuh"
     #include "./src/base/L3/trsm.cuh"

@@ -31,9 +31,10 @@ RESULTS_DIR = BENCH_DIR / "results"
 
 BENCH_NAMES = [
     "bench_reduce", "bench_gemv", "bench_gemm",
-    "bench_blockdim",        # gated on cuBLASDx
-    "bench_gemm_batched",    # gated on cuBLASDx
-    "bench_lapack",          # gated on cuSOLVERDx (skipped at runtime if absent)
+    "bench_blockdim",          # gated on cuBLASDx
+    "bench_gemm_batched",      # gated on cuBLASDx (2D launch)
+    "bench_gemm_batched_1d",   # gated on cuBLASDx (1D launch; new in round-2)
+    "bench_lapack",            # gated on cuSOLVERDx (skipped at runtime if absent)
 ]
 
 # Which benches require cuSOLVERDx (skipped if cusolverdx.hpp missing).
@@ -302,6 +303,13 @@ def main():
         batched_rows = run_binary(binaries["bench_gemm_batched"], [str(args.iters)])
         print_table("Batched GEMM", batched_rows)
         all_results["gemm_batched"] = batched_rows
+
+    # bench_gemm_batched_1d: round-2 1D-launch batched (SIMT vs cuBLASDx)
+    if "bench_gemm_batched_1d" in binaries:
+        print("\nRunning bench_gemm_batched_1d (SIMT 1D-launch vs cuBLASDx)...")
+        batched_1d_rows = run_binary(binaries["bench_gemm_batched_1d"], [str(args.iters)])
+        print_table("Batched GEMM (1D launch)", batched_1d_rows)
+        all_results["gemm_batched_1d"] = batched_1d_rows
 
     # bench_lapack: cuSOLVERDx-backed chol_inplace / trsm / posv vs pure-SIMT
     if "bench_lapack" in binaries:

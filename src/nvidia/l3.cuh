@@ -57,8 +57,23 @@
 // ---------------------------------------------------------------------------
 // Primary templates — instantiated by the DEFINE_NVIDIA_GEMM* macros below.
 // Default arguments make existing callers `gemm<float, M, N, K>(...)` resolve
-// to `gemm<float, M, N, K, 0, col_major, col_major, col_major, SMS>(...)`,
-// which the original DEFINE_NVIDIA_GEMM(M,N,K) macro specializes.
+// to `gemm<float, M, N, K, 0, col_major, col_major, col_major, SMS>(...)`.
+//
+// The primary template now AUTO-DISPATCHES based on
+// `should_use_cublasdx<T, M, N, K, SM_VAL>()` (query.cuh / tuning_table.cuh):
+//   - returns false  → routes to ::glass::gemm<T,M,N,K,TRANSPOSE_B,ROW_MAJOR>
+//                      (pure-SIMT, no cuBLASDx scratch needed)
+//   - returns true   → static_assert that a DEFINE_NVIDIA_GEMM* macro
+//                      specialized this signature. Macro-emitted explicit
+//                      specializations beat the primary template at lookup,
+//                      so when present they are picked unconditionally.
+//
+// Layout flags map onto SIMT booleans:
+//   TRANSPOSE_B = (LB == layout::row_major)            // A * B^T
+//   ROW_MAJOR   = (LA == row_major) && (LC == row_major)
+// SIMT does not support arbitrary mixed layouts; mixed combinations that
+// can't be expressed via the two flags above force the static_assert path,
+// requiring an explicit DEFINE_NVIDIA_GEMM_LAYOUT* specialization.
 // ---------------------------------------------------------------------------
 
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
@@ -69,12 +84,24 @@ template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t SM_VAL = SMS>
 __device__ void gemm(T alpha, T* A, T* B, T beta, T* C, char* smem)
 {
-    static_assert(sizeof(T) == 0,
-        "glass::nvidia::gemm<T,M,N,K,BLOCK_THREADS,LA,LB,LC,SM_VAL> is not "
-        "available for this signature. Add a DEFINE_NVIDIA_GEMM* macro in your "
-        ".cu file (see VARIABLE_BLOCKDIM_PROPOSAL.md for the full set).");
+    if constexpr (!should_use_cublasdx<T, M, N, K, SM_VAL>()) {
+        constexpr bool TRANSPOSE_B = (LB == layout::row_major);
+        constexpr bool ROW_MAJOR   =
+            (LA == layout::row_major) && (LC == layout::row_major);
+        ::glass::gemm<T, M, N, K, TRANSPOSE_B, ROW_MAJOR>(alpha, A, B, beta, C);
+    } else {
+        static_assert(sizeof(T) == 0,
+            "glass::nvidia::gemm<T,M,N,K,BLOCK_THREADS,LA,LB,LC,SM_VAL>: "
+            "should_use_cublasdx<> returned true for this shape but no "
+            "DEFINE_NVIDIA_GEMM* macro is in scope. Add one in your .cu, or "
+            "override the dispatch via tuning_table.cuh / GLASS_TUNING_TABLE_LOCAL.");
+    }
 }
 
+// Returns the cuBLASDx scratch size for this signature; 0 when the auto-
+// dispatch would route to SIMT (which needs no scratch). DEFINE_NVIDIA_GEMM*
+// macros emit explicit specializations that return the real cuBLASDx size,
+// taking precedence over this primary.
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t BLOCK_THREADS = 0,
           layout LA = layout::col_major,
@@ -332,25 +359,34 @@ template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t SM_VAL = SMS>
 __device__ void row_strided_gemm(T alpha, T* A, T* B, T beta, T* C, char* smem)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    T* A_compact = reinterpret_cast<T*>(smem);
-    T* B_compact = reinterpret_cast<T*>(smem + M * N * sizeof(T));
-    char* cublas_smem = smem + (M * N + N * K) * sizeof(T);
-    for (uint32_t i = rank; i < M * N; i += size) {
-        uint32_t r = i % M, c = i / M;
-        A_compact[r + c*M] = A[r + c*A_RS];
+    if constexpr (!should_use_cublasdx_row_strided_gemm<T, M, N, K, A_RS, B_RS, SM_VAL>()) {
+        // SIMT path: ::glass::row_strided_gemm uses the strides directly.
+        // No packing, no scratch needed.
+        ::glass::row_strided_gemm<T, M, N, K, A_RS, B_RS>(A, B, C, alpha, beta);
+    } else {
+        // cuBLASDx path: pack strided inputs into compact scratch, then
+        // delegate to the cuBLASDx-specialized gemm<>.
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        T* A_compact = reinterpret_cast<T*>(smem);
+        T* B_compact = reinterpret_cast<T*>(smem + M * N * sizeof(T));
+        char* cublas_smem = smem + (M * N + N * K) * sizeof(T);
+        for (uint32_t i = rank; i < M * N; i += size) {
+            uint32_t r = i % M, c = i / M;
+            A_compact[r + c*M] = A[r + c*A_RS];
+        }
+        for (uint32_t i = rank; i < N * K; i += size) {
+            uint32_t r = i % N, c = i / N;
+            B_compact[r + c*N] = B[r + c*B_RS];
+        }
+        __syncthreads();
+        gemm<T, M, N, K, BLOCK_THREADS, LA, LB, LC, SM_VAL>(
+            alpha, A_compact, B_compact, beta, C, cublas_smem);
     }
-    for (uint32_t i = rank; i < N * K; i += size) {
-        uint32_t r = i % N, c = i / N;
-        B_compact[r + c*N] = B[r + c*B_RS];
-    }
-    __syncthreads();
-    gemm<T, M, N, K, BLOCK_THREADS, LA, LB, LC, SM_VAL>(
-        alpha, A_compact, B_compact, beta, C, cublas_smem);
 }
 
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
+          uint32_t A_RS = M, uint32_t B_RS = N,
           uint32_t BLOCK_THREADS = 0,
           layout LA = layout::col_major,
           layout LB = layout::col_major,
@@ -358,8 +394,11 @@ template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t SM_VAL = SMS>
 constexpr std::size_t row_strided_gemm_smem_size()
 {
-    return (M * N + N * K) * sizeof(T)
-         + gemm_smem_size<T, M, N, K, BLOCK_THREADS, LA, LB, LC, SM_VAL>();
+    if constexpr (!should_use_cublasdx_row_strided_gemm<T, M, N, K, A_RS, B_RS, SM_VAL>())
+        return 0;
+    else
+        return (M * N + N * K) * sizeof(T)
+             + gemm_smem_size<T, M, N, K, BLOCK_THREADS, LA, LB, LC, SM_VAL>();
 }
 
 // ---------------------------------------------------------------------------
@@ -502,3 +541,222 @@ constexpr uint32_t gemm_batched_threads() { return 256; }
 
 #define DEFINE_NVIDIA_GEMM_BATCHED_BLOCKDIM_LAYOUT_SM(M, N, K, BATCH, TC, LA, LB, LC, SM) \
     _GLASS_GEMM_BATCHED_BD_E(M, N, K, BATCH, TC, LA, LB, LC, SM)
+
+// ---------------------------------------------------------------------------
+// gemm_batched_1d — 1D-launch batched GEMM (auto-dispatch).
+//
+// Distinct from gemm_batched above (which requires a 2D launch dim3(TC,BATCH)
+// and runs all BATCH gemms in parallel via threadIdx.y). The "_1d" variant
+// takes a flat 1D launch (TC threads) and EITHER:
+//   - SIMT route: strides every thread across BATCH*M*K output elements, no
+//                 scratch needed. ::glass::gemm_batched_1d.
+//   - cuBLASDx route: loops sequentially over batches, reusing one cuBLASDx
+//                     scratch tile per iteration. Pinned BlockDim<TC,1,1>.
+//
+// Two input forms:
+//   gemm_batched_1d<...>(alpha, A, B, beta, C, smem)
+//        A, B, C are arrays of pointers (length BATCH). Each batch's matrices
+//        can live at arbitrary addresses.
+//   gemm_strided_batched_1d<...>(alpha, A, B, beta, C, smem)
+//        A, B, C are single base pointers; batch b lives at base+b*STRIDE.
+// ---------------------------------------------------------------------------
+
+template <typename T, uint32_t M, uint32_t N, uint32_t K, uint32_t BATCH,
+          uint32_t BLOCK_THREADS = 0,
+          layout LA = layout::col_major,
+          layout LB = layout::col_major,
+          layout LC = layout::col_major,
+          uint32_t SM_VAL = SMS>
+__device__ void gemm_batched_1d(T alpha, T* const* A, T* const* B,
+                                T beta,  T* const* C, char* smem)
+{
+    if constexpr (!should_use_cublasdx_batched<T, M, N, K, BATCH, SM_VAL>()) {
+        constexpr bool TRANSPOSE_B = (LB == layout::row_major);
+        ::glass::gemm_batched_1d<T, M, N, K, BATCH, TRANSPOSE_B>(
+            alpha, A, B, beta, C);
+    } else {
+        static_assert(sizeof(T) == 0,
+            "glass::nvidia::gemm_batched_1d<T,M,N,K,BATCH,...>: "
+            "should_use_cublasdx_batched<> returned true but no "
+            "DEFINE_NVIDIA_GEMM_BATCHED_1D_BLOCKDIM* macro is in scope.");
+    }
+}
+
+template <typename T, uint32_t M, uint32_t N, uint32_t K, uint32_t BATCH,
+          uint32_t A_STRIDE = M * N,
+          uint32_t B_STRIDE = N * K,
+          uint32_t C_STRIDE = M * K,
+          uint32_t BLOCK_THREADS = 0,
+          layout LA = layout::col_major,
+          layout LB = layout::col_major,
+          layout LC = layout::col_major,
+          uint32_t SM_VAL = SMS>
+__device__ void gemm_strided_batched_1d(T alpha, T* A, T* B,
+                                        T beta,  T* C, char* smem)
+{
+    if constexpr (!should_use_cublasdx_batched<T, M, N, K, BATCH, SM_VAL>()) {
+        constexpr bool TRANSPOSE_B = (LB == layout::row_major);
+        ::glass::gemm_strided_batched_1d<T, M, N, K, BATCH,
+                                         A_STRIDE, B_STRIDE, C_STRIDE,
+                                         TRANSPOSE_B>(alpha, A, B, beta, C);
+    } else {
+        static_assert(sizeof(T) == 0,
+            "glass::nvidia::gemm_strided_batched_1d<T,M,N,K,BATCH,...>: "
+            "should_use_cublasdx_batched<> returned true but no "
+            "DEFINE_NVIDIA_GEMM_STRIDED_BATCHED_1D_BLOCKDIM* macro is in scope.");
+    }
+}
+
+template <typename T, uint32_t M, uint32_t N, uint32_t K, uint32_t BATCH,
+          uint32_t BLOCK_THREADS = 0,
+          layout LA = layout::col_major,
+          layout LB = layout::col_major,
+          layout LC = layout::col_major,
+          uint32_t SM_VAL = SMS>
+constexpr std::size_t gemm_batched_1d_smem_size() { return 0; }
+
+template <typename T, uint32_t M, uint32_t N, uint32_t K, uint32_t BATCH,
+          uint32_t A_STRIDE = M * N,
+          uint32_t B_STRIDE = N * K,
+          uint32_t C_STRIDE = M * K,
+          uint32_t BLOCK_THREADS = 0,
+          layout LA = layout::col_major,
+          layout LB = layout::col_major,
+          layout LC = layout::col_major,
+          uint32_t SM_VAL = SMS>
+constexpr std::size_t gemm_strided_batched_1d_smem_size() { return 0; }
+
+template <typename T, uint32_t M, uint32_t N, uint32_t K, uint32_t BATCH,
+          uint32_t BLOCK_THREADS = 0,
+          layout LA = layout::col_major,
+          layout LB = layout::col_major,
+          layout LC = layout::col_major,
+          uint32_t SM_VAL = SMS>
+constexpr uint32_t gemm_batched_1d_threads() { return 256; }
+
+// ---------------------------------------------------------------------------
+// Private core macro for cuBLASDx-backed gemm_batched_1d. Sequential outer
+// loop over BATCH; each iteration reuses the same cuBLASDx scratch tile.
+// Single block, 1D launch dim3(TC,1,1). The smem requirement is per-batch
+// (NOT scaled by BATCH).
+// ---------------------------------------------------------------------------
+
+#define _GLASS_GEMM_BATCHED_1D_BD(M, N, K, BATCH, TC, LA, LB, LC, ARCH)                       \
+    namespace _nvidia_gemm_batched_1d_impl_##M##x##N##x##K##_b##BATCH##_bd##TC##_la##LA##_lb##LB##_lc##LC##_sm##ARCH { \
+        using GEMM = decltype(                                                                \
+            cublasdx::Size<M, N, K>()                                                         \
+            + cublasdx::Precision<float>()                                                    \
+            + cublasdx::Type<cublasdx::type::real>()                                          \
+            + cublasdx::Function<cublasdx::function::MM>()                                    \
+            + cublasdx::Arrangement<                                                          \
+                  _GLASS_CUBLAS_LAYOUT(LA),                                                   \
+                  _GLASS_CUBLAS_LAYOUT(LB),                                                   \
+                  _GLASS_CUBLAS_LAYOUT(LC)>()                                                 \
+            + cublasdx::SM<ARCH>()                                                            \
+            + cublasdx::Block()                                                               \
+            + cublasdx::BlockDim<TC, 1, 1>());                                                \
+        static constexpr uint32_t block_threads =                                             \
+            static_cast<uint32_t>(GEMM::block_dim.x);                                         \
+        static constexpr std::size_t smem_bytes =                                             \
+            cublasdx::get_shared_storage_size<GEMM>();                                        \
+        __device__ inline void run(float alpha, float* const* A, float* const* B,             \
+                                   float beta,  float* const* C, char* smem)                  \
+        {                                                                                     \
+            _GLASS_ASSERT_BLOCKDIM_GEQ(GEMM)                                                  \
+            using align = cublasdx::alignment_of<GEMM>;                                       \
+            for (uint32_t b = 0; b < BATCH; ++b) {                                            \
+                float* Ab = A[b];                                                             \
+                float* Bb = B[b];                                                             \
+                float* Cb = C[b];                                                             \
+                auto [smem_a, smem_b, smem_c] = cublasdx::slice_shared_memory<GEMM>(smem);    \
+                auto a_smem = cublasdx::make_tensor(smem_a, GEMM::get_layout_smem_a());       \
+                auto b_smem = cublasdx::make_tensor(smem_b, GEMM::get_layout_smem_b());       \
+                auto c_smem = cublasdx::make_tensor(smem_c, GEMM::get_layout_smem_c());       \
+                cublasdx::copy<GEMM, align::a>(                                               \
+                    cublasdx::make_tensor(Ab, GEMM::get_layout_gmem_a()), a_smem);            \
+                cublasdx::copy<GEMM, align::b>(                                               \
+                    cublasdx::make_tensor(Bb, GEMM::get_layout_gmem_b()), b_smem);            \
+                cublasdx::copy<GEMM, align::c>(                                               \
+                    cublasdx::make_tensor(Cb, GEMM::get_layout_gmem_c()), c_smem);            \
+                cublasdx::copy_wait();                                                        \
+                GEMM().execute(alpha, a_smem, b_smem, beta, c_smem);                          \
+                __syncthreads();                                                              \
+                cublasdx::copy<GEMM, align::c>(                                               \
+                    c_smem, cublasdx::make_tensor(Cb, GEMM::get_layout_gmem_c()));            \
+                __syncthreads();                                                              \
+            }                                                                                 \
+        }                                                                                     \
+        __device__ inline void run_strided(float alpha, float* A, float* B,                   \
+                                           float beta,  float* C, char* smem,                 \
+                                           uint32_t A_STRIDE, uint32_t B_STRIDE,              \
+                                           uint32_t C_STRIDE)                                 \
+        {                                                                                     \
+            _GLASS_ASSERT_BLOCKDIM_GEQ(GEMM)                                                  \
+            using align = cublasdx::alignment_of<GEMM>;                                       \
+            for (uint32_t b = 0; b < BATCH; ++b) {                                            \
+                float* Ab = A + b * A_STRIDE;                                                 \
+                float* Bb = B + b * B_STRIDE;                                                 \
+                float* Cb = C + b * C_STRIDE;                                                 \
+                auto [smem_a, smem_b, smem_c] = cublasdx::slice_shared_memory<GEMM>(smem);    \
+                auto a_smem = cublasdx::make_tensor(smem_a, GEMM::get_layout_smem_a());       \
+                auto b_smem = cublasdx::make_tensor(smem_b, GEMM::get_layout_smem_b());       \
+                auto c_smem = cublasdx::make_tensor(smem_c, GEMM::get_layout_smem_c());       \
+                cublasdx::copy<GEMM, align::a>(                                               \
+                    cublasdx::make_tensor(Ab, GEMM::get_layout_gmem_a()), a_smem);            \
+                cublasdx::copy<GEMM, align::b>(                                               \
+                    cublasdx::make_tensor(Bb, GEMM::get_layout_gmem_b()), b_smem);            \
+                cublasdx::copy<GEMM, align::c>(                                               \
+                    cublasdx::make_tensor(Cb, GEMM::get_layout_gmem_c()), c_smem);            \
+                cublasdx::copy_wait();                                                        \
+                GEMM().execute(alpha, a_smem, b_smem, beta, c_smem);                          \
+                __syncthreads();                                                              \
+                cublasdx::copy<GEMM, align::c>(                                               \
+                    c_smem, cublasdx::make_tensor(Cb, GEMM::get_layout_gmem_c()));            \
+                __syncthreads();                                                              \
+            }                                                                                 \
+        }                                                                                     \
+    }                                                                                         \
+    template <>                                                                               \
+    __device__ inline void gemm_batched_1d<float, M, N, K, BATCH, TC,                        \
+                                            static_cast<layout>(LA),                          \
+                                            static_cast<layout>(LB),                          \
+                                            static_cast<layout>(LC), ARCH>                   \
+                                           (float alpha, float* const* A, float* const* B,    \
+                                            float beta,  float* const* C, char* smem)         \
+    {                                                                                         \
+        _nvidia_gemm_batched_1d_impl_##M##x##N##x##K##_b##BATCH##_bd##TC##_la##LA##_lb##LB##_lc##LC##_sm##ARCH::run( \
+            alpha, A, B, beta, C, smem);                                                      \
+    }                                                                                         \
+    template <>                                                                               \
+    constexpr std::size_t gemm_batched_1d_smem_size<float, M, N, K, BATCH, TC,                \
+                                                     static_cast<layout>(LA),                  \
+                                                     static_cast<layout>(LB),                  \
+                                                     static_cast<layout>(LC), ARCH>()         \
+    {                                                                                         \
+        return _nvidia_gemm_batched_1d_impl_##M##x##N##x##K##_b##BATCH##_bd##TC##_la##LA##_lb##LB##_lc##LC##_sm##ARCH::smem_bytes; \
+    }                                                                                         \
+    template <>                                                                               \
+    constexpr uint32_t gemm_batched_1d_threads<float, M, N, K, BATCH, TC,                    \
+                                                static_cast<layout>(LA),                       \
+                                                static_cast<layout>(LB),                       \
+                                                static_cast<layout>(LC), ARCH>()              \
+    {                                                                                         \
+        return _nvidia_gemm_batched_1d_impl_##M##x##N##x##K##_b##BATCH##_bd##TC##_la##LA##_lb##LB##_lc##LC##_sm##ARCH::block_threads; \
+    }
+
+#define _GLASS_GEMM_BATCHED_1D_BD_E(M, N, K, BATCH, TC, LA, LB, LC, ARCH) \
+    _GLASS_GEMM_BATCHED_1D_BD(M, N, K, BATCH, TC, LA, LB, LC, ARCH)
+
+// Public DEFINE macros for the 1D-launch batched cuBLASDx variant. BlockDim
+// is required because batched cuBLASDx needs a pinned thread count.
+#define DEFINE_NVIDIA_GEMM_BATCHED_1D_BLOCKDIM(M, N, K, BATCH, TC) \
+    _GLASS_GEMM_BATCHED_1D_BD_E(M, N, K, BATCH, TC, 0, 0, 0, SMS)
+
+#define DEFINE_NVIDIA_GEMM_BATCHED_1D_BLOCKDIM_LAYOUT(M, N, K, BATCH, TC, LA, LB, LC) \
+    _GLASS_GEMM_BATCHED_1D_BD_E(M, N, K, BATCH, TC, LA, LB, LC, SMS)
+
+#define DEFINE_NVIDIA_GEMM_BATCHED_1D_BLOCKDIM_SM(M, N, K, BATCH, TC, SM) \
+    _GLASS_GEMM_BATCHED_1D_BD_E(M, N, K, BATCH, TC, 0, 0, 0, SM)
+
+#define DEFINE_NVIDIA_GEMM_BATCHED_1D_BLOCKDIM_LAYOUT_SM(M, N, K, BATCH, TC, LA, LB, LC, SM) \
+    _GLASS_GEMM_BATCHED_1D_BD_E(M, N, K, BATCH, TC, LA, LB, LC, SM)

@@ -53,11 +53,30 @@ def _hash_sources(cu_path: pathlib.Path) -> str:
 
 # ─── compilation ──────────────────────────────────────────────────────────────
 
-def compile_binary(name: str, build_dir: pathlib.Path, arch: str) -> pathlib.Path:
-    """Compile a CUDA test binary, skipping if the source hash is unchanged."""
+def _mathdx_root() -> pathlib.Path | None:
+    root = os.environ.get("MATHDX_ROOT")
+    if not root:
+        return None
+    root = pathlib.Path(root)
+    if (root / "include" / "cublasdx.hpp").exists():
+        return root
+    return None
+
+
+def compile_binary(name: str, build_dir: pathlib.Path, arch: str,
+                   needs_cublasdx: bool = False) -> pathlib.Path | None:
+    """Compile a CUDA test binary, skipping if the source hash is unchanged.
+
+    If needs_cublasdx is True and MATHDX_ROOT is not set / invalid, returns
+    None so callers can pytest.skip() the relevant tests.
+    """
     cu_src    = CUDA_DIR / f"{name}.cu"
     out_bin   = build_dir / name
     hash_file = build_dir / f"{name}.hash"
+
+    mathdx = _mathdx_root() if needs_cublasdx else None
+    if needs_cublasdx and mathdx is None:
+        return None
 
     current_hash = _hash_sources(cu_src)
     if hash_file.exists() and out_bin.exists():
@@ -72,9 +91,15 @@ def compile_binary(name: str, build_dir: pathlib.Path, arch: str) -> pathlib.Pat
         "-I", str(GLASS_DIR),
         "-I", str(GLASS_DIR / "src"),
         "-I", str(CUDA_DIR),
-        "-o", str(out_bin),
-        str(cu_src),
     ]
+    if needs_cublasdx:
+        cmd += [
+            "--expt-relaxed-constexpr",
+            "-DGLASS_BENCH_CUBLASDX",
+            "-I", str(mathdx / "include"),
+            "-I", str(mathdx / "external" / "cutlass" / "include"),
+        ]
+    cmd += ["-o", str(out_bin), str(cu_src)]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         print(f"\nCompilation failed for {name}:\n{result.stderr}", file=sys.stderr)
@@ -87,12 +112,16 @@ def compile_binary(name: str, build_dir: pathlib.Path, arch: str) -> pathlib.Pat
 
 @pytest.fixture(scope="session")
 def bins(tmp_path_factory):
-    """Compile all three test binaries once per pytest session."""
+    """Compile all test binaries once per pytest session. The nvidia binary
+    is None when MATHDX_ROOT is not configured; tests that depend on it
+    pytest.skip()."""
     build_dir = BUILD_DIR
     return {
         "l1": compile_binary("test_l1", build_dir, CUDA_ARCH),
         "l2": compile_binary("test_l2", build_dir, CUDA_ARCH),
         "l3": compile_binary("test_l3", build_dir, CUDA_ARCH),
+        "nvidia": compile_binary("test_nvidia_dispatch", build_dir, CUDA_ARCH,
+                                 needs_cublasdx=True),
     }
 
 
