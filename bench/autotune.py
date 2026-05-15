@@ -45,19 +45,21 @@ TUNING_DIR = BENCH_DIR / "tuning"
 
 # ─── Per-API microbench templates ───────────────────────────────────────────
 #
-# Each API description carries:
-#   - shape_keys: names of the shape-grid tuple positions (used for parsing
-#                 --shapes and formatting specializations).
+# Each API_CONFIGS entry carries:
+#   - shape_keys: tuple of shape-grid parameter names (used for parsing
+#                 --shapes and for `microbench.format(**placeholders)`).
 #   - default_shapes: list of tuples matching shape_keys.
-#   - spec_name: the C++ primary template name (specialized in the output).
-#   - spec_tparams_fmt: format string for the specialization template params
-#                       (positions match shape_keys + "SM_VAL" appended).
-#   - microbench: textwrap-dedented C++ source with {placeholder} fields for
-#                 the per-shape build. Must print two lines:
+#   - microbench: textwrap-dedented C++ source with `{key}` placeholders.
+#                 Must compile to a binary that prints two lines:
 #                     simt     <us_per_op>
 #                     cublasdx <us_per_op>
+#   - spec_fmt: callable (shape_values..., sms) -> the C++ specialization
+#               name (e.g. "cublasdx_wins_gemv<6,6,1200>"). The output
+#               file prepends "template <> constexpr bool ", appends "()
+#               { return <bool>; }".
+#   - label_fmt: callable (shape) -> short human label for progress prints.
 #
-# To add an API: define another entry below; main loop picks it up.
+# To add an API: append an entry to API_CONFIGS; main loop picks it up.
 
 # NOTE: the preamble is concatenated with each per-API microbench template
 # and the WHOLE combined string is passed through `str.format(**placeholders)`.

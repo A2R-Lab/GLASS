@@ -122,21 +122,28 @@ glass::nvidia::print_dispatch<float, 32, 32, 32>();
 |------|-----|
 | Force cuBLASDx for a shape the heuristic puts in SIMT | Add `DEFINE_NVIDIA_GEMM(M,N,K)` in your `.cu` file. The explicit specialization always overrides the primary template. |
 | Force SIMT for a shape the heuristic puts in cuBLASDx | Call `::glass::gemm<T,M,N,K>(...)` directly (skip the `nvidia::` path). |
-| Different shapes / different SM | Edit `src/nvidia/tuning_table.cuh` by hand, or regenerate it with autotune (next section). |
+| Per-host tuning without editing source | Run `python bench/autotune.py` to generate `bench/tuning/<hostname>.cuh`, then compile with `-DGLASS_TUNING_TABLE_LOCAL='"bench/tuning/<hostname>.cuh"'`. See `bench/TUNING.md`. |
+| Different SM in-tree (for a PR) | `python bench/autotune.py --in-tree` rewrites the marker-delimited specializations section inside `src/nvidia/tuning_table.cuh`, preserving the round-2 primaries above it. |
 
 #### Auto-tune for your hardware
 
-The shipped values are sensible defaults but small-GEMM perf is highly SM-dependent. To regenerate the table on your machine:
+The shipped values are sensible defaults but small-GEMM perf is highly SM-dependent. The autotune covers all five round-2 primaries (`gemm`, `gemv`, `row_strided_gemv`, `row_strided_gemm`, `gemm_batched_1d`).
 
 ```bash
-# Detect SM, measure all default shapes, overwrite tuning_table.cuh
-python bench/autotune.py --sm AUTO --out src/nvidia/tuning_table.cuh
+# Detect SM, measure all default shapes for all 5 APIs, write per-host
+# overrides to bench/tuning/<hostname>.cuh. Does NOT modify src/.
+python bench/autotune.py --sm AUTO
 
-# Custom shape list, longer iterations, dry-run first
-python bench/autotune.py --shapes '4,4,4;6,6,6;16,16,16' --iters 20000 --dry-run
+# Restrict to one API + custom shapes; --dry-run reports without writing
+python bench/autotune.py --apis gemv --shapes '6,6;14,14;32,32' --iters 20000 --dry-run
+
+# Update the in-tree shipped table (for upstream PRs only)
+python bench/autotune.py --sm AUTO --in-tree
 ```
 
-The script compiles and runs a small SIMT-vs-cuBLASDx microbench per shape, takes the median over `--iters` iterations after a warm-up, and emits a fresh `tuning_table.cuh` plus a human-readable `tuning_table_results.md`. Ties (within `--margin`, default ±5 %) default to SIMT. Requires `MATHDX_ROOT` set.
+The script compiles and runs a small SIMT-vs-cuBLASDx microbench per (API, shape), times each leg over `--iters` iterations, and emits one `template <> constexpr bool ...` specialization per measured combination plus a human-readable `*_results.md` alongside. Ties (within `--margin`, default ±5 %) default to SIMT. Requires `MATHDX_ROOT` set. Per-host outputs under `bench/tuning/` are gitignored.
+
+See `bench/TUNING.md` for the full contributor workflow including how the override mechanism layers on top of the in-tree table.
 
 ---
 
@@ -695,22 +702,22 @@ with **actual measurements on your hardware**:
 
 ```bash
 python3 bench/autotune.py
-# → runs the bench, picks the faster path per shape, writes
-#   bench/tuning/tuning_<your-host>_sm<NN>.cuh
+# → measures all 5 round-2 primaries, writes bench/tuning/<hostname>.cuh.
+# → does NOT modify src/nvidia/tuning_table.cuh.
 #
 # Compile your project with:
-#   nvcc ... -DGLASS_TUNING_TABLE_LOCAL='"bench/tuning/tuning_<your-host>_sm<NN>.cuh"' ...
+#   nvcc ... -DGLASS_TUNING_TABLE_LOCAL='"bench/tuning/<hostname>.cuh"' ...
 #
 # Per-host files are gitignored — only the shipped global table is
 # tracked in version control. Want to PR your measurements upstream?
-# See bench/TUNING.md.
+# See bench/TUNING.md (covers --in-tree mode for shipped-table updates).
 ```
 
 The shipped global table (`src/nvidia/tuning_table.cuh`) is grown
 collaboratively — contributions are welcomed via PR. See
 [`bench/TUNING.md`](bench/TUNING.md) for the contributor workflow,
-including how to use `autotune.py --emit-pr-diff` to generate the patch
-text.
+including `autotune.py --in-tree` (writes specializations directly
+into the shipped table, preserving the round-2 primaries above it).
 
 Timing uses the GRiD pattern — the iteration loop runs inside the kernel to amortize launch overhead. Results are printed as a Markdown table and saved to `bench/results/bench_<hostname>.json`.
 
