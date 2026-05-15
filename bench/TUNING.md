@@ -35,50 +35,40 @@ specialize it and either keep it local or PR upstream.
 ```bash
 cd GLASS
 python3 bench/autotune.py
-# → writes src/nvidia/tuning_table.cuh with measurements for the local SM
+# → measures all 5 round-2 primaries (gemm, gemv, row_strided_gemv,
+#   row_strided_gemm, gemm_batched_1d) across each one's default shape grid
+# → writes bench/tuning/<hostname>.cuh with the per-host specializations
 ```
 
 The script:
-1. Measures both backends across the (M,N,K) grid for `gemm` at your local SM.
-2. Picks the faster path per shape.
-3. Emits one explicit `cublasdx_wins<M,N,K,SM>()` specialization per measured shape.
-4. Writes the result to `src/nvidia/tuning_table.cuh`.
+1. Detects your local SM via `nvidia-smi`.
+2. For each requested API, measures both backends across that API's
+   shape grid.
+3. Picks the faster path per (shape, SM).
+4. Emits one explicit specialization per measured shape into
+   `bench/tuning/<hostname>.cuh`.
 
-This **overwrites** the shipped defaults with your machine's measurements.
-For a shared checkout where you don't want to commit local tuning, use
-the per-build override instead (below).
+The shipped `src/nvidia/tuning_table.cuh` is **never overwritten** by
+the default flow — it carries the per-API primary templates, the
+default heuristics, and a small curated set of in-tree specializations,
+and must stay stable so consumers can rely on it as the baseline.
 
-## Per-build local override
+## Consuming your per-host overrides
 
-If you want to keep the shipped `tuning_table.cuh` clean (e.g. shared
-checkout, CI that builds for multiple targets), supply a per-build
-override file:
+The default per-host output file is designed to be included via the
+round-2 `GLASS_TUNING_TABLE_LOCAL` macro:
 
 ```bash
-nvcc ... -DGLASS_TUNING_TABLE_LOCAL='"path/to/my_overrides.cuh"' ...
+nvcc ... -DGLASS_TUNING_TABLE_LOCAL='"bench/tuning/<hostname>.cuh"' ...
 ```
 
 The named header is `#include`d at the bottom of `_glass_tuning` and may
-add specializations for shapes **not already specialized in the in-tree
-table**. (C++ disallows re-specialization; to override a shape the in-tree
-table already covers, edit `tuning_table.cuh` directly or remove the
-in-tree entry first.)
+add specializations for shapes **not already specialized in the shipped
+table**. (C++ disallows re-specialization; to override a shape the
+shipped table already covers, edit `tuning_table.cuh` directly or
+remove the in-tree entry first.)
 
-Example `my_overrides.cuh`:
-
-```cpp
-// gemm 7×7×7 on sm_8.6 — force cuBLASDx for our compute kernel.
-template <> constexpr bool cublasdx_wins< 7,  7,  7, 860>() { return true; }
-// gemv 17×17 on sm_8.6 — measured SIMT win not yet upstreamed.
-template <> constexpr bool cublasdx_wins_gemv<17, 17, 860>() { return false; }
-// batched 4×4×4 × 8 on sm_8.6 — force cuBLASDx (default heuristic agrees,
-// but pinning makes the intent explicit even if the heuristic changes).
-template <> constexpr bool cublasdx_wins_batched< 4,  4,  4,  8, 860>() { return true; }
-```
-
-The override file is *not* expected to live under version control. Put it
-wherever your build system finds it (often `bench/tuning/`, which is
-gitignored by `bench/.gitignore`).
+Per-host files under `bench/tuning/` are gitignored by `bench/.gitignore`.
 
 ## Per-API templates
 
@@ -93,10 +83,19 @@ heuristics reflect the API's arithmetic intensity:
 | `cublasdx_wins_row_strided_gemm<M, N, K, A_RS, B_RS, SM>`           | delegates to `cublasdx_wins<>` |
 | `cublasdx_wins_row_strided_gemv<M, N, ROW_STRIDE, SM>`              | delegates to `cublasdx_wins_gemv<>` |
 
-`autotune.py` today populates `cublasdx_wins` (gemm). The other variants
-fall back to the default heuristic unless you specialize them by hand.
-Extending autotune to cover the other APIs is straightforward — see the
-existing pattern in `bench/autotune.py`.
+`bench/autotune.py` (round-2 rewrite) covers all five. To restrict to a
+subset:
+
+```bash
+python3 bench/autotune.py --apis gemm,gemv
+python3 bench/autotune.py --apis row_strided_gemv --shapes "6,6,8;14,14,16"
+```
+
+The `--shapes` flag passes a `;`-separated tuple list; the arity has to
+match the chosen API (3 values for `gemm`, 2 for `gemv`, etc.). If you
+list multiple APIs and `--shapes` matches one but not all, the
+non-matching APIs are skipped with a one-line note (the matching APIs
+still run).
 
 ## Debugging dispatch decisions
 
@@ -116,22 +115,42 @@ int main() {
 These are `__host__ __device__` so you can drop one into a kernel for
 runtime diagnostics, or call from main for build-time confirmation.
 
-## Contributing back
+## Contributing upstream
 
-If your measurements differ materially from the shipped table:
+If your measurements would meaningfully improve the shipped table
+(e.g. SM not yet covered, or a shape range the curated entries miss),
+contribute back. Two routes:
 
-1. Re-run autotune for the gemm grid:
-   ```bash
-   python3 bench/autotune.py
-   ```
-   This overwrites `src/nvidia/tuning_table.cuh`.
-2. Inspect the diff vs `git`:
-   ```bash
-   git diff src/nvidia/tuning_table.cuh
-   ```
-3. Open a PR with the diff. Include in the description: hostname, GPU
-   model from `nvidia-smi`, CUDA toolkit version, MathDx version, bench
-   `--iters` count.
+### Option A — submit your per-host file unchanged
+
+The simplest contribution: rerun autotune, then attach the contents of
+`bench/tuning/<hostname>.cuh` to a PR. Reviewers will spot-check and
+merge specific specializations into `src/nvidia/tuning_table.cuh` as
+appropriate.
+
+### Option B — update the shipped table directly
+
+For maintainers or contributors who want to commit specializations
+straight into the shipped file:
+
+```bash
+python3 bench/autotune.py --sm AUTO --in-tree
+```
+
+`--in-tree` writes the new specializations into a marker-delimited
+section inside `src/nvidia/tuning_table.cuh` while preserving the round-2
+primary templates, default heuristics, and the `GLASS_TUNING_TABLE_LOCAL`
+hook. The markers are:
+
+```
+// === BEGIN: autotune-generated specializations ===
+// ...
+// === END: autotune-generated specializations ===
+```
+
+Re-running `--in-tree` replaces the section in-place; running without
+`--in-tree` writes only to `bench/tuning/<hostname>.cuh` and leaves the
+shipped table alone.
 
 ### What NOT to contribute
 

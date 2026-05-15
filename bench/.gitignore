@@ -1,4 +1,8 @@
 build/
 results/*.json
-tuning/tuning_*.cuh
+# Per-host autotune outputs. The autotune script writes
+# bench/tuning/<hostname>.cuh + a results .md alongside; both are local
+# artifacts consumed via -DGLASS_TUNING_TABLE_LOCAL='"path/to/file"'.
+tuning/*.cuh
+tuning/*_results.md
 __pycache__/
