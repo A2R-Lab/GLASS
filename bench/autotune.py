@@ -604,11 +604,22 @@ def emit_overrides(out_path: pathlib.Path,
             continue
         lines.append(f"// ─── {api} ─" + ("─" * (72 - len(api))))
         cfg = API_CONFIGS[api]
+        # Sub-microsecond measurements are unreliable on small kernels (timer
+        # granularity, kernel launch failures, shared-mem overflows that
+        # bail before the kernel body runs all produce 0.000us-ish values).
+        # Below this floor we can't trust either leg, so we conservatively
+        # default to SIMT.
+        MIN_TRUSTWORTHY_US = 0.05
         for shape, simt, cdx in results:
             spec = cfg["spec_fmt"](*shape, sms)
             if simt is None or cdx is None:
                 verdict = "false"
                 note = "measurement failed → SIMT default"
+            elif simt < MIN_TRUSTWORTHY_US or cdx < MIN_TRUSTWORTHY_US:
+                verdict = "false"
+                note = (f"measurement below noise floor "
+                        f"(simt={simt:.3f}us, cublasdx={cdx:.3f}us; "
+                        f"< {MIN_TRUSTWORTHY_US:.2f}us) → SIMT default")
             else:
                 ratio = cdx / simt
                 if ratio < (1.0 - margin):
@@ -657,10 +668,17 @@ def emit_results_md(md_path: pathlib.Path,
         header = "| " + " | ".join(keys) + " | SIMT (us) | cuBLASDx (us) | Winner | Speedup |"
         sep = "|" + "|".join(["---"] * (len(keys) + 4)) + "|"
         lines.extend([header, sep])
+        # See emit_overrides_file: sub-noise-floor measurements are
+        # untrustworthy and we conservatively default to SIMT.
+        MIN_TRUSTWORTHY_US = 0.05
         for shape, simt, cdx in results:
             shape_cells = " | ".join(str(s) for s in shape)
             if simt is None or cdx is None:
                 lines.append(f"| {shape_cells} | — | — | SIMT (compile failed) | — |")
+                continue
+            if simt < MIN_TRUSTWORTHY_US or cdx < MIN_TRUSTWORTHY_US:
+                lines.append(f"| {shape_cells} | {simt:.3f} | {cdx:.3f} | "
+                             f"SIMT (sub-noise) | — |")
                 continue
             if cdx < simt * (1.0 - margin):
                 lines.append(f"| {shape_cells} | {simt:.3f} | {cdx:.3f} | "
@@ -836,10 +854,21 @@ def _update_in_tree(path: pathlib.Path,
         block_lines.append("")
         block_lines.append(f"// ─── {api} ─" + ("─" * max(0, 60 - len(api))))
         cfg = API_CONFIGS[api]
+        # Sub-microsecond measurements are unreliable on small kernels
+        # (timer granularity, kernel launch failures, shared-mem overflows
+        # that bail before the kernel body runs all produce 0.000us-ish
+        # values). Below this floor we can't trust either leg → default
+        # to SIMT.
+        MIN_TRUSTWORTHY_US = 0.05
         for shape, simt, cdx in results:
             spec = cfg["spec_fmt"](*shape, sms)
             if simt is None or cdx is None:
                 verdict, note = "false", "measurement failed → SIMT default"
+            elif simt < MIN_TRUSTWORTHY_US or cdx < MIN_TRUSTWORTHY_US:
+                verdict, note = "false", (
+                    f"measurement below noise floor "
+                    f"(simt={simt:.3f}us, cublasdx={cdx:.3f}us; "
+                    f"< {MIN_TRUSTWORTHY_US:.2f}us) → SIMT default")
             else:
                 ratio = cdx / simt
                 if ratio < (1.0 - margin):
