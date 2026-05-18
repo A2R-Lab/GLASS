@@ -32,12 +32,21 @@
 // A, B, C are arrays of length BATCH; each element points at one matrix.
 // Templated on T (no DEFINE macro needed) — the SIMT path has no precompiled
 // specialization to instantiate, so any T (float, double, half, ...) works.
+//
+// TRAILING_SYNC: when true (default), the function emits a __syncthreads()
+//                before returning so callers can read any batch's output
+//                safely. When false, the caller is responsible for syncing
+//                before reading another batch's output. Pass false when
+//                fusing with subsequent work that does its own block-wide
+//                barrier (e.g. a parallel_loop that begins with a sync), so
+//                two back-to-back syncs collapse to one.
 // ---------------------------------------------------------------------------
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t BATCH, uint32_t TC,
           layout LA = layout::col_major,
           layout LB = layout::col_major,
-          layout LC = layout::col_major>
+          layout LC = layout::col_major,
+          bool TRAILING_SYNC = true>
 __device__ void gemm_batched_1d(T alpha, T* const* A, T* const* B,
                                 T beta,  T* const* C)
 {
@@ -52,13 +61,17 @@ __device__ void gemm_batched_1d(T alpha, T* const* A, T* const* B,
     constexpr bool RM_C = (LC == layout::row_major);
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t b    = rank / TC;
-    if (b >= BATCH) return;
-    uint32_t tx   = rank - b * TC;
-    // Reuse the well-tested compile-time SIMT gemm core from glass::.
-    // Inner loop is fully unrolled; no inter-batch synchronization needed
-    // because batches use disjoint thread sets and disjoint output buffers.
-    ::glass::gemm_impl_ct<T, M, N, K, /*TRANSPOSE_B=*/false, RM_A, RM_B, RM_C>(
-        tx, TC, alpha, A[b], B[b], beta, C[b]);
+    if (b < BATCH) {
+        uint32_t tx = rank - b * TC;
+        // Reuse the well-tested compile-time SIMT gemm core from glass::.
+        // Inner loop is fully unrolled; no inter-batch synchronization needed
+        // because batches use disjoint thread sets and disjoint output buffers.
+        ::glass::gemm_impl_ct<T, M, N, K, /*TRANSPOSE_B=*/false, RM_A, RM_B, RM_C>(
+            tx, TC, alpha, A[b], B[b], beta, C[b]);
+    }
+    if constexpr (TRAILING_SYNC) {
+        __syncthreads();
+    }
 }
 
 // Smem requirement is zero; provided for API symmetry with gemm_batched.
@@ -66,7 +79,8 @@ template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t BATCH, uint32_t TC,
           layout LA = layout::col_major,
           layout LB = layout::col_major,
-          layout LC = layout::col_major>
+          layout LC = layout::col_major,
+          bool TRAILING_SYNC = true>
 constexpr std::size_t gemm_batched_1d_smem_size() { return 0; }
 
 // Total threads required across the whole 1D block.
@@ -74,7 +88,8 @@ template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t BATCH, uint32_t TC,
           layout LA = layout::col_major,
           layout LB = layout::col_major,
-          layout LC = layout::col_major>
+          layout LC = layout::col_major,
+          bool TRAILING_SYNC = true>
 constexpr uint32_t gemm_batched_1d_threads() { return TC * BATCH; }
 
 // ---------------------------------------------------------------------------
@@ -94,6 +109,10 @@ constexpr uint32_t gemm_batched_1d_threads() { return TC * BATCH; }
 //
 // Only B and C are strided — A is always shared. Use gemm_batched_1d if a
 // per-batch A is needed.
+//
+// TRAILING_SYNC: see gemm_batched_1d for semantics. Defaults to true so the
+// function returns with all threads at a block-wide barrier; pass false when
+// fusing with subsequent work that already does its own __syncthreads().
 // ---------------------------------------------------------------------------
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t BATCH, uint32_t TC,
@@ -101,7 +120,8 @@ template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t C_STRIDE = M * K,
           layout LA = layout::col_major,
           layout LB = layout::col_major,
-          layout LC = layout::col_major>
+          layout LC = layout::col_major,
+          bool TRAILING_SYNC = true>
 __device__ void gemm_strided_batched_1d(T alpha, const T* A_shared, T* B,
                                         T beta,  T* C)
 {
@@ -116,14 +136,18 @@ __device__ void gemm_strided_batched_1d(T alpha, const T* A_shared, T* B,
     constexpr bool RM_C = (LC == layout::row_major);
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t b    = rank / TC;
-    if (b >= BATCH) return;
-    uint32_t tx   = rank - b * TC;
-    // const_cast: gemm_impl_ct's signature takes T*, but it only reads A.
-    // Safe because every batch element only reads — never writes — A_shared.
-    ::glass::gemm_impl_ct<T, M, N, K, /*TRANSPOSE_B=*/false, RM_A, RM_B, RM_C>(
-        tx, TC, alpha, const_cast<T*>(A_shared),
-                       B + b * B_STRIDE,
-        beta,          C + b * C_STRIDE);
+    if (b < BATCH) {
+        uint32_t tx = rank - b * TC;
+        // const_cast: gemm_impl_ct's signature takes T*, but it only reads A.
+        // Safe because every batch element only reads — never writes — A_shared.
+        ::glass::gemm_impl_ct<T, M, N, K, /*TRANSPOSE_B=*/false, RM_A, RM_B, RM_C>(
+            tx, TC, alpha, const_cast<T*>(A_shared),
+                           B + b * B_STRIDE,
+            beta,          C + b * C_STRIDE);
+    }
+    if constexpr (TRAILING_SYNC) {
+        __syncthreads();
+    }
 }
 
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
@@ -131,7 +155,8 @@ template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t B_STRIDE = N * K, uint32_t C_STRIDE = M * K,
           layout LA = layout::col_major,
           layout LB = layout::col_major,
-          layout LC = layout::col_major>
+          layout LC = layout::col_major,
+          bool TRAILING_SYNC = true>
 constexpr std::size_t gemm_strided_batched_1d_smem_size() { return 0; }
 
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
@@ -139,5 +164,6 @@ template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t B_STRIDE = N * K, uint32_t C_STRIDE = M * K,
           layout LA = layout::col_major,
           layout LB = layout::col_major,
-          layout LC = layout::col_major>
+          layout LC = layout::col_major,
+          bool TRAILING_SYNC = true>
 constexpr uint32_t gemm_strided_batched_1d_threads() { return TC * BATCH; }

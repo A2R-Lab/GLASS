@@ -48,7 +48,13 @@ def _hash_sources(cu_path: pathlib.Path) -> str:
               GLASS_DIR / "glass.cuh", GLASS_DIR / "glass-cgrps.cuh",
               GLASS_DIR / "glass-nvidia.cuh",
               GLASS_DIR / "src" / "nvidia" / "types.cuh",
-              GLASS_DIR / "src" / "nvidia" / "l3_simt.cuh"]:
+              GLASS_DIR / "src" / "nvidia" / "l1.cuh",
+              GLASS_DIR / "src" / "nvidia" / "l2.cuh",
+              GLASS_DIR / "src" / "nvidia" / "l3.cuh",
+              GLASS_DIR / "src" / "nvidia" / "l3_simt.cuh",
+              GLASS_DIR / "src" / "nvidia" / "lapack.cuh",
+              GLASS_DIR / "src" / "nvidia" / "query_simt.cuh",
+              GLASS_DIR / "src" / "nvidia" / "tuning_table.cuh"]:
         if p.exists():
             h.update(p.read_bytes())
     return h.hexdigest()[:16]
@@ -115,7 +121,8 @@ def bins(tmp_path_factory):
     # query helpers). Requires cuBLASDx for the gemm cuBLASDx-route test,
     # so it needs MATHDX_ROOT to compile; otherwise skipped at the fixture.
     mathdx = os.environ.get("MATHDX_ROOT")
-    if mathdx and (pathlib.Path(mathdx) / "include" / "cublasdx.hpp").exists():
+    cublasdx_available = bool(mathdx) and (pathlib.Path(mathdx) / "include" / "cublasdx.hpp").exists() if mathdx else False
+    if cublasdx_available:
         try:
             out["nvidia_dispatch"] = compile_binary(
                 "test_nvidia_dispatch", build_dir, CUDA_ARCH,
@@ -127,6 +134,24 @@ def bins(tmp_path_factory):
                 ])
         except Exception as e:
             print(f"\nSkipping test_nvidia_dispatch (compile failed): {e}", file=sys.stderr)
+
+    # test_trailing_sync.cu exercises the bool TRAILING_SYNC template
+    # parameter across the L1/L2/L3 surface. Compile both variants
+    # (with and without cuBLASDx) — the binary internally skips the
+    # cuBLASDx op when GLASS_BENCH_CUBLASDX isn't defined.
+    try:
+        flags = []
+        if cublasdx_available:
+            flags = [
+                "--expt-relaxed-constexpr",
+                "-DGLASS_BENCH_CUBLASDX",
+                "-I", str(pathlib.Path(mathdx) / "include"),
+                "-I", str(pathlib.Path(mathdx) / "external" / "cutlass" / "include"),
+            ]
+        out["trailing_sync"] = compile_binary(
+            "test_trailing_sync", build_dir, CUDA_ARCH, extra_flags=flags)
+    except Exception as e:
+        print(f"\nSkipping test_trailing_sync (compile failed): {e}", file=sys.stderr)
     return out
 
 
@@ -145,6 +170,14 @@ def bin_nvidia_dispatch(bins):
     if "nvidia_dispatch" not in bins:
         pytest.skip("test_nvidia_dispatch needs MATHDX_ROOT (cuBLASDx)")
     return bins["nvidia_dispatch"]
+
+
+@pytest.fixture(scope="session")
+def bin_trailing_sync(bins):
+    """TRAILING_SYNC surface tests; skip if the binary didn't compile."""
+    if "trailing_sync" not in bins:
+        pytest.skip("test_trailing_sync failed to compile")
+    return bins["trailing_sync"]
 
 
 # ─── run_op helper ────────────────────────────────────────────────────────────

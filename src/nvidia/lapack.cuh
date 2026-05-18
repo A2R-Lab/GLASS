@@ -36,7 +36,8 @@
 // Primary templates
 // ---------------------------------------------------------------------------
 
-template <typename T, uint32_t N, uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
+template <typename T, uint32_t N, uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS,
+          bool TRAILING_SYNC = true>
 __device__ void chol_inplace(T* A, char* smem)
 {
     static_assert(sizeof(T) == 0,
@@ -51,7 +52,8 @@ template <typename T, uint32_t N, uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = 
 constexpr uint32_t chol_inplace_threads() { return 256; }
 
 template <typename T, uint32_t M, uint32_t N,
-          uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
+          uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS,
+          bool TRAILING_SYNC = true>
 __device__ void trsm(T alpha, T* L, T* B, char* smem)
 {
     static_assert(sizeof(T) == 0,
@@ -88,6 +90,7 @@ constexpr uint32_t trsm_threads() { return 256; }
                                   SOLVER::block_dim.y *                                       \
                                   SOLVER::block_dim.z);                                       \
         static constexpr std::size_t smem_bytes = SOLVER::shared_memory_size;                 \
+        template <bool TRAILING_SYNC>                                                         \
         __device__ inline void run(float* A, char* smem) {                                    \
             _GLASS_ASSERT_BLOCKDIM_GEQ(SOLVER)                                                \
             float* As = reinterpret_cast<float*>(smem);                                       \
@@ -97,13 +100,20 @@ constexpr uint32_t trsm_threads() { return 256; }
             SOLVER().execute(As, &info);                                                      \
             __syncthreads();                                                                  \
             cusolverdx::copy_2d<SOLVER, N, N, cusolverdx::col_major>(As, SOLVER::lda, A, N); \
-            __syncthreads();                                                                  \
+            if constexpr (TRAILING_SYNC) {                                                    \
+                __syncthreads();                                                              \
+            }                                                                                 \
         }                                                                                     \
     }                                                                                         \
     template <>                                                                               \
-    __device__ inline void chol_inplace<float, N, 0, ARCH>(float* A, char* smem)              \
+    __device__ inline void chol_inplace<float, N, 0, ARCH, true>(float* A, char* smem)        \
     {                                                                                         \
-        _nvidia_chol_impl_##N##_bd0_sm##ARCH::run(A, smem);                                   \
+        _nvidia_chol_impl_##N##_bd0_sm##ARCH::template run<true>(A, smem);                    \
+    }                                                                                         \
+    template <>                                                                               \
+    __device__ inline void chol_inplace<float, N, 0, ARCH, false>(float* A, char* smem)       \
+    {                                                                                         \
+        _nvidia_chol_impl_##N##_bd0_sm##ARCH::template run<false>(A, smem);                   \
     }                                                                                         \
     template <>                                                                               \
     constexpr std::size_t chol_inplace_smem_size<float, N, 0, ARCH>()                         \
@@ -133,6 +143,7 @@ constexpr uint32_t trsm_threads() { return 256; }
                                   SOLVER::block_dim.y *                                       \
                                   SOLVER::block_dim.z);                                       \
         static constexpr std::size_t smem_bytes = SOLVER::shared_memory_size;                 \
+        template <bool TRAILING_SYNC>                                                         \
         __device__ inline void run(float* A, char* smem) {                                    \
             _GLASS_ASSERT_BLOCKDIM_GEQ(SOLVER)                                                \
             float* As = reinterpret_cast<float*>(smem);                                       \
@@ -142,13 +153,20 @@ constexpr uint32_t trsm_threads() { return 256; }
             SOLVER().execute(As, &info);                                                      \
             __syncthreads();                                                                  \
             cusolverdx::copy_2d<SOLVER, N, N, cusolverdx::col_major>(As, SOLVER::lda, A, N); \
-            __syncthreads();                                                                  \
+            if constexpr (TRAILING_SYNC) {                                                    \
+                __syncthreads();                                                              \
+            }                                                                                 \
         }                                                                                     \
     }                                                                                         \
     template <>                                                                               \
-    __device__ inline void chol_inplace<float, N, TC, ARCH>(float* A, char* smem)             \
+    __device__ inline void chol_inplace<float, N, TC, ARCH, true>(float* A, char* smem)       \
     {                                                                                         \
-        _nvidia_chol_impl_##N##_bd##TC##_sm##ARCH::run(A, smem);                              \
+        _nvidia_chol_impl_##N##_bd##TC##_sm##ARCH::template run<true>(A, smem);               \
+    }                                                                                         \
+    template <>                                                                               \
+    __device__ inline void chol_inplace<float, N, TC, ARCH, false>(float* A, char* smem)      \
+    {                                                                                         \
+        _nvidia_chol_impl_##N##_bd##TC##_sm##ARCH::template run<false>(A, smem);              \
     }                                                                                         \
     template <>                                                                               \
     constexpr std::size_t chol_inplace_smem_size<float, N, TC, ARCH>()                        \
@@ -187,6 +205,7 @@ constexpr uint32_t trsm_threads() { return 256; }
                                   SOLVER::block_dim.y *                                       \
                                   SOLVER::block_dim.z);                                       \
         static constexpr std::size_t smem_bytes = SOLVER::shared_memory_size;                 \
+        template <bool TRAILING_SYNC>                                                         \
         __device__ inline void run(float alpha, float* L, float* B, char* smem) {             \
             _GLASS_ASSERT_BLOCKDIM_GEQ(SOLVER)                                                \
             float* Ls = reinterpret_cast<float*>(smem);                                       \
@@ -206,14 +225,22 @@ constexpr uint32_t trsm_threads() { return 256; }
             SOLVER().execute(Ls, M, Bs, M);                                                   \
             __syncthreads();                                                                  \
             cusolverdx::copy_2d<SOLVER, M, N, cusolverdx::col_major>(Bs, M, B, M);           \
-            __syncthreads();                                                                  \
+            if constexpr (TRAILING_SYNC) {                                                    \
+                __syncthreads();                                                              \
+            }                                                                                 \
         }                                                                                     \
     }                                                                                         \
     template <>                                                                               \
-    __device__ inline void trsm<float, M, N, 0, ARCH>                                         \
+    __device__ inline void trsm<float, M, N, 0, ARCH, true>                                   \
         (float alpha, float* L, float* B, char* smem)                                         \
     {                                                                                         \
-        _nvidia_trsm_impl_##M##x##N##_bd0_sm##ARCH::run(alpha, L, B, smem);                   \
+        _nvidia_trsm_impl_##M##x##N##_bd0_sm##ARCH::template run<true>(alpha, L, B, smem);    \
+    }                                                                                         \
+    template <>                                                                               \
+    __device__ inline void trsm<float, M, N, 0, ARCH, false>                                  \
+        (float alpha, float* L, float* B, char* smem)                                         \
+    {                                                                                         \
+        _nvidia_trsm_impl_##M##x##N##_bd0_sm##ARCH::template run<false>(alpha, L, B, smem);   \
     }                                                                                         \
     template <>                                                                               \
     constexpr std::size_t trsm_smem_size<float, M, N, 0, ARCH>()                              \
@@ -246,6 +273,7 @@ constexpr uint32_t trsm_threads() { return 256; }
                                   SOLVER::block_dim.y *                                       \
                                   SOLVER::block_dim.z);                                       \
         static constexpr std::size_t smem_bytes = SOLVER::shared_memory_size;                 \
+        template <bool TRAILING_SYNC>                                                         \
         __device__ inline void run(float alpha, float* L, float* B, char* smem) {             \
             _GLASS_ASSERT_BLOCKDIM_GEQ(SOLVER)                                                \
             float* Ls = reinterpret_cast<float*>(smem);                                       \
@@ -265,14 +293,22 @@ constexpr uint32_t trsm_threads() { return 256; }
             SOLVER().execute(Ls, M, Bs, M);                                                   \
             __syncthreads();                                                                  \
             cusolverdx::copy_2d<SOLVER, M, N, cusolverdx::col_major>(Bs, M, B, M);           \
-            __syncthreads();                                                                  \
+            if constexpr (TRAILING_SYNC) {                                                    \
+                __syncthreads();                                                              \
+            }                                                                                 \
         }                                                                                     \
     }                                                                                         \
     template <>                                                                               \
-    __device__ inline void trsm<float, M, N, TC, ARCH>                                        \
+    __device__ inline void trsm<float, M, N, TC, ARCH, true>                                  \
         (float alpha, float* L, float* B, char* smem)                                         \
     {                                                                                         \
-        _nvidia_trsm_impl_##M##x##N##_bd##TC##_sm##ARCH::run(alpha, L, B, smem);              \
+        _nvidia_trsm_impl_##M##x##N##_bd##TC##_sm##ARCH::template run<true>(alpha, L, B, smem);\
+    }                                                                                         \
+    template <>                                                                               \
+    __device__ inline void trsm<float, M, N, TC, ARCH, false>                                 \
+        (float alpha, float* L, float* B, char* smem)                                         \
+    {                                                                                         \
+        _nvidia_trsm_impl_##M##x##N##_bd##TC##_sm##ARCH::template run<false>(alpha, L, B, smem);\
     }                                                                                         \
     template <>                                                                               \
     constexpr std::size_t trsm_smem_size<float, M, N, TC, ARCH>()                             \
@@ -325,7 +361,8 @@ constexpr uint32_t trsm_threads() { return 256; }
 // B is overwritten with X.  Smem layout: [As: N*N] [Bs: N*NRHS] [solver_smem].
 
 template <typename T, uint32_t N, uint32_t NRHS,
-          uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
+          uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS,
+          bool TRAILING_SYNC = true>
 __device__ void posv(T* A, T* B, char* smem)
 {
     static_assert(sizeof(T) == 0,
@@ -357,6 +394,7 @@ constexpr uint32_t posv_threads() { return 256; }
                                   SOLVER::block_dim.y *                                          \
                                   SOLVER::block_dim.z);                                          \
         static constexpr std::size_t smem_bytes = SOLVER::shared_memory_size;                    \
+        template <bool TRAILING_SYNC>                                                            \
         __device__ inline void run(float* A, float* B, char* smem) {                             \
             _GLASS_ASSERT_BLOCKDIM_GEQ(SOLVER)                                                   \
             float* As = reinterpret_cast<float*>(smem);                                          \
@@ -369,12 +407,17 @@ constexpr uint32_t posv_threads() { return 256; }
             __syncthreads();                                                                     \
             cusolverdx::copy_2d<SOLVER, N, N, cusolverdx::col_major>(As, N, A, N);              \
             cusolverdx::copy_2d<SOLVER, N, NRHS, cusolverdx::col_major>(Bs, N, B, N);           \
-            __syncthreads();                                                                     \
+            if constexpr (TRAILING_SYNC) {                                                       \
+                __syncthreads();                                                                 \
+            }                                                                                    \
         }                                                                                        \
     }                                                                                            \
     template <>                                                                                  \
-    __device__ inline void posv<float, N, NRHS, 0, ARCH>(float* A, float* B, char* smem)        \
-    { _nvidia_posv_impl_##N##x##NRHS##_bd0_sm##ARCH::run(A, B, smem); }                          \
+    __device__ inline void posv<float, N, NRHS, 0, ARCH, true>(float* A, float* B, char* smem)  \
+    { _nvidia_posv_impl_##N##x##NRHS##_bd0_sm##ARCH::template run<true>(A, B, smem); }           \
+    template <>                                                                                  \
+    __device__ inline void posv<float, N, NRHS, 0, ARCH, false>(float* A, float* B, char* smem) \
+    { _nvidia_posv_impl_##N##x##NRHS##_bd0_sm##ARCH::template run<false>(A, B, smem); }          \
     template <>                                                                                  \
     constexpr std::size_t posv_smem_size<float, N, NRHS, 0, ARCH>()                             \
     { return _nvidia_posv_impl_##N##x##NRHS##_bd0_sm##ARCH::smem_bytes; }                        \
@@ -399,6 +442,7 @@ constexpr uint32_t posv_threads() { return 256; }
                                   SOLVER::block_dim.y *                                          \
                                   SOLVER::block_dim.z);                                          \
         static constexpr std::size_t smem_bytes = SOLVER::shared_memory_size;                    \
+        template <bool TRAILING_SYNC>                                                            \
         __device__ inline void run(float* A, float* B, char* smem) {                             \
             _GLASS_ASSERT_BLOCKDIM_GEQ(SOLVER)                                                   \
             float* As = reinterpret_cast<float*>(smem);                                          \
@@ -411,12 +455,17 @@ constexpr uint32_t posv_threads() { return 256; }
             __syncthreads();                                                                     \
             cusolverdx::copy_2d<SOLVER, N, N, cusolverdx::col_major>(As, N, A, N);              \
             cusolverdx::copy_2d<SOLVER, N, NRHS, cusolverdx::col_major>(Bs, N, B, N);           \
-            __syncthreads();                                                                     \
+            if constexpr (TRAILING_SYNC) {                                                       \
+                __syncthreads();                                                                 \
+            }                                                                                    \
         }                                                                                        \
     }                                                                                            \
     template <>                                                                                  \
-    __device__ inline void posv<float, N, NRHS, TC, ARCH>(float* A, float* B, char* smem)       \
-    { _nvidia_posv_impl_##N##x##NRHS##_bd##TC##_sm##ARCH::run(A, B, smem); }                     \
+    __device__ inline void posv<float, N, NRHS, TC, ARCH, true>(float* A, float* B, char* smem) \
+    { _nvidia_posv_impl_##N##x##NRHS##_bd##TC##_sm##ARCH::template run<true>(A, B, smem); }      \
+    template <>                                                                                  \
+    __device__ inline void posv<float, N, NRHS, TC, ARCH, false>(float* A, float* B, char* smem)\
+    { _nvidia_posv_impl_##N##x##NRHS##_bd##TC##_sm##ARCH::template run<false>(A, B, smem); }     \
     template <>                                                                                  \
     constexpr std::size_t posv_smem_size<float, N, NRHS, TC, ARCH>()                            \
     { return _nvidia_posv_impl_##N##x##NRHS##_bd##TC##_sm##ARCH::smem_bytes; }                   \
@@ -753,7 +802,8 @@ constexpr uint32_t getrs_no_pivot_threads() { return 256; }
 // Smem layout: [As: N*N] [Bs: N*NRHS] [solver_smem].
 
 template <typename T, uint32_t N, uint32_t NRHS,
-          uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
+          uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS,
+          bool TRAILING_SYNC = true>
 __device__ void gesv_no_pivot(T* A, T* B, char* smem)
 {
     static_assert(sizeof(T) == 0,
@@ -784,6 +834,7 @@ constexpr uint32_t gesv_no_pivot_threads() { return 256; }
                                   SOLVER::block_dim.y *                                          \
                                   SOLVER::block_dim.z);                                          \
         static constexpr std::size_t smem_bytes = SOLVER::shared_memory_size;                    \
+        template <bool TRAILING_SYNC>                                                            \
         __device__ inline void run(float* A, float* B, char* smem) {                             \
             _GLASS_ASSERT_BLOCKDIM_GEQ(SOLVER)                                                   \
             float* As = reinterpret_cast<float*>(smem);                                          \
@@ -796,12 +847,17 @@ constexpr uint32_t gesv_no_pivot_threads() { return 256; }
             __syncthreads();                                                                     \
             cusolverdx::copy_2d<SOLVER, N, N, cusolverdx::col_major>(As, N, A, N);              \
             cusolverdx::copy_2d<SOLVER, N, NRHS, cusolverdx::col_major>(Bs, N, B, N);           \
-            __syncthreads();                                                                     \
+            if constexpr (TRAILING_SYNC) {                                                       \
+                __syncthreads();                                                                 \
+            }                                                                                    \
         }                                                                                        \
     }                                                                                            \
     template <>                                                                                  \
-    __device__ inline void gesv_no_pivot<float, N, NRHS, 0, ARCH>(float* A, float* B, char* smem) \
-    { _nvidia_gesv_impl_##N##x##NRHS##_bd0_sm##ARCH::run(A, B, smem); }                          \
+    __device__ inline void gesv_no_pivot<float, N, NRHS, 0, ARCH, true>(float* A, float* B, char* smem) \
+    { _nvidia_gesv_impl_##N##x##NRHS##_bd0_sm##ARCH::template run<true>(A, B, smem); }           \
+    template <>                                                                                  \
+    __device__ inline void gesv_no_pivot<float, N, NRHS, 0, ARCH, false>(float* A, float* B, char* smem) \
+    { _nvidia_gesv_impl_##N##x##NRHS##_bd0_sm##ARCH::template run<false>(A, B, smem); }          \
     template <>                                                                                  \
     constexpr std::size_t gesv_no_pivot_smem_size<float, N, NRHS, 0, ARCH>()                    \
     { return _nvidia_gesv_impl_##N##x##NRHS##_bd0_sm##ARCH::smem_bytes; }                        \
@@ -825,6 +881,7 @@ constexpr uint32_t gesv_no_pivot_threads() { return 256; }
                                   SOLVER::block_dim.y *                                          \
                                   SOLVER::block_dim.z);                                          \
         static constexpr std::size_t smem_bytes = SOLVER::shared_memory_size;                    \
+        template <bool TRAILING_SYNC>                                                            \
         __device__ inline void run(float* A, float* B, char* smem) {                             \
             _GLASS_ASSERT_BLOCKDIM_GEQ(SOLVER)                                                   \
             float* As = reinterpret_cast<float*>(smem);                                          \
@@ -837,12 +894,17 @@ constexpr uint32_t gesv_no_pivot_threads() { return 256; }
             __syncthreads();                                                                     \
             cusolverdx::copy_2d<SOLVER, N, N, cusolverdx::col_major>(As, N, A, N);              \
             cusolverdx::copy_2d<SOLVER, N, NRHS, cusolverdx::col_major>(Bs, N, B, N);           \
-            __syncthreads();                                                                     \
+            if constexpr (TRAILING_SYNC) {                                                       \
+                __syncthreads();                                                                 \
+            }                                                                                    \
         }                                                                                        \
     }                                                                                            \
     template <>                                                                                  \
-    __device__ inline void gesv_no_pivot<float, N, NRHS, TC, ARCH>(float* A, float* B, char* smem) \
-    { _nvidia_gesv_impl_##N##x##NRHS##_bd##TC##_sm##ARCH::run(A, B, smem); }                     \
+    __device__ inline void gesv_no_pivot<float, N, NRHS, TC, ARCH, true>(float* A, float* B, char* smem) \
+    { _nvidia_gesv_impl_##N##x##NRHS##_bd##TC##_sm##ARCH::template run<true>(A, B, smem); }      \
+    template <>                                                                                  \
+    __device__ inline void gesv_no_pivot<float, N, NRHS, TC, ARCH, false>(float* A, float* B, char* smem) \
+    { _nvidia_gesv_impl_##N##x##NRHS##_bd##TC##_sm##ARCH::template run<false>(A, B, smem); }     \
     template <>                                                                                  \
     constexpr std::size_t gesv_no_pivot_smem_size<float, N, NRHS, TC, ARCH>()                   \
     { return _nvidia_gesv_impl_##N##x##NRHS##_bd##TC##_sm##ARCH::smem_bytes; }                   \
@@ -970,7 +1032,8 @@ constexpr uint32_t geqrf_threads() { return 256; }
 // Smem layout: [As: M*N] [Bs: max(M,N)*NRHS] [solver_smem]; tau is caller-provided.
 
 template <typename T, uint32_t M, uint32_t N, uint32_t NRHS,
-          uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
+          uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS,
+          bool TRAILING_SYNC = true>
 __device__ void gels(T* A, T* tau, T* B, char* smem)
 {
     static_assert(sizeof(T) == 0,
@@ -1003,6 +1066,7 @@ constexpr uint32_t gels_threads() { return 256; }
                                   SOLVER::block_dim.y *                                          \
                                   SOLVER::block_dim.z);                                          \
         static constexpr std::size_t smem_bytes = SOLVER::shared_memory_size;                    \
+        template <bool TRAILING_SYNC>                                                            \
         __device__ inline void run(float* A, float* tau, float* B, char* smem) {                 \
             _GLASS_ASSERT_BLOCKDIM_GEQ(SOLVER)                                                   \
             constexpr uint32_t BMAX = _GLASS_GELS_BMAX(M, N);                                    \
@@ -1014,12 +1078,17 @@ constexpr uint32_t gels_threads() { return 256; }
             SOLVER().execute(As, M, tau, Bs, BMAX);                                              \
             __syncthreads();                                                                     \
             cusolverdx::copy_2d<SOLVER, N, NRHS, cusolverdx::col_major>(Bs, BMAX, B, BMAX);     \
-            __syncthreads();                                                                     \
+            if constexpr (TRAILING_SYNC) {                                                       \
+                __syncthreads();                                                                 \
+            }                                                                                    \
         }                                                                                        \
     }                                                                                            \
     template <>                                                                                  \
-    __device__ inline void gels<float, M, N, NRHS, 0, ARCH>(float* A, float* tau, float* B, char* smem) \
-    { _nvidia_gels_impl_##M##x##N##x##NRHS##_bd0_sm##ARCH::run(A, tau, B, smem); }               \
+    __device__ inline void gels<float, M, N, NRHS, 0, ARCH, true>(float* A, float* tau, float* B, char* smem) \
+    { _nvidia_gels_impl_##M##x##N##x##NRHS##_bd0_sm##ARCH::template run<true>(A, tau, B, smem); }\
+    template <>                                                                                  \
+    __device__ inline void gels<float, M, N, NRHS, 0, ARCH, false>(float* A, float* tau, float* B, char* smem) \
+    { _nvidia_gels_impl_##M##x##N##x##NRHS##_bd0_sm##ARCH::template run<false>(A, tau, B, smem); }\
     template <>                                                                                  \
     constexpr std::size_t gels_smem_size<float, M, N, NRHS, 0, ARCH>()                          \
     { return _nvidia_gels_impl_##M##x##N##x##NRHS##_bd0_sm##ARCH::smem_bytes; }                  \
@@ -1043,6 +1112,7 @@ constexpr uint32_t gels_threads() { return 256; }
                                   SOLVER::block_dim.y *                                          \
                                   SOLVER::block_dim.z);                                          \
         static constexpr std::size_t smem_bytes = SOLVER::shared_memory_size;                    \
+        template <bool TRAILING_SYNC>                                                            \
         __device__ inline void run(float* A, float* tau, float* B, char* smem) {                 \
             _GLASS_ASSERT_BLOCKDIM_GEQ(SOLVER)                                                   \
             constexpr uint32_t BMAX = _GLASS_GELS_BMAX(M, N);                                    \
@@ -1054,12 +1124,17 @@ constexpr uint32_t gels_threads() { return 256; }
             SOLVER().execute(As, M, tau, Bs, BMAX);                                              \
             __syncthreads();                                                                     \
             cusolverdx::copy_2d<SOLVER, N, NRHS, cusolverdx::col_major>(Bs, BMAX, B, BMAX);     \
-            __syncthreads();                                                                     \
+            if constexpr (TRAILING_SYNC) {                                                       \
+                __syncthreads();                                                                 \
+            }                                                                                    \
         }                                                                                        \
     }                                                                                            \
     template <>                                                                                  \
-    __device__ inline void gels<float, M, N, NRHS, TC, ARCH>(float* A, float* tau, float* B, char* smem) \
-    { _nvidia_gels_impl_##M##x##N##x##NRHS##_bd##TC##_sm##ARCH::run(A, tau, B, smem); }          \
+    __device__ inline void gels<float, M, N, NRHS, TC, ARCH, true>(float* A, float* tau, float* B, char* smem) \
+    { _nvidia_gels_impl_##M##x##N##x##NRHS##_bd##TC##_sm##ARCH::template run<true>(A, tau, B, smem); }\
+    template <>                                                                                  \
+    __device__ inline void gels<float, M, N, NRHS, TC, ARCH, false>(float* A, float* tau, float* B, char* smem) \
+    { _nvidia_gels_impl_##M##x##N##x##NRHS##_bd##TC##_sm##ARCH::template run<false>(A, tau, B, smem); }\
     template <>                                                                                  \
     constexpr std::size_t gels_smem_size<float, M, N, NRHS, TC, ARCH>()                         \
     { return _nvidia_gels_impl_##M##x##N##x##NRHS##_bd##TC##_sm##ARCH::smem_bytes; }             \

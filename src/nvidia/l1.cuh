@@ -10,9 +10,18 @@
 // CUB contract: blockDim.x must equal THREADS exactly. Mismatch is silent
 // (CUB does not assert), so we add a debug-only assertion below.
 //
+// TRAILING_SYNC: every function takes a `bool TRAILING_SYNC = true` template
+// parameter as the last template argument. When true (default), the function
+// returns with all threads at a __syncthreads() so callers can read the
+// result safely. When false, the caller is responsible for syncing before
+// reading. Pass false when fusing with subsequent work that already issues
+// its own __syncthreads(). The LEADING sync (before the CUB BlockReduce) is
+// NOT gated — CUB requires its TempStorage to be quiescent on entry.
+//
 // Example:
 //   extern __shared__ float scratch[];   // must be >= sizeof(T) * THREADS
-//   glass::nvidia::reduce<float, 64, 256>(x, scratch);
+//   glass::nvidia::reduce<float, 64, 256>(x, scratch);                   // default sync
+//   glass::nvidia::reduce<float, 64, 256, /*TRAILING_SYNC=*/false>(...); // fused
 
 // Debug-only check that the launched blockDim.x matches CUB's THREADS template
 // arg. Mismatch (in either direction) silently corrupts the BlockReduce result.
@@ -25,7 +34,7 @@
            "CUB BlockReduce does not tolerate mismatch");
 #endif
 
-template <typename T, uint32_t N, uint32_t THREADS = 256>
+template <typename T, uint32_t N, uint32_t THREADS = 256, bool TRAILING_SYNC = true>
 __device__ void reduce(T *x, T *s_scratch)
 {
     _GLASS_ASSERT_THREADS_EQ(THREADS)
@@ -37,10 +46,12 @@ __device__ void reduce(T *x, T *s_scratch)
     T block_sum = BlockReduce(*reinterpret_cast<typename BlockReduce::TempStorage*>(s_scratch))
                       .Sum(thread_sum);
     if (threadIdx.x == 0) x[0] = block_sum;
-    __syncthreads();
+    if constexpr (TRAILING_SYNC) {
+        __syncthreads();
+    }
 }
 
-template <typename T, uint32_t N, uint32_t THREADS = 256>
+template <typename T, uint32_t N, uint32_t THREADS = 256, bool TRAILING_SYNC = true>
 __device__ void dot(T *x, T *y, T *out, T *s_scratch)
 {
     _GLASS_ASSERT_THREADS_EQ(THREADS)
@@ -52,10 +63,12 @@ __device__ void dot(T *x, T *y, T *out, T *s_scratch)
     T block_sum = BlockReduce(*reinterpret_cast<typename BlockReduce::TempStorage*>(s_scratch))
                       .Sum(thread_sum);
     if (threadIdx.x == 0) *out = block_sum;
-    __syncthreads();
+    if constexpr (TRAILING_SYNC) {
+        __syncthreads();
+    }
 }
 
-template <typename T, uint32_t N, uint32_t THREADS = 256>
+template <typename T, uint32_t N, uint32_t THREADS = 256, bool TRAILING_SYNC = true>
 __device__ void l2norm(T *x, T *out, T *s_scratch)
 {
     _GLASS_ASSERT_THREADS_EQ(THREADS)
@@ -67,7 +80,9 @@ __device__ void l2norm(T *x, T *out, T *s_scratch)
     T block_sum = BlockReduce(*reinterpret_cast<typename BlockReduce::TempStorage*>(s_scratch))
                       .Sum(thread_sum);
     if (threadIdx.x == 0) *out = sqrtf(block_sum);
-    __syncthreads();
+    if constexpr (TRAILING_SYNC) {
+        __syncthreads();
+    }
 }
 
 // smem size helper (host-callable): bytes needed for s_scratch
