@@ -276,6 +276,30 @@ def test_dot_strided(bins, n, sx, sy, case):
     assert np.isclose(float(result[0]), expected, rtol=RTOL, atol=ATOL)
 
 
+# ─── dot_strided_coalesced ──────────────────────────────────────────────────
+# Block-cooperative sibling of dot_strided: same value, coalesced global loads.
+# "simple" version dispatches the per-thread dot_strided reference (thread 0
+# writes); "simple_hs" dispatches the coalesced block-reduction primitive.
+# Equivalence test asserts both agree (and match numpy) for a large stride.
+
+DOT_COALESCED_SHAPES = [
+    (64, 64, 64),   # x,y = 4096 each; stride 64 (column of a 64-wide row-major mat)
+    (256, 256, 1),  # x = 65536, y = 256; large x stride, unit y stride
+]
+
+
+@pytest.mark.parametrize("n,sx,sy", DOT_COALESCED_SHAPES)
+def test_dot_strided_coalesced(bins, n, sx, sy):
+    x = (RNG.random(n * sx) - 0.5).astype(np.float32)
+    y = (RNG.random(n * sy) - 0.5).astype(np.float32)
+    op = f"dot_coalesced_{n}_{sx}_{sy}"
+    coalesced = run_op(bins["l1"], op, "simple_hs", args=[0], inputs=[x, y])
+    reference = run_op(bins["l1"], op, "simple", args=[0], inputs=[x, y])
+    expected = sum(float(x[i * sx]) * float(y[i * sy]) for i in range(n))
+    assert np.isclose(float(coalesced[0]), float(reference[0]), rtol=1e-4, atol=1e-4)
+    assert np.isclose(float(coalesced[0]), expected, rtol=1e-3, atol=1e-4)
+
+
 # ─── prefix sum ───────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("n", [8, 32, 64])

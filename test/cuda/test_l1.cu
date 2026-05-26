@@ -169,6 +169,23 @@ DEFINE_DOT_STRIDED_KERNEL(6, 1, 1)
 DEFINE_DOT_STRIDED_KERNEL(6, 6, 1)
 DEFINE_DOT_STRIDED_KERNEL(6, 6, 6)
 
+// ─── dot_strided_coalesced kernels (block-cooperative, coalesced loads) ──────
+// Block-wide reduction sibling of dot_strided: same result, launched <<<1,T>>>.
+// Also a reference per-thread dot_strided kernel that writes from thread 0 only,
+// so the test can assert numerical equivalence for a large stride.
+#define DEFINE_DOT_COALESCED_KERNEL(N, SX, SY)                                          \
+    __global__ void k_dot_coalesced_##N##_##SX##_##SY(float* x, float* y, float* out,  \
+                                                      float* scratch) {                 \
+        glass::dot_strided_coalesced<float, N, SX, SY>(x, y, out, scratch);            \
+    }                                                                                    \
+    __global__ void k_dot_strided_ref_##N##_##SX##_##SY(float* x, float* y, float* out){\
+        uint32_t r = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;\
+        float v = glass::dot_strided<float, N, SX, SY>(x, y);                           \
+        if (r == 0) *out = v;                                                           \
+    }
+DEFINE_DOT_COALESCED_KERNEL(64, 64, 64)
+DEFINE_DOT_COALESCED_KERNEL(256, 256, 1)
+
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 static int THREADS = 256;
@@ -441,6 +458,30 @@ int main(int argc, char** argv) {
         float* dy = read_device_vec(argv[5], 6 * 6);  // y: N*SY = 36 elements
         float* dout = alloc_device_vec(1);
         k_dot_strided_6_6_6<<<1, 1>>>(dx, dy, dout);
+        cudaDeviceSynchronize();
+        print_device_vec(dout, 1);
+
+    } else if (strcmp(op, "dot_coalesced_64_64_64") == 0) {
+        float* dx = read_device_vec(argv[4], 64 * 64);
+        float* dy = read_device_vec(argv[5], 64 * 64);
+        float* dout = alloc_device_vec(1);
+        if (is_simple(ver)) {
+            k_dot_strided_ref_64_64_64<<<1, THREADS>>>(dx, dy, dout);
+        } else {
+            k_dot_coalesced_64_64_64<<<1, THREADS>>>(dx, dy, dout, d_scratch);
+        }
+        cudaDeviceSynchronize();
+        print_device_vec(dout, 1);
+
+    } else if (strcmp(op, "dot_coalesced_256_256_1") == 0) {
+        float* dx = read_device_vec(argv[4], 256 * 256);
+        float* dy = read_device_vec(argv[5], 256 * 1);
+        float* dout = alloc_device_vec(1);
+        if (is_simple(ver)) {
+            k_dot_strided_ref_256_256_1<<<1, THREADS>>>(dx, dy, dout);
+        } else {
+            k_dot_coalesced_256_256_1<<<1, THREADS>>>(dx, dy, dout, d_scratch);
+        }
         cudaDeviceSynchronize();
         print_device_vec(dout, 1);
 

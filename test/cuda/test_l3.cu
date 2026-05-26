@@ -14,6 +14,23 @@
 
 static int THREADS = 256;
 
+// Read n float32 values from a .bin, round to int, upload to device int array.
+static int* read_device_ivec(const char* path, int n) {
+    float* h = read_host_vec(path, n);
+    int* hi = (int*)malloc(n * sizeof(int));
+    for (int i = 0; i < n; i++) hi[i] = (int)lroundf(h[i]);
+    int* d; cudaMalloc(&d, n * sizeof(int));
+    cudaMemcpy(d, hi, n * sizeof(int), cudaMemcpyHostToDevice);
+    free(h); free(hi);
+    return d;
+}
+
+// ─── indexed_batched_gemm kernel (DIM=4) ─────────────────────────────────────
+__global__ void k_indexed_bgemm_4(uint32_t pairs, int* a_idx, int* b_idx, int* c_idx,
+                                   float* A, float* B, float* C) {
+    glass::indexed_batched_gemm<float, 4, int>(pairs, a_idx, b_idx, c_idx, A, B, C);
+}
+
 // ─── gemm kernels ─────────────────────────────────────────────────────────────
 __global__ void k_gemm_cg(int m, int n, int k, float alpha, float* A, float* B, float beta, float* C) {
     glass::cgrps::gemm<float, false>(m, n, k, alpha, A, B, beta, C);
@@ -279,6 +296,23 @@ int main(int argc, char** argv) {
         k_packed_gemm_4x4x64<<<1, THREADS>>>(alpha, dA, dB, beta, dC);
         cudaDeviceSynchronize();
         print_device_vec(dC, 4 * 64);
+
+    } else if (strcmp(op, "indexed_bgemm_4") == 0) {
+        // argv: m n k pairs A_mats B_mats C_mats  a_idx b_idx c_idx A B C
+        uint32_t pairs = (uint32_t)atoi(argv[6]);
+        int A_mats = atoi(argv[7]);
+        int B_mats = atoi(argv[8]);
+        int C_mats = atoi(argv[9]);
+        int MAT = 4 * 4;
+        int* a_idx = read_device_ivec(argv[10], pairs);
+        int* b_idx = read_device_ivec(argv[11], pairs);
+        int* c_idx = read_device_ivec(argv[12], pairs);
+        float* dA = read_device_vec(argv[13], A_mats * MAT);
+        float* dB = read_device_vec(argv[14], B_mats * MAT);
+        float* dC = alloc_device_vec(C_mats * MAT);
+        k_indexed_bgemm_4<<<1, THREADS>>>(pairs, a_idx, b_idx, c_idx, dA, dB, dC);
+        cudaDeviceSynchronize();
+        print_device_vec(dC, C_mats * MAT);
 
     } else {
         fprintf(stderr, "Unknown op: %s\n", op);

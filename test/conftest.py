@@ -46,6 +46,9 @@ def _hash_sources(cu_path: pathlib.Path) -> str:
     h = hashlib.sha256()
     for p in [cu_path, CUDA_DIR / "helpers.cuh",
               GLASS_DIR / "glass.cuh", GLASS_DIR / "glass-cgrps.cuh",
+              GLASS_DIR / "src" / "base" / "L1" / "dot_strided_coalesced.cuh",
+              GLASS_DIR / "src" / "base" / "L2" / "gemv_segmented.cuh",
+              GLASS_DIR / "src" / "base" / "L3" / "gemm_batched_indexed.cuh",
               GLASS_DIR / "glass-nvidia.cuh",
               GLASS_DIR / "src" / "nvidia" / "types.cuh",
               GLASS_DIR / "src" / "nvidia" / "l1.cuh",

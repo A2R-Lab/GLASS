@@ -104,6 +104,83 @@ def test_gemv_strided(bins, op, m, n, rs, alpha, beta):
     assert np.allclose(result, expected, rtol=RTOL, atol=ATOL)
 
 
+# ─── segmented_row_strided_gemv ──────────────────────────────────────────────
+# `segments` independent 6x6 col-major (LDA=6) GEMVs computed concurrently.
+# Descriptor arrays give per-segment base element offsets into packed buffers.
+# numpy does each GEMV independently as the reference.
+
+def _build_segmented(segments, m, n, rs, rng, with_S=False):
+    """Pack `segments` GEMVs into contiguous A/x/y buffers with per-seg offsets."""
+    A_blocks, x_blocks, y_blocks, S_blocks = [], [], [], []
+    a_off, x_off, y_off, s_off = [], [], [], []
+    A_cur = x_cur = y_cur = s_cur = 0
+    A_list, x_list, y_list, S_list = [], [], [], []
+    for _ in range(segments):
+        Aseg = rng.random((rs, n)).astype(np.float32)   # rs x n storage, LDA=rs
+        Aseg[m:, :] = 0.0
+        xseg = rng.random(n).astype(np.float32)
+        yseg = rng.random(m).astype(np.float32)
+        a_off.append(A_cur); x_off.append(x_cur); y_off.append(y_cur)
+        A_list.append(np.asfortranarray(Aseg).ravel(order='F'))
+        x_list.append(xseg); y_list.append(yseg)
+        A_cur += rs * n; x_cur += n; y_cur += m
+        A_blocks.append(Aseg[:m, :]); x_blocks.append(xseg); y_blocks.append(yseg)
+        if with_S:
+            Sseg = rng.random(m).astype(np.float32)
+            s_off.append(s_cur); S_list.append(Sseg); s_cur += m
+            S_blocks.append(Sseg)
+    A = np.concatenate(A_list).astype(np.float32)
+    x = np.concatenate(x_list).astype(np.float32)
+    y = np.concatenate(y_list).astype(np.float32)
+    out = dict(A=A, x=x, y=y, a_off=np.array(a_off, np.float32),
+               x_off=np.array(x_off, np.float32), y_off=np.array(y_off, np.float32),
+               A_blocks=A_blocks, x_blocks=x_blocks, y_blocks=y_blocks)
+    if with_S:
+        out["S"] = np.concatenate(S_list).astype(np.float32)
+        out["s_off"] = np.array(s_off, np.float32)
+        out["S_blocks"] = S_blocks
+    return out
+
+
+@pytest.mark.parametrize("segments", [1, 3, 5])
+@pytest.mark.parametrize("alpha,beta", [(1.5, 0.3), (1.0, 0.0)])
+def test_segmented_row_strided_gemv_nofuse(bins, segments, alpha, beta):
+    m, n, rs = 6, 6, 6
+    d = _build_segmented(segments, m, n, rs, RNG)
+    y0 = d["y"].copy()
+    result = run_op(
+        bins["l2"], "seg_gemv_6x6_nofuse", "simple",
+        args=[m, n, segments, alpha, beta, d["A"].size, d["x"].size, d["y"].size],
+        inputs=[d["a_off"], d["x_off"], d["y_off"], d["A"], d["x"], d["y"]])
+    expected = []
+    for s in range(segments):
+        yseg0 = d["y_blocks"][s]
+        expected.append(alpha * d["A_blocks"][s] @ d["x_blocks"][s] + beta * yseg0)
+    expected = np.concatenate(expected).astype(np.float32)
+    assert np.allclose(result, expected, rtol=RTOL, atol=ATOL)
+
+
+@pytest.mark.parametrize("segments", [1, 3, 5])
+@pytest.mark.parametrize("alpha,beta", [(1.5, 0.3), (1.0, 0.0)])
+def test_segmented_row_strided_gemv_fuse(bins, segments, alpha, beta):
+    m, n, rs = 6, 6, 6
+    d = _build_segmented(segments, m, n, rs, RNG, with_S=True)
+    scalar = (RNG.random(segments) - 0.5).astype(np.float32)
+    result = run_op(
+        bins["l2"], "seg_gemv_6x6_fuse", "simple",
+        args=[m, n, segments, alpha, beta,
+              d["A"].size, d["x"].size, d["y"].size, d["S"].size],
+        inputs=[d["a_off"], d["x_off"], d["y_off"], d["A"], d["x"], d["y"],
+                d["s_off"], d["S"], scalar])
+    expected = []
+    for s in range(segments):
+        gemv = alpha * d["A_blocks"][s] @ d["x_blocks"][s] + beta * d["y_blocks"][s]
+        gemv = gemv + d["S_blocks"][s] * scalar[s]
+        expected.append(gemv)
+    expected = np.concatenate(expected).astype(np.float32)
+    assert np.allclose(result, expected, rtol=RTOL, atol=ATOL)
+
+
 # ─── ger ──────────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("m,n", [(4, 6), (8, 8), (16, 12)])

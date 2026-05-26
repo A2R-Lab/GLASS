@@ -351,3 +351,39 @@ def test_gemm_strided_batched_1d_padded(bin_l3_nvidia, op, m, n, k, batch,
     # can verify the kernel did NOT write to the padding slots either).
     assert len(result) == batch * c_stride
     assert np.allclose(result, expected, rtol=RTOL, atol=ATOL)
+
+
+# ─── indexed_batched_gemm ─────────────────────────────────────────────────────
+# C[c_idx[p]] = A[a_idx[p]] @ B[b_idx[p]], 4x4 col-major, selected by index lists.
+# numpy does each indexed product independently as the reference.
+
+@pytest.mark.parametrize("pairs,a_mats,b_mats,c_mats", [
+    (1, 1, 1, 1),
+    (4, 2, 3, 4),    # repeated/aliased a_idx,b_idx; distinct c_idx
+    (8, 5, 5, 8),
+])
+def test_indexed_batched_gemm(bins, pairs, a_mats, b_mats, c_mats):
+    DIM = 4
+    rng = RNG
+    A_mats = [rng.random((DIM, DIM)).astype(np.float32) for _ in range(a_mats)]
+    B_mats = [rng.random((DIM, DIM)).astype(np.float32) for _ in range(b_mats)]
+    a_idx = rng.integers(0, a_mats, size=pairs).astype(np.int64)
+    b_idx = rng.integers(0, b_mats, size=pairs).astype(np.int64)
+    c_idx = rng.permutation(c_mats)[:pairs].astype(np.int64)  # distinct c slots
+
+    A_flat = np.concatenate([np.asfortranarray(M).ravel(order='F') for M in A_mats]).astype(np.float32)
+    B_flat = np.concatenate([np.asfortranarray(M).ravel(order='F') for M in B_mats]).astype(np.float32)
+
+    result = run_op(
+        bins["l3"], "indexed_bgemm_4", "simple",
+        args=[DIM, DIM, DIM, pairs, a_mats, b_mats, c_mats],
+        inputs=[a_idx.astype(np.float32), b_idx.astype(np.float32),
+                c_idx.astype(np.float32), A_flat, B_flat])
+
+    MAT = DIM * DIM
+    expected = np.zeros(c_mats * MAT, dtype=np.float32)
+    for p in range(pairs):
+        prod = A_mats[a_idx[p]] @ B_mats[b_idx[p]]
+        base = int(c_idx[p]) * MAT
+        expected[base:base + MAT] = np.asfortranarray(prod).ravel(order='F')
+    assert np.allclose(result, expected, rtol=RTOL, atol=ATOL)
