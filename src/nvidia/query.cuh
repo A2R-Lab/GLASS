@@ -5,7 +5,7 @@
 // glass::nvidia query API — host- and device-callable constexpr helpers that
 // answer "what BlockDim does cuBLASDx pick for this (T,M,N,K,SM)?" without
 // requiring a DEFINE_NVIDIA_GEMM* macro to have been called first. This lets
-// callers (e.g. a code-generator) pick a SUGGESTED_THREADS value at generation
+// callers (e.g. a code-generator) pick a MAX_PERF_LEVEL_THREADS value at generation
 // time and emit the matching DEFINE_NVIDIA_GEMM_BLOCKDIM call.
 //
 // For dispatch/diagnostic helpers that work without cuBLASDx (e.g.

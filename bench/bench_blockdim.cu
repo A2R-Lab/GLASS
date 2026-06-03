@@ -7,7 +7,7 @@
 //                                                     natural block_dim
 //   pinned-128 — glass::nvidia::gemm<...,128>(...)    launched <<<1, 128>>>
 //   pinned-352 — glass::nvidia::gemm<...,352>(...)    launched <<<1, 352>>>
-//                (matches GRiD's iiwa14 SUGGESTED_THREADS, the value that
+//                (matches GRiD's iiwa14 MAX_PERF_LEVEL_THREADS, the value that
 //                 deadlocked before P0-1)
 //
 // Anti-optimization: per-iter sink writes; -Xptxas -O1 (set by run_bench.py);
@@ -101,7 +101,7 @@ static void bench_one(int iters) {
     printf("M=%2d N=%2d K=%2d  pinned(TC=128)   %.3f us/op\n",
            M, N, K, elapsed_us(t0, t1) / iters);
 
-    // pinned 352 (GRiD iiwa14 SUGGESTED_THREADS — the value that deadlocked pre-P0-1)
+    // pinned 352 (GRiD iiwa14 MAX_PERF_LEVEL_THREADS — the value that deadlocked pre-P0-1)
     constexpr auto smem_352 = glass::nvidia::gemm_smem_size<float, M, N, K, 352>();
     cudaMemset(dC, 0, M*K*sizeof(float));
     clock_gettime(CLOCK_MONOTONIC, &t0);

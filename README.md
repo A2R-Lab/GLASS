@@ -35,7 +35,7 @@ Three questions decide which API to call:
 | Sizes only known at runtime | `glass::gemm(m, n, k, ...)` | Pure-SIMT, accepts dynamic args |
 | Compile-time sizes, small matrices (≤ ~8×8), simple kernel | `glass::gemm<float, M, N, K>(...)` | Compiler unrolls inner loops; ~1 µs/op overhead is hard to beat for tiny sizes |
 | Compile-time sizes, larger matrices, tensor-core hardware | `glass::nvidia::gemm<float, M, N, K>(...)` | cuBLASDx generates SM-specific tensor-core code |
-| Compile-time sizes inside an existing kernel that uses a different thread count (e.g. GRiD's 352-thread launches) | `glass::nvidia::gemm<float, M, N, K, TC>(...)` with `DEFINE_NVIDIA_GEMM_BLOCKDIM(M,N,K,TC)` | Pins cuBLASDx's `BlockDim<TC,1,1>`; lets you launch with any thread count ≥ TC ([P0-1 in the proposal](VARIABLE_BLOCKDIM_PROPOSAL.md)) |
+| Compile-time sizes inside an existing kernel that uses a different thread count (e.g. GRiD's 352-thread launches) | `glass::nvidia::gemm<float, M, N, K, TC>(...)` with `DEFINE_NVIDIA_GEMM_BLOCKDIM(M,N,K,TC)` | Pins cuBLASDx's `BlockDim<TC,1,1>`; lets you launch with any thread count ≥ TC ([P0-1 in the design doc](glass-rfc-batched-1d.md)) |
 | Need a transposed B (or row-major A/B/C) in the NVIDIA path | `glass::nvidia::gemm<...,LA,LB,LC>` with `DEFINE_NVIDIA_GEMM_BLOCKDIM_LAYOUT(...)` or `_TRANSB` alias | cuBLASDx Arrangement; pure-SIMT fallback no longer needed |
 | Linear solve (`Mx = b` for SPD `M`) | `glass::nvidia::posv<float, N, NRHS>(...)` | cuSOLVERDx fused factor + solve; faster than chol+trsm at N ≥ 8 |
 | Cholesky alone (factor only, custom solve) | `glass::nvidia::chol_inplace<float, N>(...)` | cuSOLVERDx potrf |
@@ -82,7 +82,7 @@ you can override these defaults via the tuning table — see
 
 ## Backend dispatch — when does `glass::nvidia::gemm` run cuBLASDx vs SIMT?
 
-As of [P1-4](VARIABLE_BLOCKDIM_PROPOSAL.md), the primary `glass::nvidia::gemm<T,M,N,K,...>` template auto-dispatches:
+As of [P1-4](glass-rfc-batched-1d.md), the primary `glass::nvidia::gemm<T,M,N,K,...>` template auto-dispatches:
 
 ```
                   caller writes:  glass::nvidia::gemm<float, M, N, K>(...)
@@ -702,7 +702,7 @@ constexpr uint32_t glass::nvidia::gemv_min_block_threads<T, M, N, SM_VAL>();
 constexpr bool     glass::nvidia::gemv_block_threads_valid<T, M, N, BT, SM_VAL>();
 ```
 
-These do **not** require a `DEFINE_NVIDIA_*` macro — they construct the GEMM type inline and read `block_dim` directly. Useful for codegen that wants to pick `SUGGESTED_THREADS` at generation time.
+These do **not** require a `DEFINE_NVIDIA_*` macro — they construct the GEMM type inline and read `block_dim` directly. Useful for codegen that wants to pick `MAX_PERF_LEVEL_THREADS` at generation time.
 
 #### Debug assertions (P1-4)
 

@@ -36,7 +36,7 @@ GLASS/
 **GRiD-A2R** is the consumer. Its codegen generates per-robot CUDA headers
 that call `grid_linalg_gemm<T,M,N,K,...>` (thin wrappers around
 `glass::gemm` or `glass::nvidia::gemm`). Every kernel in GRiD launches
-with **1D thread blocks** (`dim3(SUGGESTED_THREADS, 1, 1)`).
+with **1D thread blocks** (`dim3(MAX_PERF_LEVEL_THREADS, 1, 1)`).
 
 **The problem.** Today's `glass::nvidia::gemm_batched` requires a **2D launch
 (`dim3(TC, BATCH)`)** to give each batch element a `threadIdx.y` slot. GRiD
@@ -239,7 +239,7 @@ if packed_parent_runs:
             self.gen_add_code_line(f"_b_ptrs[{i}] = &s_eeTemp[{tempSrcOffset + 16*n*(run_start+i)}];")
             self.gen_add_code_line(f"_c_ptrs[{i}] = &s_eeTemp[{tempDstOffset + 16*n*(run_start+i)}];")
         self.gen_add_code_line(
-            f"glass::nvidia::gemm_batched_1d<T,4,4,4,{run_len},SUGGESTED_THREADS>("
+            f"glass::nvidia::gemm_batched_1d<T,4,4,4,{run_len},MAX_PERF_LEVEL_THREADS>("
             f"static_cast<T>(1), _a_ptrs, _b_ptrs, static_cast<T>(0), _c_ptrs);"
         )
 # ... SIMT path stays as the #else fallback
@@ -294,7 +294,7 @@ The GRiD codegen for the EE-pose case becomes one line:
 
 ```python
 self.gen_add_code_line(
-    f"glass::nvidia::gemm_strided_batched_1d<T,4,4,4,{run_len},SUGGESTED_THREADS>("
+    f"glass::nvidia::gemm_strided_batched_1d<T,4,4,4,{run_len},MAX_PERF_LEVEL_THREADS>("
     f"static_cast<T>(1), &s_Xhom[16*{parent_jid}], "
     f"&s_eeTemp[{tempSrcOffset + 16*n*run_start}], static_cast<T>(0), "
     f"&s_eeTemp[{tempDstOffset + 16*n*run_start}]);"
