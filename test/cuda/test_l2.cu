@@ -66,14 +66,40 @@ __global__ void k_gemv_strided_4x4_6(float alpha, float* A, float* x, float beta
 // Descriptor arrays arrive as float32 .bin; cast to int on host then upload.
 __global__ void k_seg_gemv_6x6_nofuse(uint32_t segs, int* a_off, int* x_off, int* y_off,
                                       float* A, float* x, float* y, float alpha, float beta) {
-    glass::segmented_row_strided_gemv<float, 6, 6, 6, false, int>(
+    glass::segmented_row_strided_gemv<float, 6, 6, 6, false>(
         segs, a_off, x_off, y_off, A, x, y, alpha, beta);
 }
 __global__ void k_seg_gemv_6x6_fuse(uint32_t segs, int* a_off, int* x_off, int* y_off,
                                      float* A, float* x, float* y, float alpha, float beta,
                                      int* s_off, float* S, float* scalar) {
-    glass::segmented_row_strided_gemv<float, 6, 6, 6, true, int>(
+    glass::segmented_row_strided_gemv<float, 6, 6, 6, true>(
         segs, a_off, x_off, y_off, A, x, y, alpha, beta, s_off, S, scalar);
+}
+
+// ─── segmented_row_strided_gemv: TRANSPOSE / ATOMIC_Y variants ───────────────
+// TRANSPOSE: per segment y_seg(N) = alpha * Aᵀ_seg(N×M) * x_seg(M) + beta*y_seg.
+// A_seg is M×N col-major LDA=ROW_STRIDE; here M=6,N=4,ROW_STRIDE=6.
+__global__ void k_seg_gemv_transpose(uint32_t segs, int* a_off, int* x_off, int* y_off,
+                                     float* A, float* x, float* y, float alpha, float beta) {
+    glass::segmented_row_strided_gemv<float, 6, 4, 6,
+        /*FUSE*/false, /*TRANSPOSE*/true, /*ATOMIC_Y*/false>(
+        segs, a_off, x_off, y_off, A, x, y, alpha, beta);
+}
+// ATOMIC_Y (no transpose): per segment y_seg(M) += alpha * A_seg(M×N) * x_seg(N).
+// Overlapping y ranges are summed atomically; caller pre-zeros/pre-scales y.
+__global__ void k_seg_gemv_atomic(uint32_t segs, int* a_off, int* x_off, int* y_off,
+                                  float* A, float* x, float* y, float alpha) {
+    glass::segmented_row_strided_gemv<float, 6, 6, 6,
+        /*FUSE*/false, /*TRANSPOSE*/false, /*ATOMIC_Y*/true>(
+        segs, a_off, x_off, y_off, A, x, y, alpha);
+}
+// TRANSPOSE + ATOMIC_Y (the backward-pass case): children compute Xᵀ·f and
+// atomically accumulate into shared parent y ranges. M=6,N=6,ROW_STRIDE=6.
+__global__ void k_seg_gemv_transpose_atomic(uint32_t segs, int* a_off, int* x_off, int* y_off,
+                                            float* A, float* x, float* y, float alpha) {
+    glass::segmented_row_strided_gemv<float, 6, 6, 6,
+        /*FUSE*/false, /*TRANSPOSE*/true, /*ATOMIC_Y*/true>(
+        segs, a_off, x_off, y_off, A, x, y, alpha);
 }
 
 // ─── ger kernels ──────────────────────────────────────────────────────────────
@@ -229,6 +255,61 @@ int main(int argc, char** argv) {
         float* dscalar = read_device_vec(argv[20], segs);
         k_seg_gemv_6x6_fuse<<<1, THREADS>>>(segs, a_off, x_off, y_off, dA, dx, dy,
                                             alpha, beta, s_off, dS, dscalar);
+        cudaDeviceSynchronize();
+        print_device_vec(dy, y_size);
+
+    } else if (strcmp(op, "seg_gemv_transpose") == 0) {
+        // M=6,N=4,RS=6. argv: m n segments alpha beta A_size x_size y_size
+        //                     a_off x_off y_off A x y
+        uint32_t segs = (uint32_t)atoi(argv[5]);
+        float alpha = atof(argv[6]);
+        float beta  = atof(argv[7]);
+        int A_size = atoi(argv[8]);
+        int x_size = atoi(argv[9]);
+        int y_size = atoi(argv[10]);
+        int* a_off = read_device_ivec(argv[11], segs);
+        int* x_off = read_device_ivec(argv[12], segs);
+        int* y_off = read_device_ivec(argv[13], segs);
+        float* dA = read_device_vec(argv[14], A_size);
+        float* dx = read_device_vec(argv[15], x_size);
+        float* dy = read_device_vec(argv[16], y_size);
+        k_seg_gemv_transpose<<<1, THREADS>>>(segs, a_off, x_off, y_off, dA, dx, dy, alpha, beta);
+        cudaDeviceSynchronize();
+        print_device_vec(dy, y_size);
+
+    } else if (strcmp(op, "seg_gemv_atomic") == 0) {
+        // M=6,N=6,RS=6, no-beta (pure accumulate). argv: m n segments alpha
+        //   A_size x_size y_size  a_off x_off y_off A x y
+        uint32_t segs = (uint32_t)atoi(argv[5]);
+        float alpha = atof(argv[6]);
+        int A_size = atoi(argv[7]);
+        int x_size = atoi(argv[8]);
+        int y_size = atoi(argv[9]);
+        int* a_off = read_device_ivec(argv[10], segs);
+        int* x_off = read_device_ivec(argv[11], segs);
+        int* y_off = read_device_ivec(argv[12], segs);
+        float* dA = read_device_vec(argv[13], A_size);
+        float* dx = read_device_vec(argv[14], x_size);
+        float* dy = read_device_vec(argv[15], y_size);
+        k_seg_gemv_atomic<<<1, THREADS>>>(segs, a_off, x_off, y_off, dA, dx, dy, alpha);
+        cudaDeviceSynchronize();
+        print_device_vec(dy, y_size);
+
+    } else if (strcmp(op, "seg_gemv_transpose_atomic") == 0) {
+        // M=6,N=6,RS=6, transpose + atomic accumulate (no beta).
+        // argv: m n segments alpha A_size x_size y_size a_off x_off y_off A x y
+        uint32_t segs = (uint32_t)atoi(argv[5]);
+        float alpha = atof(argv[6]);
+        int A_size = atoi(argv[7]);
+        int x_size = atoi(argv[8]);
+        int y_size = atoi(argv[9]);
+        int* a_off = read_device_ivec(argv[10], segs);
+        int* x_off = read_device_ivec(argv[11], segs);
+        int* y_off = read_device_ivec(argv[12], segs);
+        float* dA = read_device_vec(argv[13], A_size);
+        float* dx = read_device_vec(argv[14], x_size);
+        float* dy = read_device_vec(argv[15], y_size);
+        k_seg_gemv_transpose_atomic<<<1, THREADS>>>(segs, a_off, x_off, y_off, dA, dx, dy, alpha);
         cudaDeviceSynchronize();
         print_device_vec(dy, y_size);
 

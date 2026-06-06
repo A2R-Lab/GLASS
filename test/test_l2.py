@@ -181,6 +181,125 @@ def test_segmented_row_strided_gemv_fuse(bins, segments, alpha, beta):
     assert np.allclose(result, expected, rtol=RTOL, atol=ATOL)
 
 
+# ─── segmented_row_strided_gemv: TRANSPOSE ───────────────────────────────────
+# Per segment y_seg(N) = alpha * Aᵀ_seg(N×M) * x_seg(M) + beta*y_seg(N).
+# A_seg is M×N col-major LDA=rs; the kernel binds M=6,N=4,ROW_STRIDE=6.
+# Segments keep DISJOINT y ranges (non-atomic), checked vs a per-segment Aᵀ·x.
+
+@pytest.mark.parametrize("segments", [1, 3, 5])
+@pytest.mark.parametrize("alpha,beta", [(1.5, 0.3), (1.0, 0.0)])
+def test_segmented_row_strided_gemv_transpose(bins, segments, alpha, beta):
+    m, n, rs = 6, 4, 6
+    A_list, x_list, y_list = [], [], []
+    a_off, x_off, y_off = [], [], []
+    A_blocks, x_blocks, y_blocks = [], [], []
+    A_cur = x_cur = y_cur = 0
+    for _ in range(segments):
+        Aseg = RNG.random((rs, n)).astype(np.float32)   # rs×n storage, LDA=rs
+        Aseg[m:, :] = 0.0
+        xseg = RNG.random(m).astype(np.float32)          # transpose: x has M values
+        yseg = RNG.random(n).astype(np.float32)          # transpose: y has N values
+        a_off.append(A_cur); x_off.append(x_cur); y_off.append(y_cur)
+        A_list.append(np.asfortranarray(Aseg).ravel(order='F'))
+        x_list.append(xseg); y_list.append(yseg)
+        A_cur += rs * n; x_cur += m; y_cur += n
+        A_blocks.append(Aseg[:m, :]); x_blocks.append(xseg); y_blocks.append(yseg)
+    A = np.concatenate(A_list).astype(np.float32)
+    x = np.concatenate(x_list).astype(np.float32)
+    y = np.concatenate(y_list).astype(np.float32)
+    result = run_op(
+        bins["l2"], "seg_gemv_transpose", "simple",
+        args=[m, n, segments, alpha, beta, A.size, x.size, y.size],
+        inputs=[np.array(a_off, np.float32), np.array(x_off, np.float32),
+                np.array(y_off, np.float32), A, x, y])
+    expected = []
+    for s in range(segments):
+        expected.append(alpha * A_blocks[s].T @ x_blocks[s] + beta * y_blocks[s])
+    expected = np.concatenate(expected).astype(np.float32)
+    assert np.allclose(result, expected, rtol=RTOL, atol=ATOL)
+
+
+# ─── segmented_row_strided_gemv: ATOMIC_Y (overlapping y) ─────────────────────
+# Per segment y_seg(M) += alpha * A_seg(M×N) * x_seg(N). Multiple segments share
+# the SAME y range (a parent), so the atomic path must SCATTER-ADD them. Caller
+# pre-zeros y; reference is a numpy scatter-add. M=6,N=6,rs=6.
+
+@pytest.mark.parametrize("alpha", [1.0, 1.5])
+def test_segmented_row_strided_gemv_atomic(bins, alpha):
+    m, n, rs = 6, 6, 6
+    # 3 parents, several child segments each accumulating into a shared parent.
+    parent_of = [0, 1, 1, 2, 2, 2]   # seg -> parent index (overlap by design)
+    n_parents = 3
+    segments = len(parent_of)
+    A_list, x_list = [], []
+    a_off, x_off, y_off = [], [], []
+    A_blocks, x_blocks = [], []
+    A_cur = x_cur = 0
+    for s in range(segments):
+        Aseg = RNG.random((rs, n)).astype(np.float32)
+        Aseg[m:, :] = 0.0
+        xseg = RNG.random(n).astype(np.float32)
+        a_off.append(A_cur); x_off.append(x_cur); y_off.append(parent_of[s] * m)
+        A_list.append(np.asfortranarray(Aseg).ravel(order='F'))
+        x_list.append(xseg)
+        A_cur += rs * n; x_cur += n
+        A_blocks.append(Aseg[:m, :]); x_blocks.append(xseg)
+    A = np.concatenate(A_list).astype(np.float32)
+    x = np.concatenate(x_list).astype(np.float32)
+    y = np.zeros(n_parents * m, np.float32)   # pre-zeroed accumulator
+    result = run_op(
+        bins["l2"], "seg_gemv_atomic", "simple",
+        args=[m, n, segments, alpha, A.size, x.size, y.size],
+        inputs=[np.array(a_off, np.float32), np.array(x_off, np.float32),
+                np.array(y_off, np.float32), A, x, y])
+    expected = np.zeros(n_parents * m, np.float64)
+    for s in range(segments):
+        p = parent_of[s]
+        expected[p*m:(p+1)*m] += alpha * (A_blocks[s] @ x_blocks[s])
+    expected = expected.astype(np.float32)
+    assert np.allclose(result, expected, rtol=RTOL, atol=ATOL)
+
+
+# ─── segmented_row_strided_gemv: TRANSPOSE + ATOMIC_Y (backward pass) ─────────
+# The leaf→root case: each child segment computes Aᵀ_seg·x_seg (the Xᵀ·f map)
+# and atomically accumulates it into a SHARED parent y range. M=6,N=6,rs=6 so
+# y_seg also has length 6 (square X). Reference is a transposed scatter-add.
+
+@pytest.mark.parametrize("alpha", [1.0, 1.5])
+def test_segmented_row_strided_gemv_transpose_atomic(bins, alpha):
+    m, n, rs = 6, 6, 6
+    parent_of = [0, 1, 1, 2, 2, 2]
+    n_parents = 3
+    segments = len(parent_of)
+    A_list, x_list = [], []
+    a_off, x_off, y_off = [], [], []
+    A_blocks, x_blocks = [], []
+    A_cur = x_cur = 0
+    for s in range(segments):
+        Aseg = RNG.random((rs, n)).astype(np.float32)
+        Aseg[m:, :] = 0.0
+        xseg = RNG.random(m).astype(np.float32)   # transpose: x has M values
+        a_off.append(A_cur); x_off.append(x_cur); y_off.append(parent_of[s] * n)
+        A_list.append(np.asfortranarray(Aseg).ravel(order='F'))
+        x_list.append(xseg)
+        A_cur += rs * n; x_cur += m
+        A_blocks.append(Aseg[:m, :]); x_blocks.append(xseg)
+    A = np.concatenate(A_list).astype(np.float32)
+    x = np.concatenate(x_list).astype(np.float32)
+    y = np.zeros(n_parents * n, np.float32)
+    result = run_op(
+        bins["l2"], "seg_gemv_transpose_atomic", "simple",
+        args=[m, n, segments, alpha, A.size, x.size, y.size],
+        inputs=[np.array(a_off, np.float32), np.array(x_off, np.float32),
+                np.array(y_off, np.float32), A, x, y])
+    expected = np.zeros(n_parents * n, np.float64)
+    for s in range(segments):
+        p = parent_of[s]
+        expected[p*n:(p+1)*n] += alpha * (A_blocks[s].T @ x_blocks[s])
+    expected = expected.astype(np.float32)
+    assert np.allclose(result, expected, rtol=RTOL, atol=ATOL)
+
+
 # ─── ger ──────────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("m,n", [(4, 6), (8, 8), (16, 12)])
