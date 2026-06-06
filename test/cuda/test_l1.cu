@@ -60,6 +60,19 @@ __global__ void k_reduce_simple_lm(int n, float* x) { glass::low_memory::reduce(
 __global__ void k_reduce_simple_hs(int n, float* x, float* scratch) {
     glass::high_speed::reduce(n, x, scratch);
 }
+// Register-partial -> block-sum overload: each thread forms a per-thread partial
+// (here a strided slice of x, mirroring a cost/barrier kernel's per-thread term),
+// passes it directly to reduce(partial, scratch), and gets the block total back.
+// We write the returned total from EVERY thread to verify the broadcast (out[0]
+// is the last writer's value; all threads hold the same total).
+__global__ void k_reduce_partial_hs(int n, float* x, float* out, float* scratch) {
+    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    float partial = 0.0f;
+    for (uint32_t i = rank; i < (uint32_t)n; i += size) partial += x[i];
+    float total = glass::high_speed::reduce(partial, scratch);
+    out[0] = total;   // broadcast check: every thread holds the same `total`
+}
 
 __global__ void k_l2norm_cg(int n, float* x) { glass::cgrps::l2norm(n, x); }
 __global__ void k_l2norm_simple_lm(int n, float* x) { glass::low_memory::l2norm(n, x); }
@@ -282,6 +295,13 @@ int main(int argc, char** argv) {
         }
         cudaDeviceSynchronize();
         print_device_vec(dx, 1);
+
+    } else if (strcmp(op, "reduce_partial") == 0) {
+        float* dx  = read_device_vec(argv[4], n);
+        float* dout = alloc_device_vec(1);
+        k_reduce_partial_hs<<<1, THREADS>>>(n, dx, dout, d_scratch);
+        cudaDeviceSynchronize();
+        print_device_vec(dout, 1);
 
     } else if (strcmp(op, "l2norm") == 0) {
         float* dx = read_device_vec(argv[4], n);

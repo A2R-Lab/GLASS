@@ -387,3 +387,88 @@ def test_indexed_batched_gemm(bins, pairs, a_mats, b_mats, c_mats):
         base = int(c_idx[p]) * MAT
         expected[base:base + MAT] = np.asfortranarray(prod).ravel(order='F')
     assert np.allclose(result, expected, rtol=RTOL, atol=ATOL)
+
+
+# ─── indexed_batched_gemm: TRANSPOSE_A / TRANSPOSE_B ──────────────────────────
+# Distinct c_idx, plain overwrite, but the left and/or right factor is read
+# transposed. Reference applies .T to the corresponding numpy operand.
+
+@pytest.mark.parametrize("op,ta,tb", [
+    ("indexed_bgemm_4_ta", True, False),
+    ("indexed_bgemm_4_tb", False, True),
+])
+@pytest.mark.parametrize("pairs,a_mats,b_mats,c_mats", [
+    (1, 1, 1, 1),
+    (4, 2, 3, 4),
+    (8, 5, 5, 8),
+])
+def test_indexed_batched_gemm_transpose(bins, op, ta, tb, pairs, a_mats, b_mats, c_mats):
+    DIM = 4
+    rng = RNG
+    A_mats = [rng.random((DIM, DIM)).astype(np.float32) for _ in range(a_mats)]
+    B_mats = [rng.random((DIM, DIM)).astype(np.float32) for _ in range(b_mats)]
+    a_idx = rng.integers(0, a_mats, size=pairs).astype(np.int64)
+    b_idx = rng.integers(0, b_mats, size=pairs).astype(np.int64)
+    c_idx = rng.permutation(c_mats)[:pairs].astype(np.int64)
+
+    A_flat = np.concatenate([np.asfortranarray(M).ravel(order='F') for M in A_mats]).astype(np.float32)
+    B_flat = np.concatenate([np.asfortranarray(M).ravel(order='F') for M in B_mats]).astype(np.float32)
+
+    result = run_op(
+        bins["l3"], op, "simple",
+        args=[DIM, DIM, DIM, pairs, a_mats, b_mats, c_mats],
+        inputs=[a_idx.astype(np.float32), b_idx.astype(np.float32),
+                c_idx.astype(np.float32), A_flat, B_flat])
+
+    MAT = DIM * DIM
+    expected = np.zeros(c_mats * MAT, dtype=np.float32)
+    for p in range(pairs):
+        Am = A_mats[a_idx[p]].T if ta else A_mats[a_idx[p]]
+        Bm = B_mats[b_idx[p]].T if tb else B_mats[b_idx[p]]
+        prod = Am @ Bm
+        base = int(c_idx[p]) * MAT
+        expected[base:base + MAT] = np.asfortranarray(prod).ravel(order='F')
+    assert np.allclose(result, expected, rtol=RTOL, atol=ATOL)
+
+
+# ─── indexed_batched_gemm: ATOMIC_C (overlapping c_idx) ───────────────────────
+# Several pairs SHARE a c_idx slot (a parent block); the atomic path must
+# scatter-ADD their products. Caller pre-zeros C; reference is a numpy
+# scatter-add into the shared C slots. parent_of maps pair -> c slot.
+
+@pytest.mark.parametrize("op,ta", [
+    ("indexed_bgemm_4_atomic", False),     # C += A · B
+    ("indexed_bgemm_4_ta_atomic", True),   # C += Aᵀ · B  (backward Xᵀ·M·X→parent)
+])
+def test_indexed_batched_gemm_atomic(bins, op, ta):
+    DIM = 4
+    rng = RNG
+    # 6 child pairs accumulating into 3 shared parent C slots (overlap by design).
+    parent_of = [0, 1, 1, 2, 2, 2]
+    c_mats = 3
+    pairs = len(parent_of)
+    a_mats = b_mats = pairs
+    A_mats = [rng.random((DIM, DIM)).astype(np.float32) for _ in range(a_mats)]
+    B_mats = [rng.random((DIM, DIM)).astype(np.float32) for _ in range(b_mats)]
+    a_idx = np.arange(pairs).astype(np.int64)
+    b_idx = np.arange(pairs).astype(np.int64)
+    c_idx = np.array(parent_of, dtype=np.int64)
+
+    A_flat = np.concatenate([np.asfortranarray(M).ravel(order='F') for M in A_mats]).astype(np.float32)
+    B_flat = np.concatenate([np.asfortranarray(M).ravel(order='F') for M in B_mats]).astype(np.float32)
+
+    result = run_op(
+        bins["l3"], op, "simple",
+        args=[DIM, DIM, DIM, pairs, a_mats, b_mats, c_mats],
+        inputs=[a_idx.astype(np.float32), b_idx.astype(np.float32),
+                c_idx.astype(np.float32), A_flat, B_flat])
+
+    MAT = DIM * DIM
+    expected = np.zeros(c_mats * MAT, dtype=np.float64)
+    for p in range(pairs):
+        Am = A_mats[a_idx[p]].T if ta else A_mats[a_idx[p]]
+        prod = Am @ B_mats[b_idx[p]]
+        base = int(c_idx[p]) * MAT
+        expected[base:base + MAT] += np.asfortranarray(prod).ravel(order='F')
+    expected = expected.astype(np.float32)
+    assert np.allclose(result, expected, rtol=RTOL, atol=ATOL)

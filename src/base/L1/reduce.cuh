@@ -93,4 +93,39 @@ namespace high_speed {
         }
         __syncthreads();
     }
+
+    // ── register-partial → block-sum overload ────────────────────────────────
+    // Block-reduce one PER-THREAD register value `partial` (one contribution per
+    // thread) and return the block total to EVERY thread, with no x[] buffer to
+    // materialize the partials first.  This is the entry point for fused
+    // "compute-a-partial-then-sum" patterns (e.g. cost/barrier kernels that form
+    // a per-thread term and previously did a serial thread-0 sum): each thread
+    // passes its own contribution directly.
+    //
+    // s_scratch must hold ceil(blockDim/32) elements (one per warp), the same
+    // sizing as the array overloads above.  The result is broadcast to all
+    // threads (s_scratch[0] holds the total on return); the routine ends on a
+    // __syncthreads(), so s_scratch is safe to reuse afterwards.  Threads that
+    // have no contribution should pass partial = 0.
+    template <typename T>
+    __device__ T reduce(T partial, T *s_scratch)
+    {
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        T val = partial;
+        for (int off = 16; off > 0; off >>= 1) val += __shfl_down_sync(0xffffffff, val, off);
+        uint32_t lane = rank & 31, warp = rank >> 5;
+        if (lane == 0) s_scratch[warp] = val;
+        __syncthreads();
+        uint32_t nw = (size + 31) / 32;
+        if (rank < 32) {
+            val = (rank < nw) ? s_scratch[rank] : static_cast<T>(0);
+            for (int off = 16; off > 0; off >>= 1) val += __shfl_down_sync(0xffffffff, val, off);
+            if (rank == 0) s_scratch[0] = val;
+        }
+        __syncthreads();
+        T total = s_scratch[0];
+        __syncthreads();
+        return total;
+    }
 }

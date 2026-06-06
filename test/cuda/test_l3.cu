@@ -28,7 +28,34 @@ static int* read_device_ivec(const char* path, int n) {
 // ─── indexed_batched_gemm kernel (DIM=4) ─────────────────────────────────────
 __global__ void k_indexed_bgemm_4(uint32_t pairs, int* a_idx, int* b_idx, int* c_idx,
                                    float* A, float* B, float* C) {
-    glass::indexed_batched_gemm<float, 4, int>(pairs, a_idx, b_idx, c_idx, A, B, C);
+    glass::indexed_batched_gemm<float, 4>(pairs, a_idx, b_idx, c_idx, A, B, C);
+}
+
+// ─── indexed_batched_gemm: TRANSPOSE_A / TRANSPOSE_B / ATOMIC_C variants ──────
+// TRANSPOSE_A: C_p = A_pᵀ · B_p (distinct c_idx, plain overwrite).
+__global__ void k_indexed_bgemm_4_ta(uint32_t pairs, int* a_idx, int* b_idx, int* c_idx,
+                                      float* A, float* B, float* C) {
+    glass::indexed_batched_gemm<float, 4, /*TA*/true, /*TB*/false, /*ATOMIC*/false>(
+        pairs, a_idx, b_idx, c_idx, A, B, C);
+}
+// TRANSPOSE_B: C_p = A_p · B_pᵀ.
+__global__ void k_indexed_bgemm_4_tb(uint32_t pairs, int* a_idx, int* b_idx, int* c_idx,
+                                      float* A, float* B, float* C) {
+    glass::indexed_batched_gemm<float, 4, /*TA*/false, /*TB*/true, /*ATOMIC*/false>(
+        pairs, a_idx, b_idx, c_idx, A, B, C);
+}
+// ATOMIC_C: pairs may share c_idx; products are scatter-summed into pre-zeroed C.
+__global__ void k_indexed_bgemm_4_atomic(uint32_t pairs, int* a_idx, int* b_idx, int* c_idx,
+                                         float* A, float* B, float* C) {
+    glass::indexed_batched_gemm<float, 4, /*TA*/false, /*TB*/false, /*ATOMIC*/true>(
+        pairs, a_idx, b_idx, c_idx, A, B, C);
+}
+// TRANSPOSE_A + ATOMIC_C (the backward-pass case Xᵀ·M·X → shared parent): each
+// child computes A_pᵀ·B_p and atomically accumulates into a SHARED parent C slot.
+__global__ void k_indexed_bgemm_4_ta_atomic(uint32_t pairs, int* a_idx, int* b_idx, int* c_idx,
+                                            float* A, float* B, float* C) {
+    glass::indexed_batched_gemm<float, 4, /*TA*/true, /*TB*/false, /*ATOMIC*/true>(
+        pairs, a_idx, b_idx, c_idx, A, B, C);
 }
 
 // ─── gemm kernels ─────────────────────────────────────────────────────────────
@@ -311,6 +338,35 @@ int main(int argc, char** argv) {
         float* dB = read_device_vec(argv[14], B_mats * MAT);
         float* dC = alloc_device_vec(C_mats * MAT);
         k_indexed_bgemm_4<<<1, THREADS>>>(pairs, a_idx, b_idx, c_idx, dA, dB, dC);
+        cudaDeviceSynchronize();
+        print_device_vec(dC, C_mats * MAT);
+
+    } else if (strcmp(op, "indexed_bgemm_4_ta") == 0 ||
+               strcmp(op, "indexed_bgemm_4_tb") == 0 ||
+               strcmp(op, "indexed_bgemm_4_atomic") == 0 ||
+               strcmp(op, "indexed_bgemm_4_ta_atomic") == 0) {
+        // argv: m n k pairs A_mats B_mats C_mats  a_idx b_idx c_idx A B C
+        // The atomic variants expect C to be PRE-ZEROED here (alloc_device_vec
+        // zero-inits) so the scatter-add reference matches.
+        uint32_t pairs = (uint32_t)atoi(argv[6]);
+        int A_mats = atoi(argv[7]);
+        int B_mats = atoi(argv[8]);
+        int C_mats = atoi(argv[9]);
+        int MAT = 4 * 4;
+        int* a_idx = read_device_ivec(argv[10], pairs);
+        int* b_idx = read_device_ivec(argv[11], pairs);
+        int* c_idx = read_device_ivec(argv[12], pairs);
+        float* dA = read_device_vec(argv[13], A_mats * MAT);
+        float* dB = read_device_vec(argv[14], B_mats * MAT);
+        float* dC = alloc_device_vec(C_mats * MAT);
+        if (strcmp(op, "indexed_bgemm_4_ta") == 0)
+            k_indexed_bgemm_4_ta<<<1, THREADS>>>(pairs, a_idx, b_idx, c_idx, dA, dB, dC);
+        else if (strcmp(op, "indexed_bgemm_4_tb") == 0)
+            k_indexed_bgemm_4_tb<<<1, THREADS>>>(pairs, a_idx, b_idx, c_idx, dA, dB, dC);
+        else if (strcmp(op, "indexed_bgemm_4_atomic") == 0)
+            k_indexed_bgemm_4_atomic<<<1, THREADS>>>(pairs, a_idx, b_idx, c_idx, dA, dB, dC);
+        else
+            k_indexed_bgemm_4_ta_atomic<<<1, THREADS>>>(pairs, a_idx, b_idx, c_idx, dA, dB, dC);
         cudaDeviceSynchronize();
         print_device_vec(dC, C_mats * MAT);
 

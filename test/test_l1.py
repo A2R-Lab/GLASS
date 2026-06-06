@@ -97,6 +97,19 @@ def test_reduce(bins, n, version):
     assert np.allclose(float(result[0]), expected, rtol=1e-3, atol=1e-4)
 
 
+# ─── high_speed::reduce register-partial overload ─────────────────────────────
+# Each thread forms a per-thread partial (strided slice of x) and passes it
+# directly to reduce(partial, scratch); the returned block total is broadcast to
+# every thread. Reference is the plain sum (the partials, summed, must equal it).
+
+@pytest.mark.parametrize("n", SIZES)
+def test_reduce_partial(bins, n):
+    x = RNG.random(n).astype(np.float32)
+    result = run_op(bins["l1"], "reduce_partial", "simple_hs", args=[n], inputs=[x])
+    expected = float(np.sum(x.astype(np.float64)))
+    assert np.allclose(float(result[0]), expected, rtol=1e-3, atol=1e-4)
+
+
 # ─── l2norm ───────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("n", SIZES)
