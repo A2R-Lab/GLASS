@@ -1,8 +1,17 @@
-#include "L1/copy.cuh"
-#include "L1/dot.cuh"
-#include "L1/elementwise_logic.cuh"
-#include "L1/norm.cuh"
-#include "L3/gemm.cuh"
+// ============================================================================
+// UNVALIDATED / EXPERIMENTAL — constrained-QP (box) solver.
+// Ported onto the src/base/** API on 2026-06-15 to drop the legacy src/L1,L3
+// headers. NOT wired into glass.cuh, NOT covered by the pytest suite, and NOT
+// numerically validated since the port (gemm_v2 -> base gemm, matrixAlphaAdd ->
+// axpy, dot/reduce arg-order/group changes). Needs validation before any use.
+// ============================================================================
+#include "../base/L1/copy.cuh"
+#include "../base/L1/dot.cuh"
+#include "../base/L1/reduce.cuh"
+#include "../base/L1/elementwise_logic.cuh"
+#include "../base/L1/norm.cuh"
+#include "../base/L1/axpy.cuh"
+#include "../base/L3/gemm.cuh"
 #include <cooperative_groups.h>
 #include <cstdint>
 
@@ -49,10 +58,13 @@ template <typename T>
 __device__ T objective_function(std::uint32_t dim, T *x, T *P, T *q, T *obj_tmp1, T *obj_tmp2, T *res, T *s_tmp,
                                 cgrps::thread_group g = cgrps::this_thread_block())
 {
-    gemm_v2<T, true, false>(dim, 1, dim, dim, x, dim, P, dim, obj_tmp1, s_tmp);
+    // obj_tmp1 = P @ x  (dim x 1). Was gemm_v2<T,true,false>(...) computing x^T@P;
+    // P is the symmetric QP Hessian so x^T(P x) == (x^T P) x for the dot below.
+    gemm<T>(dim, dim, 1, (T)1, P, x, obj_tmp1);
     __syncthreads();
-    dot<T>(res, dim, obj_tmp1, x, g);
-    dot<T>(obj_tmp2, dim, q, x, g);
+    // out-of-place dots: leave obj_tmp1/x/q intact (result lands in out[0]).
+    low_memory::dot<T>(dim, obj_tmp1, x, res);
+    low_memory::dot<T>(dim, q, x, obj_tmp2);
     __syncthreads();
 
     return 0.5 * res[0] + obj_tmp2[0];
@@ -72,7 +84,7 @@ __device__ T line_search_armijo(std::uint32_t dim, T *x, T *x_new, T *grad, T *P
                                 T beta = 0.5)
 {
     T f_xk = objective_function(dim, x, P, q, obj_tmp1, obj_tmp2, obj_res, s_tmp);
-    dot(dot_grad, dim, grad, grad);
+    low_memory::dot(dim, grad, grad, dot_grad);
     for (int i = 0; i < MAX_ITER; i++)
     {
         // obj_tmp1 = alpha * grad
@@ -112,7 +124,7 @@ __device__ bool cpqp(std::uint32_t dim, T *P, T *q, T *A, T *l, T *u, T *x, T *t
         // printMatrixColumnMajor(res, 1, dim);
         gemm(dim, dim, 1, (T)1, P, res, tmp3);
         __syncthreads();
-        matrixAlphaAdd((T)1, tmp3, q, tmp1, 1, dim);
+        axpy(dim, (T)1, tmp3, q, tmp1); // tmp1 = 1*tmp3 + q  (grad = P@x + q)
         __syncthreads();
         // printMatrixColumnMajor(tmp1, 1, dim);
 
@@ -138,9 +150,9 @@ __device__ bool cpqp(std::uint32_t dim, T *P, T *q, T *A, T *l, T *u, T *x, T *t
         // np.all(l <= Ax_c) and np.all(Ax_c <= u) and np.linalg.norm(grad) <= tol
         elementwise_less_than_or_eq(dim, l, res, tmp3);
         elementwise_less_than_or_eq(dim, res, u, tmp4);
-        reduce(dim, tmp3, g);
-        reduce(dim, tmp4, g);
-        vector_norm(dim, tmp1, tmp6);
+        reduce(dim, tmp3);
+        reduce(dim, tmp4);
+        low_memory::vector_norm(dim, tmp1, tmp6);
         __syncthreads();
 
         if (tmp3[0] == dim && tmp4[0] == dim && tmp6[1] <= TOL)
