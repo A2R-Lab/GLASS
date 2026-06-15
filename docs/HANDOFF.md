@@ -3,6 +3,23 @@
 Living status doc. Update the top as work lands. For onboarding read
 `docs/STARTUP_PROMPT.md` first.
 
+## 2026-06-15 — box-QP solver validated (internal)
+
+Redesigned, fixed, and validated the orphaned QP solver.
+- `src/L3/cpqp.cuh` → **`src/L3/box_qp.cuh`**: honest box-QP
+  (`min 0.5xᵀPx+qᵀx s.t. l≤x≤u`), clean struct API (`QPParams`/`QPResult`/
+  `box_qp_scratch_size`), solution in-place, `A`/`s_tmp` dropped, proper
+  projected-gradient KKT stopping test.
+- **Found + fixed a real OOB bug:** the dot accumulators were single scalars but
+  `low_memory::dot` needs a length-`n` reduction buffer → out-of-bounds writes
+  corrupted the objective. Arena is now `5n`; compute-sanitizer clean.
+- **`test/test_qp.py`** (27 cases): KKT optimality, SciPy cross-check, closed-form
+  cases, thread-count invariance (1..256), f32 + f64. Full suite **358 passed**.
+- Kept **internal** — not in `glass.cuh`/public docs/examples. Whether to promote
+  is gated on `docs/open-tasks/qp_solver_scope.md` (QP is optimization, not LA).
+- Standalone `src/L3/test_cpqp.cu` removed (replaced by the harness runner
+  `test/cuda/test_qp.cu`).
+
 ## 2026-06-15 — developer-experience parity + legacy cleanup
 
 Brought GLASS's developer experience up to parity with the GRiD repo
@@ -23,9 +40,9 @@ reference generated from header Doxygen doc-comments via Breathe.
 across `src/base/**`, `src/cgrps/**`, `src/nvidia/**`, and the top-level headers.
 `Doxyfile` uses `EXTRACT_ALL = NO`, so undocumented internals are excluded.
 
-**Website (new).** `.github/workflows/gh-pages.yml` builds the docs (installs
-Doxygen) and deploys to GitHub Pages on push to `main`.
-*Manual step:* enable Pages in the repo settings (Source = GitHub Actions).
+**Website (new, LIVE).** `.github/workflows/gh-pages.yml` builds the docs
+(installs Doxygen) and deploys to GitHub Pages on push to `main`. Pages is
+enabled (Settings → Pages → Source = GitHub Actions) and serving.
 
 **Agent files (new).** `CLAUDE.md`, `docs/agent_debugging_guide.md`,
 `docs/STARTUP_PROMPT.md`, this file, and `docs/open-tasks/`.
@@ -57,6 +74,6 @@ undocumented** — see `docs/open-tasks/cpqp_validation.md`.
 - Docs build (`cd docs && make all`) and `pytest test/`: see the latest run notes.
 
 ### Next / open
-- Enable GitHub Pages in repo settings (manual).
+- ~~Enable GitHub Pages in repo settings~~ — DONE; site is live.
 - `docs/open-tasks/cpqp_validation.md` — validate or remove cpqp.
 - `docs/open-tasks/doc_comment_coverage.md` — optional long-tail doc-comments.

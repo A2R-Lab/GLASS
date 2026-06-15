@@ -1,48 +1,53 @@
-# Validate (or remove) the cpqp box-QP solver
+# box-QP solver — VALIDATED (internal)
 
-**Status:** UNVALIDATED. Compiles, not numerically verified, not in the test suite.
+**Status:** DONE (2026-06-15). The former `cpqp.cuh` is now
+`src/L3/box_qp.cuh` — redesigned, bug-fixed, and validated by `test/test_qp.py`.
+It remains **internal** (not exported via `glass.cuh`, not in the public API
+docs). Whether it should ever be promoted is gated on
+[`qp_solver_scope.md`](qp_solver_scope.md).
 
-`src/L3/cpqp.cuh` is a single-block box-constrained QP solver (projected
-gradient + Armijo line search) with a standalone harness `src/L3/test_cpqp.cu`.
-It is **not** included by `glass.cuh` and **not** covered by `pytest test/`.
+## What it is
 
-## What happened (2026-06-15)
+`glass::internal::box_qp<T>` — single-block solver for
+`min 0.5 xᵀP x + qᵀx  s.t.  l ≤ x ≤ u` (P symmetric PD), via projected-gradient
+descent with Armijo backtracking line search. Clean API:
 
-The legacy `src/L1`, `src/L2`, `src/L3` duplicate header dirs were deleted (they
-were pre-`base/`-refactor duplicates that nothing included). cpqp was the only
-thing depending on them, so it was rewired onto the current `src/base/**` API:
+```cpp
+QPParams<T>  { max_iter, tol, alpha0, c, beta };   // was #defines
+QPResult<T>  { converged, iters, grad_norm };
+box_qp_scratch_size<T>(n)  -> element count (= 5n)
+box_qp<T>(n, P, q, l, u, x /*in/out*/, scratch, params) -> QPResult
+```
 
-- Includes repointed to `../base/...` (added `../base/L1/reduce.cuh`,
-  `../base/L1/axpy.cuh`).
-- `dot` calls → `low_memory::dot(n, x, y, out)` (output now LAST, no thread-group
-  arg; `low_memory` is non-destructive — required since inputs are reused).
-- `reduce(n, x, g)` → `reduce(n, x)` (no group arg).
-- `vector_norm` → `low_memory::vector_norm(dim, x, out)`.
-- `matrixAlphaAdd(1, tmp3, q, tmp1, 1, dim)` → `axpy(dim, 1, tmp3, q, tmp1)`
-  (`z = 1*x + y`). Numerically equivalent.
-- `gemm_v2<T,true,false>(...)` (no base equivalent) → `gemm(dim, dim, 1, 1, P, x, obj_tmp1)`.
+## What was fixed in the redesign
 
-**Verified:** `nvcc -std=c++17 -arch=sm_120 -c -I src/L3 src/L3/test_cpqp.cu`
-compiles cleanly (object produced).
+- **Dropped the vestigial `A`** (the old solver only gave a correct result for
+  `A = I`); committed to the box `l ≤ x ≤ u`. Solution is returned **in-place in
+  `x`**, not in a scratch buffer.
+- **Replaced the dead `tmp6[1]` convergence test** with the proper box-QP
+  optimality measure: projected-gradient inf-norm `‖x − clip(x − (Px+q), l, u)‖∞`.
+- **Collapsed the 11 caller scratch buffers + `s_tmp`** into a single arena sliced
+  internally; added `box_qp_scratch_size`.
+- **Fixed a real scratch bug found during validation:** `low_memory::dot(n,x,y,out)`
+  uses `out` as a length-`n` reduction buffer (result in `out[0]`), but the dots
+  were handed single-element scalar slots → out-of-bounds writes that corrupted the
+  objective and stalled the line search. The arena now gives the dots a full
+  length-`n` `tmp` buffer. (compute-sanitizer memcheck/racecheck now clean.)
+- Tunable params (`max_iter/tol/alpha0/c/beta`) are struct fields, not `#define`s.
+- `gemm` symmetry assumption documented (`xᵀPx == xᵀ(Px)` holds for symmetric P).
 
-## What a validator must check
+## How it's validated (`test/test_qp.py`, 27 cases)
 
-1. **`gemm_v2 → gemm` symmetry assumption (MEDIUM RISK).** The legacy call
-   computed `obj_tmp1 = xᵀP`; the replacement computes `P@x`. The objective
-   `xᵀPx` is identical **only if P is symmetric** (true for a QP Hessian). If
-   cpqp is ever used with non-symmetric `P`, the quadratic term is wrong — add an
-   assert/comment or symmetrize.
-2. **Pre-existing bug (not introduced by the port):** the convergence check reads
-   `tmp6[1]` but `vector_norm` writes the norm to `tmp6[0]`. Likely should be
-   `tmp6[0]`.
-3. **Dead scratch:** `s_tmp` in `objective_function` is now unused (the base
-   `gemm` doesn't need it). Prune the param + its device buffer if kept.
-4. **End-to-end numerics:** the solver was never validated even before the port.
-   Run `test_cpqp.cu` on a GPU against a reference QP (e.g. scipy/OSQP) for the
-   `P`/`q`/box case in the harness; confirm convergence and box feasibility.
+- **KKT optimality** — projected-gradient inf-norm below tolerance + box feasibility.
+- **SciPy cross-check** — matches `scipy.optimize.minimize(L-BFGS-B, bounds=...)`.
+- **Closed-form** — wide bounds ⇒ `x = −P⁻¹q`; diagonal P ⇒ `x = clip(−P⁻¹q, l, u)`.
+- **Thread-count invariance** — identical solution at 1 / 32 / 64 / 96 / 256 threads.
+- **dtypes** — float64 (tol 1e-6) and float32 (tol 1e-3).
+- **Convergence flag** — reports `converged` within budget for well-conditioned P.
 
-## Decision
+## Known characteristics / possible future work
 
-Either (a) validate it, add it to the pytest suite, and document it; or
-(b) remove `src/L3/cpqp.cuh` + `test_cpqp.cu` entirely (recoverable from git).
-Until then it stays undocumented in the public API.
+- **Linear convergence** — plain projected gradient is slow to squeeze below
+  ~1e-6; fine for the small, well-conditioned control QPs it targets. An
+  accelerated (Nesterov) or active-set / projected-Newton method would converge
+  faster. Not required for current use.
