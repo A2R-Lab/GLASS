@@ -34,6 +34,21 @@
            "CUB BlockReduce does not tolerate mismatch");
 #endif
 
+/**
+ * @brief Block-level sum reduction backed by CUB BlockReduce.
+ *
+ * Sums all N elements of `x` across the block; thread 0 writes the total to
+ * `x[0]` (in place). Requires `blockDim` == (THREADS, 1, 1) exactly — CUB
+ * does not tolerate a mismatch. Compile-time sizes only. NumPy equivalent:
+ * `x[0] = np.sum(x)`.
+ *
+ * @tparam T             Scalar type.
+ * @tparam N             Number of elements.
+ * @tparam THREADS       Block thread count (must equal blockDim.x).
+ * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
+ * @param  x             Input array of length N; result lands in x[0].
+ * @param  s_scratch     Shared scratch >= reduce_smem_size<T, THREADS>() bytes.
+ */
 template <typename T, uint32_t N, uint32_t THREADS = 256, bool TRAILING_SYNC = true>
 __device__ void reduce(T *x, T *s_scratch)
 {
@@ -51,6 +66,22 @@ __device__ void reduce(T *x, T *s_scratch)
     }
 }
 
+/**
+ * @brief Block-level dot product backed by CUB BlockReduce.
+ *
+ * Computes the inner product of the N-element vectors `x` and `y`; thread 0
+ * writes the scalar result to `*out`. Requires `blockDim` == (THREADS, 1, 1)
+ * exactly. Compile-time sizes only. NumPy equivalent: `*out = np.dot(x, y)`.
+ *
+ * @tparam T             Scalar type.
+ * @tparam N             Number of elements.
+ * @tparam THREADS       Block thread count (must equal blockDim.x).
+ * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
+ * @param  x             First input vector (length N).
+ * @param  y             Second input vector (length N).
+ * @param  out           Output pointer for the resulting scalar.
+ * @param  s_scratch     Shared scratch >= reduce_smem_size<T, THREADS>() bytes.
+ */
 template <typename T, uint32_t N, uint32_t THREADS = 256, bool TRAILING_SYNC = true>
 __device__ void dot(T *x, T *y, T *out, T *s_scratch)
 {
@@ -68,6 +99,21 @@ __device__ void dot(T *x, T *y, T *out, T *s_scratch)
     }
 }
 
+/**
+ * @brief Block-level Euclidean (L2) norm backed by CUB BlockReduce.
+ *
+ * Sums the squares of the N elements of `x` and writes the square root to
+ * `*out` from thread 0. Requires `blockDim` == (THREADS, 1, 1) exactly.
+ * Compile-time sizes only. NumPy equivalent: `*out = np.linalg.norm(x)`.
+ *
+ * @tparam T             Scalar type.
+ * @tparam N             Number of elements.
+ * @tparam THREADS       Block thread count (must equal blockDim.x).
+ * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
+ * @param  x             Input vector (length N).
+ * @param  out           Output pointer for the resulting scalar norm.
+ * @param  s_scratch     Shared scratch >= reduce_smem_size<T, THREADS>() bytes.
+ */
 template <typename T, uint32_t N, uint32_t THREADS = 256, bool TRAILING_SYNC = true>
 __device__ void l2norm(T *x, T *out, T *s_scratch)
 {
@@ -85,7 +131,16 @@ __device__ void l2norm(T *x, T *out, T *s_scratch)
     }
 }
 
-// smem size helper (host-callable): bytes needed for s_scratch
+/**
+ * @brief Shared-memory bytes needed for the L1 reduce/dot/l2norm scratch (host-callable).
+ *
+ * Returns `sizeof(cub::BlockReduce<T, THREADS>::TempStorage)` — the size of
+ * the `s_scratch` buffer these CUB-backed reductions require. constexpr.
+ *
+ * @tparam T       Scalar type.
+ * @tparam THREADS Block thread count (must match the reduction call).
+ * @return Required scratch size in bytes.
+ */
 template <typename T, uint32_t THREADS = 256>
 inline constexpr std::size_t reduce_smem_size()
 {

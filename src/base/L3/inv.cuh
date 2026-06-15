@@ -1,6 +1,20 @@
 #pragma once
 #include <cstdint>
 
+/**
+ * @brief In-place matrix inverse via Gauss-Jordan on an augmented `[A | I]` layout.
+ *
+ * Reduces a column-major augmented `dimA x (2*dimA)` matrix `[A | I]` so that on
+ * return columns `dimA..2*dimA-1` hold `A^-1`. Single-block; the pivot loop is
+ * serial (pivot-to-pivot dependency) while each pivot's cell updates are
+ * parallelized across the block. NumPy equivalent: `Ainv = np.linalg.inv(A)`.
+ *
+ * @tparam T  Scalar type.
+ * @param dimA    Matrix dimension (A is dimA x dimA).
+ * @param A       In/out augmented `[A | I]` buffer (column-major, dimA x 2*dimA);
+ *                on return its right half holds `A^-1`.
+ * @param s_temp  Shared scratch of `(2*dimA + 1) * sizeof(T)` bytes.
+ */
 // Gauss-Jordan inversion of an augmented dimA×(2*dimA) matrix in-place.
 // Expected layout: column-major [A | I]; on return columns dimA..2*dimA-1 hold A^-1.
 // s_temp: (2*dimA+1)*sizeof(T) bytes.
@@ -26,6 +40,18 @@ __device__ void invertMatrix(uint32_t dimA, T *A, T *s_temp)
     }
 }
 
+/**
+ * @brief Compile-time-size in-place matrix inverse (augmented `[A | I]` Gauss-Jordan).
+ *
+ * Same as the runtime `invertMatrix` but with the dimension as a template
+ * parameter. NumPy equivalent: `Ainv = np.linalg.inv(A)`.
+ *
+ * @tparam T  Scalar type.
+ * @tparam N  Matrix dimension (A is N x N).
+ * @param A       In/out augmented `[A | I]` buffer (column-major, N x 2*N);
+ *                on return its right half holds `A^-1`.
+ * @param s_temp  Shared scratch of `(2*N + 1) * sizeof(T)` bytes.
+ */
 template <typename T, uint32_t N>
 __device__ void invertMatrix(T *A, T *s_temp)
 {
@@ -33,6 +59,22 @@ __device__ void invertMatrix(T *A, T *s_temp)
 }
 
 
+/**
+ * @brief Dense (no augmented buffer) in-place matrix inverse via dual-update Gauss-Jordan.
+ *
+ * Inverts a column-major `dimA x dimA` matrix without materializing the `[A | I]`
+ * augmented layout: tracks A and a separate inverse buffer through the same
+ * `[A | I] -> [I | A^{-1}]` reduction. On return BOTH `A` and `Ainv` hold
+ * `A^{-1}` (callers that want the original A preserved should copy it first).
+ * Single-block: serial pivot loop, block-parallel per-pivot updates. NumPy
+ * equivalent: `Ainv = np.linalg.inv(A)`.
+ *
+ * @tparam T  Scalar type.
+ * @param dimA    Matrix dimension (A is dimA x dimA).
+ * @param A       In/out column-major dimA x dimA matrix; on return holds `A^{-1}`.
+ * @param Ainv    Workspace column-major dimA x dimA; on return also holds `A^{-1}`.
+ * @param s_temp  Shared scratch of `3 * dimA * sizeof(T)` bytes.
+ */
 // Block-cooperative Gauss-Jordan inversion of a dimA×dimA matrix.
 //   A:    in/out, column-major dimA×dimA.  On return: A := A^{-1}.
 //   Ainv: workspace, column-major dimA×dimA (overwritten).  On return: A^{-1}.
@@ -84,6 +126,19 @@ __device__ void invertMatrix_dense(uint32_t dimA, T *A, T *Ainv, T *s_temp)
     }
 }
 
+/**
+ * @brief Compile-time-size dense in-place matrix inverse (dual-update Gauss-Jordan).
+ *
+ * Same as the runtime `invertMatrix_dense` but with the dimension as a template
+ * parameter; on return both `A` and `Ainv` hold `A^{-1}`. NumPy equivalent:
+ * `Ainv = np.linalg.inv(A)`.
+ *
+ * @tparam T  Scalar type.
+ * @tparam N  Matrix dimension (A is N x N).
+ * @param A       In/out column-major N x N matrix; on return holds `A^{-1}`.
+ * @param Ainv    Workspace column-major N x N; on return also holds `A^{-1}`.
+ * @param s_temp  Shared scratch of `3 * N * sizeof(T)` bytes.
+ */
 template <typename T, uint32_t N>
 __device__ void invertMatrix_dense(T *A, T *Ainv, T *s_temp)
 {

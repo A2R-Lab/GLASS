@@ -1,6 +1,20 @@
 #pragma once
 #include <cstdint>
 
+/**
+ * @brief Rank-1 update: `A += alpha * x * yᵀ` (GER).
+ *
+ * Adds the scaled outer product of `x` and `y` to the `m×n` column-major matrix
+ * `A`. NumPy equivalent: `A += alpha * np.outer(x, y)`.
+ *
+ * @tparam T  Scalar type (e.g. `float`, `double`).
+ * @param m      Number of rows of `A` (length of `x`).
+ * @param n      Number of columns of `A` (length of `y`).
+ * @param alpha  Scalar multiplier on the outer product.
+ * @param x      Input vector of length `m`.
+ * @param y      Input vector of length `n`.
+ * @param A      In/out matrix of `m*n` elements (column-major).
+ */
 // A += alpha * x * y^T  (A is m×n column-major)
 template <typename T>
 __device__ void ger(uint32_t m, uint32_t n, T alpha, T *x, T *y, T *A)
@@ -14,6 +28,20 @@ __device__ void ger(uint32_t m, uint32_t n, T alpha, T *x, T *y, T *A)
     }
 }
 
+/**
+ * @brief Rank-1 update: `A += alpha * x * yᵀ` (GER), compile-time size.
+ *
+ * Compile-time-`M`,`N` overload of the rank-1 update. NumPy equivalent:
+ * `A += alpha * np.outer(x, y)`.
+ *
+ * @tparam T  Scalar type (e.g. `float`, `double`).
+ * @tparam M  Number of rows of `A` / length of `x` (compile-time constant).
+ * @tparam N  Number of columns of `A` / length of `y` (compile-time constant).
+ * @param alpha  Scalar multiplier on the outer product.
+ * @param x      Input vector of length `M`.
+ * @param y      Input vector of length `N`.
+ * @param A      In/out matrix of `M*N` elements (column-major).
+ */
 template <typename T, uint32_t M, uint32_t N>
 __device__ void ger(T alpha, T *x, T *y, T *A)
 {

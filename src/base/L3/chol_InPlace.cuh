@@ -2,6 +2,18 @@
 #include <cstdint>
 #include <math.h>
 
+/**
+ * @brief In-place Cholesky factorization of an SPD matrix (LAPACK potrf, lower).
+ *
+ * Factors `A = L * L^T` and overwrites `A` with the lower-triangular factor `L`
+ * (only the lower triangle is written; the upper triangle keeps its input
+ * values). Single-block, column-major storage, in-place. `A` must be symmetric
+ * positive-definite. NumPy equivalent: `L = np.linalg.cholesky(A)`.
+ *
+ * @tparam T  Scalar type.
+ * @param n    Matrix dimension (A is n x n).
+ * @param s_A  In/out n x n matrix (column-major); on return its lower triangle holds L.
+ */
 template <typename T>
 __device__ void cholDecomp_InPlace(uint32_t n, T *s_A)
 {
@@ -24,6 +36,18 @@ __device__ void cholDecomp_InPlace(uint32_t n, T *s_A)
     }
 }
 
+/**
+ * @brief Compile-time-size in-place Cholesky factorization (LAPACK potrf, lower).
+ *
+ * Same as the runtime overload but with the dimension as a template parameter,
+ * letting the compiler bake `N` in. Factors the SPD matrix `A = L * L^T` in
+ * place, writing only the lower triangle. NumPy equivalent:
+ * `L = np.linalg.cholesky(A)`.
+ *
+ * @tparam T  Scalar type.
+ * @tparam N  Matrix dimension (A is N x N).
+ * @param s_A  In/out N x N matrix (column-major); on return its lower triangle holds L.
+ */
 template <typename T, uint32_t N>
 __device__ void cholDecomp_InPlace(T *s_A)
 {

@@ -4,6 +4,17 @@
 #include "reduce.cuh"
 
 namespace low_memory {
+    /**
+     * @brief Euclidean (L2) norm: `x[0] = ‖x‖₂` (in-place, destructive), low-memory variant.
+     *
+     * Squares each element in place, then thread 0 serially sums them and takes
+     * the square root, leaving the result in `x[0]` (the input is overwritten).
+     * NumPy equivalent: `np.linalg.norm(x)`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param n  Number of elements.
+     * @param x  In/out vector of length `n`; the result lands in `x[0]`.
+     */
     template <typename T>
     __device__ void l2norm(uint32_t n, T *x)
     {
@@ -20,6 +31,18 @@ namespace low_memory {
 }
 
 namespace high_speed {
+    /**
+     * @brief Euclidean (L2) norm: `x[0] = ‖x‖₂` (in-place), warp-shuffle variant.
+     *
+     * Accumulates the sum of squares with a warp-shuffle reduction plus an
+     * inter-warp reduction through shared scratch, then takes the square root;
+     * the result lands in `x[0]`. NumPy equivalent: `np.linalg.norm(x)`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param n          Number of elements.
+     * @param x          In/out vector of length `n`; the result lands in `x[0]`.
+     * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per warp).
+     */
     template <typename T>
     __device__ void l2norm(uint32_t n, T *x, T *s_scratch)
     {
@@ -40,6 +63,17 @@ namespace high_speed {
         __syncthreads();
     }
 
+    /**
+     * @brief Euclidean (L2) norm: `x[0] = ‖x‖₂`, warp-shuffle, compile-time size.
+     *
+     * Compile-time-`N` overload of the warp-shuffle L2 norm. NumPy equivalent:
+     * `np.linalg.norm(x)`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @tparam N  Number of elements (compile-time constant).
+     * @param x          In/out vector of length `N`; the result lands in `x[0]`.
+     * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per warp).
+     */
     template <typename T, uint32_t N>
     __device__ void l2norm(T *x, T *s_scratch)
     {

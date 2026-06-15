@@ -1,0 +1,38 @@
+# GLASS test suite — DISABLED STUB.
+#
+# GLASS tests compile CUDA sources with nvcc and RUN them on a GPU, so they
+# cannot execute on GitHub-hosted runners (which have no GPU). This workflow is
+# intentionally gated off. To enable it:
+#   1. Register a self-hosted runner that has an NVIDIA GPU + CUDA toolkit and
+#      label it `gpu` (Settings -> Actions -> Runners).
+#   2. Delete the `if: ${{ false }}` guard on the job below (or trigger it
+#      manually via the "Run workflow" button — it is wired for workflow_dispatch).
+#
+# Until then this file documents the intended CI and does nothing on push.
+
+name: Tests (self-hosted GPU)
+
+on:
+  workflow_dispatch:        # manual trigger only
+  # push:                   # <- uncomment once a GPU runner is registered
+  #   branches: [main]
+
+jobs:
+  test:
+    # Remove this guard to enable. Requires a self-hosted runner labelled `gpu`.
+    if: ${{ false }}
+    runs-on: [self-hosted, gpu]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install test dependencies
+        run: pip install -r test/requirements.txt
+
+      - name: Run test suite
+        run: pytest test/ -v

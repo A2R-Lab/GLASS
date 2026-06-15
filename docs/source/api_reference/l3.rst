@@ -1,0 +1,44 @@
+L3 — Matrix Operations
+======================
+
+General matrix-matrix products (``gemm`` and its tiled / strided / batched /
+indexed variants), matrix inversion, Cholesky factorization, and triangular
+solves. The GEMM family takes compile-time storage-order flags
+(``ROW_MAJOR_A`` / ``ROW_MAJOR_B`` / ``ROW_MAJOR_C``) and a ``TRANSPOSE_B``
+flag; see :doc:`../user_guide/concepts/backend_dispatch` for how the dispatch
+GEMM chooses a path.
+
+gemm
+----
+
+.. doxygenfile:: src/base/L3/gemm.cuh
+
+Strided gemm
+------------
+
+.. doxygenfile:: src/base/L3/gemm_strided.cuh
+
+Indexed / batched gemm
+----------------------
+
+.. doxygenfile:: src/base/L3/gemm_batched_indexed.cuh
+
+Matrix inverse
+--------------
+
+.. doxygenfile:: src/base/L3/inv.cuh
+
+Cholesky
+--------
+
+.. doxygenfile:: src/base/L3/chol_InPlace.cuh
+
+Triangular solve (trsm)
+-----------------------
+
+.. doxygenfile:: src/base/L3/trsm.cuh
+
+Cooperative-groups variants (``glass::cgrps::``)
+------------------------------------------------
+
+.. doxygenfile:: src/cgrps/l3.cuh

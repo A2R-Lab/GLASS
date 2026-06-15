@@ -1,4 +1,20 @@
 #pragma once
+/**
+ * @file lapack.cuh
+ * @brief cuSOLVERDx-backed single-block LAPACK wrappers for `glass::nvidia::`.
+ *
+ * Block-level, compile-time-size factorizations and solves: Cholesky
+ * (chol_inplace), triangular solve (trsm), SPD solve (posv / potrs), unpivoted
+ * LU (getrf_no_pivot / getrs_no_pivot / gesv_no_pivot), QR (geqrf), and
+ * least-squares (gels). Each is a static_assert stub by default; instantiate a
+ * shape with the matching `DEFINE_NVIDIA_<NAME>` / `_BLOCKDIM` / `_SM` /
+ * `_BLOCKDIM_SM` macro in your `.cu` (inside `namespace glass::nvidia`). Each
+ * also ships `*_smem_size` / `*_threads` host-callable constexpr queries.
+ *
+ * Requires cuSOLVERDx / NVIDIA MathDx (MATHDX_ROOT) and linking the precompiled
+ * device library (`-rdc=true -dlto -lcusolverdx -lcublas -lcusolver -lcudart`).
+ * All matrices are column-major.
+ */
 #include <cstdint>
 // cusolverdx.hpp and cusolverdx_io.hpp must be included at GLOBAL scope
 // (glass-nvidia.cuh handles this) — re-including them inside `namespace
@@ -36,6 +52,22 @@
 // Primary templates
 // ---------------------------------------------------------------------------
 
+/**
+ * @brief In-place Cholesky factorization of an N×N SPD matrix (cuSOLVERDx potrf).
+ *
+ * Factors `A = L*Lᵀ` and overwrites A with the lower-triangular L (upper
+ * triangle untouched). Primary template is a static_assert stub — add a
+ * `DEFINE_NVIDIA_CHOL*` specialization for the shape. Requires cuSOLVERDx /
+ * MathDx (MATHDX_ROOT). NumPy equivalent: `A = np.linalg.cholesky(A)`.
+ *
+ * @tparam T             Scalar type.
+ * @tparam N             Matrix dimension.
+ * @tparam BLOCK_THREADS Pinned cuSOLVERDx BlockDim (0 = vendor picks).
+ * @tparam SM_VAL        Target SM architecture (default = SMS).
+ * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
+ * @param  A             Pointer to the N×N column-major SPD matrix; overwritten with L.
+ * @param  smem          Shared scratch (>= chol_inplace_smem_size<...>()).
+ */
 template <typename T, uint32_t N, uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS,
           bool TRAILING_SYNC = true>
 __device__ void chol_inplace(T* A, char* smem)
@@ -45,12 +77,40 @@ __device__ void chol_inplace(T* A, char* smem)
         "add DEFINE_NVIDIA_CHOL* in your .cu file.");
 }
 
+/**
+ * @brief Shared-memory bytes needed by `chol_inplace<...>` (host-callable, constexpr).
+ * @tparam T T scalar; @tparam N dim; @tparam BLOCK_THREADS pinned BlockDim; @tparam SM_VAL SM arch.
+ */
 template <typename T, uint32_t N, uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
 constexpr std::size_t chol_inplace_smem_size() { return 0; }
 
+/**
+ * @brief Thread count cuSOLVERDx wants for `chol_inplace<...>` (host-callable, constexpr).
+ * @tparam T scalar; @tparam N dim; @tparam BLOCK_THREADS pinned BlockDim; @tparam SM_VAL SM arch.
+ */
 template <typename T, uint32_t N, uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
 constexpr uint32_t chol_inplace_threads() { return 256; }
 
+/**
+ * @brief Lower-triangular solve `L*X = alpha*B` in place (cuSOLVERDx trsm).
+ *
+ * Solves with side=left, fill=lower, non-transposed, non-unit-diagonal; B is
+ * overwritten with X. cuSOLVERDx has no alpha, so the wrapper pre-multiplies B
+ * by alpha in shared memory first. Primary template is a static_assert stub —
+ * add a `DEFINE_NVIDIA_TRSM*` specialization. Requires cuSOLVERDx / MathDx
+ * (MATHDX_ROOT). SciPy equivalent: `solve_triangular(L, alpha*B, lower=True)`.
+ *
+ * @tparam T             Scalar type.
+ * @tparam M             Rows of L (M×M) and of B.
+ * @tparam N             Columns (number of right-hand sides) of B.
+ * @tparam BLOCK_THREADS Pinned cuSOLVERDx BlockDim (0 = vendor picks).
+ * @tparam SM_VAL        Target SM architecture (default = SMS).
+ * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
+ * @param  alpha         Scaling factor applied to B before the solve.
+ * @param  L             Pointer to the M×M lower-triangular matrix.
+ * @param  B             Pointer to the M×N right-hand sides; overwritten with X.
+ * @param  smem          Shared scratch (>= trsm_smem_size<...>()).
+ */
 template <typename T, uint32_t M, uint32_t N,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS,
           bool TRAILING_SYNC = true>
@@ -61,10 +121,18 @@ __device__ void trsm(T alpha, T* L, T* B, char* smem)
         "add DEFINE_NVIDIA_TRSM* in your .cu file.");
 }
 
+/**
+ * @brief Shared-memory bytes needed by `trsm<...>` (host-callable, constexpr).
+ * @tparam T scalar; @tparam M rows; @tparam N rhs; @tparam BLOCK_THREADS pinned BlockDim; @tparam SM_VAL SM arch.
+ */
 template <typename T, uint32_t M, uint32_t N,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
 constexpr std::size_t trsm_smem_size() { return 0; }
 
+/**
+ * @brief Thread count cuSOLVERDx wants for `trsm<...>` (host-callable, constexpr).
+ * @tparam T scalar; @tparam M rows; @tparam N rhs; @tparam BLOCK_THREADS pinned BlockDim; @tparam SM_VAL SM arch.
+ */
 template <typename T, uint32_t M, uint32_t N,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
 constexpr uint32_t trsm_threads() { return 256; }
@@ -360,6 +428,24 @@ constexpr uint32_t trsm_threads() { return 256; }
 // Solves A·X = B for SPD A in one call.  A is overwritten with L (lower);
 // B is overwritten with X.  Smem layout: [As: N*N] [Bs: N*NRHS] [solver_smem].
 
+/**
+ * @brief Fused SPD solve `A*X = B` (cuSOLVERDx posv: Cholesky factor + solve).
+ *
+ * Factors SPD A and solves in one call; A is overwritten with L (lower), B with
+ * X. Faster than a separate chol+trsm for N >= ~8. Primary template is a
+ * static_assert stub — add a `DEFINE_NVIDIA_POSV*` specialization. Requires
+ * cuSOLVERDx / MathDx (MATHDX_ROOT). NumPy equivalent: `X = np.linalg.solve(A, B)`.
+ *
+ * @tparam T             Scalar type.
+ * @tparam N             Matrix dimension (A is N×N).
+ * @tparam NRHS          Number of right-hand sides (columns of B).
+ * @tparam BLOCK_THREADS Pinned cuSOLVERDx BlockDim (0 = vendor picks).
+ * @tparam SM_VAL        Target SM architecture (default = SMS).
+ * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
+ * @param  A             Pointer to the N×N SPD matrix; overwritten with L.
+ * @param  B             Pointer to the N×NRHS right-hand sides; overwritten with X.
+ * @param  smem          Shared scratch (>= posv_smem_size<...>()).
+ */
 template <typename T, uint32_t N, uint32_t NRHS,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS,
           bool TRAILING_SYNC = true>
@@ -370,10 +456,18 @@ __device__ void posv(T* A, T* B, char* smem)
         "add DEFINE_NVIDIA_POSV* in your .cu file.");
 }
 
+/**
+ * @brief Shared-memory bytes needed by `posv<...>` (host-callable, constexpr).
+ * @tparam T scalar; @tparam N dim; @tparam NRHS rhs; @tparam BLOCK_THREADS pinned BlockDim; @tparam SM_VAL SM arch.
+ */
 template <typename T, uint32_t N, uint32_t NRHS,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
 constexpr std::size_t posv_smem_size() { return 0; }
 
+/**
+ * @brief Thread count cuSOLVERDx wants for `posv<...>` (host-callable, constexpr).
+ * @tparam T scalar; @tparam N dim; @tparam NRHS rhs; @tparam BLOCK_THREADS pinned BlockDim; @tparam SM_VAL SM arch.
+ */
 template <typename T, uint32_t N, uint32_t NRHS,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
 constexpr uint32_t posv_threads() { return 256; }
@@ -485,6 +579,23 @@ constexpr uint32_t posv_threads() { return 256; }
 // Solves L·L^T·X = B given the L factor from chol_inplace.  B is overwritten
 // with X.  Smem layout: [Ls: N*N] [Bs: N*NRHS] [solver_smem].
 
+/**
+ * @brief SPD solve given the Cholesky factor (cuSOLVERDx potrs).
+ *
+ * Solves `L*Lᵀ*X = B` given the lower factor L from chol_inplace; B is
+ * overwritten with X. Primary template is a static_assert stub — add a
+ * `DEFINE_NVIDIA_POTRS*` specialization. Requires cuSOLVERDx / MathDx
+ * (MATHDX_ROOT). SciPy equivalent: `cho_solve((L, True), B)`.
+ *
+ * @tparam T             Scalar type.
+ * @tparam N             Matrix dimension.
+ * @tparam NRHS          Number of right-hand sides.
+ * @tparam BLOCK_THREADS Pinned cuSOLVERDx BlockDim (0 = vendor picks).
+ * @tparam SM_VAL        Target SM architecture (default = SMS).
+ * @param  L             Pointer to the N×N lower Cholesky factor (read-only).
+ * @param  B             Pointer to the N×NRHS right-hand sides; overwritten with X.
+ * @param  smem          Shared scratch (>= potrs_smem_size<...>()).
+ */
 template <typename T, uint32_t N, uint32_t NRHS,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
 __device__ void potrs(const T* L, T* B, char* smem)
@@ -494,10 +605,18 @@ __device__ void potrs(const T* L, T* B, char* smem)
         "add DEFINE_NVIDIA_POTRS* in your .cu file.");
 }
 
+/**
+ * @brief Shared-memory bytes needed by `potrs<...>` (host-callable, constexpr).
+ * @tparam T scalar; @tparam N dim; @tparam NRHS rhs; @tparam BLOCK_THREADS pinned BlockDim; @tparam SM_VAL SM arch.
+ */
 template <typename T, uint32_t N, uint32_t NRHS,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
 constexpr std::size_t potrs_smem_size() { return 0; }
 
+/**
+ * @brief Thread count cuSOLVERDx wants for `potrs<...>` (host-callable, constexpr).
+ * @tparam T scalar; @tparam N dim; @tparam NRHS rhs; @tparam BLOCK_THREADS pinned BlockDim; @tparam SM_VAL SM arch.
+ */
 template <typename T, uint32_t N, uint32_t NRHS,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
 constexpr uint32_t potrs_threads() { return 256; }
@@ -593,6 +712,21 @@ constexpr uint32_t potrs_threads() { return 256; }
 // In-place LU factorization without pivoting.  A := L (unit lower) + U (upper).
 // Smem layout: [As: N*N] [solver_smem].
 
+/**
+ * @brief In-place LU factorization without pivoting (cuSOLVERDx getrf_no_pivot).
+ *
+ * Factors `A = L*U` (unit-lower L, upper U) in place, no row pivoting. Primary
+ * template is a static_assert stub — add a `DEFINE_NVIDIA_GETRF*`
+ * specialization. Requires cuSOLVERDx / MathDx (MATHDX_ROOT). SciPy
+ * (pivot-free) equivalent of `lu_factor(A)` with A := LU.
+ *
+ * @tparam T             Scalar type.
+ * @tparam N             Matrix dimension.
+ * @tparam BLOCK_THREADS Pinned cuSOLVERDx BlockDim (0 = vendor picks).
+ * @tparam SM_VAL        Target SM architecture (default = SMS).
+ * @param  A             Pointer to the N×N matrix; overwritten with the LU factors.
+ * @param  smem          Shared scratch (>= getrf_no_pivot_smem_size<...>()).
+ */
 template <typename T, uint32_t N,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
 __device__ void getrf_no_pivot(T* A, char* smem)
@@ -602,9 +736,17 @@ __device__ void getrf_no_pivot(T* A, char* smem)
         "add DEFINE_NVIDIA_GETRF* in your .cu file.");
 }
 
+/**
+ * @brief Shared-memory bytes needed by `getrf_no_pivot<...>` (host-callable, constexpr).
+ * @tparam T scalar; @tparam N dim; @tparam BLOCK_THREADS pinned BlockDim; @tparam SM_VAL SM arch.
+ */
 template <typename T, uint32_t N, uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
 constexpr std::size_t getrf_no_pivot_smem_size() { return 0; }
 
+/**
+ * @brief Thread count cuSOLVERDx wants for `getrf_no_pivot<...>` (host-callable, constexpr).
+ * @tparam T scalar; @tparam N dim; @tparam BLOCK_THREADS pinned BlockDim; @tparam SM_VAL SM arch.
+ */
 template <typename T, uint32_t N, uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
 constexpr uint32_t getrf_no_pivot_threads() { return 256; }
 
@@ -695,6 +837,23 @@ constexpr uint32_t getrf_no_pivot_threads() { return 256; }
 // Solves LU·X = B given the LU factor from getrf_no_pivot.  B is overwritten.
 // Smem layout: [LUs: N*N] [Bs: N*NRHS] [solver_smem].
 
+/**
+ * @brief LU solve given the (unpivoted) LU factor (cuSOLVERDx getrs_no_pivot).
+ *
+ * Solves `L*U*X = B` given the LU factor from getrf_no_pivot; B is overwritten
+ * with X. Primary template is a static_assert stub — add a
+ * `DEFINE_NVIDIA_GETRS*` specialization. Requires cuSOLVERDx / MathDx
+ * (MATHDX_ROOT). SciPy (pivot-free) equivalent of `lu_solve((LU, ...), B)`.
+ *
+ * @tparam T             Scalar type.
+ * @tparam N             Matrix dimension.
+ * @tparam NRHS          Number of right-hand sides.
+ * @tparam BLOCK_THREADS Pinned cuSOLVERDx BlockDim (0 = vendor picks).
+ * @tparam SM_VAL        Target SM architecture (default = SMS).
+ * @param  LU            Pointer to the N×N LU factor (read-only).
+ * @param  B             Pointer to the N×NRHS right-hand sides; overwritten with X.
+ * @param  smem          Shared scratch (>= getrs_no_pivot_smem_size<...>()).
+ */
 template <typename T, uint32_t N, uint32_t NRHS,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
 __device__ void getrs_no_pivot(const T* LU, T* B, char* smem)
@@ -704,10 +863,18 @@ __device__ void getrs_no_pivot(const T* LU, T* B, char* smem)
         "add DEFINE_NVIDIA_GETRS* in your .cu file.");
 }
 
+/**
+ * @brief Shared-memory bytes needed by `getrs_no_pivot<...>` (host-callable, constexpr).
+ * @tparam T scalar; @tparam N dim; @tparam NRHS rhs; @tparam BLOCK_THREADS pinned BlockDim; @tparam SM_VAL SM arch.
+ */
 template <typename T, uint32_t N, uint32_t NRHS,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
 constexpr std::size_t getrs_no_pivot_smem_size() { return 0; }
 
+/**
+ * @brief Thread count cuSOLVERDx wants for `getrs_no_pivot<...>` (host-callable, constexpr).
+ * @tparam T scalar; @tparam N dim; @tparam NRHS rhs; @tparam BLOCK_THREADS pinned BlockDim; @tparam SM_VAL SM arch.
+ */
 template <typename T, uint32_t N, uint32_t NRHS,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
 constexpr uint32_t getrs_no_pivot_threads() { return 256; }
@@ -801,6 +968,24 @@ constexpr uint32_t getrs_no_pivot_threads() { return 256; }
 // LU-factor A (no pivoting) and solve A·X = B.  A is destroyed; B := X.
 // Smem layout: [As: N*N] [Bs: N*NRHS] [solver_smem].
 
+/**
+ * @brief Fused general solve `A*X = B` without pivoting (cuSOLVERDx gesv_no_pivot).
+ *
+ * LU-factors general A (no pivoting) and solves in one call; A is destroyed, B
+ * overwritten with X. Primary template is a static_assert stub — add a
+ * `DEFINE_NVIDIA_GESV*` specialization. Requires cuSOLVERDx / MathDx
+ * (MATHDX_ROOT). NumPy equivalent: `X = np.linalg.solve(A, B)`.
+ *
+ * @tparam T             Scalar type.
+ * @tparam N             Matrix dimension (A is N×N).
+ * @tparam NRHS          Number of right-hand sides.
+ * @tparam BLOCK_THREADS Pinned cuSOLVERDx BlockDim (0 = vendor picks).
+ * @tparam SM_VAL        Target SM architecture (default = SMS).
+ * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
+ * @param  A             Pointer to the N×N matrix; destroyed (holds LU on exit).
+ * @param  B             Pointer to the N×NRHS right-hand sides; overwritten with X.
+ * @param  smem          Shared scratch (>= gesv_no_pivot_smem_size<...>()).
+ */
 template <typename T, uint32_t N, uint32_t NRHS,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS,
           bool TRAILING_SYNC = true>
@@ -811,10 +996,18 @@ __device__ void gesv_no_pivot(T* A, T* B, char* smem)
         "add DEFINE_NVIDIA_GESV* in your .cu file.");
 }
 
+/**
+ * @brief Shared-memory bytes needed by `gesv_no_pivot<...>` (host-callable, constexpr).
+ * @tparam T scalar; @tparam N dim; @tparam NRHS rhs; @tparam BLOCK_THREADS pinned BlockDim; @tparam SM_VAL SM arch.
+ */
 template <typename T, uint32_t N, uint32_t NRHS,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
 constexpr std::size_t gesv_no_pivot_smem_size() { return 0; }
 
+/**
+ * @brief Thread count cuSOLVERDx wants for `gesv_no_pivot<...>` (host-callable, constexpr).
+ * @tparam T scalar; @tparam N dim; @tparam NRHS rhs; @tparam BLOCK_THREADS pinned BlockDim; @tparam SM_VAL SM arch.
+ */
 template <typename T, uint32_t N, uint32_t NRHS,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
 constexpr uint32_t gesv_no_pivot_threads() { return 256; }
@@ -927,6 +1120,23 @@ constexpr uint32_t gesv_no_pivot_threads() { return 256; }
 // The caller must provide `tau` storage of size min(M,N) floats (in shared,
 // pointed at by `tau`); call site responsibility.
 
+/**
+ * @brief In-place QR factorization of an M×N matrix (cuSOLVERDx geqrf).
+ *
+ * Factors A into R (upper triangle) and Householder reflectors (below the
+ * diagonal), with the scalar factors written to `tau`. Primary template is a
+ * static_assert stub — add a `DEFINE_NVIDIA_GEQRF*` specialization. Requires
+ * cuSOLVERDx / MathDx (MATHDX_ROOT). SciPy equivalent: `qr(A, mode='raw')`.
+ *
+ * @tparam T             Scalar type.
+ * @tparam M             Rows of A.
+ * @tparam N             Columns of A.
+ * @tparam BLOCK_THREADS Pinned cuSOLVERDx BlockDim (0 = vendor picks).
+ * @tparam SM_VAL        Target SM architecture (default = SMS).
+ * @param  A             Pointer to the M×N matrix; overwritten with R + reflectors.
+ * @param  tau           Caller-provided output array of min(M,N) scalars.
+ * @param  smem          Shared scratch (>= geqrf_smem_size<...>()).
+ */
 template <typename T, uint32_t M, uint32_t N,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
 __device__ void geqrf(T* A, T* tau, char* smem)
@@ -936,10 +1146,18 @@ __device__ void geqrf(T* A, T* tau, char* smem)
         "add DEFINE_NVIDIA_GEQRF* in your .cu file.");
 }
 
+/**
+ * @brief Shared-memory bytes needed by `geqrf<...>` (host-callable, constexpr).
+ * @tparam T scalar; @tparam M rows; @tparam N cols; @tparam BLOCK_THREADS pinned BlockDim; @tparam SM_VAL SM arch.
+ */
 template <typename T, uint32_t M, uint32_t N,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
 constexpr std::size_t geqrf_smem_size() { return 0; }
 
+/**
+ * @brief Thread count cuSOLVERDx wants for `geqrf<...>` (host-callable, constexpr).
+ * @tparam T scalar; @tparam M rows; @tparam N cols; @tparam BLOCK_THREADS pinned BlockDim; @tparam SM_VAL SM arch.
+ */
 template <typename T, uint32_t M, uint32_t N,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
 constexpr uint32_t geqrf_threads() { return 256; }
@@ -1031,6 +1249,27 @@ constexpr uint32_t geqrf_threads() { return 256; }
 // `tau` workspace is min(M,N) floats.
 // Smem layout: [As: M*N] [Bs: max(M,N)*NRHS] [solver_smem]; tau is caller-provided.
 
+/**
+ * @brief Least-squares solve of `min ||A*X - B||` (cuSOLVERDx gels).
+ *
+ * Solves the over- or under-determined system; cuSOLVERDx picks QR (M >= N) or
+ * LQ (M < N) internally. A is destroyed, B overwritten with X. Primary template
+ * is a static_assert stub — add a `DEFINE_NVIDIA_GELS*` specialization.
+ * Requires cuSOLVERDx / MathDx (MATHDX_ROOT). NumPy equivalent:
+ * `X = np.linalg.lstsq(A, B)`.
+ *
+ * @tparam T             Scalar type.
+ * @tparam M             Rows of A.
+ * @tparam N             Columns of A.
+ * @tparam NRHS          Number of right-hand sides.
+ * @tparam BLOCK_THREADS Pinned cuSOLVERDx BlockDim (0 = vendor picks).
+ * @tparam SM_VAL        Target SM architecture (default = SMS).
+ * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
+ * @param  A             Pointer to the M×N matrix; destroyed during the solve.
+ * @param  tau           Caller-provided workspace of min(M,N) scalars.
+ * @param  B             Right-hand sides (max(M,N)×NRHS storage); overwritten with X.
+ * @param  smem          Shared scratch (>= gels_smem_size<...>()).
+ */
 template <typename T, uint32_t M, uint32_t N, uint32_t NRHS,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS,
           bool TRAILING_SYNC = true>
@@ -1041,10 +1280,18 @@ __device__ void gels(T* A, T* tau, T* B, char* smem)
         "add DEFINE_NVIDIA_GELS* in your .cu file.");
 }
 
+/**
+ * @brief Shared-memory bytes needed by `gels<...>` (host-callable, constexpr).
+ * @tparam T scalar; @tparam M rows; @tparam N cols; @tparam NRHS rhs; @tparam BLOCK_THREADS pinned BlockDim; @tparam SM_VAL SM arch.
+ */
 template <typename T, uint32_t M, uint32_t N, uint32_t NRHS,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
 constexpr std::size_t gels_smem_size() { return 0; }
 
+/**
+ * @brief Thread count cuSOLVERDx wants for `gels<...>` (host-callable, constexpr).
+ * @tparam T scalar; @tparam M rows; @tparam N cols; @tparam NRHS rhs; @tparam BLOCK_THREADS pinned BlockDim; @tparam SM_VAL SM arch.
+ */
 template <typename T, uint32_t M, uint32_t N, uint32_t NRHS,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
 constexpr uint32_t gels_threads() { return 256; }

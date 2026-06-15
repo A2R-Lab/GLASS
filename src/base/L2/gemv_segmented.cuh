@@ -62,6 +62,40 @@
 // must be DISJOINT (each output row written exactly once); with ATOMIC_Y they
 // may overlap freely (results are atomically summed).
 
+/**
+ * @brief Segmented (batched) column-major GEMV: `y_seg = alpha*A_seg*x_seg + beta*y_seg` for each segment.
+ *
+ * Computes `segments` independent small GEMVs concurrently in one block. Each
+ * `A_seg` is `M×N`, column-major with leading dimension `ROW_STRIDE`, and base
+ * offsets into the flat `A`/`x`/`y` arrays come from the descriptor arrays. A
+ * single block-stride loop walks the flattened `segments * OUT_ROWS` outputs
+ * (`OUT_ROWS = TRANSPOSE ? N : M`). Optional flags: `TRANSPOSE` computes
+ * `Aᵀ_seg · x_seg` (the leaf→root direction); `ATOMIC_Y` accumulates into `y`
+ * via `atomicAdd` so segments may overlap (`beta` is then ignored — pre-scale
+ * `y` yourself); `FUSE_SCALED_ADD` folds an extra per-segment `S * scalar` term
+ * into the single `y` store (non-atomic path only).
+ *
+ * @tparam T               Scalar type (e.g. `float`, `double`).
+ * @tparam M               Rows per segment matrix (compile-time constant).
+ * @tparam N               Columns per segment matrix (compile-time constant).
+ * @tparam ROW_STRIDE      Column-major leading dimension of each `A_seg` (default `M`).
+ * @tparam FUSE_SCALED_ADD When true, add `S[seg]*scalar[seg]` into the output (non-atomic only).
+ * @tparam TRANSPOSE       When true, each segment computes `Aᵀ_seg · x_seg`.
+ * @tparam ATOMIC_Y        When true, accumulate into `y` with `atomicAdd` (overlap-safe).
+ * @tparam IDX_T           Index type of the offset descriptor arrays (default `int`).
+ * @param segments    Number of independent GEMVs.
+ * @param seg_a_off   Per-segment base element offsets of `A_seg` within `A`.
+ * @param seg_x_off   Per-segment base element offsets of `x_seg` within `x`.
+ * @param seg_y_off   Per-segment base element offsets of `y_seg` within `y`.
+ * @param A           Flat backing array of all segment matrices.
+ * @param x           Flat backing array of all segment input vectors.
+ * @param y           Flat backing array of all segment output vectors (in/out).
+ * @param alpha       Scalar multiplier on each segment product.
+ * @param beta        Scalar multiplier on the prior `y` (ignored under `ATOMIC_Y`).
+ * @param seg_s_off   Per-segment offsets of `S_seg` within `S` (FUSE only).
+ * @param S           Flat backing array for the fused scaled-add term (FUSE only).
+ * @param scalar      Per-segment multiplier for the fused scaled-add (FUSE only).
+ */
 template <typename T, uint32_t M, uint32_t N, uint32_t ROW_STRIDE = M,
           bool FUSE_SCALED_ADD = false, bool TRANSPOSE = false,
           bool ATOMIC_Y = false, typename IDX_T = int>
@@ -104,6 +138,34 @@ __device__ void segmented_row_strided_gemv(
     }
 }
 
+/**
+ * @brief Segmented (batched) column-major GEMV, no-beta overload: `y_seg = alpha*A_seg*x_seg` per segment.
+ *
+ * No-`beta` variant of `segmented_row_strided_gemv`: each segment overwrites its
+ * `y_seg` (optionally plus the fused scaled-add) or computes the transpose. This
+ * also serves as the `ATOMIC_Y` entry point, since atomic accumulate takes no
+ * `beta` (see the full overload's note on beta-under-atomic).
+ *
+ * @tparam T               Scalar type (e.g. `float`, `double`).
+ * @tparam M               Rows per segment matrix (compile-time constant).
+ * @tparam N               Columns per segment matrix (compile-time constant).
+ * @tparam ROW_STRIDE      Column-major leading dimension of each `A_seg` (default `M`).
+ * @tparam FUSE_SCALED_ADD When true, add `S[seg]*scalar[seg]` into the output (non-atomic only).
+ * @tparam TRANSPOSE       When true, each segment computes `Aᵀ_seg · x_seg`.
+ * @tparam ATOMIC_Y        When true, accumulate into `y` with `atomicAdd` (overlap-safe).
+ * @tparam IDX_T           Index type of the offset descriptor arrays (default `int`).
+ * @param segments    Number of independent GEMVs.
+ * @param seg_a_off   Per-segment base element offsets of `A_seg` within `A`.
+ * @param seg_x_off   Per-segment base element offsets of `x_seg` within `x`.
+ * @param seg_y_off   Per-segment base element offsets of `y_seg` within `y`.
+ * @param A           Flat backing array of all segment matrices.
+ * @param x           Flat backing array of all segment input vectors.
+ * @param y           Flat backing array of all segment output vectors (out, or accumulated under `ATOMIC_Y`).
+ * @param alpha       Scalar multiplier on each segment product.
+ * @param seg_s_off   Per-segment offsets of `S_seg` within `S` (FUSE only).
+ * @param S           Flat backing array for the fused scaled-add term (FUSE only).
+ * @param scalar      Per-segment multiplier for the fused scaled-add (FUSE only).
+ */
 // No-beta overload: y_seg = alpha * A_seg * x_seg (+ fused scaled add), or its
 // transpose.  Doubles as the ATOMIC_Y entry point (atomic accumulate takes no
 // beta — see the header note on beta-under-atomic).

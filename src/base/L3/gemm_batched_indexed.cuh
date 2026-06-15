@@ -54,6 +54,39 @@
 // a_idx / b_idx may repeat or alias freely.  No alpha/beta — pure C = A*B
 // overwrite (or, under ATOMIC_C, pure += accumulate into pre-zeroed C).
 
+/**
+ * @brief Indexed/gather batched square GEMM: `C[c_idx[p]] = op(A[a_idx[p]]) * op(B[b_idx[p]])`.
+ *
+ * For each pair `p` in `[0, pairs)` multiplies two `DIM x DIM` column-major
+ * matrices selected by index into flat base buffers (`a_idx[p]` is a MATRIX
+ * index, so the matrix lives at offset `a_idx[p] * DIM * DIM`), computing all
+ * pairs concurrently in a single block. This is the indexed/gather analogue of
+ * `row_strided_gemm`, useful for assembling many independent small (e.g. 4x4
+ * SE(3)) products from index lists. No alpha/beta — a pure overwrite
+ * (`C = op(A) * op(B)`) unless `ATOMIC_C` is set.
+ *
+ * Layout flags read the factors transposed in place (matrices stay square
+ * `DIM x DIM`, so the output is always `DIM x DIM`):
+ * `TRANSPOSE_A` gives `A_p^T * B_p`, `TRANSPOSE_B` gives `A_p * B_p^T`, and both
+ * give `A_p^T * B_p^T`. Without `ATOMIC_C`, distinct pairs MUST target distinct
+ * `c_idx` slots (each output written once); `a_idx` / `b_idx` may alias freely.
+ *
+ * @tparam T  Scalar type.
+ * @tparam DIM  Compile-time matrix dimension (square; inner loop fully unrolled).
+ * @tparam TRANSPOSE_A  If true, the left factor is read transposed (`C_p = A_p^T * ...`).
+ * @tparam TRANSPOSE_B  If true, the right factor is read transposed (`... * B_p^T`).
+ * @tparam ATOMIC_C  If true, accumulate via atomicAdd (`C[c_idx[p]] += ...`), allowing
+ *                   several pairs to share a `c_idx` slot; the caller must PRE-ZERO
+ *                   (or pre-load) the touched C slots, and no beta is applied.
+ * @tparam IDX_T  Index type of the *_idx arrays.
+ * @param pairs   Number of independent GEMMs.
+ * @param a_idx   Per-pair matrix slot of the left factor in `A_base` (length `pairs`).
+ * @param b_idx   Per-pair matrix slot of the right factor in `B_base` (length `pairs`).
+ * @param c_idx   Per-pair matrix slot of the destination in `C_base` (length `pairs`).
+ * @param A_base  Flat array of `DIM x DIM` left-factor matrices.
+ * @param B_base  Flat array of `DIM x DIM` right-factor matrices.
+ * @param C_base  Flat array of `DIM x DIM` destination matrices (written, or accumulated if ATOMIC_C).
+ */
 template <typename T, uint32_t DIM = 4, bool TRANSPOSE_A = false,
           bool TRANSPOSE_B = false, bool ATOMIC_C = false, typename IDX_T = int>
 __device__ void indexed_batched_gemm(

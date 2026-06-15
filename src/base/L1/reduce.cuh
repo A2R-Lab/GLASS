@@ -1,6 +1,17 @@
 #pragma once
 #include <cstdint>
 
+/**
+ * @brief Sum reduction: `x[0] = Σ x[i]` (in-place, destructive).
+ *
+ * Default `threadIdx`-based halving reduce; the block cooperatively sums the
+ * vector and leaves the total in `x[0]` (the input is overwritten). NumPy
+ * equivalent: `np.sum(x)`.
+ *
+ * @tparam T  Scalar type (e.g. `float`, `double`).
+ * @param n  Number of elements.
+ * @param x  In/out vector of length `n`; the sum lands in `x[0]`.
+ */
 // default threadIdx-based halving reduce; result in x[0]
 template <typename T>
 __device__ void reduce(uint32_t n, T *x)
@@ -18,6 +29,15 @@ __device__ void reduce(uint32_t n, T *x)
     if (rank == 0) { for (uint32_t i = 1; i < left; i++) x[0] += x[i]; }
 }
 
+/**
+ * @brief Sum reduction: `x[0] = Σ x[i]` (in-place), compile-time size.
+ *
+ * Compile-time-`N` overload of the halving reduce. NumPy equivalent: `np.sum(x)`.
+ *
+ * @tparam T  Scalar type (e.g. `float`, `double`).
+ * @tparam N  Number of elements (compile-time constant).
+ * @param x  In/out vector of length `N`; the sum lands in `x[0]`.
+ */
 template <typename T, uint32_t N>
 __device__ void reduce(T *x)
 {
@@ -35,6 +55,16 @@ __device__ void reduce(T *x)
 }
 
 namespace low_memory {
+    /**
+     * @brief Sum reduction: `x[0] = Σ x[i]` (in-place), low-memory variant.
+     *
+     * Thread 0 serially accumulates all elements into `x[0]`; uses no scratch.
+     * NumPy equivalent: `np.sum(x)`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param n  Number of elements.
+     * @param x  In/out vector of length `n`; the sum lands in `x[0]`.
+     */
     template <typename T>
     __device__ void reduce(uint32_t n, T *x)
     {
@@ -43,6 +73,16 @@ namespace low_memory {
         __syncthreads();
     }
 
+    /**
+     * @brief Sum reduction: `x[0] = Σ x[i]` (in-place), low-memory, compile-time size.
+     *
+     * Compile-time-`N` overload; thread 0 serially accumulates into `x[0]`.
+     * NumPy equivalent: `np.sum(x)`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @tparam N  Number of elements (compile-time constant).
+     * @param x  In/out vector of length `N`; the sum lands in `x[0]`.
+     */
     template <typename T, uint32_t N>
     __device__ void reduce(T *x)
     {
@@ -53,6 +93,18 @@ namespace low_memory {
 }
 
 namespace high_speed {
+    /**
+     * @brief Sum reduction: `x[0] = Σ x[i]` (in-place), warp-shuffle variant.
+     *
+     * Accumulates with a warp-shuffle reduction plus an inter-warp reduction
+     * through shared scratch; the total lands in `x[0]`. NumPy equivalent:
+     * `np.sum(x)`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param n          Number of elements.
+     * @param x          In/out vector of length `n`; the sum lands in `x[0]`.
+     * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per warp).
+     */
     // warp-shuffle + inter-warp reduce; s_scratch: ceil(blockDim/32)*sizeof(T); result in x[0]
     template <typename T>
     __device__ void reduce(uint32_t n, T *x, T *s_scratch)
@@ -74,6 +126,17 @@ namespace high_speed {
         __syncthreads();
     }
 
+    /**
+     * @brief Sum reduction: `x[0] = Σ x[i]` (in-place), warp-shuffle, compile-time size.
+     *
+     * Compile-time-`N` overload of the warp-shuffle reduce. NumPy equivalent:
+     * `np.sum(x)`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @tparam N  Number of elements (compile-time constant).
+     * @param x          In/out vector of length `N`; the sum lands in `x[0]`.
+     * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per warp).
+     */
     template <typename T, uint32_t N>
     __device__ void reduce(T *x, T *s_scratch)
     {
@@ -107,6 +170,22 @@ namespace high_speed {
     // threads (s_scratch[0] holds the total on return); the routine ends on a
     // __syncthreads(), so s_scratch is safe to reuse afterwards.  Threads that
     // have no contribution should pass partial = 0.
+    /**
+     * @brief Block-sum of a per-thread register value: returns `Σ partial`.
+     *
+     * Reduces one PER-THREAD contribution `partial` (one per thread) across the
+     * block and returns the total to EVERY thread, with no intermediate `x[]`
+     * buffer. This is the entry point for fused "compute-a-partial-then-sum"
+     * patterns (e.g. cost/barrier kernels). The result is also broadcast through
+     * `s_scratch[0]`; the routine ends on a `__syncthreads()`, so `s_scratch` is
+     * safe to reuse afterwards. Threads with no contribution should pass `0`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param partial    This thread's contribution to the block sum.
+     * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per warp);
+     *                   on return `s_scratch[0]` holds the total.
+     * @return The block-wide total `Σ partial`, identical on every thread.
+     */
     template <typename T>
     __device__ T reduce(T partial, T *s_scratch)
     {

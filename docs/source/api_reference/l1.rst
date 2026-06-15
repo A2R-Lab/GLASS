@@ -1,0 +1,86 @@
+L1 — Vector Operations
+======================
+
+Single-block vector primitives: scaled sums, copies, scaling, dot products,
+reductions, norms, and elementwise logic. Pure-SIMT (``glass::``) routines are
+listed first, followed by the cooperative-groups (``glass::cgrps::``) variants.
+
+axpy / axpby
+------------
+
+.. doxygenfile:: src/base/L1/axpy.cuh
+
+copy
+----
+
+.. doxygenfile:: src/base/L1/copy.cuh
+
+scal
+----
+
+.. doxygenfile:: src/base/L1/scal.cuh
+
+swap
+----
+
+.. doxygenfile:: src/base/L1/swap.cuh
+
+dot
+---
+
+.. doxygenfile:: src/base/L1/dot.cuh
+
+.. doxygenfile:: src/base/L1/dot_strided.cuh
+
+.. doxygenfile:: src/base/L1/dot_strided_coalesced.cuh
+
+reduce
+------
+
+.. doxygenfile:: src/base/L1/reduce.cuh
+
+prefix_sum
+----------
+
+.. doxygenfile:: src/base/L1/prefix_sum.cuh
+
+Norms
+-----
+
+.. doxygenfile:: src/base/L1/norm.cuh
+
+.. doxygenfile:: src/base/L1/l2norm.cuh
+
+.. doxygenfile:: src/base/L1/infnorm.cuh
+
+.. doxygenfile:: src/base/L1/asum.cuh
+
+clip
+----
+
+.. doxygenfile:: src/base/L1/clip.cuh
+
+set_const
+---------
+
+.. doxygenfile:: src/base/L1/set_const.cuh
+
+identity
+--------
+
+.. doxygenfile:: src/base/L1/ident.cuh
+
+transpose
+---------
+
+.. doxygenfile:: src/base/L1/transpose.cuh
+
+Elementwise logic
+-----------------
+
+.. doxygenfile:: src/base/L1/elementwise_logic.cuh
+
+Cooperative-groups variants (``glass::cgrps::``)
+------------------------------------------------
+
+.. doxygenfile:: src/cgrps/l1.cuh

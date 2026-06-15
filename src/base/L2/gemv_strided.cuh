@@ -10,6 +10,24 @@
 // distributed over rows, and the inner column loop is fully unrolled by the
 // compiler since N and ROW_STRIDE are compile-time constants.
 
+/**
+ * @brief Column-major GEMV with an explicit leading dimension: `y = alpha * A * x + beta * y`.
+ *
+ * Compile-time-`M`,`N` matrix-vector product where `A[i][j] = A[i + j*ROW_STRIDE]`,
+ * letting an `M×N` matrix be addressed inside a larger array (e.g. a spatial 6×6
+ * embedded in a wider buffer, as in GRiD). When `ROW_STRIDE == M` this is
+ * identical to `glass::gemv<T,M,N>`. NumPy equivalent: `y = alpha*A@x + beta*y`.
+ *
+ * @tparam T           Scalar type (e.g. `float`, `double`).
+ * @tparam M           Number of rows of `A` (compile-time constant).
+ * @tparam N           Number of columns of `A` (compile-time constant).
+ * @tparam ROW_STRIDE  Column-major leading dimension of `A` (default `M`).
+ * @param A      Input matrix, addressed at `A[row + col*ROW_STRIDE]`.
+ * @param x      Input vector of length `N`.
+ * @param y      In/out vector of length `M`.
+ * @param alpha  Scalar multiplier on the product.
+ * @param beta   Scalar multiplier on the prior `y`.
+ */
 template <typename T, uint32_t M, uint32_t N, uint32_t ROW_STRIDE = M>
 __device__ void row_strided_gemv(const T* A, const T* x, T* y, T alpha, T beta)
 {
@@ -23,6 +41,21 @@ __device__ void row_strided_gemv(const T* A, const T* x, T* y, T alpha, T beta)
     }
 }
 
+/**
+ * @brief Column-major GEMV with an explicit leading dimension: `y = alpha * A * x`, no-beta overload.
+ *
+ * No-`beta` variant of the strided GEMV that overwrites `y`, with
+ * `A[i][j] = A[i + j*ROW_STRIDE]`. NumPy equivalent: `y = alpha*A@x`.
+ *
+ * @tparam T           Scalar type (e.g. `float`, `double`).
+ * @tparam M           Number of rows of `A` (compile-time constant).
+ * @tparam N           Number of columns of `A` (compile-time constant).
+ * @tparam ROW_STRIDE  Column-major leading dimension of `A` (default `M`).
+ * @param A      Input matrix, addressed at `A[row + col*ROW_STRIDE]`.
+ * @param x      Input vector of length `N`.
+ * @param y      Output vector of length `M`.
+ * @param alpha  Scalar multiplier on the product.
+ */
 template <typename T, uint32_t M, uint32_t N, uint32_t ROW_STRIDE = M>
 __device__ void row_strided_gemv(const T* A, const T* x, T* y, T alpha)
 {

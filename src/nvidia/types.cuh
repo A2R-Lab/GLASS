@@ -1,12 +1,26 @@
 #pragma once
+/**
+ * @file types.cuh
+ * @brief Public types and shared helper macros for the `glass::nvidia::` wrappers.
+ *
+ * Defines the user-facing `glass::nvidia::layout` enum (per-matrix memory
+ * order, used as the LA/LB/LC template arguments of gemm/gemv/...) plus the
+ * private helper macros (_GLASS_CUBLAS_LAYOUT, _GLASS_ASSERT_BLOCKDIM_GEQ)
+ * shared by l2.cuh and l3.cuh. Included before l1/l2/l3/lapack so `layout` is
+ * in scope inside the `glass::nvidia` namespace.
+ */
 #include <cstdint>
 #include <cassert>
 
-// glass::nvidia::layout — matrix memory layout for cuBLASDx-backed wrappers.
-// Maps directly to cublasdx::Arrangement<>: col_major <-> cublasdx::col_major,
-// row_major <-> cublasdx::row_major. Numeric values are part of the public ABI
-// because the DEFINE_NVIDIA_GEMM*_LAYOUT* macros take integer literals (0/1)
-// and static_cast them back to this enum in the explicit specialization.
+/**
+ * @brief Matrix memory layout for the cuBLASDx-backed `glass::nvidia::` wrappers.
+ *
+ * Maps directly to `cublasdx::Arrangement<>`: `col_major` (Fortran/cuBLAS
+ * default) and `row_major` (C-style). Passed per matrix as the LA/LB/LC
+ * template arguments of gemm/gemv/row_strided_*. The numeric values (0/1) are
+ * part of the public ABI: the `DEFINE_NVIDIA_*_LAYOUT*` macros take integer
+ * literals and static_cast them back to this enum in their specializations.
+ */
 namespace glass {
 namespace nvidia {
 

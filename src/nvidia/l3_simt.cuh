@@ -41,6 +41,32 @@
 //                barrier (e.g. a parallel_loop that begins with a sync), so
 //                two back-to-back syncs collapse to one.
 // ---------------------------------------------------------------------------
+/**
+ * @brief Pure-SIMT batched GEMM for a 1D launch (no cuBLASDx, no scratch).
+ *
+ * Runs BATCH independent `C = alpha*A*B + beta*C` products in one block, giving
+ * each batch element TC threads carved out of a 1D launch of `>= TC*BATCH`
+ * threads (canonical `dim3(TC*BATCH, 1, 1)`). Reuses the well-tested
+ * compile-time SIMT gemm core; no shared memory and no DEFINE macro needed, so
+ * any T works. Best for small shapes (max(M,N,K) ≲ 8) where cuBLASDx tile-load
+ * overhead dominates. Use the cuBLASDx gemm_batched (l3.cuh) for larger shapes.
+ *
+ * @tparam T             Scalar type.
+ * @tparam M             Rows of A / C.
+ * @tparam N             Columns of B / C.
+ * @tparam K             Inner dimension.
+ * @tparam BATCH         Number of independent GEMMs.
+ * @tparam TC            Threads assigned to each batch element.
+ * @tparam LA            Memory layout of A.
+ * @tparam LB            Memory layout of B.
+ * @tparam LC            Memory layout of C.
+ * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
+ * @param  alpha         Scaling factor for A*B.
+ * @param  A             Array of BATCH pointers to the M×K matrices.
+ * @param  B             Array of BATCH pointers to the K×N matrices.
+ * @param  beta          Scaling factor for the incoming C.
+ * @param  C             Array of BATCH pointers to the M×N output matrices.
+ */
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t BATCH, uint32_t TC,
           layout LA = layout::col_major,
@@ -74,7 +100,13 @@ __device__ void gemm_batched_1d(T alpha, T* const* A, T* const* B,
     }
 }
 
-// Smem requirement is zero; provided for API symmetry with gemm_batched.
+/**
+ * @brief Shared-memory bytes needed by `gemm_batched_1d<...>` (host-callable).
+ *
+ * Always 0 (the SIMT path needs no scratch); provided for API symmetry with
+ * the cuBLASDx gemm_batched. Template parameters match gemm_batched_1d<>.
+ * constexpr.
+ */
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t BATCH, uint32_t TC,
           layout LA = layout::col_major,
@@ -83,7 +115,12 @@ template <typename T, uint32_t M, uint32_t N, uint32_t K,
           bool TRAILING_SYNC = true>
 constexpr std::size_t gemm_batched_1d_smem_size() { return 0; }
 
-// Total threads required across the whole 1D block.
+/**
+ * @brief Total threads required across the 1D block for `gemm_batched_1d<...>`.
+ *
+ * Returns `TC * BATCH` — launch with at least this many threads. Host-callable
+ * constexpr. Template parameters match gemm_batched_1d<>.
+ */
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t BATCH, uint32_t TC,
           layout LA = layout::col_major,
@@ -114,6 +151,33 @@ constexpr uint32_t gemm_batched_1d_threads() { return TC * BATCH; }
 // function returns with all threads at a block-wide barrier; pass false when
 // fusing with subsequent work that already does its own __syncthreads().
 // ---------------------------------------------------------------------------
+/**
+ * @brief Pure-SIMT batched GEMM (1D launch) with one shared A across BATCH (B,C) pairs.
+ *
+ * Like gemm_batched_1d, but a single A matrix is broadcast to BATCH strided
+ * (B, C) pairs: batch b reads `B + b*B_STRIDE`, writes `C + b*C_STRIDE`. Common
+ * in GRiD's EE-pose-gradient (one transform applied to many destinations).
+ * Avoids building pointer arrays caller-side. No cuBLASDx, no scratch, no
+ * DEFINE macro. Strides default to tightly-packed batches.
+ *
+ * @tparam T             Scalar type.
+ * @tparam M             Rows of A / C.
+ * @tparam N             Columns of B / C.
+ * @tparam K             Inner dimension.
+ * @tparam BATCH         Number of (B,C) pairs sharing A.
+ * @tparam TC            Threads assigned to each batch element.
+ * @tparam B_STRIDE      Element stride between consecutive B matrices.
+ * @tparam C_STRIDE      Element stride between consecutive C matrices.
+ * @tparam LA            Memory layout of A.
+ * @tparam LB            Memory layout of B.
+ * @tparam LC            Memory layout of C.
+ * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
+ * @param  alpha         Scaling factor for A*B.
+ * @param  A_shared      Pointer to the single shared M×K matrix (read-only).
+ * @param  B             Base pointer for the BATCH K×N matrices.
+ * @param  beta          Scaling factor for the incoming C.
+ * @param  C             Base pointer for the BATCH M×N output matrices.
+ */
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t BATCH, uint32_t TC,
           uint32_t B_STRIDE = N * K,
@@ -150,6 +214,12 @@ __device__ void gemm_strided_batched_1d(T alpha, const T* A_shared, T* B,
     }
 }
 
+/**
+ * @brief Shared-memory bytes needed by `gemm_strided_batched_1d<...>` (host-callable).
+ *
+ * Always 0 (SIMT path needs no scratch); provided for API symmetry. Template
+ * parameters match gemm_strided_batched_1d<>. constexpr.
+ */
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t BATCH, uint32_t TC,
           uint32_t B_STRIDE = N * K, uint32_t C_STRIDE = M * K,
@@ -159,6 +229,12 @@ template <typename T, uint32_t M, uint32_t N, uint32_t K,
           bool TRAILING_SYNC = true>
 constexpr std::size_t gemm_strided_batched_1d_smem_size() { return 0; }
 
+/**
+ * @brief Total threads required across the 1D block for `gemm_strided_batched_1d<...>`.
+ *
+ * Returns `TC * BATCH` — launch with at least this many threads. Host-callable
+ * constexpr. Template parameters match gemm_strided_batched_1d<>.
+ */
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t BATCH, uint32_t TC,
           uint32_t B_STRIDE = N * K, uint32_t C_STRIDE = M * K,

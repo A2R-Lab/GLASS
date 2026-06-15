@@ -4,6 +4,18 @@
 #include "reduce.cuh"
 
 namespace low_memory {
+    /**
+     * @brief Euclidean (L2) norm into a separate buffer: `out[0] = ‖a‖₂`, low-memory variant.
+     *
+     * Writes the per-element squares into `out`, then thread 0 serially sums
+     * them and takes the square root, leaving `a` untouched. NumPy equivalent:
+     * `np.linalg.norm(a)`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param N    Number of elements.
+     * @param a    Input vector of length `N`.
+     * @param out  Length-`N` scratch/output buffer; the result lands in `out[0]`.
+     */
     template <typename T>
     __device__ void vector_norm(uint32_t N, T *a, T *out)
     {
@@ -20,6 +32,19 @@ namespace low_memory {
 }
 
 namespace high_speed {
+    /**
+     * @brief Euclidean (L2) norm into a separate buffer: `out[0] = ‖a‖₂`, warp-shuffle variant.
+     *
+     * Accumulates the sum of squares with a warp-shuffle reduction plus an
+     * inter-warp reduction through shared scratch, then takes the square root,
+     * leaving `a` untouched. NumPy equivalent: `np.linalg.norm(a)`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param N          Number of elements.
+     * @param a          Input vector of length `N`.
+     * @param out        Output buffer; the result lands in `out[0]`.
+     * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per warp).
+     */
     template <typename T>
     __device__ void vector_norm(uint32_t N, T *a, T *out, T *s_scratch)
     {
@@ -40,6 +65,18 @@ namespace high_speed {
         __syncthreads();
     }
 
+    /**
+     * @brief Euclidean (L2) norm into a separate buffer: `out[0] = ‖a‖₂`, warp-shuffle, compile-time size.
+     *
+     * Compile-time-`N` overload of the warp-shuffle vector norm; leaves `a`
+     * untouched. NumPy equivalent: `np.linalg.norm(a)`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @tparam N  Number of elements (compile-time constant).
+     * @param a          Input vector of length `N`.
+     * @param out        Output buffer; the result lands in `out[0]`.
+     * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per warp).
+     */
     template <typename T, uint32_t N>
     __device__ void vector_norm(T *a, T *out, T *s_scratch)
     {

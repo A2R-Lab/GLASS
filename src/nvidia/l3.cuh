@@ -79,6 +79,35 @@
 // to `gemm<float, M, N, K, 0, col_major, col_major, col_major, SMS>(...)`.
 // ---------------------------------------------------------------------------
 
+/**
+ * @brief Block-level GEMM that auto-dispatches between SIMT and cuBLASDx.
+ *
+ * Computes `C = alpha*A*B + beta*C` for an M×N×K product. The primary template
+ * consults `should_use_cublasdx<T,M,N,K,SM_VAL>()` at compile time: small
+ * shapes fall through to the dependency-free SIMT path `%glass::gemm` (no
+ * scratch; LA/LB/LC are mapped onto its TRANSPOSE_B / ROW_MAJOR flags), while
+ * shapes the heuristic flags for the vendor backend require a
+ * `DEFINE_NVIDIA_GEMM*` macro in scope (cuBLASDx, needs the MathDx headers /
+ * MATHDX_ROOT) or a static_assert fires. Compile-time sizes only.
+ * NumPy equivalent: `C = alpha*A@B + beta*C`.
+ *
+ * @tparam T             Scalar type.
+ * @tparam M             Rows of A / C.
+ * @tparam N             Columns of B / C.
+ * @tparam K             Inner dimension (cols of A, rows of B).
+ * @tparam BLOCK_THREADS Pinned cuBLASDx BlockDim (0 = vendor picks).
+ * @tparam LA            Memory layout of A.
+ * @tparam LB            Memory layout of B (row_major expresses A*Bᵀ).
+ * @tparam LC            Memory layout of C.
+ * @tparam SM_VAL        Target SM architecture (default = SMS).
+ * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
+ * @param  alpha         Scaling factor for A*B.
+ * @param  A             Pointer to the M×K matrix.
+ * @param  B             Pointer to the K×N matrix.
+ * @param  beta          Scaling factor for the incoming C.
+ * @param  C             Pointer to the M×N output matrix.
+ * @param  smem          Shared scratch (cuBLASDx route only; unused for SIMT).
+ */
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t BLOCK_THREADS = 0,
           layout LA = layout::col_major,
@@ -117,6 +146,23 @@ __device__ void gemm(T alpha, T* A, T* B, T beta, T* C, char* smem)
     }
 }
 
+/**
+ * @brief Shared-memory bytes needed by `gemm<...>` (host-callable).
+ *
+ * Returns the cuBLASDx scratch size for this signature, or 0 when the
+ * auto-dispatch routes to SIMT (which needs no scratch). Template parameters
+ * match gemm<>. constexpr.
+ *
+ * @tparam T             Scalar type.
+ * @tparam M             Rows of A / C.
+ * @tparam N             Columns of B / C.
+ * @tparam K             Inner dimension.
+ * @tparam BLOCK_THREADS Pinned cuBLASDx BlockDim (0 = vendor picks).
+ * @tparam LA            Memory layout of A.
+ * @tparam LB            Memory layout of B.
+ * @tparam LC            Memory layout of C.
+ * @tparam SM_VAL        Target SM architecture.
+ */
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t BLOCK_THREADS = 0,
           layout LA = layout::col_major,
@@ -125,6 +171,23 @@ template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t SM_VAL = SMS>
 constexpr std::size_t gemm_smem_size() { return 0; }
 
+/**
+ * @brief Thread count cuBLASDx wants for `gemm<...>` (host-callable).
+ *
+ * Returns the block thread count to launch with for the cuBLASDx route (the
+ * default 256 is overridden by the matching `DEFINE_NVIDIA_GEMM*`
+ * specialization). Template parameters match gemm<>. constexpr.
+ *
+ * @tparam T             Scalar type.
+ * @tparam M             Rows of A / C.
+ * @tparam N             Columns of B / C.
+ * @tparam K             Inner dimension.
+ * @tparam BLOCK_THREADS Pinned cuBLASDx BlockDim (0 = vendor picks).
+ * @tparam LA            Memory layout of A.
+ * @tparam LB            Memory layout of B.
+ * @tparam LC            Memory layout of C.
+ * @tparam SM_VAL        Target SM architecture.
+ */
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t BLOCK_THREADS = 0,
           layout LA = layout::col_major,
@@ -393,6 +456,35 @@ constexpr uint32_t gemm_threads() { return 256; }
 // C is written as standard column-major with LDC=M (no strided output support).
 // When A_RS==M and B_RS==N this degenerates to standard gemm with one pack pass.
 // ---------------------------------------------------------------------------
+/**
+ * @brief Strided-A/B GEMM that auto-dispatches between SIMT and cuBLASDx.
+ *
+ * Computes `C = alpha*A*B + beta*C` where A and B are stored with arbitrary
+ * leading dimensions A_RS and B_RS. On the SIMT route the strides are used
+ * directly (no packing, no scratch); on the cuBLASDx route A and B are packed
+ * into compact shared scratch and forwarded to gemm<>. C is written standard
+ * column-major (LDC = M; no strided output). When A_RS==M and B_RS==N this
+ * degenerates to standard gemm. cuBLASDx route needs MathDx / MATHDX_ROOT.
+ *
+ * @tparam T             Scalar type.
+ * @tparam M             Rows of A / C.
+ * @tparam N             Columns of B / C.
+ * @tparam K             Inner dimension.
+ * @tparam A_RS          Leading dimension (row stride) of A.
+ * @tparam B_RS          Leading dimension (row stride) of B.
+ * @tparam BLOCK_THREADS Pinned cuBLASDx BlockDim (0 = vendor picks).
+ * @tparam LA            Memory layout of A.
+ * @tparam LB            Memory layout of B.
+ * @tparam LC            Memory layout of C.
+ * @tparam SM_VAL        Target SM architecture.
+ * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
+ * @param  alpha         Scaling factor for A*B.
+ * @param  A             Pointer to the strided M×K matrix.
+ * @param  B             Pointer to the strided K×N matrix.
+ * @param  beta          Scaling factor for the incoming C.
+ * @param  C             Pointer to the M×N output matrix.
+ * @param  smem          Shared scratch (cuBLASDx route only; unused for SIMT).
+ */
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t A_RS = M, uint32_t B_RS = N,
           uint32_t BLOCK_THREADS = 0,
@@ -431,6 +523,24 @@ __device__ void row_strided_gemm(T alpha, T* A, T* B, T beta, T* C, char* smem)
 
 // Returns the cuBLASDx scratch + packing scratch the cuBLASDx route needs,
 // or 0 when the auto-dispatch would route to SIMT (which skips packing).
+/**
+ * @brief Shared-memory bytes needed by `row_strided_gemm<...>` (host-callable).
+ *
+ * Returns 0 when the auto-dispatch routes to SIMT (no packing), or the A+B
+ * packing scratch plus the inner cuBLASDx gemm scratch otherwise. constexpr.
+ *
+ * @tparam T             Scalar type.
+ * @tparam M             Rows of A / C.
+ * @tparam N             Columns of B / C.
+ * @tparam K             Inner dimension.
+ * @tparam A_RS          Leading dimension (row stride) of A.
+ * @tparam B_RS          Leading dimension (row stride) of B.
+ * @tparam BLOCK_THREADS Pinned cuBLASDx BlockDim (0 = vendor picks).
+ * @tparam LA            Memory layout of A.
+ * @tparam LB            Memory layout of B.
+ * @tparam LC            Memory layout of C.
+ * @tparam SM_VAL        Target SM architecture.
+ */
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t A_RS = M, uint32_t B_RS = N,
           uint32_t BLOCK_THREADS = 0,
@@ -462,6 +572,34 @@ constexpr std::size_t row_strided_gemm_smem_size()
 // Required smem:    glass::nvidia::gemm_batched_smem_size<T, M, N, K, BATCH, TC>()
 // ---------------------------------------------------------------------------
 
+/**
+ * @brief cuBLASDx-backed batched GEMM: BATCH independent products in one block.
+ *
+ * Performs BATCH independent `C = alpha*A*B + beta*C` products, one per
+ * `threadIdx.y`, in a single CUDA block (requires a 2D launch
+ * `dim3(TC, BATCH)`). A/B/C are length-BATCH arrays of pointers. The primary
+ * template is a static_assert stub — a `DEFINE_NVIDIA_GEMM_BATCHED_BLOCKDIM(
+ * M,N,K,BATCH,TC)` specialization must be in scope. Needs cuBLASDx / MathDx
+ * (MATHDX_ROOT). For a 1D launch use gemm_batched_1d in l3_simt.cuh.
+ *
+ * @tparam T             Scalar type.
+ * @tparam M             Rows of A / C.
+ * @tparam N             Columns of B / C.
+ * @tparam K             Inner dimension.
+ * @tparam BATCH         Number of independent GEMMs.
+ * @tparam BLOCK_THREADS Pinned per-batch cuBLASDx BlockDim (0 = vendor picks).
+ * @tparam LA            Memory layout of A.
+ * @tparam LB            Memory layout of B.
+ * @tparam LC            Memory layout of C.
+ * @tparam SM_VAL        Target SM architecture.
+ * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
+ * @param  alpha         Scaling factor for A*B.
+ * @param  A             Array of BATCH pointers to the M×K matrices.
+ * @param  B             Array of BATCH pointers to the K×N matrices.
+ * @param  beta          Scaling factor for the incoming C.
+ * @param  C             Array of BATCH pointers to the M×N output matrices.
+ * @param  smem          Shared scratch (BATCH copies of per-GEMM cuBLASDx smem).
+ */
 template <typename T, uint32_t M, uint32_t N, uint32_t K, uint32_t BATCH,
           uint32_t BLOCK_THREADS = 0,
           layout LA = layout::col_major,
@@ -477,6 +615,24 @@ __device__ void gemm_batched(T alpha, T* const* A, T* const* B,
         "add DEFINE_NVIDIA_GEMM_BATCHED_BLOCKDIM(M,N,K,BATCH,TC) in your .cu file.");
 }
 
+/**
+ * @brief Total shared-memory bytes needed by `gemm_batched<...>` (host-callable).
+ *
+ * Returns BATCH copies of the per-GEMM cuBLASDx scratch (set by the matching
+ * `DEFINE_NVIDIA_GEMM_BATCHED_*` specialization; 0 for the unspecialized
+ * primary). Template parameters match gemm_batched<>. constexpr.
+ *
+ * @tparam T             Scalar type.
+ * @tparam M             Rows of A / C.
+ * @tparam N             Columns of B / C.
+ * @tparam K             Inner dimension.
+ * @tparam BATCH         Number of independent GEMMs.
+ * @tparam BLOCK_THREADS Pinned per-batch cuBLASDx BlockDim (0 = vendor picks).
+ * @tparam LA            Memory layout of A.
+ * @tparam LB            Memory layout of B.
+ * @tparam LC            Memory layout of C.
+ * @tparam SM_VAL        Target SM architecture.
+ */
 template <typename T, uint32_t M, uint32_t N, uint32_t K, uint32_t BATCH,
           uint32_t BLOCK_THREADS = 0,
           layout LA = layout::col_major,
@@ -485,6 +641,24 @@ template <typename T, uint32_t M, uint32_t N, uint32_t K, uint32_t BATCH,
           uint32_t SM_VAL = SMS>
 constexpr std::size_t gemm_batched_smem_size() { return 0; }
 
+/**
+ * @brief Total thread count for `gemm_batched<...>` (host-callable).
+ *
+ * Returns the full launch thread count (per-batch BlockDim × BATCH) for the
+ * cuBLASDx route; launch as `dim3(TC, BATCH)`. The default 256 is overridden by
+ * the matching `DEFINE_NVIDIA_GEMM_BATCHED_*` specialization. constexpr.
+ *
+ * @tparam T             Scalar type.
+ * @tparam M             Rows of A / C.
+ * @tparam N             Columns of B / C.
+ * @tparam K             Inner dimension.
+ * @tparam BATCH         Number of independent GEMMs.
+ * @tparam BLOCK_THREADS Pinned per-batch cuBLASDx BlockDim (0 = vendor picks).
+ * @tparam LA            Memory layout of A.
+ * @tparam LB            Memory layout of B.
+ * @tparam LC            Memory layout of C.
+ * @tparam SM_VAL        Target SM architecture.
+ */
 template <typename T, uint32_t M, uint32_t N, uint32_t K, uint32_t BATCH,
           uint32_t BLOCK_THREADS = 0,
           layout LA = layout::col_major,

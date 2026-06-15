@@ -32,6 +32,28 @@
 //
 // s_scratch must hold ceil(blockDim/32) elements of T.
 
+/**
+ * @brief Block-cooperative strided inner product with coalesced loads (DOT, strided).
+ *
+ * Computes the same value as `dot_strided<T,N,SX,SY>` (`Σ x[i*SX] * y[i*SY]`),
+ * but the WHOLE block cooperates on one dot product: the `i`-loop is distributed
+ * across threads with a block stride so consecutive ranks touch addresses `SX`
+ * apart, turning a per-warp strided gather into a coalesced burst when `SX` is
+ * the inner contiguous axis. Partial sums are combined via warp-shuffle plus a
+ * shared-scratch block reduction; the scalar result is broadcast to `*out`
+ * (visible to all threads after the trailing barrier). Requires a block-wide,
+ * `__syncthreads`-safe launch — use `dot_strided` instead in a per-thread
+ * context. NumPy equivalent: `np.dot(x[::SX], y[::SY])`.
+ *
+ * @tparam T   Scalar type (e.g. `float`, `double`).
+ * @tparam N   Number of products to accumulate (compile-time constant).
+ * @tparam SX  Element stride into `x` (compile-time, default 1).
+ * @tparam SY  Element stride into `y` (compile-time, default 1).
+ * @param x          Input vector, accessed at indices `0, SX, 2*SX, …`.
+ * @param y          Input vector, accessed at indices `0, SY, 2*SY, …`.
+ * @param out        Destination for the scalar result (broadcast to all threads).
+ * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per warp).
+ */
 template <typename T, uint32_t N, uint32_t SX = 1, uint32_t SY = 1>
 __device__ void dot_strided_coalesced(const T* x, const T* y, T* out, T* s_scratch)
 {

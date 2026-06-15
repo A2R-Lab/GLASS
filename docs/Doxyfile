@@ -1,0 +1,57 @@
+# Doxygen configuration for GLASS.
+#
+# Produces XML only (consumed by Breathe — see source/conf.py). Run from the
+# docs/ directory: `doxygen Doxyfile`. Paths below are relative to docs/.
+
+PROJECT_NAME           = "GLASS"
+PROJECT_BRIEF          = "GPU Linear Algebra for Single-block Systems"
+OUTPUT_DIRECTORY       = doxygen
+
+# Record file paths as "src/..." / "glass.cuh" (strip the leading "../") so the
+# Breathe `.. doxygenfile::` directives in the API reference resolve predictably.
+FULL_PATH_NAMES        = YES
+STRIP_FROM_PATH        = ..
+
+# --- What to parse ---------------------------------------------------------
+INPUT                  = ../src ../glass.cuh ../glass-cgrps.cuh ../glass-nvidia.cuh
+RECURSIVE              = YES
+# The live public API is src/base/** (-> glass::), src/cgrps/** (-> glass::cgrps::)
+# and src/nvidia/** (-> glass::nvidia::). The top-level src/L1, src/L2, src/L3
+# dirs are legacy duplicates not included by any header — keep them out of the
+# API reference to avoid duplicate-symbol noise.
+EXCLUDE                = ../src/L1 ../src/L2 ../src/L3
+FILE_PATTERNS          = *.cuh *.cu
+# Treat CUDA headers as C++ so __device__/templates parse correctly.
+EXTENSION_MAPPING      = cuh=C++ cu=C++
+
+# --- What to emit ----------------------------------------------------------
+GENERATE_XML           = YES
+GENERATE_HTML          = NO
+GENERATE_LATEX         = NO
+XML_OUTPUT             = xml
+
+# Only document symbols that carry a Doxygen comment block. Undocumented
+# internal *_impl helpers therefore stay out of the API reference (no broken
+# Breathe references, no noise).
+EXTRACT_ALL            = NO
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+HIDE_UNDOC_MEMBERS     = YES
+HIDE_UNDOC_CLASSES     = YES
+
+# --- Preprocessing ---------------------------------------------------------
+ENABLE_PREPROCESSING   = YES
+MACRO_EXPANSION        = YES
+EXPAND_ONLY_PREDEF     = NO
+# Strip CUDA execution-space qualifiers so signatures read cleanly.
+PREDEFINED             = __device__= __host__= __global__= __forceinline__= \
+                         __restrict__= GLASS_INLINE=
+
+# --- Misc ------------------------------------------------------------------
+QUIET                  = YES
+WARN_IF_UNDOCUMENTED   = NO
+WARN_NO_PARAMDOC       = NO
+JAVADOC_AUTOBRIEF      = YES
+QT_AUTOBRIEF           = YES
+OPTIMIZE_OUTPUT_FOR_C  = NO
+BUILTIN_STL_SUPPORT    = YES

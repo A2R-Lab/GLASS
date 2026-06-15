@@ -3,6 +3,17 @@
 #include <math.h>
 
 namespace low_memory {
+    /**
+     * @brief Sum of absolute values: `out[0] = Σ|x[i]|` (ASUM), low-memory variant.
+     *
+     * Writes the per-element absolute values into `out`, then thread 0 serially
+     * accumulates them into `out[0]`. NumPy equivalent: `np.sum(np.abs(x))`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param n    Number of elements.
+     * @param x    Input vector of length `n`.
+     * @param out  Length-`n` scratch/output buffer; the result lands in `out[0]`.
+     */
     template <typename T>
     __device__ void asum(uint32_t n, T *x, T *out)
     {
@@ -16,6 +27,19 @@ namespace low_memory {
 }
 
 namespace high_speed {
+    /**
+     * @brief Sum of absolute values: `x[0] = Σ|x[i]|` (ASUM), warp-shuffle variant.
+     *
+     * Computes the absolute-value sum with a warp-shuffle reduction plus an
+     * inter-warp reduction through shared scratch. The result is written to
+     * `x[0]` (destructive — overwrites the input). NumPy equivalent:
+     * `np.sum(np.abs(x))`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param n          Number of elements.
+     * @param x          In/out vector of length `n`; result lands in `x[0]`.
+     * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per warp).
+     */
     // s_scratch: ceil(blockDim/32)*sizeof(T); result in x[0] (overwrites input!)
     template <typename T>
     __device__ void asum(uint32_t n, T *x, T *s_scratch)
@@ -37,6 +61,17 @@ namespace high_speed {
         __syncthreads();
     }
 
+    /**
+     * @brief Sum of absolute values: `x[0] = Σ|x[i]|` (ASUM), compile-time size.
+     *
+     * Compile-time-`N` overload of the warp-shuffle ASUM; the result is written
+     * to `x[0]` (destructive). NumPy equivalent: `np.sum(np.abs(x))`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @tparam N  Number of elements (compile-time constant).
+     * @param x          In/out vector of length `N`; result lands in `x[0]`.
+     * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per warp).
+     */
     template <typename T, uint32_t N>
     __device__ void asum(T *x, T *s_scratch)
     {

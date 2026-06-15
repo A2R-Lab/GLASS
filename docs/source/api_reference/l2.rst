@@ -1,0 +1,27 @@
+L2 — Matrix-Vector Operations
+=============================
+
+General matrix-vector products (``gemv``), rank-1 updates (``ger``), and the
+strided / segmented ``gemv`` variants.
+
+gemv
+----
+
+.. doxygenfile:: src/base/L2/gemv.cuh
+
+Strided / segmented gemv
+------------------------
+
+.. doxygenfile:: src/base/L2/gemv_strided.cuh
+
+.. doxygenfile:: src/base/L2/gemv_segmented.cuh
+
+ger
+---
+
+.. doxygenfile:: src/base/L2/ger.cuh
+
+Cooperative-groups variants (``glass::cgrps::``)
+------------------------------------------------
+
+.. doxygenfile:: src/cgrps/l2.cuh

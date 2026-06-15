@@ -1,4 +1,25 @@
 #pragma once
+/**
+ * @file glass-nvidia.cuh
+ * @brief Umbrella header for the `glass::nvidia::` backend (CUB / cuBLASDx / cuSOLVERDx).
+ *
+ * Include this (instead of, or in addition to, glass.cuh) to access the
+ * vendor-accelerated single-block linear-algebra paths. It pulls in:
+ *   - L1 (l1.cuh)         CUB-backed block reductions: reduce / dot / l2norm.
+ *   - query_simt.cuh      SIMT-only dispatch + diagnostic helpers
+ *                         (should_use_cublasdx<>, print_dispatch<>, ...).
+ *   - L3 SIMT (l3_simt.cuh)  1D-launch batched GEMMs (no cuBLASDx dependency).
+ *   - L2 (l2.cuh)         cuBLASDx-backed gemv + DEFINE_NVIDIA_GEMV* macros.
+ *   - L3 (l3.cuh)         cuBLASDx-backed gemm / gemm_batched / row_strided_*.
+ *   - query.cuh           Host-side constexpr BlockDim query API.
+ *   - LAPACK (lapack.cuh) cuSOLVERDx chol/trsm/posv/getrf/gesv/geqrf/gels.
+ *
+ * The L2/L3/LAPACK wrappers gate themselves on GLASS_HAVE_CUBLASDX /
+ * GLASS_HAVE_CUSOLVERDX, auto-detected from include order. Set MATHDX_ROOT and
+ * define GLASS_BENCH_CUBLASDX / GLASS_BENCH_CUSOLVERDX to force-enable them. The
+ * `glass::nvidia::*` primary templates auto-dispatch between pure-SIMT and the
+ * vendor backend at compile time via the size heuristic / tuning table.
+ */
 #include "glass.cuh"
 
 // System headers must be included before namespace wrapping so their internal
@@ -110,6 +131,22 @@ namespace nvidia {
     // when nonzero, or skip the buffer entirely.
     // ---------------------------------------------------------------------
 
+    /**
+     * @brief Shared-memory bytes the dispatched `gemm<...>` needs (host-callable).
+     *
+     * Self-documenting alias for `gemm_smem_size<...>()`: returns 0 for shapes
+     * the auto-dispatch routes to SIMT, or the cuBLASDx scratch size otherwise.
+     *
+     * @tparam T             Scalar type.
+     * @tparam M             Rows of A / C.
+     * @tparam N             Columns of B / C.
+     * @tparam K             Inner dimension (cols of A, rows of B).
+     * @tparam BLOCK_THREADS Pinned cuBLASDx BlockDim (0 = vendor picks).
+     * @tparam LA            Memory layout of A.
+     * @tparam LB            Memory layout of B.
+     * @tparam LC            Memory layout of C.
+     * @tparam SM_VAL        Target SM architecture.
+     */
     template <typename T, uint32_t M, uint32_t N, uint32_t K,
               uint32_t BLOCK_THREADS = 0,
               layout LA = layout::col_major,
@@ -120,6 +157,21 @@ namespace nvidia {
         return gemm_smem_size<T, M, N, K, BLOCK_THREADS, LA, LB, LC, SM_VAL>();
     }
 
+    /**
+     * @brief Shared-memory bytes the dispatched `gemv<...>` needs (host-callable).
+     *
+     * Self-documenting alias for `gemv_smem_size<...>()`: 0 when SIMT-routed,
+     * cuBLASDx scratch size otherwise.
+     *
+     * @tparam T             Scalar type.
+     * @tparam M             Rows of A / length of y.
+     * @tparam N             Columns of A / length of x.
+     * @tparam BLOCK_THREADS Pinned cuBLASDx BlockDim (0 = vendor picks).
+     * @tparam LA            Memory layout of A.
+     * @tparam LB            Memory layout of B (degenerate for a vector).
+     * @tparam LC            Memory layout of C (degenerate for a vector).
+     * @tparam SM_VAL        Target SM architecture.
+     */
     template <typename T, uint32_t M, uint32_t N,
               uint32_t BLOCK_THREADS = 0,
               layout LA = layout::col_major,
@@ -130,6 +182,24 @@ namespace nvidia {
         return gemv_smem_size<T, M, N, BLOCK_THREADS, LA, LB, LC, SM_VAL>();
     }
 
+    /**
+     * @brief Shared-memory bytes the dispatched `row_strided_gemm<...>` needs (host-callable).
+     *
+     * Self-documenting alias for `row_strided_gemm_smem_size<...>()`: 0 when
+     * SIMT-routed (strides used directly), packing + cuBLASDx scratch otherwise.
+     *
+     * @tparam T             Scalar type.
+     * @tparam M             Rows of A / C.
+     * @tparam N             Columns of B / C.
+     * @tparam K             Inner dimension.
+     * @tparam A_RS          Leading dimension (row stride) of A.
+     * @tparam B_RS          Leading dimension (row stride) of B.
+     * @tparam BLOCK_THREADS Pinned cuBLASDx BlockDim (0 = vendor picks).
+     * @tparam LA            Memory layout of A.
+     * @tparam LB            Memory layout of B.
+     * @tparam LC            Memory layout of C.
+     * @tparam SM_VAL        Target SM architecture.
+     */
     template <typename T, uint32_t M, uint32_t N, uint32_t K,
               uint32_t A_RS = M, uint32_t B_RS = N,
               uint32_t BLOCK_THREADS = 0,
@@ -142,6 +212,22 @@ namespace nvidia {
                                           BLOCK_THREADS, LA, LB, LC, SM_VAL>();
     }
 
+    /**
+     * @brief Shared-memory bytes the dispatched `row_strided_gemv<...>` needs (host-callable).
+     *
+     * Self-documenting alias for `row_strided_gemv_smem_size<...>()`: 0 when
+     * SIMT-routed, A-packing + cuBLASDx scratch otherwise.
+     *
+     * @tparam T             Scalar type.
+     * @tparam M             Rows of A / length of y.
+     * @tparam N             Columns of A / length of x.
+     * @tparam ROW_STRIDE    Leading dimension (row stride) of A.
+     * @tparam BLOCK_THREADS Pinned cuBLASDx BlockDim (0 = vendor picks).
+     * @tparam LA            Memory layout of A.
+     * @tparam LB            Memory layout of B (degenerate for a vector).
+     * @tparam LC            Memory layout of C (degenerate for a vector).
+     * @tparam SM_VAL        Target SM architecture.
+     */
     template <typename T, uint32_t M, uint32_t N, uint32_t ROW_STRIDE = M,
               uint32_t BLOCK_THREADS = 0,
               layout LA = layout::col_major,

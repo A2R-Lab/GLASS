@@ -1,6 +1,17 @@
 #pragma once
 #include <cstdint>
 
+/**
+ * @brief Infinity norm: `x[0] = ‖x‖∞ = max|x[i]|` (in-place, destructive).
+ *
+ * Computes the maximum absolute value via a block-wide halving reduction; the
+ * result lands in `x[0]` (the input is overwritten). NumPy equivalent:
+ * `np.max(np.abs(x))`.
+ *
+ * @tparam T  Scalar type (e.g. `float`, `double`).
+ * @param n  Number of elements.
+ * @param x  In/out vector of length `n`; the result lands in `x[0]`.
+ */
 template <typename T>
 __device__ void infnorm(uint32_t n, T *x)
 {
@@ -19,6 +30,16 @@ __device__ void infnorm(uint32_t n, T *x)
     if (ind == 0) { for (uint32_t i = 1; i < left; i++) x[0] = max(abs(x[0]), abs(x[i])); }
 }
 
+/**
+ * @brief Infinity norm: `x[0] = ‖x‖∞ = max|x[i]|`, compile-time size.
+ *
+ * Compile-time-`N` overload (in-place, destructive). NumPy equivalent:
+ * `np.max(np.abs(x))`.
+ *
+ * @tparam T  Scalar type (e.g. `float`, `double`).
+ * @tparam N  Number of elements (compile-time constant).
+ * @param x  In/out vector of length `N`; the result lands in `x[0]`.
+ */
 template <typename T, uint32_t N>
 __device__ void infnorm(T *x)
 {
