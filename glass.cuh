@@ -52,6 +52,12 @@ namespace glass {
     #include "./src/base/L3/inv.cuh"
     #include "./src/base/L3/chol_InPlace.cuh"
     #include "./src/base/L3/trsm.cuh"
+
+    /*      banded  */
+    #include "./src/base/banded/bdmv.cuh"
+
+    /*      solvers */
+    #include "./src/base/pcg/solve.cuh"
 }
 
 /**
