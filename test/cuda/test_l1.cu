@@ -60,6 +60,16 @@ __global__ void k_reduce_simple_lm(int n, float* x) { glass::low_memory::reduce(
 __global__ void k_reduce_simple_hs(int n, float* x, float* scratch) {
     glass::high_speed::reduce(n, x, scratch);
 }
+// Single-warp reduce (launch <<<1,32>>>): raw __shfl, no scratch, no inter-warp combine.
+__global__ void k_reduce_warp(int n, float* x) { glass::warp::reduce(n, x); }
+// Single-warp register-partial reduce: each lane forms a strided partial, gets the warp total back.
+__global__ void k_reduce_partial_warp(int n, float* x, float* out) {
+    uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+    float partial = 0.0f;
+    for (uint32_t i = lane; i < (uint32_t)n; i += 32) partial += x[i];
+    float total = glass::warp::reduce(partial);
+    out[0] = total;   // broadcast check: every lane holds the same `total`
+}
 // Register-partial -> block-sum overload: each thread forms a per-thread partial
 // (here a strided slice of x, mirroring a cost/barrier kernel's per-thread term),
 // passes it directly to reduce(partial, scratch), and gets the block total back.
@@ -207,6 +217,7 @@ static bool is_cg(const char* v)     { return strcmp(v, "cg") == 0; }
 static bool is_simple(const char* v) { return strcmp(v, "simple") == 0; }
 static bool is_lm(const char* v)     { return strcmp(v, "simple_lm") == 0; }
 static bool is_hs(const char* v)     { return strcmp(v, "simple_hs") == 0; }
+static bool is_warp(const char* v)   { return strcmp(v, "warp") == 0; }
 
 // ─── main ────────────────────────────────────────────────────────────────────
 
@@ -290,6 +301,8 @@ int main(int argc, char** argv) {
             k_reduce_cg<<<1, THREADS>>>(n, dx);
         } else if (is_lm(ver)) {
             k_reduce_simple_lm<<<1, THREADS>>>(n, dx);
+        } else if (is_warp(ver)) {
+            k_reduce_warp<<<1, 32>>>(n, dx);
         } else {
             k_reduce_simple_hs<<<1, THREADS>>>(n, dx, d_scratch);
         }
@@ -299,7 +312,11 @@ int main(int argc, char** argv) {
     } else if (strcmp(op, "reduce_partial") == 0) {
         float* dx  = read_device_vec(argv[4], n);
         float* dout = alloc_device_vec(1);
-        k_reduce_partial_hs<<<1, THREADS>>>(n, dx, dout, d_scratch);
+        if (is_warp(ver)) {
+            k_reduce_partial_warp<<<1, 32>>>(n, dx, dout);
+        } else {
+            k_reduce_partial_hs<<<1, THREADS>>>(n, dx, dout, d_scratch);
+        }
         cudaDeviceSynchronize();
         print_device_vec(dout, 1);
 

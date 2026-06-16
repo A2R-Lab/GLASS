@@ -227,6 +227,37 @@ def test_trsm(bins, n, version):
     assert np.allclose(residual, 0, atol=1e-3)
 
 
+# ─── warp:: (single warp, launched <<<1,32>>>) ────────────────────────────────
+
+def test_gemm_warp_4x4x4(bins):
+    # glass::warp::gemm<float,4,4,4>: C = alpha*A@B + beta*C, col-major, one warp.
+    m, n, k = 4, 4, 4
+    alpha, beta = 1.5, 0.3
+    A = RNG.random((m, n)).astype(np.float32)
+    B = RNG.random((n, k)).astype(np.float32)
+    C = RNG.random((m, k)).astype(np.float32)
+    C0 = C.copy()
+    result = run_op(bins["l3"], "gemm_warp", "warp",
+                    args=[m, n, k, alpha, beta],
+                    inputs=[np.asfortranarray(A).ravel(order='F'),
+                            np.asfortranarray(B).ravel(order='F'),
+                            np.asfortranarray(C).ravel(order='F')])
+    expected = (alpha * A @ B + beta * C0).astype(np.float32)
+    mat = result.reshape(m, k, order='F')
+    assert np.allclose(mat, expected, rtol=RTOL, atol=ATOL)
+
+
+def test_posv_warp_7(bins):
+    # Single-warp SPD solve A x = b via warp:: chol + trsm + trsm_transpose (N=7).
+    n = 7
+    A = make_spd(n)
+    b = RNG.random(n).astype(np.float32)
+    A_col = np.asfortranarray(A).ravel(order='F')
+    result = run_op(bins["l3"], "posv_warp", "warp", args=[n], inputs=[A_col, b])
+    residual = A.astype(np.float64) @ result.astype(np.float64) - b.astype(np.float64)
+    assert np.allclose(residual, 0, atol=1e-3)
+
+
 # ─── nvidia::gemm_batched_1d (SIMT, 1D launch) ────────────────────────────────
 
 def _flatten_col(mats):

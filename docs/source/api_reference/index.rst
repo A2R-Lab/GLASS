@@ -13,6 +13,8 @@ The reference is organized by BLAS level and by backend:
 * **L3** — matrix operations (gemm and variants, inverse, Cholesky, trsm).
 * **NVIDIA backend** — the ``glass::nvidia::`` CUB / cuBLASDx / cuSOLVERDx paths
   and their host-side query/size helpers.
+* **Warp-scoped** — the ``glass::warp::`` single-warp SIMT variants for
+  warp-per-problem kernels.
 
 .. note::
 
@@ -28,3 +30,4 @@ The reference is organized by BLAS level and by backend:
    l2
    l3
    nvidia
+   warp

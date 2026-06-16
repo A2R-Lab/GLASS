@@ -96,6 +96,20 @@ __global__ void k_trsm_simple(int n, float* L, float* b) {
     glass::trsm(n, L, b);
 }
 
+// ─── warp:: kernels (launch <<<1,32>>>) ──────────────────────────────────────
+// Single-warp 4×4×4 GEMM (the mat4-style transform-multiply replacement).
+__global__ void k_gemm_warp_4x4x4(float alpha, float* A, float* B, float beta, float* C) {
+    glass::warp::gemm<float, 4, 4, 4>(alpha, A, B, beta, C);
+}
+// Single-warp SPD solve A x = b (N=7): factor A=LLᵀ, then forward + transpose solves.
+// Exercises warp::cholDecomp_InPlace + warp::trsm + warp::trsm_transpose together
+// (the HJCD normal-equations pattern). b is overwritten with the solution.
+__global__ void k_posv_warp_7(float* A, float* b) {
+    glass::warp::cholDecomp_InPlace<float, 7>(A);
+    glass::warp::trsm<float, 7>(A, b);
+    glass::warp::trsm_transpose<float, 7>(A, b);
+}
+
 // ─── gemm row-major kernels ───────────────────────────────────────────────────
 __global__ void k_gemm_rowmajor(int m, int n, int k, float alpha, float* A, float* B, float beta, float* C) {
     glass::gemm<float, false, true>(m, n, k, alpha, A, B, beta, C);
@@ -201,6 +215,27 @@ int main(int argc, char** argv) {
         float* db = read_device_vec(argv[5], n);
         if (cg) k_trsm_cg<<<1, THREADS>>>(n, dL, db);
         else    k_trsm_simple<<<1, THREADS>>>(n, dL, db);
+        cudaDeviceSynchronize();
+        print_device_vec(db, n);
+
+    } else if (strcmp(op, "gemm_warp") == 0) {
+        int m = atoi(argv[3]);   // fixed 4×4×4 warp kernel
+        int n = atoi(argv[4]);
+        int k = atoi(argv[5]);
+        float alpha = atof(argv[6]);
+        float beta  = atof(argv[7]);
+        float* dA = read_device_vec(argv[8], m * n);
+        float* dB = read_device_vec(argv[9], n * k);
+        float* dC = read_device_vec(argv[10], m * k);
+        k_gemm_warp_4x4x4<<<1, 32>>>(alpha, dA, dB, beta, dC);
+        cudaDeviceSynchronize();
+        print_device_vec(dC, m * k);
+
+    } else if (strcmp(op, "posv_warp") == 0) {
+        int n = atoi(argv[3]);   // fixed N=7 warp SPD solve
+        float* dA = read_device_vec(argv[4], n * n);
+        float* db = read_device_vec(argv[5], n);
+        k_posv_warp_7<<<1, 32>>>(dA, db);
         cudaDeviceSynchronize();
         print_device_vec(db, n);
 

@@ -208,3 +208,73 @@ namespace high_speed {
         return total;
     }
 }
+
+namespace warp {
+    // Single-warp reductions: raw __shfl, no shared scratch, no inter-warp combine.
+    // For warp-per-problem kernels (one 32-lane warp owns the reduction). The
+    // caller must run a full warp (mask 0xffffffff); partial-warp callers must
+    // pass 0 from inactive lanes. Distinct from high_speed::reduce, which is
+    // block-scoped (warp-shuffle + shared inter-warp combine).
+
+    /**
+     * @brief Sum reduction within one warp: `x[0] = Σ x[i]` (in-place), single-warp.
+     *
+     * One 32-lane warp sums the vector with `__shfl_down_sync`; the total lands in
+     * `x[0]` (input overwritten). No shared scratch, no inter-warp combine. NumPy
+     * equivalent: `np.sum(x)`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param n  Number of elements.
+     * @param x  In/out vector of length `n`; the sum lands in `x[0]`.
+     */
+    template <typename T>
+    __device__ void reduce(uint32_t n, T *x)
+    {
+        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+        T val = static_cast<T>(0);
+        for (uint32_t i = lane; i < n; i += 32) val += x[i];
+        for (int off = 16; off > 0; off >>= 1) val += __shfl_down_sync(0xffffffff, val, off);
+        if (lane == 0) x[0] = val;
+        __syncwarp();
+    }
+
+    /**
+     * @brief Sum reduction within one warp: `x[0] = Σ x[i]` (in-place), single-warp, compile-time size.
+     *
+     * Compile-time-`N` overload. NumPy equivalent: `np.sum(x)`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @tparam N  Number of elements (compile-time constant).
+     * @param x  In/out vector of length `N`; the sum lands in `x[0]`.
+     */
+    template <typename T, uint32_t N>
+    __device__ void reduce(T *x)
+    {
+        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+        T val = static_cast<T>(0);
+        for (uint32_t i = lane; i < N; i += 32) val += x[i];
+        for (int off = 16; off > 0; off >>= 1) val += __shfl_down_sync(0xffffffff, val, off);
+        if (lane == 0) x[0] = val;
+        __syncwarp();
+    }
+
+    /**
+     * @brief Warp-sum of a per-lane register value: returns `Σ partial` on every lane.
+     *
+     * Reduces one PER-LANE contribution across a single warp and broadcasts the
+     * total back to all 32 lanes — no `x[]` buffer, no shared scratch. The entry
+     * point for fused "compute-a-partial-then-sum" patterns inside a warp (e.g.
+     * row-norm / residual accumulation). Inactive lanes should pass `0`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param partial  This lane's contribution.
+     * @return The warp-wide total `Σ partial`, identical on every lane.
+     */
+    template <typename T>
+    __device__ T reduce(T partial)
+    {
+        T val = partial;
+        for (int off = 16; off > 0; off >>= 1) val += __shfl_down_sync(0xffffffff, val, off);
+        return __shfl_sync(0xffffffff, val, 0);
+    }
+}

@@ -110,6 +110,24 @@ def test_reduce_partial(bins, n):
     assert np.allclose(float(result[0]), expected, rtol=1e-3, atol=1e-4)
 
 
+# ─── warp::reduce (single warp, launched <<<1,32>>>) ──────────────────────────
+
+@pytest.mark.parametrize("n", SIZES)
+def test_reduce_warp(bins, n):
+    x = RNG.random(n).astype(np.float32)
+    result = run_op(bins["l1"], "reduce", "warp", args=[n], inputs=[x])
+    expected = float(np.sum(x.astype(np.float64)))
+    assert np.allclose(float(result[0]), expected, rtol=1e-3, atol=1e-4)
+
+
+@pytest.mark.parametrize("n", SIZES)
+def test_reduce_partial_warp(bins, n):
+    x = RNG.random(n).astype(np.float32)
+    result = run_op(bins["l1"], "reduce_partial", "warp", args=[n], inputs=[x])
+    expected = float(np.sum(x.astype(np.float64)))
+    assert np.allclose(float(result[0]), expected, rtol=1e-3, atol=1e-4)
+
+
 # ─── l2norm ───────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("n", SIZES)
