@@ -193,6 +193,11 @@ __device__ void cholDecomp_InPlace(uint32_t n, T *s_A,
             s_A[row*n + row] = sqrtf(val - sum);
         }
         g.sync();
+        // NOTE: the pivot s_A[row*n+row] is broadcast by re-reading shared after g.sync().
+        // Safe for a block group (the default — g.sync() is a full block fence). If this is
+        // ever called with a warp-tiled group, prefer g.shfl(pivot, 0) — a shared re-read at
+        // warp scope can be cached stale by nvcc under caller __restrict__ (see the
+        // glass::warp::cholDecomp_InPlace shfl fix in base/L3/chol_InPlace.cuh).
         for (uint32_t col = g.thread_rank() + row + 1; col < n; col += g.size()) {
             T sum = static_cast<T>(0);
             for (uint32_t kk = 0; kk < row; kk++) sum += s_A[kk*n+col]*s_A[kk*n+row];
@@ -223,6 +228,8 @@ __device__ void trsm(uint32_t n, T *L, T *b,
     for (uint32_t col = 0; col < n; col++) {
         if (g.thread_rank() == 0) b[col] /= L[col*n + col];
         g.sync();
+        // broadcast via shared re-read; safe for a block group (full fence). For a warp-tiled
+        // group prefer g.shfl(b[col], 0) — see the glass::warp::trsm shfl fix (base/L3/trsm.cuh).
         T factor = b[col];
         for (uint32_t row = g.thread_rank() + col + 1; row < n; row += g.size())
             b[row] -= L[col*n + row] * factor;

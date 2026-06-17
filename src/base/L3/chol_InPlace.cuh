@@ -75,14 +75,21 @@ namespace warp {
     {
         uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
         for (uint32_t k = 0; k < N; k++) {
+            T diag = static_cast<T>(0);
             if (lane == 0) {
                 T sum = static_cast<T>(0);
                 T val = s_A[k*N + k];
                 for (uint32_t r = 0; r < k; r++) sum += s_A[r*N + k]*s_A[r*N + k];
-                s_A[k*N + k] = sqrt(val - sum);
+                diag = sqrt(val - sum);
+                s_A[k*N + k] = diag;
             }
-            __syncwarp();
-            T diag = s_A[k*N + k];
+            // Broadcast the pivot from lane 0's REGISTER via __shfl_sync rather than having
+            // every lane re-read s_A[k*N+k] from shared. The shared re-read is the same
+            // write-then-read-same-location pattern that nvcc can cache stale when the buffer
+            // is reached through a caller `__restrict__` pointer (observed: in-place warp solve
+            // gave wrong results for ~10% of inputs under -restrict; shfl broadcast is immune
+            // and matches glass::warp::reduce's own shfl-based design).
+            diag = __shfl_sync(0xffffffffu, diag, 0);
             for (uint32_t row = lane + k + 1; row < N; row += 32) {
                 T sum = static_cast<T>(0);
                 for (uint32_t kk = 0; kk < k; kk++) sum += s_A[kk*N + row]*s_A[kk*N + k];

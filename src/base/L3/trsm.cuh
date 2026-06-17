@@ -65,9 +65,11 @@ namespace warp {
     {
         uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
         for (uint32_t col = 0; col < N; col++) {
-            if (lane == 0) b[col] /= L[col*N + col];
-            __syncwarp();
-            T factor = b[col];
+            T factor = static_cast<T>(0);
+            if (lane == 0) { factor = b[col] / L[col*N + col]; b[col] = factor; }
+            // broadcast from lane 0's register (not a shared re-read of b[col]) — see the note
+            // in warp::cholDecomp_InPlace; immune to the nvcc __restrict__ stale-cache miscompile.
+            factor = __shfl_sync(0xffffffffu, factor, 0);
             for (uint32_t row = lane + col + 1; row < N; row += 32)
                 b[row] -= L[col*N + row] * factor;
             __syncwarp();
@@ -93,9 +95,11 @@ namespace warp {
     {
         uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
         for (int32_t col = (int32_t)N - 1; col >= 0; col--) {
-            if (lane == 0) b[col] /= L[col*N + col];
-            __syncwarp();
-            T factor = b[col];
+            T factor = static_cast<T>(0);
+            if (lane == 0) { factor = b[col] / L[col*N + col]; b[col] = factor; }
+            // broadcast from lane 0's register (not a shared re-read of b[col]); immune to the
+            // nvcc __restrict__ stale-cache miscompile — see warp::cholDecomp_InPlace.
+            factor = __shfl_sync(0xffffffffu, factor, 0);
             // eliminate x[col] from rows i < col:  b[i] -= (Lᵀ)_{i,col} x[col] = L_{col,i} x[col]
             for (uint32_t i = lane; i < (uint32_t)col; i += 32)
                 b[i] -= L[i*N + col] * factor;
