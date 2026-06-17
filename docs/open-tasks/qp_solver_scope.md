@@ -4,10 +4,15 @@
 unexposed.**
 
 GLASS's charter is **single-block linear-algebra primitives** (BLAS/LAPACK-style
-`__device__` routines). The `box_qp` solver (`src/L3/box_qp.cuh`) is
-**optimization, not linear algebra** — it loops to convergence with a line
-search. It reuses GLASS L1/L3 primitives and is convenient to colocate, but it
-arguably doesn't belong in GLASS's public surface.
+`__device__` routines). **Linear-system solvers are explicitly in scope** — both
+direct (`chol`/`trsm`/`invertMatrix`) and iterative (`glass::pcg::solve`); these
+are public, first-class GLASS. (Confirmed 2026-06-17.)
+
+The open question is narrower: **constrained-optimization solvers.** The `box_qp`
+solver (`src/L3/box_qp.cuh`) is *optimization, not linear algebra* — it loops to
+convergence with a projected-gradient line search. It reuses GLASS L1/L3
+primitives and is convenient to colocate, but it arguably doesn't belong in
+GLASS's public surface.
 
 There are also sibling QP/optimization efforts in the repo's history/branches
 (`qp_line_search`, `admm`, `cpddp-updates`), which makes the scope question real:
