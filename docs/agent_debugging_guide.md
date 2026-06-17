@@ -186,6 +186,47 @@ The banded matvec and PCG solver carry layout/launch preconditions that fail *si
   Mixing this up with a dense or column-major layout silently produces wrong results — validate a
   new caller against the dense reference in `test/test_banded.py` / `test/test_pcg.py`.
 
+### 1g. Warp-scoped broadcast via shared re-read → `__restrict__` stale-cache miscompile
+
+**Never broadcast a warp value by writing it to shared and re-reading that same location.** Use
+`__shfl_sync` from the computing lane's register instead. The bad pattern:
+
+```cpp
+if (lane == 0) s_A[k*N+k] = sqrt(val - sum);   // lane 0 writes shared
+__syncwarp();
+T diag = s_A[k*N+k];                            // every lane re-reads shared  <-- MISCOMPILES
+```
+
+When the buffer is reached through a caller `__restrict__` pointer under aggressive optimization
+(observed: sm_120 / CUDA 13.2, `-O3`), nvcc can **cache that shared load stale** — the non-writing
+lanes read a previous value, so an in-place warp solve returns wrong results for a fraction of
+inputs. `__syncwarp()` guarantees *execution* convergence, not that the compiler reloads the
+shared address. The fix (`1df6e40`, in `warp::cholDecomp_InPlace` / `warp::trsm` /
+`warp::trsm_transpose`):
+
+```cpp
+T diag = static_cast<T>(0);
+if (lane == 0) { diag = sqrt(val - sum); s_A[k*N+k] = diag; }  // still write the result
+diag = __shfl_sync(0xffffffffu, diag, 0);                      // broadcast from REGISTER
+```
+
+Keep the result write to shared (it's the actual output); only the *broadcast* moves to `__shfl`.
+Retain any **trailing** `__syncwarp()` — that one orders this iteration's shared writes before the
+next iteration reads them, and is unrelated to the broadcast.
+
+Nasty properties, so check for it deliberately:
+
+- **GLASS's own warp tests will NOT catch it** — `test_l3.cu`'s `k_posv_warp_7` calls the solve on
+  a non-`__restrict__` pointer, and the miscompile only fires through a `__restrict__` caller *and*
+  typically only inside a larger kernel (more inlining / register pressure). It was found via a
+  downstream warp-per-candidate IK solver: correct standalone, wrong only in the full kernel.
+- **The tell:** glass-on-a-fresh-copy correct, in-place-under-`__restrict__` wrong,
+  in-place-without-`__restrict__` correct ⇒ a `__restrict__` aliasing miscompile, not your algebra.
+  Don't "fix" it by dropping `__restrict__` (you lose the optimization) — kill the shared re-read.
+- **`glass::warp::reduce` is already safe** (shfl-based); `warp::gemm` is flat (no broadcast). The
+  block-scoped `cgrps`/`__syncthreads` twins are safe *today* (full-block fence) but carry a note to
+  prefer `g.shfl(pivot, 0)` if ever called with a warp-tiled group.
+
 ---
 
 ## 2. Debugging methodology (what localizes a bug fast here)
@@ -310,3 +351,5 @@ NOT. Rules:
 | Flaky, vanishes in isolation / at 1 thread | Cold-scratch read or missing sync (§1c/§1a) |
 | Hard compile error when MathDx absent | Optional-dep guard missing (§3) |
 | Edits seem to have no effect | Stale compile cache / header not hashed (§4) |
+| Warp op correct standalone, wrong only in a larger `__restrict__` kernel | Shared-reread broadcast miscompile — use `__shfl` (§1g) |
+| Block-tridiagonal `bdmv`/`pcg` wrong at edges or non-warp thread count | Layout/launch contract (§1f) |
