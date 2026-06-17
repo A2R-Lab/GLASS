@@ -14,8 +14,10 @@ routines that run inside a single thread block (one block per problem). It backs
    `TRAILING_SYNC`).
 
 **Where things live:**
-- Public API: `src/base/{L1,L2,L3}/` (→ `glass::`), `src/cgrps/` (→ `glass::cgrps::`),
-  `src/nvidia/` (→ `glass::nvidia::`).
+- Public API: `src/base/{L1,L2,L3}/` (→ `glass::`, plus inline `glass::warp::`),
+  `src/base/banded/` + `src/base/pcg/` (→ `glass::banded::` / `glass::pcg::`),
+  `src/cgrps/` (→ `glass::cgrps::`), `src/nvidia/` (→ `glass::nvidia::`).
+- Internal (not in `glass.cuh`): `src/L3/box_qp.cuh` (validated box-QP solver).
 - Tests: `test/` (pytest) driving `test/cuda/*.cu`; `pytest test/`.
 - Benchmarks: `bench/` (`run_bench.py`, `autotune.py`).
 - Docs: `docs/` (Sphinx + Doxygen + Breathe; `cd docs && make all`).
@@ -25,8 +27,8 @@ routines that run inside a single thread block (one block per problem). It backs
 invariant — test at 1 / 32 / partial-warp / many-warp block sizes, and put a
 `__syncthreads()` between any write phase and a dependent read.
 
-**Current state (2026-06-15):** developer-experience parity pass — added the
-Sphinx docs site, GitHub Pages workflow, agent files, examples, and project-info,
-and removed the legacy `src/L1`/`src/L2`/`src/L3` duplicate dirs (the `cpqp`
-solver was rewired onto `base/` and backlogged for validation). See
-`docs/HANDOFF.md`.
+**Current state (2026-06-17):** `main` carries the docs-parity infra, the
+validated (internal) `box_qp` solver, the `glass::warp::` single-warp primitives
+(PR #15), and the GATO-unification `glass::banded::` + `glass::pcg::`
+block-tridiagonal solvers. Full suite **382 passing**. See `docs/HANDOFF.md` for
+the latest entry.

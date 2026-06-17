@@ -166,6 +166,26 @@ Functions that take `extern __shared__` scratch (or an explicit scratch pointer)
   EXACT value to the launch — too small = OOB, and (for the default form) a wrong thread count
   deadlocks. Always query, never hard-code a guessed byte count.
 
+### 1f. Block-tridiagonal layout contracts (`glass::banded::` / `glass::pcg::`)
+
+The banded matvec and PCG solver carry layout/launch preconditions that fail *silently*
+(wrong numbers, not a crash) if violated:
+
+- **Pre-zero the vector pads.** Vectors are padded `(knot_points+2)*state_size` with one
+  `state_size` pad block on each end. `bdmv` relies on the first/last block-rows multiplying
+  their absent `L`/`R` against **zero pad** — if the pads hold garbage, the edge rows are wrong.
+  `pcg::solve` zeroes its internal vectors (`set_const`), but a hand-rolled `bdmv` caller must
+  zero the pads itself.
+- **`pcg::solve` needs `blockDim.x` a multiple of 32.** Its inner dot is `high_speed::dot`
+  (warp-shuffle); a non-warp-multiple thread count drops the partial warp's contribution. (This
+  is the one place the usual "any thread count" invariance does **not** hold — it's a documented
+  contract, asserted-by-convention.)
+- **Shared-mem must equal `pcg::smem_elems<T,state_size,knot_points>(threads)`** — five padded
+  work vectors + `ceil(threads/32)` warp-dot scratch. Under-sizing overruns; see 1e.
+- **`[L|D|R]` is row-major per block-row**, strip `br` at `s_matrix + br*(3*state_size)*state_size`.
+  Mixing this up with a dense or column-major layout silently produces wrong results — validate a
+  new caller against the dense reference in `test/test_banded.py` / `test/test_pcg.py`.
+
 ---
 
 ## 2. Debugging methodology (what localizes a bug fast here)

@@ -26,17 +26,29 @@ threads (one warp runs lockstep), a race at 64+.
 | `glass-cgrps.cuh` | `glass::cgrps::` | Same surface via cooperative groups. |
 | `glass-nvidia.cuh` | `glass::nvidia::` | CUB / cuBLASDx / cuSOLVERDx, auto-dispatched by size. Needs NVIDIA MathDx (`MATHDX_ROOT`). |
 
+Scoped sub-namespaces also live in the base headers (pulled in by `glass.cuh`):
+`glass::warp::` (single-warp SIMT variants for warp-per-problem kernels),
+`glass::high_speed::` / `glass::low_memory::` (perf vs scratch trade-offs of
+reductions/dots), and the block-tridiagonal solver families `glass::banded::`
+(matvec) and `glass::pcg::` (preconditioned conjugate gradient).
+
 ## Source layout
 
 - `src/base/{L1,L2,L3}/` — **the live public API** (pulled into `namespace glass`
   by `glass.cuh` via an `#include` trick — the functions are written at file
-  scope and the namespace wraps the includes).
+  scope and the namespace wraps the includes). The `glass::warp::` variants live
+  *inline* in these base headers (e.g. `reduce.cuh`, `gemm.cuh`), not a separate dir.
+- `src/base/banded/bdmv.cuh`, `src/base/pcg/solve.cuh` — block-tridiagonal matvec
+  + PCG solver (public; `glass::banded::` / `glass::pcg::`). Block-tridiagonal
+  `[L|D|R]` strips + padded `(knot_points+2)*state_size` vectors.
 - `src/cgrps/{l1,l2,l3}.cuh` — cooperative-groups variants.
 - `src/nvidia/*.cuh` — vendor-backed paths + host-side query/size helpers.
 - `src/L1`, `src/L2`, `src/L3` (non-base) were **removed** as legacy duplicates
   (superseded by the May-2026 `base/` refactor). Do not reintroduce them.
-- `src/L3/cpqp.cuh` (+ `test_cpqp.cu`) is an **UNVALIDATED, unwired** QP solver —
-  not in the build or the test suite; see `docs/open-tasks/`.
+- `src/L3/box_qp.cuh` is a **validated but INTERNAL** box-constrained QP solver
+  (`glass::internal::box_qp`) — deliberately NOT in `glass.cuh` or the public API
+  (QP is optimization, not linear algebra). Tested by `test/test_qp.py`. See
+  `docs/open-tasks/qp_solver_scope.md`.
 
 ## Build & test
 

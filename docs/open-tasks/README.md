@@ -9,6 +9,9 @@ delete them when done. This mirrors the convention used in the GRiD repo.
 - [`qp_solver_scope.md`](qp_solver_scope.md) — open architectural question: should
   GLASS host QP/optimization solvers at all (QP is optimization, not linear
   algebra)? Gates whether `box_qp` is ever promoted to the public API.
+- [`grid_wide_pcg.md`](grid_wide_pcg.md) — future work: the cooperative grid-wide
+  PCG variant (`glass::cgrps::grid`) for systems too large for the single-block
+  `glass::pcg::solve`.
 - [`doc_comment_coverage.md`](doc_comment_coverage.md) — extend Doxygen
   doc-comments from the public entry points to remaining overloads / internals as
   desired; track API-reference completeness.

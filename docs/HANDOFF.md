@@ -3,6 +3,23 @@
 Living status doc. Update the top as work lands. For onboarding read
 `docs/STARTUP_PROMPT.md` first.
 
+## 2026-06-17 — warp primitives (PR #15) + GATO banded/PCG merged, docs added
+
+Reconciled two diverged lines onto `main` and documented the new public solvers.
+- **PR #15 (`glass::warp::`)** — single-warp SIMT variants (reduce, gemm,
+  chol/trsm) for warp-per-problem kernels; live *inline* in the base L1/L3 headers.
+- **GATO unification (`glass::banded::` + `glass::pcg::`)** — block-tridiagonal
+  matvec (`src/base/banded/bdmv.cuh`) and single-block preconditioned conjugate
+  gradient (`src/base/pcg/solve.cuh`) for the block-tridiagonal SPD KKT systems of
+  trajectory optimization / MPC. Public (in `glass.cuh`). This is GATO's solver
+  re-homed as native GLASS single-block primitives.
+- Rebased the banded/pcg branch onto PR #15 (clean, no conflicts), full suite
+  **382 passed**, compute-sanitizer clean, merged to `main` (`f904b86`).
+- **Docs added (this pass):** API-reference pages `banded.rst` + `pcg.rst`, the
+  `concepts/block_tridiagonal.rst` walkthrough (layout + matvec + PCG), an
+  `examples/08_pcg_solve.cu`, and agent-file updates (CLAUDE/STARTUP/this).
+- Note: the cooperative grid-wide PCG (`glass::cgrps::grid`) is future work.
+
 ## 2026-06-15 — box-QP solver validated (internal)
 
 Redesigned, fixed, and validated the orphaned QP solver.
