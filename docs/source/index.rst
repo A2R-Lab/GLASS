@@ -35,6 +35,19 @@ Three namespaces, one mental model
       Vendor-accelerated paths (CUB, cuBLASDx, cuSOLVERDx) that auto-dispatch
       between SIMT and the vendor backend by size. Needs NVIDIA MathDx.
 
+Block-scoped by default, warp-scoped where it pays
+--------------------------------------------------
+
+GLASS primitives are **block-scoped** by default: you launch one block per
+problem and the block's threads cooperate over the whole operation. For kernels
+that instead pack *many small independent problems into one block* — one per
+warp — the ``glass::warp::`` sub-namespace now exposes single-warp SIMT variants
+of selected L1/L3 ops (``reduce``, ``gemm``, ``cholDecomp_InPlace``, ``trsm``).
+They use raw ``__shfl_*_sync`` intrinsics with no ``__syncthreads`` and no shared
+scratch, so the warps run independently — turning the block into a vehicle for
+**intra-block parallelism** rather than serializing the problems across it. See
+:doc:`api_reference/warp`.
+
 .. grid:: 2
    :gutter: 3
 

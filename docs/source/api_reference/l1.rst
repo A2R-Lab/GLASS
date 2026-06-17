@@ -4,6 +4,8 @@ L1 — Vector Operations
 Single-block vector primitives: scaled sums, copies, scaling, dot products,
 reductions, norms, and elementwise logic. Pure-SIMT (``glass::``) routines are
 listed first, followed by the cooperative-groups (``glass::cgrps::``) variants.
+Single-warp (``glass::warp::``) variants, where they exist, render inline beside
+their block-scoped sibling (e.g. under *reduce*); see :doc:`warp`.
 
 axpy / axpby
 ------------
