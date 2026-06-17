@@ -48,6 +48,12 @@ def _hash_sources(cu_path: pathlib.Path) -> str:
               GLASS_DIR / "glass.cuh", GLASS_DIR / "glass-cgrps.cuh",
               GLASS_DIR / "src" / "L3" / "box_qp.cuh",
               GLASS_DIR / "src" / "base" / "L1" / "dot_strided_coalesced.cuh",
+              # base headers carrying the warp:: variants — listed explicitly so
+              # edits to them (pulled in only transitively via glass.cuh) bust the cache.
+              GLASS_DIR / "src" / "base" / "L1" / "reduce.cuh",
+              GLASS_DIR / "src" / "base" / "L3" / "gemm.cuh",
+              GLASS_DIR / "src" / "base" / "L3" / "chol_InPlace.cuh",
+              GLASS_DIR / "src" / "base" / "L3" / "trsm.cuh",
               GLASS_DIR / "src" / "base" / "L2" / "gemv_segmented.cuh",
               GLASS_DIR / "src" / "base" / "L3" / "gemm_batched_indexed.cuh",
               GLASS_DIR / "glass-nvidia.cuh",

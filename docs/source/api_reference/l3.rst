@@ -6,7 +6,9 @@ indexed variants), matrix inversion, Cholesky factorization, and triangular
 solves. The GEMM family takes compile-time storage-order flags
 (``ROW_MAJOR_A`` / ``ROW_MAJOR_B`` / ``ROW_MAJOR_C``) and a ``TRANSPOSE_B``
 flag; see :doc:`../user_guide/concepts/backend_dispatch` for how the dispatch
-GEMM chooses a path.
+GEMM chooses a path. Single-warp (``glass::warp::``) variants of ``gemm``,
+``cholDecomp_InPlace``, and ``trsm`` render inline beside their block-scoped
+sibling; see :doc:`warp`.
 
 gemm
 ----

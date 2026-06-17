@@ -20,9 +20,10 @@ build. For the full API surface and the backend-choice guide, read that README.
 | [`04_cgrps.cu`](04_cgrps.cu) | the **cooperative-groups** variant `glass::cgrps::gemm` (whole-block or warp-tile) | pure SIMT — no extra deps |
 | [`05_gemm_dispatch.cu`](05_gemm_dispatch.cu) | `glass::gemm_dispatch` + dynamic shared memory via the `glass_gemm_dispatch_smem` host helper (tiled path) | pure SIMT — no extra deps |
 | [`06_nvidia_gemm.cu`](06_nvidia_gemm.cu) | the cuBLASDx-backed `glass::nvidia::gemm` path | **requires NVIDIA MathDx** |
+| [`07_warp_ops.cu`](07_warp_ops.cu) | single-warp `glass::warp::` ops (`reduce`, 4×4 `gemm`, SPD `cholDecomp_InPlace`+`trsm`+`trsm_transpose`), launched `<<<1,32>>>` | pure SIMT — no extra deps |
 
-**Examples 01–05 are pure SIMT** — they build with plain `nvcc` and need no
-external libraries. **Only `06_nvidia_gemm.cu` needs MathDx** (cuBLASDx); skip
+**Examples 01–05 and 07 are pure SIMT** — they build with plain `nvcc` and need
+no external libraries. **Only `06_nvidia_gemm.cu` needs MathDx** (cuBLASDx); skip
 it if you don't have MathDx installed.
 
 ## Building
@@ -41,6 +42,7 @@ nvcc -std=c++17 -arch=sm_75 -I.. 02_gemm.cu         -o gemm     && ./gemm
 nvcc -std=c++17 -arch=sm_75 -I.. 03_reduce.cu       -o reduce   && ./reduce
 nvcc -std=c++17 -arch=sm_75 -I.. 04_cgrps.cu        -o cgrps    && ./cgrps
 nvcc -std=c++17 -arch=sm_75 -I.. 05_gemm_dispatch.cu -o dispatch && ./dispatch
+nvcc -std=c++17 -arch=sm_75 -I.. 07_warp_ops.cu     -o warp_ops && ./warp_ops
 ```
 
 ### NVIDIA / cuBLASDx example (06) — requires MathDx

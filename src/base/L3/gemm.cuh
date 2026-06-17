@@ -272,6 +272,58 @@ __device__ void gemm(T alpha, T *A, T *B, T *C)
     gemm_impl_ct<T, M, N, K, TRANSPOSE_B, ROW_MAJOR, ROW_MAJOR, ROW_MAJOR>(rank, size, alpha, A, B, C);
 }
 
+// ─── single-warp compile-time GEMM ───────────────────────────────────────────
+namespace warp {
+    /**
+     * @brief Single-warp compile-time-size GEMM: `C = alpha * A * op(B) + beta * C`.
+     *
+     * One 32-lane warp computes the product with flat per-element parallelism
+     * (lanes stride over the `M * Ccols` outputs) — same semantics as the
+     * block-scoped compile-time `gemm`, but scoped to a single warp for
+     * warp-per-problem kernels (e.g. 4×4 homogeneous-transform multiplies). No
+     * inter-lane communication, no sync. `C` must not alias `A`/`B`. NumPy:
+     * `C = alpha * A @ op(B) + beta * C`.
+     *
+     * @tparam T  Scalar type.
+     * @tparam M,N,K  Compile-time dimensions: A is M x N, B is N x K (or K x N when TRANSPOSE_B), C is M x (TRANSPOSE_B ? N : K).
+     * @tparam TRANSPOSE_B  If true, computes `A @ B^T`.
+     * @tparam ROW_MAJOR  Storage order for A, B and C (false = column-major / Fortran).
+     * @param alpha  Scalar multiplier on the product.
+     * @param A,B    Input matrices.
+     * @param beta   Scalar multiplier on the existing C (C is read; caller must initialize it).
+     * @param C      In/out result matrix.
+     */
+    template <typename T, uint32_t M, uint32_t N, uint32_t K,
+              bool TRANSPOSE_B = false, bool ROW_MAJOR = false>
+    __device__ void gemm(T alpha, T *A, T *B, T beta, T *C)
+    {
+        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+        gemm_impl_ct<T, M, N, K, TRANSPOSE_B, ROW_MAJOR, ROW_MAJOR, ROW_MAJOR>(lane, 32u, alpha, A, B, beta, C);
+    }
+
+    /**
+     * @brief Single-warp compile-time-size GEMM with implicit `beta = 0`: `C = alpha * A * op(B)`.
+     *
+     * Overwrites C (the existing C is not read). Otherwise identical to the
+     * beta overload above. NumPy: `C = alpha * A @ op(B)`.
+     *
+     * @tparam T  Scalar type.
+     * @tparam M,N,K  Compile-time dimensions: A is M x N, B is N x K (or K x N when TRANSPOSE_B), C is M x (TRANSPOSE_B ? N : K).
+     * @tparam TRANSPOSE_B  If true, computes `A @ B^T`.
+     * @tparam ROW_MAJOR  Storage order for A, B and C (false = column-major / Fortran).
+     * @param alpha  Scalar multiplier on the product.
+     * @param A,B    Input matrices.
+     * @param C      Output result matrix (overwritten).
+     */
+    template <typename T, uint32_t M, uint32_t N, uint32_t K,
+              bool TRANSPOSE_B = false, bool ROW_MAJOR = false>
+    __device__ void gemm(T alpha, T *A, T *B, T *C)
+    {
+        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+        gemm_impl_ct<T, M, N, K, TRANSPOSE_B, ROW_MAJOR, ROW_MAJOR, ROW_MAJOR>(lane, 32u, alpha, A, B, C);
+    }
+}
+
 // ─── tiled GEMM (shared-memory staging, column-major only) ───────────────────
 /**
  * @brief Tiled GEMM with shared-memory staging: `C = alpha * A * B + beta * C`.
