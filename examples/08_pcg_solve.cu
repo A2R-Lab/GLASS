@@ -1,4 +1,4 @@
-// 08_pcg_solve.cu — block-tridiagonal PCG solve (glass::pcg::solve), pure SIMT.
+// 08_pcg_solve.cu — block-tridiagonal PCG solve (glass::pcg), pure SIMT.
 //
 // Build (from this examples/ dir):
 //   nvcc -std=c++17 -arch=sm_75 -I.. 08_pcg_solve.cu -o pcg && ./pcg
@@ -23,7 +23,7 @@ __global__ void pcg_kernel(float *x, float *S, float *Pinv, float *b,
                            unsigned max_iters, float rel_tol, float abs_tol,
                            unsigned *iters) {
     extern __shared__ float s_mem[];
-    glass::pcg::solve<float, SS, KP>(x, S, Pinv, b, s_mem,
+    glass::pcg<float, SS, KP>(x, S, Pinv, b, s_mem,
                                      max_iters, rel_tol, abs_tol, iters);
 }
 
@@ -61,7 +61,7 @@ int main() {
     cudaMemcpy(dx, x, sizeof(x), cudaMemcpyHostToDevice);
 
     const int threads = 32;            // must be a multiple of 32 (warp-dot)
-    size_t smem = glass::pcg::smem_elems<float, SS, KP>(threads) * sizeof(float);
+    size_t smem = glass::pcg_smem_size<float, SS, KP>(threads) * sizeof(float);
     pcg_kernel<<<1, threads, smem>>>(dx, dS, dPinv, db, 100, 1e-6f, 1e-12f, diters);
     cudaDeviceSynchronize();
 

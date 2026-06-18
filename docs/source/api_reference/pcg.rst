@@ -1,4 +1,4 @@
-Preconditioned Conjugate Gradient (``glass::pcg::``)
+Preconditioned Conjugate Gradient (``glass::pcg``)
 ====================================================
 
 A single-block **preconditioned conjugate gradient** solver for a
@@ -10,7 +10,7 @@ block solves one system (launch one block per independent solve); it uses only
 ``S`` and ``Pinv`` use the ``[L|D|R]`` block-tridiagonal layout of
 :doc:`banded`, and all vectors use the same padded
 ``(knot_points + 2)·state_size`` layout. Size the dynamic shared memory with
-``glass::pcg::smem_elems<T, state_size, knot_points>(threads)``. The launch
+``glass::pcg_smem_size<T, state_size, knot_points>(threads)``. The launch
 thread count must be a multiple of 32 (the inner dot uses a warp reduction).
 
 See :doc:`../user_guide/concepts/block_tridiagonal` for the layout and a worked

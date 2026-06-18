@@ -1,9 +1,9 @@
 Library Overview
 ================
 
-**GLASS** — *GPU Linear Algebra for Single-block Systems* — is a header-only
-CUDA library of BLAS- and LAPACK-like ``__device__`` functions designed for use
-within a single thread block.
+**GLASS** — *GPU Linear Algebra Simple Subroutines*. Composable ``__device__``
+BLAS/LAPACK-style subroutines that run inside a single CUDA block. Now expanding
+to warp-level primitives for packing many small problems into one block.
 
 What GLASS is
 -------------
@@ -35,41 +35,66 @@ design enables composable GPU kernels for applications such as model-predictive
 control and rigid-body dynamics, where many small independent linear-algebra
 problems run in parallel — one per block.
 
-The three namespaces
---------------------
+Call surfaces
+-------------
+
+Primitives are **block-scoped** by default (one block per problem) in three
+numerically-interchangeable backends, plus a **warp-scoped** surface
+(``glass::warp::``) for kernels that pack many small independent problems into one
+block — one per warp:
 
 .. list-table::
    :header-rows: 1
-   :widths: 22 48 30
+   :widths: 20 14 40 26
 
    * - Namespace
+     - Scope
      - Backend
      - Header
    * - ``glass::``
+     - block
      - Hand-rolled SIMT, ``threadIdx.{x,y,z}`` / ``blockDim.*`` (no cooperative-groups dependency)
      - ``glass.cuh``
    * - ``glass::cgrps::``
+     - block
      - Hand-rolled SIMT, ``g.thread_rank()`` / ``g.size()`` (cooperative groups)
      - ``glass-cgrps.cuh``
    * - ``glass::nvidia::``
+     - block
      - CUB (L1) + cuBLASDx (L2/L3, batched) + cuSOLVERDx (LAPACK) — compile-time sizes only
      - ``glass-nvidia.cuh``
+   * - ``glass::warp::``
+     - warp
+     - Single-warp SIMT via ``__shfl_*_sync`` — *selected* L1/L3 ops, no ``__syncthreads`` / shared
+     - inline in the base L1/L3 headers
+
+The three **block-scoped** backends cover the full L1/L2/L3 surface and are
+interchangeable — switch by changing the namespace prefix when profiling shows
+one is faster at a given size. They preserve the same one-block ``__device__``
+calling convention, so a single kernel can mix hand-rolled and vendor-backed
+primitives without leaving the block. ``glass::warp::`` is a **warp-per-problem**
+variant covering a selected set (``reduce``, ``gemm``, ``cholDecomp_InPlace``,
+``trsm`` / ``trsm_transpose``); the warps run independently for intra-block
+parallelism, and it requires a full 32-lane warp.
 
 Both ``glass::`` and ``glass::cgrps::`` offer **runtime** (size as a function
 argument) and **compile-time** (size as a template argument) overloads for every
-function. The ``glass::nvidia::`` wrappers preserve the same one-block
-``__device__`` calling convention, so a single kernel can mix hand-rolled and
-vendor-backed primitives without leaving the block — and switch between them by
-changing the namespace prefix when profiling shows one is faster at a given size.
-
-Reduction operations additionally offer ``glass::low_memory::`` (no scratch,
-thread 0 accumulates) and ``glass::high_speed::`` (warp-shuffle plus
+function. Reduction operations additionally offer ``glass::low_memory::`` (no
+scratch, thread 0 accumulates) and ``glass::high_speed::`` (warp-shuffle plus
 shared-memory inter-warp reduction) sub-namespaces.
+
+**Higher-level solvers** build on these primitives (and are likewise
+single-block): ``glass::bdmv`` (block-tridiagonal matvec) and ``glass::pcg``
+(preconditioned conjugate gradient) for the block-tridiagonal SPD systems of
+trajectory optimization / MPC — see :doc:`../concepts/block_tridiagonal`.
 
 Choosing the right backend
 --------------------------
 
-Three questions decide which API to call:
+First pick the **execution scope** — one block per problem (the default
+``glass::`` / ``glass::cgrps::`` / ``glass::nvidia::`` surface) or one warp per
+problem (``glass::warp::``). For the block-scoped backends, three questions decide
+which to call:
 
 1. **Are sizes known at compile time?**
 2. **Is the matrix large enough that vendor-tuned tensor-core kernels matter?**

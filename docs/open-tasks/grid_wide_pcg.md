@@ -2,7 +2,7 @@
 
 **Status:** future work (not started).
 
-`glass::pcg::solve` (`src/base/pcg/solve.cuh`) is the **single-block** PCG: one
+`glass::pcg` (`src/base/pcg/solve.cuh`) is the **single-block** PCG: one
 CUDA block solves one block-tridiagonal SPD system, synchronizing with
 `__syncthreads()`. Its file doc-comment points here for the cooperative
 **grid-wide** variant — one solve spanning the *whole grid* (a cooperative-groups
@@ -17,8 +17,8 @@ shared memory / occupancy can't hold the whole problem). It would live under a
 
 - When GLASS/GATO needs horizons large enough that the single-block PCG runs out
   of shared memory or under-uses the GPU.
-- Reuse the same `[L|D|R]` banded layout and `glass::banded::bdmv`; the dot
+- Reuse the same `[L|D|R]` banded layout and `glass::bdmv`; the dot
   reductions become grid-wide instead of block-wide.
 
-Until then, `glass::pcg::solve` (single-block, one-problem-per-block, batched over
+Until then, `glass::pcg` (single-block, one-problem-per-block, batched over
 the grid) is the supported path.

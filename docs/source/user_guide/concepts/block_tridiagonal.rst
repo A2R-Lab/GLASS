@@ -48,10 +48,10 @@ current / next state blocks — and writes its result at
 trailing pad blocks**: that is what lets the first/last block-rows multiply their
 absent ``L``/``R`` against zero instead of branching.
 
-Matvec — ``glass::banded::bdmv``
+Matvec — ``glass::bdmv``
 --------------------------------
 
-``bdmv`` computes ``s_output = A_bd · s_vector`` in one block, thread-count
+``glass::bdmv`` computes ``s_output = A_bd · s_vector`` in one block, thread-count
 invariant. A second overload writes the identical result into two buffers at once
 (used by the PCG initialization ``z = p = Pinv·r``). It emits **no trailing**
 ``__syncthreads()`` — barrier before reusing the output, per the GLASS surface
@@ -60,10 +60,10 @@ convention.
 .. code-block:: cpp
 
    // one block; threads stride over rows
-   glass::banded::bdmv<float, knot_points, state_size>(s_out, s_matrix, s_vec);
+   glass::bdmv<float, knot_points, state_size>(s_out, s_matrix, s_vec);
    __syncthreads();
 
-Solve — ``glass::pcg::solve``
+Solve — ``glass::pcg``
 -----------------------------
 
 ``solve`` runs preconditioned conjugate gradient on ``S x = b`` with the
@@ -74,7 +74,7 @@ is tested on the preconditioned residual ``rho = rᵀz``:
 Sizing and launch:
 
 * Dynamic shared memory =
-  ``glass::pcg::smem_elems<T, state_size, knot_points>(threads)`` elements (five
+  ``glass::pcg_smem_size<T, state_size, knot_points>(threads)`` elements (five
   padded work vectors + the warp-dot scratch); five scalars live in static
   ``__shared__``.
 * The block thread count **must be a multiple of 32** — the inner dot product
@@ -85,11 +85,11 @@ Sizing and launch:
 .. code-block:: cpp
 
    constexpr int SS = 6, KP = 32;
-   size_t smem = glass::pcg::smem_elems<float, SS, KP>(threads) * sizeof(float);
+   size_t smem = glass::pcg_smem_size<float, SS, KP>(threads) * sizeof(float);
    pcg_kernel<<<num_problems, threads, smem>>>(d_x, d_S, d_Pinv, d_b, ...);
    // inside the kernel:
    extern __shared__ float s_mem[];
-   glass::pcg::solve<float, SS, KP>(x, S, Pinv, b, s_mem,
+   glass::pcg<float, SS, KP>(x, S, Pinv, b, s_mem,
                                     max_iters, rel_tol, abs_tol, iters);
 
 A cooperative *grid-wide* PCG (one solve spanning the whole grid) is future work

@@ -5,7 +5,7 @@ unexposed.**
 
 GLASS's charter is **single-block linear-algebra primitives** (BLAS/LAPACK-style
 `__device__` routines). **Linear-system solvers are explicitly in scope** — both
-direct (`chol`/`trsm`/`invertMatrix`) and iterative (`glass::pcg::solve`); these
+direct (`chol`/`trsm`/`invertMatrix`) and iterative (`glass::pcg`); these
 are public, first-class GLASS. (Confirmed 2026-06-17.)
 
 The open question is narrower: **constrained-optimization solvers.** The `box_qp`

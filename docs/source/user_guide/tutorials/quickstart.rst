@@ -71,7 +71,7 @@ Next steps
 
 * :doc:`using_nvidia_backend` — route to cuBLASDx / cuSOLVERDx for larger
   shapes.
-* :doc:`../getting_started/library_overview` — the three namespaces and when to
-  use each.
+* :doc:`../getting_started/library_overview` — the call surfaces (block-scoped
+  backends + warp-scoped) and when to use each.
 * :doc:`../concepts/index` — backend dispatch, ``TRAILING_SYNC``, tuning, and
   batched-1D APIs.

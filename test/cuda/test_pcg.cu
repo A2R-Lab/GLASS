@@ -1,4 +1,4 @@
-// test_pcg.cu — dispatch glass::pcg::solve and print the solution + iters.
+// test_pcg.cu — dispatch glass::pcg and print the solution + iters.
 // Usage: ./test_pcg solve simple <SS> <KP> <threads> <max_iters> <rel_tol> <abs_tol>
 //                    <S.bin> <Pinv.bin> <b.bin>
 //   S.bin, Pinv.bin : KP * 3*SS*SS floats ([L|D|R] row-major strips)
@@ -19,7 +19,7 @@
                                       int* d_iters) {                             \
         extern __shared__ float s_mem[];                                          \
         uint32_t it = 0;                                                          \
-        glass::pcg::solve<float, SS, KP>(x, S, Pinv, b, s_mem,                    \
+        glass::pcg<float, SS, KP>(x, S, Pinv, b, s_mem,                    \
             (uint32_t)max_iters, rel_tol, abs_tol, &it);                          \
         if (threadIdx.x == 0) *d_iters = (int)it;                                 \
     }
@@ -57,7 +57,7 @@ int main(int argc, char** argv) {
     size_t smem = 0;
 #define DISPATCH(SS_, KP_)                                                        \
     if (SS == SS_ && KP == KP_) {                                                 \
-        smem = (size_t)glass::pcg::smem_elems<float, SS_, KP_>((uint32_t)threads) \
+        smem = (size_t)glass::pcg_smem_size<float, SS_, KP_>((uint32_t)threads) \
                * sizeof(float);                                                   \
         k_pcg_##SS_##_##KP_<<<1, threads, smem>>>(dx, dS, dPinv, db,              \
             max_iters, rel_tol, abs_tol, d_iters);                               \

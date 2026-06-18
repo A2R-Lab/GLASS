@@ -3,7 +3,7 @@
 
 /**
  * @file bdmv.cuh
- * @brief Block-tridiagonal matrix-vector product (`glass::banded::bdmv`).
+ * @brief Block-tridiagonal matrix-vector product (`glass::bdmv`).
  *
  * Single-block, thread-count-invariant matvec for a block-tridiagonal matrix
  * stored as `NumBlockRows` contiguous strips. Each block-row strip is a
@@ -22,8 +22,6 @@
  * No trailing `__syncthreads()` — the caller barriers before reusing the output
  * (matches the rest of the GLASS surface).
  */
-
-namespace banded {
 
 /**
  * @brief Block-tridiagonal matvec: `s_output = A_bd * s_vector`.
@@ -88,5 +86,3 @@ __device__ void bdmv(T *s_output_1, T *s_output_2, const T *s_matrix, const T *s
         s_output_2[o] = sum;
     }
 }
-
-} // namespace banded

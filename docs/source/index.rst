@@ -1,52 +1,67 @@
-GLASS: GPU Linear Algebra for Single-block Systems
-==================================================
+GLASS: GPU Linear Algebra Simple Subroutines
+============================================
 
-GLASS is a header-only CUDA library of BLAS/LAPACK-style ``__device__`` routines
-designed to run **inside a single CUDA thread block**. You launch one block per
-independent problem; the block's threads cooperate over data already resident in
-shared or global memory. It is the linear-algebra layer underneath
-`GRiD <https://github.com/A2R-Lab/GRiD>`_ and other A2R Lab GPU solvers.
+**Composable** ``__device__`` **BLAS/LAPACK-style subroutines that run inside a
+single CUDA block. Now expanding to warp-level primitives for packing many small
+problems into one block.**
 
-Three namespaces, one mental model
-----------------------------------
+GLASS is a header-only CUDA library of BLAS/LAPACK-style ``__device__`` routines.
+You launch one block per independent problem; the block's threads cooperate over
+data already resident in shared or global memory. It is the linear-algebra layer
+underneath `GRiD <https://github.com/A2R-Lab/GRiD>`_ and other A2R Lab GPU
+solvers.
 
-.. grid:: 3
+Call surfaces
+-------------
+
+GLASS primitives are **block-scoped** by default (one block per problem) in three
+numerically-interchangeable backends, plus a **warp-scoped** surface for kernels
+that pack many small independent problems into one block — one per warp:
+
+.. grid:: 2
    :gutter: 3
 
-   .. grid-item-card:: ``glass::``
+   .. grid-item-card:: ``glass::`` — block, SIMT
       :link: user_guide/getting_started/library_overview
       :link-type: doc
 
-      Hand-rolled, pure-SIMT (``threadIdx``/``blockDim``) primitives with
-      runtime- and compile-time-sized overloads. **No dependencies** — just
-      ``#include "glass.cuh"``.
+      Hand-rolled pure-SIMT (``threadIdx``/``blockDim``), runtime- and
+      compile-time-sized. **No dependencies** — ``#include "glass.cuh"``.
 
-   .. grid-item-card:: ``glass::cgrps::``
+   .. grid-item-card:: ``glass::cgrps::`` — block, coop groups
       :link: user_guide/getting_started/library_overview
       :link-type: doc
 
-      The same surface expressed with cooperative groups
-      (``g.thread_rank()`` / ``g.size()``). ``#include "glass-cgrps.cuh"``.
+      The same surface via cooperative groups (``g.thread_rank()`` /
+      ``g.size()``). ``#include "glass-cgrps.cuh"``.
 
-   .. grid-item-card:: ``glass::nvidia::``
+   .. grid-item-card:: ``glass::nvidia::`` — block, vendor
       :link: user_guide/concepts/backend_dispatch
       :link-type: doc
 
-      Vendor-accelerated paths (CUB, cuBLASDx, cuSOLVERDx) that auto-dispatch
-      between SIMT and the vendor backend by size. Needs NVIDIA MathDx.
+      CUB / cuBLASDx / cuSOLVERDx, auto-dispatched against SIMT by size.
+      Needs NVIDIA MathDx.
 
-Block-scoped by default, warp-scoped where it pays
---------------------------------------------------
+   .. grid-item-card:: ``glass::warp::`` — warp-per-problem
+      :link: api_reference/warp
+      :link-type: doc
 
-GLASS primitives are **block-scoped** by default: you launch one block per
-problem and the block's threads cooperate over the whole operation. For kernels
-that instead pack *many small independent problems into one block* — one per
-warp — the ``glass::warp::`` sub-namespace now exposes single-warp SIMT variants
-of selected L1/L3 ops (``reduce``, ``gemm``, ``cholDecomp_InPlace``, ``trsm``).
-They use raw ``__shfl_*_sync`` intrinsics with no ``__syncthreads`` and no shared
-scratch, so the warps run independently — turning the block into a vehicle for
-**intra-block parallelism** rather than serializing the problems across it. See
-:doc:`api_reference/warp`.
+      Single-warp SIMT variants of selected L1/L3 ops (``reduce``, ``gemm``,
+      ``cholDecomp_InPlace``, ``trsm``) via ``__shfl_*_sync`` — no
+      ``__syncthreads``, so warps run independently for **intra-block
+      parallelism**.
+
+The three block-scoped backends cover the full L1/L2/L3 surface and are
+interchangeable (switch by namespace prefix). ``glass::warp::`` is a selected,
+warp-scoped set; it requires a full 32-lane warp.
+
+Higher-level solvers
+--------------------
+
+Built on those primitives (and likewise single-block): ``glass::bdmv``
+(block-tridiagonal matvec) and ``glass::pcg`` (preconditioned conjugate
+gradient) for the block-tridiagonal SPD systems of trajectory optimization /
+MPC — see :doc:`user_guide/concepts/block_tridiagonal`.
 
 .. grid:: 2
    :gutter: 3

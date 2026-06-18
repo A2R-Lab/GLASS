@@ -1,4 +1,4 @@
-Block-tridiagonal Matvec (``glass::banded::``)
+Block-tridiagonal Matvec (``glass::bdmv``)
 ==============================================
 
 Single-block matrix-vector product for a **block-tridiagonal** matrix — the

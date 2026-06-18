@@ -15,8 +15,8 @@ The reference is organized by BLAS level and by backend:
   and their host-side query/size helpers.
 * **Warp-scoped** — the ``glass::warp::`` single-warp SIMT variants for
   warp-per-problem kernels.
-* **Block-tridiagonal solvers** — the ``glass::banded::`` matvec and the
-  ``glass::pcg::`` preconditioned conjugate-gradient solver for the
+* **Block-tridiagonal solvers** — the ``glass::bdmv`` matvec and the
+  ``glass::pcg`` preconditioned conjugate-gradient solver for the
   block-tridiagonal SPD systems of trajectory optimization / MPC.
 
 .. note::

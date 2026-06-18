@@ -15,7 +15,7 @@ routines that run inside a single thread block (one block per problem). It backs
 
 **Where things live:**
 - Public API: `src/base/{L1,L2,L3}/` (→ `glass::`, plus inline `glass::warp::`),
-  `src/base/banded/` + `src/base/pcg/` (→ `glass::banded::` / `glass::pcg::`),
+  `src/base/banded/` + `src/base/pcg/` (→ `glass::bdmv` / `glass::pcg`),
   `src/cgrps/` (→ `glass::cgrps::`), `src/nvidia/` (→ `glass::nvidia::`).
 - Internal (not in `glass.cuh`): `src/L3/box_qp.cuh` (validated box-QP solver).
 - Tests: `test/` (pytest) driving `test/cuda/*.cu`; `pytest test/`.
@@ -29,6 +29,6 @@ invariant — test at 1 / 32 / partial-warp / many-warp block sizes, and put a
 
 **Current state (2026-06-17):** `main` carries the docs-parity infra, the
 validated (internal) `box_qp` solver, the `glass::warp::` single-warp primitives
-(PR #15), and the GATO-unification `glass::banded::` + `glass::pcg::`
+(PR #15), and the GATO-unification `glass::bdmv` + `glass::pcg`
 block-tridiagonal solvers. Full suite **382 passing**. See `docs/HANDOFF.md` for
 the latest entry.

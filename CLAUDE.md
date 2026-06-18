@@ -1,10 +1,12 @@
 # CLAUDE.md — orientation for AI agents (and humans) working on GLASS
 
-GLASS is **GPU Linear Algebra for Single-block Systems**: a header-only CUDA
+GLASS is **GPU Linear Algebra Simple Subroutines**: a header-only CUDA
 library of BLAS/LAPACK-style `__device__` routines that run **inside one CUDA
-thread block**. You launch one block per independent problem; the block's
-threads cooperate over data already in shared/global memory. GLASS is the
-linear-algebra layer under [GRiD](https://github.com/A2R-Lab/GRiD).
+block**. You launch one block per independent problem; the block's threads
+cooperate over data already in shared/global memory. Block-scoped by default,
+now expanding to warp-level primitives (`glass::warp::`) for packing many small
+problems into one block. GLASS is the linear-algebra layer under
+[GRiD](https://github.com/A2R-Lab/GRiD).
 
 **Before changing any primitive, read `docs/agent_debugging_guide.md`** — it is
 the runbook for the recurring single-block CUDA bug classes (missing
@@ -18,19 +20,26 @@ identical output at 1 thread, 32, a partial warp, or many warps. The #1 bug is a
 missing barrier between a write phase and a dependent read: invisible at 32
 threads (one warp runs lockstep), a race at 64+.
 
-## Three namespaces / three umbrella headers
+## Call surfaces
 
-| Header | Namespace | What it is |
-|--------|-----------|------------|
-| `glass.cuh` | `glass::` | Hand-rolled pure-SIMT (`threadIdx`/`blockDim`). No deps. |
-| `glass-cgrps.cuh` | `glass::cgrps::` | Same surface via cooperative groups. |
-| `glass-nvidia.cuh` | `glass::nvidia::` | CUB / cuBLASDx / cuSOLVERDx, auto-dispatched by size. Needs NVIDIA MathDx (`MATHDX_ROOT`). |
+Primitives are **block-scoped** by default in three numerically-interchangeable
+backends, plus a **warp-scoped** surface for warp-per-problem kernels:
 
-Scoped sub-namespaces also live in the base headers (pulled in by `glass.cuh`):
-`glass::warp::` (single-warp SIMT variants for warp-per-problem kernels),
-`glass::high_speed::` / `glass::low_memory::` (perf vs scratch trade-offs of
-reductions/dots), and the block-tridiagonal solver families `glass::banded::`
-(matvec) and `glass::pcg::` (preconditioned conjugate gradient).
+| Namespace | Scope | What it is | Header |
+|-----------|-------|------------|--------|
+| `glass::` | block | Hand-rolled pure-SIMT (`threadIdx`/`blockDim`). No deps. | `glass.cuh` |
+| `glass::cgrps::` | block | Same surface via cooperative groups. | `glass-cgrps.cuh` |
+| `glass::nvidia::` | block | CUB / cuBLASDx / cuSOLVERDx, auto-dispatched by size. Needs MathDx (`MATHDX_ROOT`). | `glass-nvidia.cuh` |
+| `glass::warp::` | warp | Single-warp SIMT (`__shfl_*_sync`), *selected* L1/L3 ops. Lives inline in the base L1/L3 headers. | via `glass.cuh` |
+
+Convention: **namespace = scope/backend; function name = operation.** So a warp
+band matvec would be `glass::warp::bdmv`, never a `banded::` namespace.
+
+Also in the base headers: `glass::high_speed::` / `glass::low_memory::` (perf vs
+scratch trade-offs of reductions/dots), and the block-tridiagonal **functions**
+`glass::bdmv` (matvec) and `glass::pcg` (preconditioned conjugate gradient, with
+`glass::pcg_smem_size`). An internal `glass::internal::box_qp` lives in the tree
+but is not part of the public surface (see `docs/open-tasks/qp_solver_scope.md`).
 
 ## Source layout
 
@@ -39,7 +48,7 @@ reductions/dots), and the block-tridiagonal solver families `glass::banded::`
   scope and the namespace wraps the includes). The `glass::warp::` variants live
   *inline* in these base headers (e.g. `reduce.cuh`, `gemm.cuh`), not a separate dir.
 - `src/base/banded/bdmv.cuh`, `src/base/pcg/solve.cuh` — block-tridiagonal matvec
-  + PCG solver (public; `glass::banded::` / `glass::pcg::`). Block-tridiagonal
+  + PCG solver (public; `glass::bdmv` / `glass::pcg`). Block-tridiagonal
   `[L|D|R]` strips + padded `(knot_points+2)*state_size` vectors.
 - `src/cgrps/{l1,l2,l3}.cuh` — cooperative-groups variants.
 - `src/nvidia/*.cuh` — vendor-backed paths + host-side query/size helpers.

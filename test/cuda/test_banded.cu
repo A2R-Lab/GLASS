@@ -1,4 +1,4 @@
-// test_banded.cu — dispatch glass::banded::bdmv and print float32 results.
+// test_banded.cu — dispatch glass::bdmv and print float32 results.
 // Usage: ./test_banded <bdmv|bdmv_dual> simple <BS> <NBR> <threads> <mat.bin> <vec.bin>
 //   mat.bin : NBR * 3*BS*BS floats ([L|D|R] row-major strips, one per block-row)
 //   vec.bin : (NBR+2)*BS floats (padded; leading/trailing BS pad blocks zeroed)
@@ -13,11 +13,11 @@
 
 #define DEFINE_BDMV(BS, NBR)                                                       \
     __global__ void k_bdmv_##BS##_##NBR(float* out, float* mat, float* vec) {     \
-        glass::banded::bdmv<float, NBR, BS>(out, mat, vec);                        \
+        glass::bdmv<float, NBR, BS>(out, mat, vec);                        \
     }                                                                              \
     __global__ void k_bdmv_dual_##BS##_##NBR(float* o1, float* o2,                \
                                              float* mat, float* vec) {            \
-        glass::banded::bdmv<float, NBR, BS>(o1, o2, mat, vec);                     \
+        glass::bdmv<float, NBR, BS>(o1, o2, mat, vec);                     \
     }
 
 DEFINE_BDMV(2, 3)

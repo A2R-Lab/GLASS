@@ -3,12 +3,27 @@
 Living status doc. Update the top as work lands. For onboarding read
 `docs/STARTUP_PROMPT.md` first.
 
+## 2026-06-17 — rename + flatten banded/pcg + docs audit
+
+- **Renamed** GLASS = *GPU Linear Algebra Simple Subroutines* (was "for Single-block
+  Systems") — decouples the name from "single-block" now that warp-scope is a thing.
+  Subheading frames block-scoped-default + the warp expansion.
+- **Flattened** the block-tridiagonal API to match the library convention
+  (*namespace = scope/backend; function name = operation*):
+  `glass::banded::bdmv` → **`glass::bdmv`**, `glass::pcg::solve` → **`glass::pcg`**,
+  `glass::pcg::smem_elems` → **`glass::pcg_smem_size`**. Removed the `banded`/`pcg`
+  namespaces. (GATO not yet wired to these — confirmed safe; no consumer break.)
+- **Docs audit:** reframed the stale "three namespaces" model to **four call
+  surfaces** (block-scoped `glass::`/`cgrps::`/`nvidia::` + warp-scoped `glass::warp::`)
+  across README + landing + library_overview + agent files; added the solvers as flat
+  functions everywhere. Full suite **382 passed**; example + docs build verified.
+
 ## 2026-06-17 — warp primitives (PR #15) + GATO banded/PCG merged, docs added
 
 Reconciled two diverged lines onto `main` and documented the new public solvers.
 - **PR #15 (`glass::warp::`)** — single-warp SIMT variants (reduce, gemm,
   chol/trsm) for warp-per-problem kernels; live *inline* in the base L1/L3 headers.
-- **GATO unification (`glass::banded::` + `glass::pcg::`)** — block-tridiagonal
+- **GATO unification (`glass::bdmv` + `glass::pcg`)** — block-tridiagonal
   matvec (`src/base/banded/bdmv.cuh`) and single-block preconditioned conjugate
   gradient (`src/base/pcg/solve.cuh`) for the block-tridiagonal SPD KKT systems of
   trajectory optimization / MPC. Public (in `glass.cuh`). This is GATO's solver

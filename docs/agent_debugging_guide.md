@@ -1,8 +1,10 @@
 # GLASS agent guide — debugging, bug classes, and refactor traps
 
-Hard-won institutional knowledge for working on **GLASS** — the header-only, single-block
-GPU linear-algebra library (`glass::` SIMT, `glass::cgrps::` cooperative-groups, and
-`glass::nvidia::` CUB/cuBLASDx/cuSOLVERDx backends). **Read this before you change any
+Hard-won institutional knowledge for working on **GLASS** (*GPU Linear Algebra Simple
+Subroutines*) — the header-only, single-block GPU linear-algebra library: block-scoped
+backends `glass::` (SIMT), `glass::cgrps::` (cooperative-groups), `glass::nvidia::`
+(CUB/cuBLASDx/cuSOLVERDx), plus the warp-scoped `glass::warp::` set and the
+block-tridiagonal `glass::bdmv` / `glass::pcg`. **Read this before you change any
 primitive or do a refactor.** Every GLASS function is a `__device__` helper that assumes it
 runs inside **one CUDA block**, cooperating across `threadIdx`/`blockDim` (or a cooperative
 group). That single-block, multi-thread, shared-data model is the source of essentially every
@@ -13,6 +15,8 @@ Source map you will reference constantly:
 - Pure-SIMT surface: `glass.cuh` → `src/base/L1/*.cuh`, `src/base/L2/*.cuh`, `src/base/L3/*.cuh`.
 - Cooperative-groups surface: `glass-cgrps.cuh`.
 - Vendor backends: `glass-nvidia.cuh` → `src/nvidia/{l1,l2,l3,l3_simt,lapack,query_simt,tuning_table,types}.cuh`.
+- Warp-scoped variants: inline in the base L1/L3 headers (`src/base/L1/reduce.cuh`, `src/base/L3/{gemm,chol_InPlace,trsm}.cuh`), under `namespace warp`.
+- Block-tridiagonal: `glass::bdmv` (`src/base/banded/bdmv.cuh`), `glass::pcg` + `glass::pcg_smem_size` (`src/base/pcg/solve.cuh`).
 - Host smem helper: `glass_gemm_dispatch_smem` in `glass.cuh`.
 - Tests: `test/conftest.py` (compile + cache harness), `test/test_l{1,2,3}.py`,
   `test/test_nvidia_dispatch.py`, `test/test_trailing_sync.py`, and the CUDA drivers under
@@ -48,8 +52,9 @@ Source map you will reference constantly:
    destination via a beta-form GEMM, make sure the caller initializes C.
 6. **MathDx-optional paths must still build and skip gracefully without it** (§3). Run the suite
    once with `MATHDX_ROOT` unset to confirm the SIMT paths and the skip logic are intact.
-7. **Confirm you touched only the files you expect** (`git diff --stat`). The three namespaces
-   share base impls via an include trick — a one-line change can have block-wide blast radius (§5).
+7. **Confirm you touched only the files you expect** (`git diff --stat`). The block-scoped
+   namespaces — and the inline `glass::warp::` variants — share base impls via an include trick,
+   so a one-line change in a base header can have library-wide blast radius (§5).
 
 ---
 
@@ -166,21 +171,21 @@ Functions that take `extern __shared__` scratch (or an explicit scratch pointer)
   EXACT value to the launch — too small = OOB, and (for the default form) a wrong thread count
   deadlocks. Always query, never hard-code a guessed byte count.
 
-### 1f. Block-tridiagonal layout contracts (`glass::banded::` / `glass::pcg::`)
+### 1f. Block-tridiagonal layout contracts (`glass::bdmv` / `glass::pcg`)
 
 The banded matvec and PCG solver carry layout/launch preconditions that fail *silently*
 (wrong numbers, not a crash) if violated:
 
 - **Pre-zero the vector pads.** Vectors are padded `(knot_points+2)*state_size` with one
-  `state_size` pad block on each end. `bdmv` relies on the first/last block-rows multiplying
+  `state_size` pad block on each end. `glass::bdmv` relies on the first/last block-rows multiplying
   their absent `L`/`R` against **zero pad** — if the pads hold garbage, the edge rows are wrong.
-  `pcg::solve` zeroes its internal vectors (`set_const`), but a hand-rolled `bdmv` caller must
+  `glass::pcg` zeroes its internal vectors (`set_const`), but a hand-rolled `glass::bdmv` caller must
   zero the pads itself.
-- **`pcg::solve` needs `blockDim.x` a multiple of 32.** Its inner dot is `high_speed::dot`
+- **`glass::pcg` needs `blockDim.x` a multiple of 32.** Its inner dot is `high_speed::dot`
   (warp-shuffle); a non-warp-multiple thread count drops the partial warp's contribution. (This
   is the one place the usual "any thread count" invariance does **not** hold — it's a documented
   contract, asserted-by-convention.)
-- **Shared-mem must equal `pcg::smem_elems<T,state_size,knot_points>(threads)`** — five padded
+- **Shared-mem must equal `glass::pcg_smem_size<T,state_size,knot_points>(threads)`** — five padded
   work vectors + `ceil(threads/32)` warp-dot scratch. Under-sizing overruns; see 1e.
 - **`[L|D|R]` is row-major per block-row**, strip `br` at `s_matrix + br*(3*state_size)*state_size`.
   Mixing this up with a dense or column-major layout silently produces wrong results — validate a
@@ -315,10 +320,11 @@ NOT. Rules:
   `glass::nvidia::` all pull the SAME base headers in via the **include trick**: `glass.cuh`
   literally `#include`s `src/base/L1/*.cuh` etc. *inside* `namespace glass { ... }`, and the other
   umbrellas do likewise into their namespaces. So editing `src/base/L3/gemm.cuh` changes
-  `glass::gemm` AND `glass::cgrps::gemm` AND the SIMT fallback that `glass::nvidia::gemm`
-  auto-dispatches to. After touching a base impl, run the FULL suite (`test_l1` + `test_l2` +
-  `test_l3` + the nvidia dispatch/trailing-sync tests), not just the namespace you were thinking
-  about. Validate that all three namespaces still produce identical numbers.
+  `glass::gemm` AND `glass::cgrps::gemm` AND the inline `glass::warp::gemm` AND the SIMT fallback
+  that `glass::nvidia::gemm` auto-dispatches to (and `glass::pcg`, which composes `glass::bdmv` +
+  the base dot/axpy). After touching a base impl, run the FULL suite (`test_l1` + `test_l2` +
+  `test_l3` + banded/pcg + the nvidia dispatch/trailing-sync tests), not just the namespace you were thinking
+  about. Validate that all the surfaces sharing that base impl still produce identical numbers.
 - **Changing a default thread group / launch contract.** `glass::nvidia::` (default form) requires
   **exactly** `gemm_threads<T,M,N,K>()` threads — a mismatch silently deadlocks (or, without
   `-DNDEBUG`, asserts via the P1-4 `assert(blockDim >= GEMM::block_dim)`). Don't change a wrapper's
@@ -352,4 +358,4 @@ NOT. Rules:
 | Hard compile error when MathDx absent | Optional-dep guard missing (§3) |
 | Edits seem to have no effect | Stale compile cache / header not hashed (§4) |
 | Warp op correct standalone, wrong only in a larger `__restrict__` kernel | Shared-reread broadcast miscompile — use `__shfl` (§1g) |
-| Block-tridiagonal `bdmv`/`pcg` wrong at edges or non-warp thread count | Layout/launch contract (§1f) |
+| Block-tridiagonal `glass::bdmv`/`pcg` wrong at edges or non-warp thread count | Layout/launch contract (§1f) |

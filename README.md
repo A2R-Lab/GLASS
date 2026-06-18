@@ -1,6 +1,6 @@
 # GLASS
 
-**GPU Linear Algebra for Single-block Systems** — a header-only CUDA library of BLAS- and LAPACK-like device functions designed for use within a single thread block.
+**GPU Linear Algebra Simple Subroutines.** Composable `__device__` BLAS/LAPACK-style subroutines that run inside a single CUDA block. Now expanding to warp-level primitives for packing many small problems into one block.
 
 ## Overview
 
@@ -8,23 +8,40 @@ GLASS functions are `__device__` helpers that operate on data in shared or devic
 
 GLASS started as a small set of hand-rolled SIMT subroutines (`glass::`, `glass::cgrps::`) tuned for very small matrices where the launch and dispatch overhead of a vendor library would dominate the actual work. It has since grown into a **unified single-block linear-algebra surface** that wraps NVIDIA's state-of-the-art device-side libraries — CUB (L1 reductions), cuBLASDx (L2/L3 GEMV/GEMM, including batched), and cuSOLVERDx (LAPACK: Cholesky, LU, QR, triangular and least-squares solves) — under the same `__device__` calling convention. The intent is to give callers one consistent API across the full block-size compute scale: pure-SIMT for tiny matrices where the vendor path can't beat unrolled SIMT, and tensor-core-tuned vendor kernels for everything large enough to benefit from them.
 
-Three namespaces are provided:
+### Call surfaces
 
-| Namespace | Backend | Header |
-|-----------|---------|--------|
-| `glass::` | Hand-rolled SIMT, `threadIdx.{x,y,z}` / `blockDim.*` — no cgrps dep | `glass.cuh` |
-| `glass::cgrps::` | Hand-rolled SIMT, `g.thread_rank()` / `g.size()` — cooperative groups | `glass-cgrps.cuh` |
-| `glass::nvidia::` | CUB (L1) + cuBLASDx (L2/L3, batched) + cuSOLVERDx (LAPACK) — compile-time sizes only | `glass-nvidia.cuh` |
+GLASS primitives are **block-scoped** by default — one block per problem — and come in three numerically-interchangeable backends, plus a **warp-scoped** surface for kernels that pack many small independent problems into one block (one per warp):
 
-Both `glass::` and `glass::cgrps::` offer **runtime** (size as function arg) and **compile-time** (size as template arg) overloads for every function. The `glass::nvidia::` wrappers preserve the same one-block, `__device__` calling convention so a single kernel can mix hand-rolled and vendor-backed primitives without leaving the block — and switch between them by changing the namespace prefix when profiling shows one is faster than the other at a given size.
+| Namespace | Scope | Backend | Header |
+|-----------|-------|---------|--------|
+| `glass::` | block | Hand-rolled SIMT, `threadIdx.{x,y,z}` / `blockDim.*` — no cgrps dep | `glass.cuh` |
+| `glass::cgrps::` | block | Hand-rolled SIMT, `g.thread_rank()` / `g.size()` — cooperative groups | `glass-cgrps.cuh` |
+| `glass::nvidia::` | block | CUB (L1) + cuBLASDx (L2/L3, batched) + cuSOLVERDx (LAPACK) — compile-time sizes only | `glass-nvidia.cuh` |
+| `glass::warp::` | **warp** | Single-warp SIMT via `__shfl_*_sync` — *selected* L1/L3 ops, no `__syncthreads`/shared | inline in the base L1/L3 headers (via `glass.cuh`) |
 
-Reduction operations additionally offer `glass::low_memory::` (no scratch, thread 0 accumulates) and `glass::high_speed::` (warp-shuffle + shared-memory inter-warp reduction) sub-namespaces.
+The three **block-scoped** backends provide the full L1/L2/L3 surface and are interchangeable — switch by changing the namespace prefix when profiling shows one is faster at a given size. They preserve the same one-block, `__device__` calling convention, so a single kernel can mix hand-rolled and vendor-backed primitives without leaving the block. `glass::warp::` is a **warp-per-problem** variant covering a selected set (`reduce`, `gemm`, `cholDecomp_InPlace`, `trsm`/`trsm_transpose`): the warps run independently (no block barrier), turning the block into a vehicle for intra-block parallelism. It requires a full 32-lane warp.
+
+Both `glass::` and `glass::cgrps::` offer **runtime** (size as function arg) and **compile-time** (size as template arg) overloads for every function. Reduction operations additionally offer `glass::low_memory::` (no scratch, thread 0 accumulates) and `glass::high_speed::` (warp-shuffle + shared-memory inter-warp reduction) sub-namespaces.
+
+### Higher-level solvers
+
+Built on the primitives above (and likewise single-block) for the block-tridiagonal SPD systems of trajectory optimization / MPC:
+
+| Function | What | Header |
+|----------|------|--------|
+| `glass::bdmv` | block-tridiagonal matvec (`[L\|D\|R]` strips, padded vectors) | `src/base/banded/bdmv.cuh` |
+| `glass::pcg` | single-block preconditioned conjugate gradient (`S x = b`) | `src/base/pcg/solve.cuh` |
+
+An internal box-constrained QP solver, `glass::internal::box_qp` (`src/L3/box_qp.cuh`), also lives in the tree but is **not** part of the public surface — QP is optimization rather than linear algebra; see `docs/open-tasks/qp_solver_scope.md`.
 
 ---
 
 ## Choosing the right backend
 
-Three questions decide which API to call:
+First pick the **execution scope**: one block per problem (the default `glass::` /
+`glass::cgrps::` / `glass::nvidia::` surface) or one warp per problem
+(`glass::warp::`, when you're packing many tiny independent problems into a block).
+For the block-scoped backends, three questions decide which to call:
 
 1. **Are sizes known at compile time?**
 2. **Is matrix size large enough that vendor-tuned tensor-core kernels matter?**

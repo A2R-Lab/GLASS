@@ -1,10 +1,10 @@
 User Guide
 ==========
 
-**GLASS** — *GPU Linear Algebra for Single-block Systems* — is a header-only
-CUDA library of BLAS- and LAPACK-like ``__device__`` functions designed to run
-within a single thread block. This guide walks you from installation through the
-core concepts and hands-on tutorials.
+**GLASS** — *GPU Linear Algebra Simple Subroutines*. Composable ``__device__``
+BLAS/LAPACK-style subroutines that run inside a single CUDA block, now expanding
+to warp-level primitives. This guide walks you from installation through the core
+concepts and hands-on tutorials.
 
 .. grid:: 2
    :gutter: 3
@@ -20,8 +20,8 @@ core concepts and hands-on tutorials.
       :link: getting_started/library_overview
       :link-type: doc
 
-      What GLASS is, the single-block execution model, and the three namespaces
-      — with a guide to choosing the right backend.
+      What GLASS is, the single-block execution model, and the four call
+      surfaces — with a guide to choosing the right backend.
 
    .. grid-item-card:: Concepts
       :link: concepts/index

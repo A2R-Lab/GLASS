@@ -53,10 +53,8 @@ namespace glass {
     #include "./src/base/L3/chol_InPlace.cuh"
     #include "./src/base/L3/trsm.cuh"
 
-    /*      banded  */
+    /*  block-tridiagonal: glass::bdmv (matvec) + glass::pcg (solver)  */
     #include "./src/base/banded/bdmv.cuh"
-
-    /*      solvers */
     #include "./src/base/pcg/solve.cuh"
 }
 

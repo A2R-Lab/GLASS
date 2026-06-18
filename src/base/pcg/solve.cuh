@@ -3,7 +3,7 @@
 
 /**
  * @file solve.cuh
- * @brief Block-wide preconditioned conjugate gradient (`glass::pcg::solve`).
+ * @brief Block-wide preconditioned conjugate gradient (`glass::pcg`).
  *
  * Solves a single block-tridiagonal SPD system `S x = b` inside ONE CUDA block,
  * with a block-tridiagonal preconditioner `Pinv` applied as `z = Pinv r`. This
@@ -11,7 +11,7 @@
  * independent solve. It uses only `__syncthreads()` (no cooperative groups);
  * for the cooperative grid-wide variant see the backlog `glass::cgrps::grid`.
  *
- * Layouts (see `glass::banded::bdmv`): `S` and `Pinv` are block-tridiagonal
+ * Layouts (see `glass::bdmv`): `S` and `Pinv` are block-tridiagonal
  * `[L|D|R]` row-major strips; all vectors use the padded layout
  * `(knot_points + 2) * state_size` (one `state_size` pad block on each end).
  * The caller seeds `x` with an initial guess (zeros are fine).
@@ -19,15 +19,13 @@
  * Convergence is tested on the preconditioned residual `rho = rᵀ z`:
  * `|rho| < abs_tol + rel_tol * |rho_init|`.
  *
- * Shared scratch: pass `s_mem` of `smem_elems<T,state_size,knot_points>(threads)`
+ * Shared scratch: pass `s_mem` of `pcg_smem_size<T,state_size,knot_points>(threads)`
  * elements (5 padded vectors + the warp-dot scratch). Five scalars live in
  * static `__shared__`. Requires `blockDim.x` be a multiple of 32 (the warp dot).
  */
 
-namespace pcg {
-
 /**
- * @brief Shared-memory element count needed by `glass::pcg::solve`.
+ * @brief Shared-memory element count needed by `glass::pcg`.
  *
  * Host- or device-callable. Multiply by `sizeof(T)` for the dynamic-shared-mem
  * bytes to pass at launch. Covers the 5 padded work vectors plus the warp-dot
@@ -40,13 +38,13 @@ namespace pcg {
  * @return Number of `T` elements of dynamic shared memory required.
  */
 template <typename T, uint32_t state_size, uint32_t knot_points>
-__host__ __device__ inline constexpr uint32_t smem_elems(uint32_t threads)
+__host__ __device__ inline constexpr uint32_t pcg_smem_size(uint32_t threads)
 {
     return 5u * ((knot_points + 2u) * state_size) + ((threads + 31u) / 32u);
 }
 
 /**
- * @brief Solve `S x = b` by preconditioned conjugate gradient, one block.
+ * @brief Solve `S x = b` by preconditioned conjugate gradient, one block (`glass::pcg`).
  *
  * @tparam T            Scalar type (e.g. `float`, `double`).
  * @tparam state_size   Block dimension (= `BlockSize` of the banded layout).
@@ -56,7 +54,7 @@ __host__ __device__ inline constexpr uint32_t smem_elems(uint32_t threads)
  * @param S          Block-tridiagonal SPD system, `[L|D|R]` row-major strips.
  * @param Pinv       Block-tridiagonal preconditioner, `[L|D|R]` row-major strips.
  * @param b          Padded right-hand side.
- * @param s_mem      Shared scratch of `smem_elems<T,...>(blockDim.x)` elements.
+ * @param s_mem      Shared scratch of `pcg_smem_size<T,...>(blockDim.x)` elements.
  * @param max_iters  Maximum CG iterations.
  * @param rel_tol    Relative tolerance on the preconditioned residual.
  * @param abs_tol    Absolute tolerance on the preconditioned residual.
@@ -65,8 +63,8 @@ __host__ __device__ inline constexpr uint32_t smem_elems(uint32_t threads)
  *                   device address).
  */
 template <typename T, uint32_t state_size, uint32_t knot_points>
-__device__ void solve(T *x, T *S, T *Pinv, T *b, T *s_mem,
-                      uint32_t max_iters, T rel_tol, T abs_tol, uint32_t *iters)
+__device__ void pcg(T *x, T *S, T *Pinv, T *b, T *s_mem,
+                    uint32_t max_iters, T rel_tol, T abs_tol, uint32_t *iters)
 {
     constexpr uint32_t VEC = (knot_points + 2) * state_size;
 
@@ -86,12 +84,12 @@ __device__ void solve(T *x, T *S, T *Pinv, T *b, T *s_mem,
     copy<T, VEC>(x, s_x);                              // s_x = x (initial guess)
     __syncthreads();
 
-    banded::bdmv<T, knot_points, state_size>(s_r, S, s_x);             // r = S x
+    bdmv<T, knot_points, state_size>(s_r, S, s_x);             // r = S x
     __syncthreads();
     axpby<T, VEC>(static_cast<T>(1), b, static_cast<T>(-1), s_r, s_r); // r = b - S x
     __syncthreads();
 
-    banded::bdmv<T, knot_points, state_size>(s_z, s_p, Pinv, s_r);     // z = p = Pinv r
+    bdmv<T, knot_points, state_size>(s_z, s_p, Pinv, s_r);     // z = p = Pinv r
     __syncthreads();
 
     high_speed::dot<T, VEC>(s_r, s_z, &s_rho, s_scr);                  // rho = rᵀ z
@@ -111,7 +109,7 @@ __device__ void solve(T *x, T *S, T *Pinv, T *b, T *s_mem,
     for (uint32_t i = 0; i < max_iters; i++) {
         it = i + 1;
 
-        banded::bdmv<T, knot_points, state_size>(s_Ap, S, s_p);        // Ap = S p
+        bdmv<T, knot_points, state_size>(s_Ap, S, s_p);        // Ap = S p
         __syncthreads();
 
         high_speed::dot<T, VEC>(s_p, s_Ap, &s_alpha, s_scr);          // pᵀ Ap
@@ -123,7 +121,7 @@ __device__ void solve(T *x, T *S, T *Pinv, T *b, T *s_mem,
         axpy<T, VEC>(-s_alpha, s_Ap, s_r);                           // r -= alpha Ap
         __syncthreads();
 
-        banded::bdmv<T, knot_points, state_size>(s_z, Pinv, s_r);     // z = Pinv r
+        bdmv<T, knot_points, state_size>(s_z, Pinv, s_r);     // z = Pinv r
         __syncthreads();
 
         high_speed::dot<T, VEC>(s_r, s_z, &s_rho_new, s_scr);        // rho_new = rᵀ z
@@ -144,4 +142,3 @@ __device__ void solve(T *x, T *S, T *Pinv, T *b, T *s_mem,
     __syncthreads();
 }
 
-} // namespace pcg
