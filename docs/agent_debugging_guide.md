@@ -81,7 +81,12 @@ that thread *j* has not yet written.
   `high_speed::reduce` syncs after the inter-warp `s_scratch` write; `gemm_tiled` in
   `src/base/L3/gemm.cuh` syncs around each tile load (`__syncthreads()` before and after the
   inner-product over the tile). The matrix factor/solve flows (`inv.cuh`, `chol_InPlace.cuh`,
-  `trsm.cuh`) sync between elimination steps.
+  `trsm.cuh`) sync between elimination steps. `inv.cuh` also has **fused 2-/3-matrix
+  `invertMatrix` overloads** (used by GATO's Schur kernel for Q_k/Q_kp1/R_k): they interleave
+  several independent matrices' Gauss-Jordan sweeps over one shared `MAX_DIM = max(dims)` pivot
+  loop (a matrix idles once `pivRC >= its dim`), keeping the **same augmented `[A | I]` convention
+  and the same per-pivot save→update barrier** as the single-matrix path — so the barrier audit is
+  identical, just replicated per matrix with per-matrix scratch offsets (`2*dim+1` each).
 - **Counter-note (do not over-add barriers):** the *plain* `gemm_impl` (`gemm.cuh`) needs **no**
   interior sync — each thread owns a disjoint output element `C[cidx]` and never reads another
   thread's partial. Adding a barrier there is wrong-headed bloat. The rule is precise: sync only
