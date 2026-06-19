@@ -86,11 +86,11 @@ __device__ void invertMatrix(uint32_t dimA, uint32_t dimB, uint32_t MAX_DIM, T *
         bool BActive = pivRC < dimB;
         unsigned pivOffA = pivRC * dimA;
         unsigned pivOffB = pivRC * dimB;
-        for (unsigned ind = rank; ind < MAX_DIM; ind++) {
+        for (unsigned ind = rank; ind < MAX_DIM; ind += size) {
             if (AActive && ind < dimA) s_memA[ind] = A[ind + pivOffA];
             if (BActive && ind < dimB) s_memB[ind] = B[ind + pivOffB];
         }
-        for (unsigned ind = rank; ind < MAX_DIM + 1; ind++) {
+        for (unsigned ind = rank; ind < MAX_DIM + 1; ind += size) {
             if (AActive && ind < dimA + 1) s_memA[ind + dimA] = A[ind*dimA + pivRC + pivOffA];
             if (BActive && ind < dimB + 1) s_memB[ind + dimB] = B[ind*dimB + pivRC + pivOffB];
         }
@@ -140,12 +140,12 @@ __device__ void invertMatrix(uint32_t dimA, uint32_t dimB, uint32_t dimC, uint32
         unsigned pivOffA = pivRC * dimA;
         unsigned pivOffB = pivRC * dimB;
         unsigned pivOffC = pivRC * dimC;
-        for (unsigned ind = rank; ind < MAX_DIM; ind++) {
+        for (unsigned ind = rank; ind < MAX_DIM; ind += size) {
             if (AActive && ind < dimA) s_memA[ind] = A[ind + pivOffA];
             if (BActive && ind < dimB) s_memB[ind] = B[ind + pivOffB];
             if (CActive && ind < dimC) s_memC[ind] = C[ind + pivOffC];
         }
-        for (unsigned ind = rank; ind < MAX_DIM + 1; ind++) {
+        for (unsigned ind = rank; ind < MAX_DIM + 1; ind += size) {
             if (AActive && ind < dimA + 1) s_memA[ind + dimA] = A[ind*dimA + pivRC + pivOffA];
             if (BActive && ind < dimB + 1) s_memB[ind + dimB] = B[ind*dimB + pivRC + pivOffB];
             if (CActive && ind < dimC + 1) s_memC[ind + dimC] = C[ind*dimC + pivRC + pivOffC];
