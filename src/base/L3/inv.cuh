@@ -58,6 +58,120 @@ __device__ void invertMatrix(T *A, T *s_temp)
     invertMatrix<T>(N, A, s_temp);
 }
 
+/**
+ * @brief Fused in-place inverse of TWO independent matrices (augmented `[A | I]`).
+ *
+ * Inverts `A` (dimA x dimA) and `B` (dimB x dimB) simultaneously in one block by
+ * interleaving their Gauss-Jordan sweeps over a shared `MAX_DIM = max(dimA, dimB)`
+ * pivot loop (a matrix sits idle once its dimension is exhausted). Same augmented
+ * `[V | I]` convention as the single-matrix `invertMatrix`: each buffer is
+ * column-major `dim x (2*dim)` and on return its right half holds the inverse.
+ * Fewer barriers than two separate calls. NumPy: `Ainv, Binv = inv(A), inv(B)`.
+ *
+ * @tparam T  Scalar type.
+ * @param dimA,dimB  Matrix dimensions.
+ * @param MAX_DIM    `max(dimA, dimB)` — the shared pivot-loop length.
+ * @param A,B        In/out augmented `[V | I]` buffers (column-major, dim x 2*dim).
+ * @param s_temp     Shared scratch of `(2*dimA + 2*dimB + 2) * sizeof(T)` bytes.
+ */
+template <typename T>
+__device__ void invertMatrix(uint32_t dimA, uint32_t dimB, uint32_t MAX_DIM, T *A, T *B, T *s_temp)
+{
+    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    T *s_memA = s_temp;
+    T *s_memB = &s_memA[2*dimA + 1];
+    for (unsigned pivRC = 0; pivRC < MAX_DIM; pivRC++) {
+        bool AActive = pivRC < dimA;
+        bool BActive = pivRC < dimB;
+        unsigned pivOffA = pivRC * dimA;
+        unsigned pivOffB = pivRC * dimB;
+        for (unsigned ind = rank; ind < MAX_DIM; ind++) {
+            if (AActive && ind < dimA) s_memA[ind] = A[ind + pivOffA];
+            if (BActive && ind < dimB) s_memB[ind] = B[ind + pivOffB];
+        }
+        for (unsigned ind = rank; ind < MAX_DIM + 1; ind++) {
+            if (AActive && ind < dimA + 1) s_memA[ind + dimA] = A[ind*dimA + pivRC + pivOffA];
+            if (BActive && ind < dimB + 1) s_memB[ind + dimB] = B[ind*dimB + pivRC + pivOffB];
+        }
+        __syncthreads();
+        for (unsigned ind = rank; ind < MAX_DIM*(MAX_DIM + 1); ind += size) {
+            if (AActive && ind < dimA*(dimA + 1)) {
+                unsigned row = ind % dimA, col = ind / dimA;
+                if (row == pivRC) A[pivOffA + ind] /= s_memA[pivRC];
+                else A[pivOffA + ind] -= s_memA[row] / s_memA[pivRC] * s_memA[dimA + col];
+            }
+            if (BActive && ind < dimB*(dimB + 1)) {
+                unsigned row = ind % dimB, col = ind / dimB;
+                if (row == pivRC) B[pivOffB + ind] /= s_memB[pivRC];
+                else B[pivOffB + ind] -= s_memB[row] / s_memB[pivRC] * s_memB[dimB + col];
+            }
+        }
+        __syncthreads();
+    }
+}
+
+/**
+ * @brief Fused in-place inverse of THREE independent matrices (augmented `[A | I]`).
+ *
+ * Inverts `A`,`B`,`C` simultaneously in one block over a shared
+ * `MAX_DIM = max(dimA, dimB, dimC)` pivot loop (each matrix idles once exhausted).
+ * Same augmented `[V | I]` convention as the single-matrix `invertMatrix`. Used by
+ * GATO's Schur kernel (Q_k, Q_kp1, R_k). NumPy: invert each independently.
+ *
+ * @tparam T  Scalar type.
+ * @param dimA,dimB,dimC  Matrix dimensions.
+ * @param MAX_DIM         `max(dimA, dimB, dimC)` — the shared pivot-loop length.
+ * @param A,B,C           In/out augmented `[V | I]` buffers (column-major, dim x 2*dim).
+ * @param s_temp          Shared scratch of `(2*dimA + 2*dimB + 2*dimC + 3) * sizeof(T)` bytes.
+ */
+template <typename T>
+__device__ void invertMatrix(uint32_t dimA, uint32_t dimB, uint32_t dimC, uint32_t MAX_DIM, T *A, T *B, T *C, T *s_temp)
+{
+    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    T *s_memA = s_temp;
+    T *s_memB = &s_memA[2*dimA + 1];
+    T *s_memC = &s_memB[2*dimB + 1];
+    for (unsigned pivRC = 0; pivRC < MAX_DIM; pivRC++) {
+        bool AActive = pivRC < dimA;
+        bool BActive = pivRC < dimB;
+        bool CActive = pivRC < dimC;
+        unsigned pivOffA = pivRC * dimA;
+        unsigned pivOffB = pivRC * dimB;
+        unsigned pivOffC = pivRC * dimC;
+        for (unsigned ind = rank; ind < MAX_DIM; ind++) {
+            if (AActive && ind < dimA) s_memA[ind] = A[ind + pivOffA];
+            if (BActive && ind < dimB) s_memB[ind] = B[ind + pivOffB];
+            if (CActive && ind < dimC) s_memC[ind] = C[ind + pivOffC];
+        }
+        for (unsigned ind = rank; ind < MAX_DIM + 1; ind++) {
+            if (AActive && ind < dimA + 1) s_memA[ind + dimA] = A[ind*dimA + pivRC + pivOffA];
+            if (BActive && ind < dimB + 1) s_memB[ind + dimB] = B[ind*dimB + pivRC + pivOffB];
+            if (CActive && ind < dimC + 1) s_memC[ind + dimC] = C[ind*dimC + pivRC + pivOffC];
+        }
+        __syncthreads();
+        for (unsigned ind = rank; ind < MAX_DIM*(MAX_DIM + 1); ind += size) {
+            if (AActive && ind < dimA*(dimA + 1)) {
+                unsigned row = ind % dimA, col = ind / dimA;
+                if (row == pivRC) A[pivOffA + ind] /= s_memA[pivRC];
+                else A[pivOffA + ind] -= s_memA[row] / s_memA[pivRC] * s_memA[dimA + col];
+            }
+            if (BActive && ind < dimB*(dimB + 1)) {
+                unsigned row = ind % dimB, col = ind / dimB;
+                if (row == pivRC) B[pivOffB + ind] /= s_memB[pivRC];
+                else B[pivOffB + ind] -= s_memB[row] / s_memB[pivRC] * s_memB[dimB + col];
+            }
+            if (CActive && ind < dimC*(dimC + 1)) {
+                unsigned row = ind % dimC, col = ind / dimC;
+                if (row == pivRC) C[pivOffC + ind] /= s_memC[pivRC];
+                else C[pivOffC + ind] -= s_memC[row] / s_memC[pivRC] * s_memC[dimC + col];
+            }
+        }
+        __syncthreads();
+    }
+}
+
 
 /**
  * @brief Dense (no augmented buffer) in-place matrix inverse via dual-update Gauss-Jordan.

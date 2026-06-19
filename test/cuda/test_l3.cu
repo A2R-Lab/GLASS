@@ -79,6 +79,12 @@ __global__ void k_inv_cg(int n, float* A, float* scratch) {
 __global__ void k_inv_simple(int n, float* A, float* scratch) {
     glass::invertMatrix(n, A, scratch);
 }
+__global__ void k_inv2_simple(int dimA, int dimB, int maxd, float* A, float* B, float* scratch) {
+    glass::invertMatrix(dimA, dimB, maxd, A, B, scratch);
+}
+__global__ void k_inv3_simple(int dimA, int dimB, int dimC, int maxd, float* A, float* B, float* C, float* scratch) {
+    glass::invertMatrix(dimA, dimB, dimC, maxd, A, B, C, scratch);
+}
 
 // ─── chol kernels ─────────────────────────────────────────────────────────────
 __global__ void k_chol_cg(int n, float* A) {
@@ -199,6 +205,30 @@ int main(int argc, char** argv) {
         else    k_inv_simple<<<1, THREADS>>>(n, dA, scratch);
         cudaDeviceSynchronize();
         print_device_vec(dA + n * n, n * n);
+        cudaFree(scratch);
+
+    } else if (strcmp(op, "inv2") == 0) {  // fused 2-matrix invert
+        int dimA = atoi(argv[3]); int dimB = atoi(argv[4]); int maxd = atoi(argv[5]);
+        float* dA = read_device_vec(argv[6], 2 * dimA * dimA);
+        float* dB = read_device_vec(argv[7], 2 * dimB * dimB);
+        float* scratch; cudaMalloc(&scratch, (2*dimA + 2*dimB + 2) * sizeof(float));
+        k_inv2_simple<<<1, THREADS>>>(dimA, dimB, maxd, dA, dB, scratch);
+        cudaDeviceSynchronize();
+        print_device_vec(dA + dimA * dimA, dimA * dimA);
+        print_device_vec(dB + dimB * dimB, dimB * dimB);
+        cudaFree(scratch);
+
+    } else if (strcmp(op, "inv3") == 0) {  // fused 3-matrix invert (GATO Schur: Q_k, Q_kp1, R_k)
+        int dimA = atoi(argv[3]); int dimB = atoi(argv[4]); int dimC = atoi(argv[5]); int maxd = atoi(argv[6]);
+        float* dA = read_device_vec(argv[7], 2 * dimA * dimA);
+        float* dB = read_device_vec(argv[8], 2 * dimB * dimB);
+        float* dC = read_device_vec(argv[9], 2 * dimC * dimC);
+        float* scratch; cudaMalloc(&scratch, (2*dimA + 2*dimB + 2*dimC + 3) * sizeof(float));
+        k_inv3_simple<<<1, THREADS>>>(dimA, dimB, dimC, maxd, dA, dB, dC, scratch);
+        cudaDeviceSynchronize();
+        print_device_vec(dA + dimA * dimA, dimA * dimA);
+        print_device_vec(dB + dimB * dimB, dimB * dimB);
+        print_device_vec(dC + dimC * dimC, dimC * dimC);
         cudaFree(scratch);
 
     } else if (strcmp(op, "chol") == 0) {

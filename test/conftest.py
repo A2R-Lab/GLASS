@@ -53,6 +53,7 @@ def _hash_sources(cu_path: pathlib.Path) -> str:
               GLASS_DIR / "src" / "base" / "L1" / "reduce.cuh",
               GLASS_DIR / "src" / "base" / "L3" / "gemm.cuh",
               GLASS_DIR / "src" / "base" / "L3" / "chol_InPlace.cuh",
+              GLASS_DIR / "src" / "base" / "L3" / "inv.cuh",
               GLASS_DIR / "src" / "base" / "L3" / "trsm.cuh",
               GLASS_DIR / "src" / "base" / "L2" / "gemv_segmented.cuh",
               GLASS_DIR / "src" / "base" / "L3" / "gemm_batched_indexed.cuh",

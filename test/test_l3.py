@@ -198,6 +198,31 @@ def test_inv(bins, n, version):
     assert np.allclose(Ainv, expected, rtol=1e-2, atol=1e-3)
 
 
+def _aug(M, d):
+    # [M | I] column-major augmented buffer for invertMatrix
+    return np.asfortranarray(np.hstack([M, np.eye(d, dtype=np.float32)])).ravel(order='F')
+
+
+@pytest.mark.parametrize("dimA,dimB", [(4, 4), (6, 4), (3, 6)])
+def test_inv2(bins, dimA, dimB):
+    # fused 2-matrix invert: same augmented [A|I] convention, interleaved sweep
+    A = make_spd(dimA); B = make_spd(dimB)
+    res = run_op(bins["l3"], "inv2", "simple", args=[dimA, dimB, max(dimA, dimB)],
+                 inputs=[_aug(A, dimA), _aug(B, dimB)])
+    assert np.allclose(res[0].reshape(dimA, dimA, order='F'), np.linalg.inv(A), rtol=1e-2, atol=1e-3)
+    assert np.allclose(res[1].reshape(dimB, dimB, order='F'), np.linalg.inv(B), rtol=1e-2, atol=1e-3)
+
+
+# (12,12,6) mirrors GATO's Schur fused-3 (STATE_SIZE=12, CONTROL_SIZE=6 for indy7)
+@pytest.mark.parametrize("dimA,dimB,dimC", [(12, 12, 6), (6, 6, 6), (4, 6, 3)])
+def test_inv3(bins, dimA, dimB, dimC):
+    A = make_spd(dimA); B = make_spd(dimB); C = make_spd(dimC)
+    res = run_op(bins["l3"], "inv3", "simple", args=[dimA, dimB, dimC, max(dimA, dimB, dimC)],
+                 inputs=[_aug(A, dimA), _aug(B, dimB), _aug(C, dimC)])
+    for M, d, r in [(A, dimA, res[0]), (B, dimB, res[1]), (C, dimC, res[2])]:
+        assert np.allclose(r.reshape(d, d, order='F'), np.linalg.inv(M), rtol=1e-2, atol=1e-3)
+
+
 # ─── chol ─────────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("n", [3, 4, 6])
