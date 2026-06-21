@@ -59,14 +59,86 @@ __device__ void invertMatrix(T *A, T *s_temp)
 }
 
 /**
- * @brief Fused in-place inverse of TWO independent matrices (augmented `[A | I]`).
+ * @brief Fused in-place inverse of K independent matrices (augmented `[V | I]`).
  *
- * Inverts `A` (dimA x dimA) and `B` (dimB x dimB) simultaneously in one block by
- * interleaving their Gauss-Jordan sweeps over a shared `MAX_DIM = max(dimA, dimB)`
- * pivot loop (a matrix sits idle once its dimension is exhausted). Same augmented
- * `[V | I]` convention as the single-matrix `invertMatrix`: each buffer is
- * column-major `dim x (2*dim)` and on return its right half holds the inverse.
- * Fewer barriers than two separate calls. NumPy: `Ainv, Binv = inv(A), inv(B)`.
+ * Inverts `K` matrices simultaneously in one block by interleaving their
+ * Gauss-Jordan sweeps over a single shared `MAX_DIM = max(dims)` pivot loop:
+ * matrix `m` participates while `pivRC < dims[m]` and sits idle thereafter.
+ * Every matrix keeps the same augmented `[V | I]` convention as the
+ * single-matrix `invertMatrix` — buffer `mats[m]` is column-major
+ * `dims[m] x (2*dims[m])` and on return its right half holds `inv(mats[m])`.
+ * Fewer barriers than K separate calls (one save→update barrier pair per pivot
+ * step, shared by all K matrices). Used by GATO's Schur kernel
+ * (Q_k, Q_kp1, R_k → K=3).
+ *
+ * Scratch layout: matrix `m` owns the contiguous span
+ * `[Σ_{j<m}(2*dims[j]+1), Σ_{j<=m}(2*dims[j]+1))` of `s_temp` (each matrix needs
+ * `2*dims[m]+1` slots: `dims[m]` for its pivot column, `dims[m]+1` for its pivot
+ * row plus the augmented column). The per-matrix base offset is the prefix sum
+ * `Σ_{j<m}(2*dims[j]+1)`, recomputed locally per thread by scanning `dims[]`
+ * (no shared write, so race-free). Total scratch = `Σ_m (2*dims[m]+1)` elements.
+ *
+ * NumPy equivalent (per matrix `m`): `inv(m) = np.linalg.inv(mats[m])`.
+ *
+ * @tparam T  Scalar type.
+ * @param K        Number of matrices.
+ * @param dims     Per-matrix dimensions (`dims[m]` for matrix `m`).
+ * @param MAX_DIM  `max(dims[0..K-1])` — the shared pivot-loop length (precondition).
+ * @param mats     Array of K in/out augmented `[V | I]` buffers (column-major,
+ *                 `dims[m] x 2*dims[m]`); on return each right half holds its inverse.
+ * @param s_temp   Shared scratch of `(Σ_m (2*dims[m]+1)) * sizeof(T)` bytes.
+ */
+template <typename T>
+__device__ void invertMatrix(uint32_t K, const uint32_t *dims, uint32_t MAX_DIM, T **mats, T *s_temp)
+{
+    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    for (unsigned pivRC = 0; pivRC < MAX_DIM; pivRC++) {
+        // Phase 1: save each active matrix's pivot row + column into its scratch span.
+        // Strided over the union of work; per-matrix scratch base = prefix sum of (2*dim+1).
+        uint32_t sOff = 0;
+        for (unsigned m = 0; m < K; m++) {
+            uint32_t dim = dims[m];
+            if (pivRC < dim) {
+                T *M = mats[m];
+                T *s_mem = &s_temp[sOff];
+                unsigned pivOff = pivRC * dim;
+                // pivot column (dim entries) + pivot row & augmented column (dim+1 entries)
+                for (unsigned ind = rank; ind < dim; ind += size)
+                    s_mem[ind] = M[ind + pivOff];
+                for (unsigned ind = rank; ind < dim + 1; ind += size)
+                    s_mem[ind + dim] = M[ind*dim + pivRC + pivOff];
+            }
+            sOff += 2*dim + 1;
+        }
+        __syncthreads();
+        // Phase 2: Gauss-Jordan cell update for each active matrix.
+        sOff = 0;
+        for (unsigned m = 0; m < K; m++) {
+            uint32_t dim = dims[m];
+            if (pivRC < dim) {
+                T *M = mats[m];
+                T *s_mem = &s_temp[sOff];
+                unsigned pivOff = pivRC * dim;
+                for (unsigned ind = rank; ind < dim*(dim + 1); ind += size) {
+                    unsigned row = ind % dim, col = ind / dim;
+                    if (row == pivRC) M[pivOff + ind] /= s_mem[pivRC];
+                    else M[pivOff + ind] -= s_mem[row] / s_mem[pivRC] * s_mem[dim + col];
+                }
+            }
+            sOff += 2*dim + 1;
+        }
+        __syncthreads();
+    }
+}
+
+/**
+ * @brief Fused in-place inverse of TWO independent matrices (augmented `[V | I]`).
+ *
+ * Thin wrapper over the K-way `invertMatrix` (K=2). Inverts `A` (dimA x dimA) and
+ * `B` (dimB x dimB) simultaneously in one block; same augmented `[V | I]`
+ * convention and output as the single-matrix `invertMatrix`.
+ * NumPy: `Ainv, Binv = inv(A), inv(B)`.
  *
  * @tparam T  Scalar type.
  * @param dimA,dimB  Matrix dimensions.
@@ -77,47 +149,18 @@ __device__ void invertMatrix(T *A, T *s_temp)
 template <typename T>
 __device__ void invertMatrix(uint32_t dimA, uint32_t dimB, uint32_t MAX_DIM, T *A, T *B, T *s_temp)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    T *s_memA = s_temp;
-    T *s_memB = &s_memA[2*dimA + 1];
-    for (unsigned pivRC = 0; pivRC < MAX_DIM; pivRC++) {
-        bool AActive = pivRC < dimA;
-        bool BActive = pivRC < dimB;
-        unsigned pivOffA = pivRC * dimA;
-        unsigned pivOffB = pivRC * dimB;
-        for (unsigned ind = rank; ind < MAX_DIM; ind += size) {
-            if (AActive && ind < dimA) s_memA[ind] = A[ind + pivOffA];
-            if (BActive && ind < dimB) s_memB[ind] = B[ind + pivOffB];
-        }
-        for (unsigned ind = rank; ind < MAX_DIM + 1; ind += size) {
-            if (AActive && ind < dimA + 1) s_memA[ind + dimA] = A[ind*dimA + pivRC + pivOffA];
-            if (BActive && ind < dimB + 1) s_memB[ind + dimB] = B[ind*dimB + pivRC + pivOffB];
-        }
-        __syncthreads();
-        for (unsigned ind = rank; ind < MAX_DIM*(MAX_DIM + 1); ind += size) {
-            if (AActive && ind < dimA*(dimA + 1)) {
-                unsigned row = ind % dimA, col = ind / dimA;
-                if (row == pivRC) A[pivOffA + ind] /= s_memA[pivRC];
-                else A[pivOffA + ind] -= s_memA[row] / s_memA[pivRC] * s_memA[dimA + col];
-            }
-            if (BActive && ind < dimB*(dimB + 1)) {
-                unsigned row = ind % dimB, col = ind / dimB;
-                if (row == pivRC) B[pivOffB + ind] /= s_memB[pivRC];
-                else B[pivOffB + ind] -= s_memB[row] / s_memB[pivRC] * s_memB[dimB + col];
-            }
-        }
-        __syncthreads();
-    }
+    uint32_t dims[2] = {dimA, dimB};
+    T *mats[2] = {A, B};
+    invertMatrix<T>(2, dims, MAX_DIM, mats, s_temp);
 }
 
 /**
- * @brief Fused in-place inverse of THREE independent matrices (augmented `[A | I]`).
+ * @brief Fused in-place inverse of THREE independent matrices (augmented `[V | I]`).
  *
- * Inverts `A`,`B`,`C` simultaneously in one block over a shared
- * `MAX_DIM = max(dimA, dimB, dimC)` pivot loop (each matrix idles once exhausted).
- * Same augmented `[V | I]` convention as the single-matrix `invertMatrix`. Used by
- * GATO's Schur kernel (Q_k, Q_kp1, R_k). NumPy: invert each independently.
+ * Thin wrapper over the K-way `invertMatrix` (K=3). Inverts `A`,`B`,`C`
+ * simultaneously in one block; same augmented `[V | I]` convention and output as
+ * the single-matrix `invertMatrix`. Used by GATO's Schur kernel (Q_k, Q_kp1, R_k).
+ * NumPy: invert each independently.
  *
  * @tparam T  Scalar type.
  * @param dimA,dimB,dimC  Matrix dimensions.
@@ -128,48 +171,9 @@ __device__ void invertMatrix(uint32_t dimA, uint32_t dimB, uint32_t MAX_DIM, T *
 template <typename T>
 __device__ void invertMatrix(uint32_t dimA, uint32_t dimB, uint32_t dimC, uint32_t MAX_DIM, T *A, T *B, T *C, T *s_temp)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    T *s_memA = s_temp;
-    T *s_memB = &s_memA[2*dimA + 1];
-    T *s_memC = &s_memB[2*dimB + 1];
-    for (unsigned pivRC = 0; pivRC < MAX_DIM; pivRC++) {
-        bool AActive = pivRC < dimA;
-        bool BActive = pivRC < dimB;
-        bool CActive = pivRC < dimC;
-        unsigned pivOffA = pivRC * dimA;
-        unsigned pivOffB = pivRC * dimB;
-        unsigned pivOffC = pivRC * dimC;
-        for (unsigned ind = rank; ind < MAX_DIM; ind += size) {
-            if (AActive && ind < dimA) s_memA[ind] = A[ind + pivOffA];
-            if (BActive && ind < dimB) s_memB[ind] = B[ind + pivOffB];
-            if (CActive && ind < dimC) s_memC[ind] = C[ind + pivOffC];
-        }
-        for (unsigned ind = rank; ind < MAX_DIM + 1; ind += size) {
-            if (AActive && ind < dimA + 1) s_memA[ind + dimA] = A[ind*dimA + pivRC + pivOffA];
-            if (BActive && ind < dimB + 1) s_memB[ind + dimB] = B[ind*dimB + pivRC + pivOffB];
-            if (CActive && ind < dimC + 1) s_memC[ind + dimC] = C[ind*dimC + pivRC + pivOffC];
-        }
-        __syncthreads();
-        for (unsigned ind = rank; ind < MAX_DIM*(MAX_DIM + 1); ind += size) {
-            if (AActive && ind < dimA*(dimA + 1)) {
-                unsigned row = ind % dimA, col = ind / dimA;
-                if (row == pivRC) A[pivOffA + ind] /= s_memA[pivRC];
-                else A[pivOffA + ind] -= s_memA[row] / s_memA[pivRC] * s_memA[dimA + col];
-            }
-            if (BActive && ind < dimB*(dimB + 1)) {
-                unsigned row = ind % dimB, col = ind / dimB;
-                if (row == pivRC) B[pivOffB + ind] /= s_memB[pivRC];
-                else B[pivOffB + ind] -= s_memB[row] / s_memB[pivRC] * s_memB[dimB + col];
-            }
-            if (CActive && ind < dimC*(dimC + 1)) {
-                unsigned row = ind % dimC, col = ind / dimC;
-                if (row == pivRC) C[pivOffC + ind] /= s_memC[pivRC];
-                else C[pivOffC + ind] -= s_memC[row] / s_memC[pivRC] * s_memC[dimC + col];
-            }
-        }
-        __syncthreads();
-    }
+    uint32_t dims[3] = {dimA, dimB, dimC};
+    T *mats[3] = {A, B, C};
+    invertMatrix<T>(3, dims, MAX_DIM, mats, s_temp);
 }
 
 
