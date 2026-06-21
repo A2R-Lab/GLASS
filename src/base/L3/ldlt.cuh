@@ -1,9 +1,12 @@
 #pragma once
 #include <cstdint>
+// glass.cuh includes L1/iamax.cuh (glass::low_memory::iamax) before this header,
+// so the pivot path below calls it unqualified — same intra-namespace dependency
+// convention as posv.cuh → cholDecomp_InPlace / trsv (no local #include).
 
 /**
  * @brief In-place LDLᵀ factorization of a symmetric (possibly INDEFINITE) matrix
- *        (LAPACK `sytrf` analogue, lower, non-pivoted).
+ *        (LAPACK `sytrf` analogue, lower, optional symmetric 1×1 pivoting).
  *
  * Factors `A = L * D * Lᵀ` where `L` is unit lower-triangular and `D` is
  * diagonal, overwriting `A` in place (column-major, lower triangle). On return:
@@ -27,39 +30,110 @@
  * the finished `D_j`) and after the trailing-column update (before the next
  * column starts).
  *
- * SciPy / NumPy equivalence: `lu, d, perm = scipy.linalg.ldl(A, lower=True)`
- * returns the same `L` (here `lu`, with `perm` the identity since this variant
- * is non-pivoted) and `D = np.diag(d)`; equivalently `A == L @ D @ L.T`.
+ * SciPy / NumPy equivalence: when `pivot==false`, `lu, d, perm =
+ * scipy.linalg.ldl(A, lower=True)` returns the same `L` (here `lu`, with `perm`
+ * the identity) and `D = np.diag(d)`; equivalently `A == L @ D @ L.T`. When
+ * `pivot==true` the recorded permutation `P` (built from `piv`, see below)
+ * satisfies `P @ A @ P.T == L @ D @ L.T`.
+ *
+ * @par Pivoting (`pivot==true`)
+ * Symmetric **1×1 diagonal pivoting**: at each step `k`, among the working
+ * (Schur-complement) diagonals `Dᵉᶠᶠ_i = A_ii - Σ_{m<k} L_im² D_m` for
+ * `i = k..n-1`, the index `p` of largest magnitude is selected and rows/cols `k`
+ * and `p` are **symmetrically swapped** in the lower-stored factor; `piv[k] = p`
+ * records the swap. This moves the largest available diagonal onto the pivot
+ * position, avoiding the zero/small-pivot breakdown of the non-pivoted path for
+ * the common indefinite case. The permutation is applied to the right-hand side
+ * by `ldlt_solve` when `piv != nullptr`. Operationally, `P b` is the forward
+ * sweep `for k=0..n-1: swap(b[k], b[piv[k]])` and `Pᵀ x` the reverse sweep — the
+ * two permutation passes `ldlt_solve` wraps around the triangular solves.
  *
  * @par Limitations
- * - **Non-pivoted.** Requires every pivot `D_j` to be nonzero. A symmetric
- *   matrix can be nonsingular yet still produce a zero pivot here (e.g. a
- *   saddle `[[0, b],[b, 0]]`): such a matrix needs the pivoted (Bunch–Kaufman)
- *   variant. The signature already reserves `bool pivot` + `uint32_t* piv` so
- *   Bunch–Kaufman can slot in later WITHOUT a signature change; `pivot=true` is
- *   not yet implemented.
+ * - `pivot==false` is **non-pivoted**: it requires every pivot `D_j` to be
+ *   nonzero. A symmetric matrix can be nonsingular yet still produce a zero pivot
+ *   here (e.g. a saddle `[[0, b],[b, 0]]`).
+ * - `pivot==true` does **symmetric 1×1 diagonal pivoting** (robust for indefinite
+ *   `A` with a nonzero remaining diagonal). **Full Bunch–Kaufman 2×2 pivoting is
+ *   NOT implemented**, so a structurally-zero diagonal *block* — e.g.
+ *   `[[0,1],[1,0]]`, whose entire remaining diagonal is zero at step 0 — still
+ *   cannot be factored (it requires a 2×2 pivot). That case remains a documented
+ *   known limitation.
  * - Thread-count invariant: identical output for any block size (1, a partial
- *   warp, or many warps).
+ *   warp, or many warps); the chosen pivot index is broadcast via shared memory +
+ *   `__syncthreads` (no racy re-read).
  * - Prefer `double` for ill-conditioned / KKT systems — small pivots amplify
- *   round-off badly without pivoting.
+ *   round-off badly; pivoting mitigates but does not eliminate this.
  *
  * @tparam T  Scalar type (use `double` for ill-conditioned KKT systems).
  * @param n       Matrix dimension (A is n x n).
  * @param A       In/out n x n matrix (column-major); on return its diagonal holds
  *                `D` and its strict lower triangle holds `L`.
- * @param s_temp  Shared scratch advertised as `(n + 1)` elements, RESERVED for
- *                the pivot path. The non-pivoted path does not use it and accepts
- *                `nullptr`.
- * @param pivot   If true, request Bunch–Kaufman pivoting (NOT yet implemented).
- * @param piv     Out pivot array of `n` entries (pivot path only); may be `nullptr`.
+ * @param s_temp  Shared scratch advertised as `(n + 1)` elements, used by the
+ *                pivot path: slot [0] broadcasts the chosen pivot index and slots
+ *                [1..n] hold the working-diagonal magnitudes fed to the no-scratch
+ *                `glass::low_memory::iamax` argmax (so the scratch stays within
+ *                `(n+1)` for any block size). The non-pivoted path does not use it
+ *                and accepts `nullptr`.
+ * @param pivot   If true, apply symmetric 1×1 diagonal pivoting (see above).
+ * @param piv     Out pivot array of `n` entries (pivot path only); `piv[k]` is the
+ *                index swapped into position `k`. May be `nullptr` when `!pivot`.
  */
 template <typename T>
 __device__ void ldlt(uint32_t n, T *A, T *s_temp, bool pivot = false, uint32_t *piv = nullptr)
 {
-    (void)s_temp; (void)pivot; (void)piv;  // reserved for the Bunch-Kaufman pivot path
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    // s_temp layout (pivot path only): [0] holds the broadcast pivot index (read
+    // as uint32_t); [1 .. n] hold the n-j working-diagonal magnitudes argmax'd by
+    // the no-scratch glass::low_memory::iamax (thread-0 serial scan — keeps the
+    // scratch within the advertised (n+1) elements regardless of block size).
+    if (!pivot) { (void)s_temp; (void)piv; }
     for (uint32_t j = 0; j < n; j++) {
+        if (pivot) {
+            // --- symmetric 1x1 pivot selection over the remaining diagonal ---
+            // Working diagonal of index i (i>=j): D_eff_i = A_ii - sum_{m<j} L_im^2 D_m.
+            // Each thread fills s_diag[i-j] for its strided i; barrier; argmax;
+            // broadcast the winner via s_idx (shared) so every thread agrees.
+            T *s_diag = s_temp + 1;          // length (n - j) working-diag scratch
+            for (uint32_t i = j + rank; i < n; i += size) {
+                T d = A[i*n + i];
+                for (uint32_t m = 0; m < j; m++) {
+                    T Lim = A[m*n + i];
+                    d -= Lim * Lim * A[m*n + m];
+                }
+                s_diag[i - j] = d;
+            }
+            __syncthreads();                 // working diagonals visible to argmax
+            // No-scratch argmax (thread 0 serial scan) over the working diagonals;
+            // writes the winning index into s_idx[0] and ends on __syncthreads(),
+            // so the pivot index is block-visible without a racy re-read.
+            uint32_t *s_idx = reinterpret_cast<uint32_t *>(s_temp);
+            low_memory::iamax<T>(n - j, s_diag, s_idx);
+            uint32_t p = j + s_idx[0];        // absolute pivot row/col
+            if (rank == 0) piv[j] = p;
+            // --- symmetric swap of rows/cols j and p in the lower factor ---
+            // Lower-stored symmetric layout: entry (r,c) with r>=c lives at A[c*n+r].
+            // Swapping index j<->p means swapping, for the whole matrix, every
+            // pair {(j,t),(p,t)} (row/col t). Strided over t for thread invariance.
+            if (p != j) {
+                for (uint32_t t = rank; t < n; t += size) {
+                    // skip the two pivot rows/cols themselves except their
+                    // diagonal handled below; handle each off-diagonal once.
+                    if (t == j || t == p) continue;
+                    // (j,t) and (p,t): pick lower-stored address by ordering.
+                    T *a_jt = (j >= t) ? &A[t*n + j] : &A[j*n + t];
+                    T *a_pt = (p >= t) ? &A[t*n + p] : &A[p*n + t];
+                    T tmp = *a_jt; *a_jt = *a_pt; *a_pt = tmp;
+                }
+                __syncthreads();             // off-diagonal swaps done
+                if (rank == 0) {
+                    // diagonal entries j<->p, and the cross entry (p,j) maps to
+                    // itself under the symmetric swap (stays in place).
+                    T tmp = A[j*n + j]; A[j*n + j] = A[p*n + p]; A[p*n + p] = tmp;
+                }
+                __syncthreads();             // diagonal swap visible before elim
+            }
+        }
         // Serial diagonal pivot: D_j = A_jj - sum_{k<j} L_jk^2 * D_k.
         if (rank == 0) {
             T sum = static_cast<T>(0);
@@ -93,9 +167,9 @@ __device__ void ldlt(uint32_t n, T *A, T *s_temp, bool pivot = false, uint32_t *
  * @tparam N  Matrix dimension (A is N x N).
  * @param A       In/out N x N matrix (column-major); diagonal holds `D`, strict
  *                lower holds `L` on return.
- * @param s_temp  Shared scratch advertised as `(N + 1)` elements (reserved for the
+ * @param s_temp  Shared scratch advertised as `(N + 1)` elements (used by the
  *                pivot path; non-pivoted path accepts `nullptr`).
- * @param pivot   If true, request Bunch–Kaufman pivoting (NOT yet implemented).
+ * @param pivot   If true, apply symmetric 1×1 diagonal pivoting (no 2×2 path).
  * @param piv     Out pivot array of `N` entries (pivot path only); may be `nullptr`.
  */
 template <typename T, uint32_t N>
@@ -117,10 +191,19 @@ __device__ void ldlt(T *A, T *s_temp, bool pivot = false, uint32_t *piv = nullpt
  * Single-block, in place. NumPy equivalence: `x = np.linalg.solve(A, b)`
  * (i.e. `x == scipy.linalg.solve(A, b, assume_a='sym')`).
  *
+ * @par Pivoting
+ * When `piv != nullptr` (factor produced with `pivot=true`), the factor satisfies
+ * `P A Pᵀ = L D Lᵀ`, so `A x = b` is solved as `x = Pᵀ (L D Lᵀ)⁻¹ P b`: the
+ * permutation `P` is applied to `b` BEFORE the forward solve and `Pᵀ` to the
+ * result AFTER the back solve. `P` is the ordered product of the recorded
+ * transpositions `swap(k, piv[k])` for `k = 0..n-1`; applying it to a vector is
+ * the same forward sweep of swaps (and `Pᵀ` is the reverse sweep). The swap pass
+ * is done serially on rank 0 (n is small and the data is the length-n RHS), with
+ * a `__syncthreads()` so the permuted vector is block-visible before the solve.
+ *
  * @par Limitations
- * Non-pivoted: pass `piv = nullptr` (the default). When the Bunch–Kaufman pivot
- * path lands, a non-null `piv` will apply the symmetric row/column permutation;
- * the signature is frozen so callers need not change.
+ * Pass `piv = nullptr` (the default) for a non-pivoted factor. Only symmetric 1×1
+ * pivoting is supported (matching `ldlt(pivot=true)`); there is no 2×2 path.
  *
  * @tparam T  Scalar type.
  * @param n   Dimension (LD is n x n, b has length n).
@@ -131,9 +214,17 @@ __device__ void ldlt(T *A, T *s_temp, bool pivot = false, uint32_t *piv = nullpt
 template <typename T>
 __device__ void ldlt_solve(uint32_t n, const T *LD, T *b, const uint32_t *piv = nullptr)
 {
-    (void)piv;  // reserved for the Bunch-Kaufman pivot path
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    // P b: forward sweep of the recorded transpositions swap(k, piv[k]).
+    if (piv != nullptr) {
+        if (rank == 0)
+            for (uint32_t k = 0; k < n; k++) {
+                uint32_t p = piv[k];
+                T tmp = b[k]; b[k] = b[p]; b[p] = tmp;
+            }
+        __syncthreads();
+    }
     // 1) forward: L y = b, L unit lower => no divide. Eliminate y[col] from rows below.
     for (uint32_t col = 0; col < n; col++) {
         T factor = b[col];
@@ -153,13 +244,23 @@ __device__ void ldlt_solve(uint32_t n, const T *LD, T *b, const uint32_t *piv = 
             b[i] -= LD[i*n + col] * factor;
         __syncthreads();
     }
+    // Pᵀ x: reverse sweep of the recorded transpositions (undoes P).
+    if (piv != nullptr) {
+        if (rank == 0)
+            for (int32_t k = (int32_t)n - 1; k >= 0; k--) {
+                uint32_t p = piv[k];
+                T tmp = b[k]; b[k] = b[p]; b[p] = tmp;
+            }
+        __syncthreads();
+    }
 }
 
 /**
  * @brief Compile-time-size LDLᵀ solve `A x = b` in place (LAPACK `sytrs` analogue).
  *
  * Same as the runtime `ldlt_solve` but with the dimension as a template
- * parameter. NumPy equivalence: `x = np.linalg.solve(A, b)`.
+ * parameter. NumPy equivalence: `x = np.linalg.solve(A, b)`. A non-null `piv`
+ * applies the symmetric 1×1 permutation (factor made with `pivot=true`).
  *
  * @tparam T  Scalar type.
  * @tparam N  Dimension (LD is N x N, b has length N).
