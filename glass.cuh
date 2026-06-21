@@ -35,6 +35,7 @@ namespace glass {
     #include "./src/base/L1/norm.cuh"
     #include "./src/base/L1/l2norm.cuh"
     #include "./src/base/L1/infnorm.cuh"
+    #include "./src/base/L1/iamax.cuh"
     #include "./src/base/L1/clip.cuh"
     #include "./src/base/L1/set_const.cuh"
     #include "./src/base/L1/asum.cuh"
