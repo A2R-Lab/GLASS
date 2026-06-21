@@ -73,6 +73,65 @@ namespace low_memory {
     }
 }
 
+namespace warp {
+    // Single-warp dot products: one 32-lane warp owns the reduction (raw __shfl,
+    // no shared scratch). For warp-per-problem kernels packing many small dots
+    // into one block via independent warps (threadIdx.y selects the warp). The
+    // caller must run a full 32-lane warp (mask 0xffffffff). Distinct from
+    // high_speed::dot, which is block-scoped (warp-shuffle + shared inter-warp
+    // combine). The result is broadcast to EVERY lane, so the value is usable
+    // immediately by all lanes without a follow-up read.
+
+    /**
+     * @brief Inner product within one warp: returns `x · y` on every lane, single-warp.
+     *
+     * One 32-lane warp forms the element-wise products and reduces them with
+     * `__shfl_down_sync`, then BROADCASTS the scalar total back to all 32 lanes via
+     * `__shfl_sync` (from a lane's register, never a shared re-read — immune to the
+     * `__restrict__` stale-cache miscompile). Inputs are left untouched; no shared
+     * scratch, no `__syncthreads`. Full 32 lanes required; independent warps may run
+     * distinct problems concurrently. NumPy equivalent: `np.dot(x, y)`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param n  Number of elements.
+     * @param x  Input vector of length `n`.
+     * @param y  Input vector of length `n`.
+     * @return The inner product `x · y`, identical on every lane.
+     */
+    template <typename T>
+    __device__ T dot(uint32_t n, T *x, T *y)
+    {
+        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+        T val = static_cast<T>(0);
+        for (uint32_t i = lane; i < n; i += 32) val += x[i]*y[i];
+        for (int off = 16; off > 0; off >>= 1) val += __shfl_down_sync(0xffffffffu, val, off);
+        return __shfl_sync(0xffffffffu, val, 0);
+    }
+
+    /**
+     * @brief Inner product within one warp: returns `x · y` on every lane, single-warp, compile-time size.
+     *
+     * Compile-time-`N` overload of the single-warp dot. Reduces with
+     * `__shfl_down_sync` and broadcasts the total to all 32 lanes from a register.
+     * No shared scratch, no `__syncthreads`. NumPy equivalent: `np.dot(x, y)`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @tparam N  Number of elements (compile-time constant).
+     * @param x  Input vector of length `N`.
+     * @param y  Input vector of length `N`.
+     * @return The inner product `x · y`, identical on every lane.
+     */
+    template <typename T, uint32_t N>
+    __device__ T dot(T *x, T *y)
+    {
+        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+        T val = static_cast<T>(0);
+        for (uint32_t i = lane; i < N; i += 32) val += x[i]*y[i];
+        for (int off = 16; off > 0; off >>= 1) val += __shfl_down_sync(0xffffffffu, val, off);
+        return __shfl_sync(0xffffffffu, val, 0);
+    }
+}
+
 namespace high_speed {
     /**
      * @brief Inner product: `out[0] = x · y` (DOT), warp-shuffle variant.

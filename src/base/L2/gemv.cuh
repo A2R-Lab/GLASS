@@ -260,3 +260,69 @@ __device__ void gemv(T alpha, T *A, T *x, T *y)
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
     gemv_impl_ct<T, M, N, TRANSPOSE, ROW_MAJOR>(rank, size, alpha, A, x, y);
 }
+
+namespace warp {
+    // Single-warp GEMV: one 32-lane warp computes the matvec, lanes striding over
+    // the output rows (lane i owns output rows i, i+32, …). Each lane's row is an
+    // independent inner product — no cross-lane communication, no shared scratch,
+    // no `__syncthreads`. Reuses the block impl `gemv_impl_ct(lane, 32u, …)` exactly
+    // as `warp::gemm` reuses `gemm_impl_ct`. For warp-per-problem kernels packing
+    // many small matvecs into one block via independent warps. Full 32 lanes
+    // required.
+
+    /**
+     * @brief Matrix-vector product within one warp: `y = alpha * A * x + beta * y` (GEMV), single-warp, compile-time size.
+     *
+     * One 32-lane warp computes the matvec with lanes striding over the output rows
+     * of the `M×N` matrix `A` (each row an independent inner product). Set
+     * `TRANSPOSE=true` for `Aᵀ * x` and `ROW_MAJOR=true` for row-major `A`. No shared
+     * scratch, no `__syncthreads`; independent warps may run distinct problems
+     * concurrently. Full 32 lanes required. `C`/`y` is read (the `beta * y` term);
+     * use the no-beta overload to write into uninitialized destinations. NumPy
+     * equivalent: `y = alpha*A@x + beta*y` (or `alpha*A.T@x + beta*y` when transposed).
+     *
+     * @tparam T          Scalar type (e.g. `float`, `double`).
+     * @tparam M          Number of rows of `A` (compile-time constant).
+     * @tparam N          Number of columns of `A` (compile-time constant).
+     * @tparam TRANSPOSE  When true, multiply by `Aᵀ` instead of `A` (default false).
+     * @tparam ROW_MAJOR  When true, `A` is stored row-major (default false = column-major).
+     * @param alpha  Scalar multiplier on the product.
+     * @param A      Input matrix of `M*N` elements.
+     * @param x      Input vector (length `N`, or `M` when transposed).
+     * @param beta   Scalar multiplier on the prior `y`.
+     * @param y      In/out vector (length `M`, or `N` when transposed).
+     */
+    template <typename T, uint32_t M, uint32_t N, bool TRANSPOSE = false, bool ROW_MAJOR = false>
+    __device__ void gemv(T alpha, T *A, T *x, T beta, T *y)
+    {
+        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+        gemv_impl_ct<T, M, N, TRANSPOSE, ROW_MAJOR>(lane, 32u, alpha, A, x, beta, y);
+        __syncwarp();
+    }
+
+    /**
+     * @brief Matrix-vector product within one warp: `y = alpha * A * x` (GEMV), single-warp, compile-time size, implicit beta = 0.
+     *
+     * Overwrites `y` (no `beta * y` term — `y` is never read, so it is safe to write
+     * into cold/uninitialized scratch). Otherwise identical to the beta overload
+     * above. No shared scratch, no `__syncthreads`. Full 32 lanes required. NumPy
+     * equivalent: `y = alpha*A@x` (or `alpha*A.T@x` when transposed).
+     *
+     * @tparam T          Scalar type (e.g. `float`, `double`).
+     * @tparam M          Number of rows of `A` (compile-time constant).
+     * @tparam N          Number of columns of `A` (compile-time constant).
+     * @tparam TRANSPOSE  When true, multiply by `Aᵀ` instead of `A` (default false).
+     * @tparam ROW_MAJOR  When true, `A` is stored row-major (default false = column-major).
+     * @param alpha  Scalar multiplier on the product.
+     * @param A      Input matrix of `M*N` elements.
+     * @param x      Input vector (length `N`, or `M` when transposed).
+     * @param y      Output vector (length `M`, or `N` when transposed; overwritten).
+     */
+    template <typename T, uint32_t M, uint32_t N, bool TRANSPOSE = false, bool ROW_MAJOR = false>
+    __device__ void gemv(T alpha, T *A, T *x, T *y)
+    {
+        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+        gemv_impl_ct<T, M, N, TRANSPOSE, ROW_MAJOR>(lane, 32u, alpha, A, x, y);
+        __syncwarp();
+    }
+}

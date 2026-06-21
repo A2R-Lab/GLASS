@@ -51,6 +51,11 @@ def _hash_sources(cu_path: pathlib.Path) -> str:
               # base headers carrying the warp:: variants — listed explicitly so
               # edits to them (pulled in only transitively via glass.cuh) bust the cache.
               GLASS_DIR / "src" / "base" / "L1" / "reduce.cuh",
+              GLASS_DIR / "src" / "base" / "L1" / "dot.cuh",
+              GLASS_DIR / "src" / "base" / "L1" / "axpy.cuh",
+              GLASS_DIR / "src" / "base" / "L1" / "copy.cuh",
+              GLASS_DIR / "src" / "base" / "L1" / "scal.cuh",
+              GLASS_DIR / "src" / "base" / "L2" / "gemv.cuh",
               GLASS_DIR / "src" / "base" / "L3" / "gemm.cuh",
               GLASS_DIR / "src" / "base" / "L3" / "syrk.cuh",
               GLASS_DIR / "test" / "cuda" / "test_syrk.cu",
@@ -124,6 +129,7 @@ def bins(tmp_path_factory):
         "banded": compile_binary("test_banded", build_dir, CUDA_ARCH),
         "pcg": compile_binary("test_pcg", build_dir, CUDA_ARCH),
         "syrk": compile_binary("test_syrk", build_dir, CUDA_ARCH),
+        "warp": compile_binary("test_warp", build_dir, CUDA_ARCH),
     }
     # test_l3_nvidia.cu includes glass-nvidia.cuh and exercises the SIMT-only
     # batched APIs (gemm_batched_1d, gemm_strided_batched_1d). It does NOT
