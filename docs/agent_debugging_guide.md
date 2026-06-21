@@ -81,12 +81,18 @@ that thread *j* has not yet written.
   `high_speed::reduce` syncs after the inter-warp `s_scratch` write; `gemm_tiled` in
   `src/base/L3/gemm.cuh` syncs around each tile load (`__syncthreads()` before and after the
   inner-product over the tile). The matrix factor/solve flows (`inv.cuh`, `chol_InPlace.cuh`,
-  `trsm.cuh`) sync between elimination steps. `inv.cuh` also has **fused 2-/3-matrix
-  `invertMatrix` overloads** (used by GATO's Schur kernel for Q_k/Q_kp1/R_k): they interleave
-  several independent matrices' Gauss-Jordan sweeps over one shared `MAX_DIM = max(dims)` pivot
-  loop (a matrix idles once `pivRC >= its dim`), keeping the **same augmented `[A | I]` convention
-  and the same per-pivot save→update barrier** as the single-matrix path — so the barrier audit is
-  identical, just replicated per matrix with per-matrix scratch offsets (`2*dim+1` each).
+  `trsm.cuh`, `ldlt.cuh`, `posv.cuh`) sync between elimination steps. `inv.cuh` and
+  `chol_InPlace.cuh` also have **K-way fused overloads** — `invertMatrix(K, dims, MAX_DIM, mats,
+  s_temp)` and `cholDecomp_InPlace(K, dims, MAX_DIM, mats)` — with thin 2-/3-matrix wrappers (the
+  3-matrix invert is GATO's Schur kernel, Q_k/Q_kp1/R_k). They interleave K independent matrices'
+  sweeps over one shared `MAX_DIM = max(dims)` pivot/row loop (matrix `m` idles once `pivRC >=
+  dims[m]`), keeping the **same augmented `[V | I]` convention (invert) / in-place lower `L·Lᵀ`
+  convention (chol) and the same per-step save→update barrier pair** as the single-matrix paths —
+  so the barrier audit is identical, just replicated per matrix. The fused invert gives each matrix
+  a contiguous scratch span at the **prefix-sum offset `Σ_{j<m}(2*dims[j]+1)`** (total
+  `Σ_m (2*dims[m]+1)`), recomputed locally per thread by scanning `dims[]` so there is no shared
+  write to race on. The fused chol needs **no scratch** and distributes the K diagonals of each step
+  across threads (`for (m = rank; m < K; m += size)`) before the parallel trailing-column update.
 - **Counter-note (do not over-add barriers):** the *plain* `gemm_impl` (`gemm.cuh`) needs **no**
   interior sync — each thread owns a disjoint output element `C[cidx]` and never reads another
   thread's partial. Adding a barrier there is wrong-headed bloat. The rule is precise: sync only

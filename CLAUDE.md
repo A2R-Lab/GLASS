@@ -30,7 +30,7 @@ backends, plus a **warp-scoped** surface for warp-per-problem kernels:
 | `glass::` | block | Hand-rolled pure-SIMT (`threadIdx`/`blockDim`). No deps. | `glass.cuh` |
 | `glass::cgrps::` | block | Same surface via cooperative groups. | `glass-cgrps.cuh` |
 | `glass::nvidia::` | block | CUB / cuBLASDx / cuSOLVERDx, auto-dispatched by size. Needs MathDx (`MATHDX_ROOT`). | `glass-nvidia.cuh` |
-| `glass::warp::` | warp | Single-warp SIMT (`__shfl_*_sync`), *selected* L1/L3 ops. Lives inline in the base L1/L3 headers. | via `glass.cuh` |
+| `glass::warp::` | warp | Single-warp SIMT (`__shfl_*_sync`), *selected* L1/L2/L3 ops; `glass::warp::posv` is the composed warp-per-problem SPD solve (chol → forward/back `trsv`). Lives inline in the base L1/L2/L3 headers. | via `glass.cuh` |
 
 Convention: **namespace = scope/backend; function name = operation.** So a warp
 band matvec would be `glass::warp::bdmv`, never a `banded::` namespace.
@@ -40,6 +40,17 @@ scratch trade-offs of reductions/dots), and the block-tridiagonal **functions**
 `glass::bdmv` (matvec) and `glass::pcg` (preconditioned conjugate gradient, with
 `glass::pcg_smem_size`). An internal `glass::internal::box_qp` lives in the tree
 but is not part of the public surface (see `docs/open-tasks/qp_solver_scope.md`).
+
+Recent L1/L2/L3 additions (all single-block, thread-count invariant): `iamax`
+(L1, BLAS i_amax pivot primitive); `trsv` / `trmv` (L2 triangular solve / matvec,
+`LOWER`/`UNIT`/`TRANS` template flags); `syrk` / `syr2k` (L3 symmetric rank-k/2k,
+both `AAᵀ` and `AᵀA` via a `TRANS` flag, `FillMode` Lower/Upper/Full); `ldlt` /
+`ldlt_solve` (L3 symmetric-indefinite LDLᵀ, non-pivoted, signature reserves
+`bool pivot`/`piv` for a future Bunch-Kaufman path); `posv` / `potrs` (L3 SPD
+solve = chol + 2×`trsv`); and **K-way fused** `invertMatrix` / `cholDecomp_InPlace`
+(invert/factor K independent matrices interleaved over one block — `inv2`/`inv3`
+are now thin wrappers). The warp surface adds `warp::{dot,axpy,copy,scal,gemv,trsv}`
++ the composed `warp::posv`.
 
 ## Source layout
 

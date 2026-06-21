@@ -2,8 +2,10 @@ L3 — Matrix Operations
 ======================
 
 General matrix-matrix products (``gemm`` and its tiled / strided / batched /
-indexed variants), matrix inversion, Cholesky factorization, and triangular
-solves. The GEMM family takes compile-time storage-order flags
+indexed variants), matrix inversion (single and **K-way fused** multi-matrix),
+Cholesky factorization (single and **K-way fused**), triangular solves, symmetric
+rank-k / rank-2k updates (``syrk`` / ``syr2k``), symmetric-indefinite ``LDLᵀ``
+(``ldlt``), and SPD solves (``posv`` / ``potrs``). The GEMM family takes compile-time storage-order flags
 (``ROW_MAJOR_A`` / ``ROW_MAJOR_B`` / ``ROW_MAJOR_C``) and a ``TRANSPOSE_B``
 flag; see :doc:`../user_guide/concepts/backend_dispatch` for how the dispatch
 GEMM chooses a path. Single-warp (``glass::warp::``) variants of ``gemm``,
@@ -44,6 +46,16 @@ Symmetric rank-k / rank-2k update (syrk / syr2k)
 ------------------------------------------------
 
 .. doxygenfile:: src/base/L3/syrk.cuh
+
+LDLᵀ factorization (ldlt / ldlt_solve)
+--------------------------------------
+
+.. doxygenfile:: src/base/L3/ldlt.cuh
+
+SPD solve (posv / potrs)
+------------------------
+
+.. doxygenfile:: src/base/L3/posv.cuh
 
 Cooperative-groups variants (``glass::cgrps::``)
 ------------------------------------------------

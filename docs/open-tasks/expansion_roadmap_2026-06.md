@@ -1,4 +1,12 @@
-# GLASS expansion roadmap (2026-06) — DRAFT, pending scope sign-off
+# GLASS expansion roadmap (2026-06) — ✅ DONE (A–G + posv merged 2026-06-21)
+
+**Status:** all of WP A (syrk), B (trsv), C (posv), D (ldlt), E (iamax), F (fused K-way),
+G (warp) implemented, verified (full suite **1405 passed**, racecheck 0 hazards), and
+merged to `main`. Docs + agent files updated; see `docs/HANDOFF.md` (2026-06-21 entry).
+Deferred/non-blocking follow-ups (API already frozen for them): Bunch-Kaufman pivoting
+(ldlt/inv), multi-RHS posv, `warp::iamax`, batching-uniformity cleanup pass.
+
+
 
 Plan for the BLAS/LAPACK gaps + custom-pattern extensions + warp buildout discussed
 2026-06-21. Orchestrated as explore → **plan-review gate (main agent)** → implement

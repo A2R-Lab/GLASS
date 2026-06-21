@@ -1,8 +1,9 @@
 L2 — Matrix-Vector Operations
 =============================
 
-General matrix-vector products (``gemv``), rank-1 updates (``ger``), and the
-strided / segmented ``gemv`` variants.
+General matrix-vector products (``gemv``), rank-1 updates (``ger``), the
+strided / segmented ``gemv`` variants, and triangular solve / matvec
+(``trsv`` / ``trmv``).
 
 gemv
 ----
@@ -20,6 +21,11 @@ ger
 ---
 
 .. doxygenfile:: src/base/L2/ger.cuh
+
+Triangular solve / matvec (trsv / trmv)
+---------------------------------------
+
+.. doxygenfile:: src/base/L2/trsv.cuh
 
 Cooperative-groups variants (``glass::cgrps::``)
 ------------------------------------------------

@@ -3,6 +3,38 @@
 Living status doc. Update the top as work lands. For onboarding read
 `docs/STARTUP_PROMPT.md` first.
 
+## 2026-06-21 — BLAS/LAPACK expansion (8 new ops) + warp buildout
+
+Orchestrated explore → gate → implement (worktree-isolated agents) → verify → merge.
+Roadmap + gate decisions: `docs/open-tasks/expansion_roadmap_2026-06.md`. Every op is
+single-block, thread-count invariant (1/7/33/256 sweeps), with a numpy/scipy oracle and
+a dedicated `test_<op>.cu`/`test_<op>.py`. **Full integrated suite: 1405 passed.**
+racecheck (syrk, ldlt, fused K-way, warp posv) — 0 hazards.
+
+- **`syrk` / `syr2k`** (L3) — symmetric rank-k/2k; both `AAᵀ` (Schur) and `AᵀA`
+  (Gram/Hessian JᵀJ) via a `TRANS` flag; `FillMode` Lower/Upper/Full; no-barrier
+  symmetric mirror write.
+- **`trsv` / `trmv`** (L2) — triangular solve / matvec; `LOWER`/`UNIT`/`TRANS` template
+  flags; trailing-sync contract (so `posv` composes barrier-free). trmv = out-of-place
+  core + in-place(+scratch) wrapper.
+- **`posv` / `potrs`** (L3) — pure-SIMT SPD solve = `cholDecomp_InPlace` + 2×`trsv`.
+- **`ldlt` / `ldlt_solve`** (L3) — symmetric-**indefinite** LDLᵀ (no sqrt) for KKT/saddle
+  systems; non-pivoted now; signature reserves `bool pivot` / `uint32_t* piv` so
+  Bunch-Kaufman slots in later with no API change. `iamax` is the pivot primitive.
+- **`iamax`** (L1) — BLAS i_amax; deterministic lowest-index tie-break = the mechanism of
+  thread-invariance; default / `high_speed::` / `low_memory::` variants; skips NaN
+  (documented divergence from numpy).
+- **K-way fused** `invertMatrix` / `cholDecomp_InPlace` (L3) — invert/factor K independent
+  matrices interleaved over one block (prefix-sum scratch offsets); `inv2`/`inv3` are now
+  thin wrappers over the K-way form (output identical, regression-clean).
+- **Warp buildout** — `warp::{dot,axpy,copy,scal,gemv,trsv}` + the composed `warp::posv`,
+  closing the L1/L2 glue gap so a complete warp-per-problem solve composes; multi-warp
+  (`<<<1,dim3(32,WARPS)>>>`) tests. Also fixed a real `_hash_sources` cache gap (5 L1/L2
+  headers weren't hashed → edits silently tested stale binaries).
+- **Deferred (API frozen, non-blocking):** Bunch-Kaufman pivoting for `ldlt`/`inv`
+  (perf-vs-robust variant), multi-RHS `posv`, `warp::iamax`, the batching-uniformity
+  cleanup pass. See the roadmap doc.
+
 ## 2026-06-17 — rename + flatten banded/pcg + docs audit
 
 - **Renamed** GLASS = *GPU Linear Algebra Simple Subroutines* (was "for Single-block

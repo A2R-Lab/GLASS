@@ -57,6 +57,11 @@ Norms
 
 .. doxygenfile:: src/base/L1/asum.cuh
 
+Index of max-abs (iamax)
+------------------------
+
+.. doxygenfile:: src/base/L1/iamax.cuh
+
 clip
 ----
 

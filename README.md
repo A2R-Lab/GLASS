@@ -17,11 +17,13 @@ GLASS primitives are **block-scoped** by default — one block per problem — a
 | `glass::` | block | Hand-rolled SIMT, `threadIdx.{x,y,z}` / `blockDim.*` — no cgrps dep | `glass.cuh` |
 | `glass::cgrps::` | block | Hand-rolled SIMT, `g.thread_rank()` / `g.size()` — cooperative groups | `glass-cgrps.cuh` |
 | `glass::nvidia::` | block | CUB (L1) + cuBLASDx (L2/L3, batched) + cuSOLVERDx (LAPACK) — compile-time sizes only | `glass-nvidia.cuh` |
-| `glass::warp::` | **warp** | Single-warp SIMT via `__shfl_*_sync` — *selected* L1/L3 ops, no `__syncthreads`/shared | inline in the base L1/L3 headers (via `glass.cuh`) |
+| `glass::warp::` | **warp** | Single-warp SIMT via `__shfl_*_sync` — *selected* L1/L2/L3 ops, no `__syncthreads`/shared | inline in the base L1/L2/L3 headers (via `glass.cuh`) |
 
-The three **block-scoped** backends provide the full L1/L2/L3 surface and are interchangeable — switch by changing the namespace prefix when profiling shows one is faster at a given size. They preserve the same one-block, `__device__` calling convention, so a single kernel can mix hand-rolled and vendor-backed primitives without leaving the block. `glass::warp::` is a **warp-per-problem** variant covering a selected set (`reduce`, `gemm`, `cholDecomp_InPlace`, `trsm`/`trsm_transpose`): the warps run independently (no block barrier), turning the block into a vehicle for intra-block parallelism. It requires a full 32-lane warp.
+The three **block-scoped** backends provide the full L1/L2/L3 surface and are interchangeable — switch by changing the namespace prefix when profiling shows one is faster at a given size. They preserve the same one-block, `__device__` calling convention, so a single kernel can mix hand-rolled and vendor-backed primitives without leaving the block. `glass::warp::` is a **warp-per-problem** variant covering a selected set (`dot`, `axpy`, `copy`, `scal`, `reduce`, `gemv`, `gemm`, `cholDecomp_InPlace`, `trsv`/`trsm`, and the composed `posv` SPD solve): the warps run independently (no block barrier), turning the block into a vehicle for intra-block parallelism. It requires a full 32-lane warp.
 
 Both `glass::` and `glass::cgrps::` offer **runtime** (size as function arg) and **compile-time** (size as template arg) overloads for every function. Reduction operations additionally offer `glass::low_memory::` (no scratch, thread 0 accumulates) and `glass::high_speed::` (warp-shuffle + shared-memory inter-warp reduction) sub-namespaces.
+
+The dense BLAS/LAPACK surface includes, alongside `gemm`/`gemv`/`ger`: `iamax` (index of max-abs, the pivot primitive); `trsv`/`trmv` (triangular solve / matvec, `LOWER`/`UNIT`/`TRANS` flags); `syrk`/`syr2k` (symmetric rank-k/2k — both `AAᵀ` and `AᵀA` via a `TRANS` flag, writing a `Lower`/`Upper`/`Full` triangle); `inv` and `cholDecomp_InPlace` (single-matrix **and K-way fused** multi-matrix, for packing many small factorizations into one block); `ldlt`/`ldlt_solve` (symmetric-indefinite LDLᵀ for KKT/saddle systems); and `posv`/`potrs` (SPD solve = Cholesky + two triangular solves).
 
 ### Higher-level solvers
 
