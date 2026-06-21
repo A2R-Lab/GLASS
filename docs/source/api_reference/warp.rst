@@ -18,7 +18,8 @@ rendered signatures appear on the :doc:`l1`, :doc:`l2`, and :doc:`l3` pages.
 * ``glass::warp::dot`` — single-warp dot product, broadcast to every lane;
   ``glass::warp::axpy`` / ``glass::warp::copy`` / ``glass::warp::scal`` —
   elementwise vector ops; ``glass::warp::reduce`` — single-warp sum (array and
-  register-partial forms). See :doc:`l1`.
+  register-partial forms); ``glass::warp::iamax`` — single-warp index of max-abs
+  (register-returned, lowest-index tie-break). See :doc:`l1`.
 * ``glass::warp::gemv`` — one output row per lane (reuses the block ``gemv``
   inner kernel). See :doc:`l2`.
 

@@ -3,6 +3,28 @@
 Living status doc. Update the top as work lands. For onboarding read
 `docs/STARTUP_PROMPT.md` first.
 
+## 2026-06-21 — follow-up wave: pivoting + multi-RHS + warp::iamax
+
+Four file-isolated follow-ups (parallel worktree agents → I verified + merged; zero
+shared-file edits so the merges were conflict-free). Deferred-but-API-frozen items from
+the expansion are now implemented except full Bunch-Kaufman 2×2.
+
+- **`invertMatrix_pivoted`** (inv.cuh) — robust partial-pivoting (row) Gauss-Jordan;
+  full-width elimination (the unpivoted column-reduced window is invalid under row
+  swaps); scratch `3*dimA+1`. Verified incl. near-singular leading-pivot cases (27).
+- **`ldlt(..., pivot=true, piv)`** (ldlt.cuh) — symmetric 1×1 diagonal pivoting via
+  `low_memory::iamax`; `ldlt_solve` applies `P`/`Pᵀ`; scratch stays `(n+1)`. Full
+  Bunch-Kaufman 2×2 still deferred (a structurally-zero diagonal block still can't
+  factor — documented limitation). Verified (204).
+- **Multi-RHS `posv`/`potrs`** (posv.cuh) — `(n, nrhs, A, B)` column-major B, factor
+  once / solve per column. Verified (64).
+- **`warp::iamax`** (iamax.cuh) — single-warp argmax-abs, register-broadcast, lowest-index
+  tie-break; multi-warp test. Verified (63).
+
+Still deferred: full Bunch-Kaufman 2×2 pivoting; the batching-uniformity cleanup pass
+(cross-cutting — held for a focused solo pass). Perf characterization backlogged in
+`docs/open-tasks/perf_autotune_breakeven.md`.
+
 ## 2026-06-21 — BLAS/LAPACK expansion (8 new ops) + warp buildout
 
 Orchestrated explore → gate → implement (worktree-isolated agents) → verify → merge.

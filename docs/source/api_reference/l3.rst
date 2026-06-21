@@ -2,7 +2,8 @@ L3 — Matrix Operations
 ======================
 
 General matrix-matrix products (``gemm`` and its tiled / strided / batched /
-indexed variants), matrix inversion (single and **K-way fused** multi-matrix),
+indexed variants), matrix inversion (single, **partial-pivoting**
+``invertMatrix_pivoted``, and **K-way fused** multi-matrix),
 Cholesky factorization (single and **K-way fused**), triangular solves, symmetric
 rank-k / rank-2k updates (``syrk`` / ``syr2k``), symmetric-indefinite ``LDLᵀ``
 (``ldlt``), and SPD solves (``posv`` / ``potrs``). The GEMM family takes compile-time storage-order flags

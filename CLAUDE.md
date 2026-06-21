@@ -49,8 +49,14 @@ both `AAᵀ` and `AᵀA` via a `TRANS` flag, `FillMode` Lower/Upper/Full); `ldlt
 `bool pivot`/`piv` for a future Bunch-Kaufman path); `posv` / `potrs` (L3 SPD
 solve = chol + 2×`trsv`); and **K-way fused** `invertMatrix` / `cholDecomp_InPlace`
 (invert/factor K independent matrices interleaved over one block — `inv2`/`inv3`
-are now thin wrappers). The warp surface adds `warp::{dot,axpy,copy,scal,gemv,trsv}`
+are now thin wrappers). The warp surface adds `warp::{dot,axpy,copy,scal,gemv,trsv,iamax}`
 + the composed `warp::posv`.
+
+Robust/perf variants (perf user vs robustness user): `invertMatrix_pivoted`
+(partial-pivoting Gauss-Jordan, robust on small/zero leading pivots), `ldlt(...,
+pivot=true, piv)` (symmetric 1×1 diagonal pivoting; full Bunch-Kaufman 2×2 still
+deferred), and multi-RHS `posv`/`potrs` (`(n, nrhs, A, B)` — factor once, solve N
+columns; B column-major).
 
 ## Source layout
 
