@@ -203,6 +203,79 @@ def _aug(M, d):
     return np.asfortranarray(np.hstack([M, np.eye(d, dtype=np.float32)])).ravel(order='F')
 
 
+# ─── inv_pivot (robust partial-pivoting) ──────────────────────────────────────
+
+def _run_inv_pivot(bins, A, n, threads):
+    """Run the partial-pivoting inverse on A (n x n) with a given block size."""
+    AI = np.hstack([A, np.eye(n, dtype=np.float32)])      # row layout (n x 2n)
+    AI_col = np.asfortranarray(AI).ravel(order='F')
+    result = run_op(bins["l3"], "inv_pivot", "simple",
+                    args=[threads, n], inputs=[AI_col])
+    return result.reshape(n, n, order='F')
+
+
+def _near_singular_leading(n):
+    """Invertible matrix whose UNPIVOTED Gauss-Jordan hits a tiny/zero leading
+    pivot: a tiny A[0,0] with a large entry lower in column 0 (the partial-pivot
+    path swaps it up; the plain path divides by ~0)."""
+    A = make_spd(n)
+    A[0, 0] = 1e-7                 # tiny leading pivot
+    A[n - 1, 0] = 5.0             # large later entry in column 0 → must pivot up
+    A[0, n - 1] = 5.0            # keep it reasonably conditioned / nonsymmetric
+    return A.astype(np.float32)
+
+
+def _zero_diagonal_perm(n):
+    """Invertible matrix with a literal ZERO on the (0,0) diagonal — the plain
+    path divides by exactly 0; partial pivoting swaps a nonzero row up."""
+    A = make_spd(n)
+    # Swap rows 0 and 1 of an SPD matrix then zero the (0,0) entry: still
+    # invertible, but A[0,0] == 0 breaks the unpivoted divide.
+    A[[0, 1], :] = A[[1, 0], :]
+    A[0, 0] = 0.0
+    return A.astype(np.float32)
+
+
+@pytest.mark.parametrize("n", [2, 3, 4, 6, 8])
+def test_inv_pivot(bins, n):
+    """Robust partial-pivoting inverse matches np.linalg.inv on well-conditioned
+    SPD matrices, across a thread-count sweep (1, 7, 33, 256) with identical
+    output at every block size."""
+    A = make_spd(n)
+    expected = np.linalg.inv(A).astype(np.float32)
+    ref = None
+    for threads in (1, 7, 33, 256):
+        Ainv = _run_inv_pivot(bins, A, n, threads)
+        assert np.allclose(Ainv, expected, rtol=1e-2, atol=1e-3), \
+            f"n={n} threads={threads}: mismatch vs np.linalg.inv"
+        if ref is None:
+            ref = Ainv
+        else:
+            # Thread-count invariance: byte-for-byte identical across block sizes.
+            assert np.array_equal(Ainv, ref), \
+                f"n={n} threads={threads}: output differs from threads=1"
+
+
+@pytest.mark.parametrize("n", [2, 3, 4, 6, 8])
+@pytest.mark.parametrize("maker", [_near_singular_leading, _zero_diagonal_perm])
+def test_inv_pivot_near_singular(bins, n, maker):
+    """Partial pivoting is CORRECT on matrices whose leading pivot is tiny or
+    exactly zero (the unpivoted path would divide by ~0 / produce garbage).
+    Same thread-count sweep, identical output across block sizes."""
+    A = maker(n)
+    expected = np.linalg.inv(A).astype(np.float32)
+    ref = None
+    for threads in (1, 7, 33, 256):
+        Ainv = _run_inv_pivot(bins, A, n, threads)
+        assert np.allclose(Ainv, expected, rtol=1e-2, atol=1e-3), \
+            f"n={n} threads={threads} maker={maker.__name__}: mismatch vs np.linalg.inv"
+        if ref is None:
+            ref = Ainv
+        else:
+            assert np.array_equal(Ainv, ref), \
+                f"n={n} threads={threads} maker={maker.__name__}: output differs from threads=1"
+
+
 @pytest.mark.parametrize("dimA,dimB", [(4, 4), (6, 4), (3, 6)])
 def test_inv2(bins, dimA, dimB):
     # fused 2-matrix invert: same augmented [A|I] convention, interleaved sweep
