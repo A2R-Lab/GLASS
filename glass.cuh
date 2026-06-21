@@ -41,6 +41,7 @@ namespace glass {
 
     /*      L2      */
     #include "./src/base/L2/gemv.cuh"
+    #include "./src/base/L2/trsv.cuh"
     #include "./src/base/L2/ger.cuh"
     #include "./src/base/L2/gemv_strided.cuh"
     #include "./src/base/L2/gemv_segmented.cuh"
