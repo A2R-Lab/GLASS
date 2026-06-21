@@ -79,6 +79,9 @@ __global__ void k_inv_cg(int n, float* A, float* scratch) {
 __global__ void k_inv_simple(int n, float* A, float* scratch) {
     glass::invertMatrix(n, A, scratch);
 }
+__global__ void k_inv_pivot_simple(int n, float* A, float* scratch) {
+    glass::invertMatrix_pivoted(n, A, scratch);
+}
 __global__ void k_inv2_simple(int dimA, int dimB, int maxd, float* A, float* B, float* scratch) {
     glass::invertMatrix(dimA, dimB, maxd, A, B, scratch);
 }
@@ -203,6 +206,17 @@ int main(int argc, char** argv) {
         float* scratch; cudaMalloc(&scratch, (2 * n + 1) * sizeof(float));
         if (cg) k_inv_cg<<<1, THREADS>>>(n, dA, scratch);
         else    k_inv_simple<<<1, THREADS>>>(n, dA, scratch);
+        cudaDeviceSynchronize();
+        print_device_vec(dA + n * n, n * n);
+        cudaFree(scratch);
+
+    } else if (strcmp(op, "inv_pivot") == 0) {  // robust partial-pivoting invert
+        // Usage: inv_pivot simple <threads> <n> <file>
+        int threads = atoi(argv[3]);
+        int n = atoi(argv[4]);
+        float* dA = read_device_vec(argv[5], 2 * n * n);
+        float* scratch; cudaMalloc(&scratch, (3 * n + 1) * sizeof(float));
+        k_inv_pivot_simple<<<1, threads>>>(n, dA, scratch);
         cudaDeviceSynchronize();
         print_device_vec(dA + n * n, n * n);
         cudaFree(scratch);

@@ -59,6 +59,149 @@ __device__ void invertMatrix(T *A, T *s_temp)
 }
 
 /**
+ * @brief Scratch element count (in units of `T`) for `invertMatrix_pivoted`.
+ *
+ * Row pivoting permutes the already-built inverse columns, so (unlike the
+ * unpivoted path) the elimination cannot use the reduced active-column window —
+ * it must save and update the **full** `2*dimA`-wide pivot row. Layout:
+ * `dimA` slots for the pivot column, `2*dimA` for the full pivot row, and **one**
+ * trailing slot to broadcast the chosen pivot-row index from the argmax.
+ *
+ * Total = `3*dimA + 1` elements of `T`.
+ *
+ * @tparam T  Scalar type.
+ * @param dimA  Matrix dimension (A is dimA x dimA).
+ * @return Element count (of `T`) to allocate for `invertMatrix_pivoted`'s `s_temp`.
+ */
+template <typename T>
+constexpr uint32_t invertMatrix_pivoted_scratch_size(uint32_t dimA)
+{
+    return 3 * dimA + 1;
+}
+
+/**
+ * @brief In-place ROBUST (partial-pivoting) matrix inverse, augmented `[A | I]`.
+ *
+ * Partial-pivoting (row-pivoted) Gauss-Jordan sibling of `invertMatrix`. Same
+ * augmented column-major `dimA x (2*dimA)` `[A | I]` input/output contract: on
+ * return columns `dimA..2*dimA-1` hold `A^-1`. NumPy equivalent:
+ * `Ainv = np.linalg.inv(A)`.
+ *
+ * @par Why pivoted
+ * The plain `invertMatrix` divides by `A[pivRC + pivRC*dimA]` as-is, so it loses
+ * accuracy (or fails outright) when a leading pivot is small/zero even though `A`
+ * is invertible — e.g. a tiny `A[0,0]` beneath a large later row, or a row
+ * permutation that parks a zero on the diagonal. At each step `k` this variant
+ * instead selects the row `r >= k` with the largest `|A[r + k*dimA]|`, swaps rows
+ * `k` and `r` across the FULL augmented width `[A | I]` (all `2*dimA` columns),
+ * then does the identical divide/eliminate. Because both halves are permuted
+ * together, the row permutation is absorbed into the result and the returned
+ * right half is `A^-1` directly — **no separate `piv` output is needed**.
+ *
+ * @par Parallelism / barriers
+ * Single-block, strided (`ind += size`), thread-count invariant. Per pivot step:
+ *   1. save the pivot column + pivot row + augmented column into `s_temp`;
+ *   2. block-wide argmax over the pivot-column tail `[k, dimA)` (deterministic
+ *      lower-index tie-break, matching `glass::iamax`) chooses the pivot row `r`,
+ *      broadcast to all threads through a shared slot + `__syncthreads()` (never
+ *      a racy re-read);
+ *   3. if `r != k`, swap rows `k` and `r` across all `2*dimA` columns (parallel);
+ *   4. re-save the (now swapped) pivot row/column, then divide/eliminate exactly
+ *      as the unpivoted path.
+ * Each phase is separated by a barrier so the argmax result and the swapped data
+ * are block-visible before they are consumed.
+ *
+ * @par Scratch
+ * `s_temp` must hold `invertMatrix_pivoted_scratch_size<T>(dimA)` = `3*dimA + 1`
+ * elements of `T`: `dimA` for the pivot column, `2*dimA` for the full pivot row,
+ * and one trailing slot to broadcast the chosen pivot-row index.
+ *
+ * @tparam T  Scalar type.
+ * @param dimA    Matrix dimension (A is dimA x dimA).
+ * @param A       In/out augmented `[A | I]` buffer (column-major, dimA x 2*dimA);
+ *                on return its right half holds `A^-1`.
+ * @param s_temp  Shared scratch of `(3*dimA + 1) * sizeof(T)` bytes.
+ */
+template <typename T>
+__device__ void invertMatrix_pivoted(uint32_t dimA, T *A, T *s_temp)
+{
+    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    const unsigned W = 2*dimA;          // augmented width
+    // s_temp layout (3*dimA + 1 slots):
+    //   [0 .. dimA)       pivot column
+    //   [dimA .. 3*dimA)  full pivot row (all 2*dimA augmented columns)
+    //   [3*dimA]          broadcast slot for the chosen pivot-row index
+    T *s_pcol = s_temp;
+    T *s_prow = &s_temp[dimA];
+    T *s_piv  = &s_temp[3*dimA];
+    for (unsigned pivRC = 0; pivRC < dimA; pivRC++) {
+        unsigned pivOff = pivRC * dimA;
+
+        // ── Partial pivot: argmax over |A[r + pivOff]| for r in [pivRC, dimA). ──
+        // Thread 0 scans the (short) pivot-column tail with a deterministic
+        // lower-index tie-break (matching glass::iamax) and broadcasts the chosen
+        // row through s_piv; the broadcast + __syncthreads makes it race-free.
+        if (rank == 0) {
+            T key = static_cast<T>(0);
+            uint32_t idx = UINT32_MAX;
+            for (unsigned r = pivRC; r < dimA; r++) {
+                T v = A[r + pivOff];
+                v = (v < static_cast<T>(0)) ? -v : v;
+                if (v > key || (v == key && r < idx)) { key = v; idx = r; }
+            }
+            // All-zero column (singular) → keep the diagonal row (idx==MAX → pivRC).
+            s_piv[0] = static_cast<T>((idx == UINT32_MAX) ? pivRC : idx);
+        }
+        __syncthreads();
+        unsigned pivRow = static_cast<unsigned>(s_piv[0]);
+
+        // ── Swap rows pivRC and pivRow across the full augmented width [A|I]. ──
+        if (pivRow != pivRC) {
+            for (unsigned col = rank; col < W; col += size) {
+                unsigned coff = col * dimA;
+                T tmp = A[pivRC + coff];
+                A[pivRC + coff] = A[pivRow + coff];
+                A[pivRow + coff] = tmp;
+            }
+            __syncthreads();
+        }
+
+        // ── Save the pivot column and the FULL pivot row, then divide/eliminate
+        //    over all 2*dimA columns (row pivoting forbids the reduced window). ──
+        for (unsigned r = rank; r < dimA; r += size) s_pcol[r] = A[r + pivOff];
+        for (unsigned c = rank; c < W;    c += size) s_prow[c] = A[pivRC + c*dimA];
+        __syncthreads();
+        T pvInv = static_cast<T>(1) / s_prow[pivRC];
+        for (unsigned ind = rank; ind < dimA*W; ind += size) {
+            unsigned row = ind % dimA, col = ind / dimA;
+            if (row == pivRC) A[row + col*dimA]  = s_prow[col] * pvInv;
+            else              A[row + col*dimA] -= s_pcol[row] * pvInv * s_prow[col];
+        }
+        __syncthreads();
+    }
+}
+
+/**
+ * @brief Compile-time-size ROBUST (partial-pivoting) matrix inverse (`[A | I]`).
+ *
+ * Same as the runtime `invertMatrix_pivoted` but with the dimension as a template
+ * parameter; partial-pivoting Gauss-Jordan, tolerant of small leading pivots that
+ * the plain `invertMatrix` mishandles. NumPy equivalent: `Ainv = np.linalg.inv(A)`.
+ *
+ * @tparam T  Scalar type.
+ * @tparam N  Matrix dimension (A is N x N).
+ * @param A       In/out augmented `[A | I]` buffer (column-major, N x 2*N);
+ *                on return its right half holds `A^-1`.
+ * @param s_temp  Shared scratch of `(2*N + 2) * sizeof(T)` bytes.
+ */
+template <typename T, uint32_t N>
+__device__ void invertMatrix_pivoted(T *A, T *s_temp)
+{
+    invertMatrix_pivoted<T>(N, A, s_temp);
+}
+
+/**
  * @brief Fused in-place inverse of K independent matrices (augmented `[V | I]`).
  *
  * Inverts `K` matrices simultaneously in one block by interleaving their
