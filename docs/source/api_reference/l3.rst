@@ -40,6 +40,11 @@ Triangular solve (trsm)
 
 .. doxygenfile:: src/base/L3/trsm.cuh
 
+Symmetric rank-k / rank-2k update (syrk / syr2k)
+------------------------------------------------
+
+.. doxygenfile:: src/base/L3/syrk.cuh
+
 Cooperative-groups variants (``glass::cgrps::``)
 ------------------------------------------------
 

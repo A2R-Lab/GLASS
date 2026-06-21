@@ -52,6 +52,8 @@ def _hash_sources(cu_path: pathlib.Path) -> str:
               # edits to them (pulled in only transitively via glass.cuh) bust the cache.
               GLASS_DIR / "src" / "base" / "L1" / "reduce.cuh",
               GLASS_DIR / "src" / "base" / "L3" / "gemm.cuh",
+              GLASS_DIR / "src" / "base" / "L3" / "syrk.cuh",
+              GLASS_DIR / "test" / "cuda" / "test_syrk.cu",
               GLASS_DIR / "src" / "base" / "L3" / "chol_InPlace.cuh",
               GLASS_DIR / "src" / "base" / "L3" / "inv.cuh",
               GLASS_DIR / "src" / "base" / "L3" / "trsm.cuh",
@@ -121,6 +123,7 @@ def bins(tmp_path_factory):
         "qp": compile_binary("test_qp", build_dir, CUDA_ARCH),
         "banded": compile_binary("test_banded", build_dir, CUDA_ARCH),
         "pcg": compile_binary("test_pcg", build_dir, CUDA_ARCH),
+        "syrk": compile_binary("test_syrk", build_dir, CUDA_ARCH),
     }
     # test_l3_nvidia.cu includes glass-nvidia.cuh and exercises the SIMT-only
     # batched APIs (gemm_batched_1d, gemm_strided_batched_1d). It does NOT
