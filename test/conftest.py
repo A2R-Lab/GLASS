@@ -57,6 +57,8 @@ def _hash_sources(cu_path: pathlib.Path) -> str:
               GLASS_DIR / "src" / "base" / "L3" / "chol_InPlace.cuh",
               GLASS_DIR / "src" / "base" / "L3" / "inv.cuh",
               GLASS_DIR / "src" / "base" / "L3" / "trsm.cuh",
+              GLASS_DIR / "src" / "base" / "L3" / "ldlt.cuh",
+              GLASS_DIR / "test" / "cuda" / "test_ldlt.cu",
               GLASS_DIR / "src" / "base" / "L2" / "gemv_segmented.cuh",
               GLASS_DIR / "src" / "base" / "L3" / "gemm_batched_indexed.cuh",
               GLASS_DIR / "src" / "base" / "banded" / "bdmv.cuh",
@@ -124,6 +126,7 @@ def bins(tmp_path_factory):
         "banded": compile_binary("test_banded", build_dir, CUDA_ARCH),
         "pcg": compile_binary("test_pcg", build_dir, CUDA_ARCH),
         "syrk": compile_binary("test_syrk", build_dir, CUDA_ARCH),
+        "ldlt": compile_binary("test_ldlt", build_dir, CUDA_ARCH),
     }
     # test_l3_nvidia.cu includes glass-nvidia.cuh and exercises the SIMT-only
     # batched APIs (gemm_batched_1d, gemm_strided_batched_1d). It does NOT
