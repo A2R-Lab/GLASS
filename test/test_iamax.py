@@ -108,3 +108,78 @@ def test_iamax_value(bins, n):
     val = float(np.asarray(result[1]).ravel()[0])
     assert idx == _oracle(x)
     assert np.isclose(val, float(np.max(np.abs(x))), rtol=1e-5, atol=1e-6)
+
+
+# ─── warp-scoped glass::warp::iamax: WARPS independent vectors, one warp each ──
+# Launched <<<1, dim3(32, WARPS)>>>; warp w owns x[w]. Each warp returns
+# argmax(|x_w|) (broadcast to its lanes), written to out[w]. Per-warp oracle is
+# int(np.argmax(np.abs(x_w))) — single-warp must equal multi-warp (independence),
+# and the answer must match the block-scoped variants and the lowest-index rule.
+
+WARP_SIZES = [5, 7, 33, 40, 64, 256]   # incl. non-multiples of 32
+WARP_COUNTS = [1, 2, 4]                 # WARPS=1 (single) == WARPS>1 (independent)
+
+
+def _gpu_warp_idx(bins, x_stack, n, W):
+    """Run glass::warp::iamax on W stacked length-n vectors; return W indices."""
+    flat = np.ascontiguousarray(x_stack.reshape(-1)).astype(np.float32)
+    # runner argv: <op> <version(ignored)> <n> <W> <file> — n and W are args.
+    result = run_op(bins["iamax"], "iamax_warp", "simple", args=[n, W], inputs=[flat])
+    arr = np.asarray(result).ravel()
+    return [int(round(float(v))) for v in arr]
+
+
+@pytest.mark.parametrize("n", WARP_SIZES)
+@pytest.mark.parametrize("W", WARP_COUNTS)
+def test_iamax_warp_random(bins, n, W):
+    # Each warp gets a distinct random vector (with negatives).
+    x = (RNG.random((W, n)) - 0.5).astype(np.float32)
+    got = _gpu_warp_idx(bins, x, n, W)
+    expected = [int(np.argmax(np.abs(x[w].astype(np.float64)))) for w in range(W)]
+    assert got == expected, f"n={n} W={W}: {got} != {expected}"
+
+
+@pytest.mark.parametrize("n", WARP_SIZES)
+def test_iamax_warp_single_eq_multi(bins, n):
+    # The SAME vector replicated across warps must give the SAME index in every
+    # warp (multi-warp independence) and equal the WARPS=1 single-warp result.
+    base = (RNG.random(n) - 0.5).astype(np.float32)
+    expected = int(np.argmax(np.abs(base.astype(np.float64))))
+    single = _gpu_warp_idx(bins, base[None, :], n, 1)
+    multi = _gpu_warp_idx(bins, np.tile(base, (4, 1)), n, 4)
+    assert single == [expected]
+    assert multi == [expected] * 4
+
+
+def test_iamax_warp_ties(bins):
+    # Deliberately-tied vectors: lowest tied index must win, per warp.
+    vecs = [
+        np.ones(7, dtype=np.float32),                           # all equal -> 0
+        np.array([1, 3, 3, 2, 3], dtype=np.float32),            # max 3 tied at idx 1
+        np.array([2, 1, 2, 2, 0, 2, 1], dtype=np.float32),      # max 2 tied at idx 0
+    ]
+    n = 7
+    stack = np.zeros((len(vecs), n), dtype=np.float32)
+    for w, v in enumerate(vecs):
+        stack[w, :len(v)] = v
+    got = _gpu_warp_idx(bins, stack, n, len(vecs))
+    expected = [int(np.argmax(np.abs(stack[w].astype(np.float64)))) for w in range(len(vecs))]
+    assert got == expected == [0, 1, 0]
+
+
+def test_iamax_warp_all_zero(bins):
+    # All-zero vector -> index 0; mixed with a non-zero warp to confirm independence.
+    stack = np.zeros((2, 33), dtype=np.float32)
+    stack[1, 10] = -4.0   # warp 1 has its max at idx 10
+    got = _gpu_warp_idx(bins, stack, 33, 2)
+    assert got == [0, 10]
+
+
+def test_iamax_warp_neg_max(bins):
+    # Negative element is the abs-max; per-warp distinct max locations.
+    stack = np.array([
+        [0.1, -5.0, 2.0, 0.0, 0.0],    # |x| max at idx 1 (negative)
+        [0.0, 0.0, 0.0, -7.0, 3.0],    # |x| max at idx 3 (negative)
+    ], dtype=np.float32)
+    got = _gpu_warp_idx(bins, stack, 5, 2)
+    assert got == [1, 3]

@@ -435,3 +435,85 @@ namespace high_speed {
         iamax<T>(N, x, out, out_val, s_temp);
     }
 }
+
+namespace warp {
+    // Single-warp i_amax: one 32-lane warp owns the argmax, the winning index is
+    // reduced with __shfl_down_sync (carrying the (abskey,index) pair) and
+    // broadcast back to every lane with __shfl_sync — no shared scratch, no
+    // __syncthreads, no inter-warp combine. For warp-per-problem kernels that pack
+    // many independent vectors into one block (one 32-lane warp per vector). The
+    // (key,idx) pair and the lower-index tie-break (iamax_detail::combine) are the
+    // SAME mechanism as the block-scoped iamax — applied at every shuffle step so
+    // the answer is lane/order independent (and identical to the block result).
+
+    /**
+     * @brief Index of `max|x|` (BLAS i_amax) within ONE warp, returned on every lane.
+     *
+     * A single 32-lane warp computes `argmax(|x|)` and returns it (register return,
+     * broadcast to all lanes via `__shfl_sync`) — there is NO `out[]` write and NO
+     * shared scratch. Each lane forms a strided per-lane `(abskey,index)` argmax over
+     * `for (i = lane; i < n; i += 32)`, then the warp folds the pair with
+     * `__shfl_down_sync` (lower-index tie-break at EVERY step) and broadcasts lane 0's
+     * index. NumPy equivalent: `int(np.argmax(np.abs(x)))`.
+     *
+     * @par Full-warp requirement
+     * This routine assumes a FULL 32-lane warp is active (mask `0xffffffff`); it must
+     * be called by all 32 lanes of the warp. Inactive lanes (those whose `lane >= n`,
+     * i.e. that never enter the strided loop) seed `key = 0, idx = UINT32_MAX`, so they
+     * never win a tie. An all-zero vector therefore returns index `0`.
+     *
+     * @par Multi-warp independence
+     * Shared-free and `__syncthreads`-free: many warps may run this concurrently in one
+     * block, each on its own `x`, with no cross-warp interference. The result is also
+     * identical to the block-scoped `glass::iamax` (same `(key,idx)` lower-index combine).
+     *
+     * @par Tie-break / NaN
+     * On EQUAL `|x|` the LOWER index wins (the BLAS rule), applied at every shuffle
+     * combine — so the result is lane/order independent. NaN inputs are SKIPPED (IEEE
+     * compares are false, so a NaN is never selected); this DIVERGES from
+     * `np.argmax(np.abs(x))`, which propagates NaN — oracle tests must exclude NaN.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param n  Number of elements.
+     * @param x  Read-only input vector of length `n` (not modified).
+     * @return The argmax index (`uint32_t`), identical on every lane.
+     */
+    template <typename T>
+    __device__ uint32_t iamax(uint32_t n, const T *x) {
+        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+        // Per-lane strided argmax over |x| (deterministic lower-index tie-break).
+        T key = static_cast<T>(0);
+        uint32_t idx = UINT32_MAX;
+        for (uint32_t i = lane; i < n; i += 32) {
+            iamax_detail::combine(key, idx, abs(x[i]), i);
+        }
+        // Warp-shuffle fold of the (key,index) pair (lower-index tie-break at each step).
+        for (int off = 16; off > 0; off >>= 1) {
+            T okey = __shfl_down_sync(0xffffffffu, key, off);
+            uint32_t oidx = __shfl_down_sync(0xffffffffu, idx, off);
+            iamax_detail::combine(key, idx, okey, oidx);
+        }
+        // All-zero / fully-inactive vector → no element beat the (0,MAX) seed.
+        idx = (idx == UINT32_MAX) ? 0u : idx;
+        // Broadcast lane 0's winning index to every lane (register broadcast, §1g).
+        return __shfl_sync(0xffffffffu, idx, 0);
+    }
+
+    /**
+     * @brief Index of `max|x|` (BLAS i_amax) within ONE warp, compile-time size.
+     *
+     * Compile-time-`N` overload of the single-warp i_amax. Returns `argmax(|x|)` on
+     * every lane (register broadcast). NumPy equivalent: `int(np.argmax(np.abs(x)))`.
+     * Same full-warp requirement, multi-warp independence, lower-index tie-break, and
+     * NaN-skip policy as the runtime-`n` overload.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @tparam N  Number of elements (compile-time constant).
+     * @param x  Read-only input vector of length `N` (not modified).
+     * @return The argmax index (`uint32_t`), identical on every lane.
+     */
+    template <typename T, uint32_t N>
+    __device__ uint32_t iamax(const T *x) {
+        return iamax<T>(N, x);
+    }
+}
