@@ -118,8 +118,10 @@ namespace glass { namespace nvidia {
     // primary's SIMT fallback). Defining the others would be a redefinition.
     DEFINE_NVIDIA_GEMM(4, 4, 4)  DEFINE_NVIDIA_GEMM(6, 6, 6)
     DEFINE_NVIDIA_GEMM(8, 8, 8)  DEFINE_NVIDIA_GEMM(12, 12, 12)
-    DEFINE_NVIDIA_GEMM(48, 48, 48)              // shipped: 16/24/32/64; 48 is the gap
-    DEFINE_NVIDIA_GEMV(32, 32)  DEFINE_NVIDIA_GEMV(48, 48)  // shipped gemv: 4/6/8/12/16/24/64
+    DEFINE_NVIDIA_GEMM(48, 48, 48)                                   // shipped: 16/24/32/64; 48 is the gap
+    DEFINE_NVIDIA_GEMM(96, 96, 96)  DEFINE_NVIDIA_GEMM(128, 128, 128)
+    DEFINE_NVIDIA_GEMV(32, 32)  DEFINE_NVIDIA_GEMV(48, 48)           // shipped gemv: 4/6/8/12/16/24/64
+    DEFINE_NVIDIA_GEMV(96, 96)  DEFINE_NVIDIA_GEMV(128, 128)
 }}
 template<int N> __global__ void kn_dot (float* x, float* y) {
     extern __shared__ char s[]; int p=blockIdx.x;
@@ -142,10 +144,13 @@ namespace glass { namespace nvidia {
     #define MEGA_POSV_DEF(N) DEFINE_NVIDIA_POSV_BLOCKDIM(N, 1, NV_LP_TB)
     MEGA_CHOL_DEF(4)  MEGA_CHOL_DEF(6)  MEGA_CHOL_DEF(8)  MEGA_CHOL_DEF(12)
     MEGA_CHOL_DEF(16) MEGA_CHOL_DEF(24) MEGA_CHOL_DEF(32) MEGA_CHOL_DEF(48) MEGA_CHOL_DEF(64)
+    MEGA_CHOL_DEF(96) MEGA_CHOL_DEF(128)
     MEGA_TRSM_DEF(4)  MEGA_TRSM_DEF(6)  MEGA_TRSM_DEF(8)  MEGA_TRSM_DEF(12)
     MEGA_TRSM_DEF(16) MEGA_TRSM_DEF(24) MEGA_TRSM_DEF(32) MEGA_TRSM_DEF(48) MEGA_TRSM_DEF(64)
+    MEGA_TRSM_DEF(96) MEGA_TRSM_DEF(128)
     MEGA_POSV_DEF(4)  MEGA_POSV_DEF(6)  MEGA_POSV_DEF(8)  MEGA_POSV_DEF(12)
     MEGA_POSV_DEF(16) MEGA_POSV_DEF(24) MEGA_POSV_DEF(32) MEGA_POSV_DEF(48) MEGA_POSV_DEF(64)
+    MEGA_POSV_DEF(96) MEGA_POSV_DEF(128)
 }}
 template<int N> __global__ void kn_chol(float* A) {
     extern __shared__ char s[]; int p=blockIdx.x;
@@ -162,8 +167,8 @@ template<int N> __global__ void kn_posv(float* A, float* b) {
 #endif
 
 // True at compile time iff op@N has a forced nvidia variant defined above.
-template<int N> static constexpr bool nv_blas_ok()   { return MEGA_NV_BLAS   && N <= 64; }
-template<int N> static constexpr bool nv_lapack_ok() { return MEGA_NV_LAPACK && N <= 64; }
+template<int N> static constexpr bool nv_blas_ok()   { return MEGA_NV_BLAS   && N <= 128; }
+template<int N> static constexpr bool nv_lapack_ok() { return MEGA_NV_LAPACK && N <= 128; }
 
 template<typename F>
 static double time_ns_per_prob(F launch, int reps) {
@@ -181,8 +186,29 @@ static double time_ns_per_prob(F launch, int reps) {
     return best;
 }
 
+static size_t g_optin_smem = 48 * 1024;   // device opt-in dynamic-smem cap (queried in main)
+
+#if MEGA_NV_BLAS || MEGA_NV_LAPACK
+// Checked nvidia launch: skip (return -1) if the descriptor's smem exceeds the
+// device opt-in cap, if the attribute opt-in fails, or if a verification launch
+// errors out. Without this, a failed launch (e.g. gemm smem > cap) would time at
+// ~1ns/problem and masquerade as an absurd "win" — corrupting the comparison.
+template<typename Kern, typename Launch>
+static double nv_timed(Kern kern, size_t smem, Launch launch, int reps) {
+    if (smem > g_optin_smem) return -1.0;
+    cudaGetLastError();                                   // clear any prior error
+    if (smem > 48u * 1024u &&
+        cudaFuncSetAttribute((const void*)kern, cudaFuncAttributeMaxDynamicSharedMemorySize,
+                             (int)smem) != cudaSuccess) { cudaGetLastError(); return -1.0; }
+    launch();                                             // verification launch
+    if (cudaDeviceSynchronize() != cudaSuccess) { cudaGetLastError(); return -1.0; }
+    if (cudaGetLastError() != cudaSuccess)       { cudaGetLastError(); return -1.0; }
+    return time_ns_per_prob(launch, reps);
+}
+#endif
+
 // nvidia leg: needs dynamic smem opt-in for the larger descriptors (>48KB). float-only.
-// Returns best ns/problem for (op,N), or -1 if no nvidia variant for this (op,N).
+// Returns best ns/problem for (op,N), or -1 if no nvidia variant or the launch can't fit.
 template<int N>
 static double nv_op_time(Op op, float* A, float* B, float* C, float* x, float* y, int reps) {
     (void)A;(void)B;(void)C;(void)x;(void)y;(void)reps;(void)op;
@@ -191,20 +217,17 @@ static double nv_op_time(Op op, float* A, float* B, float* C, float* x, float* y
     if constexpr (nv_blas_ok<N>()) {
         if (op == DOT) {
             size_t smem = glass::nvidia::reduce_smem_size<float,NV_DOT_TB>();
-            cudaFuncSetAttribute(kn_dot<N>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
-            return time_ns_per_prob([&]{ kn_dot<N><<<grid,NV_DOT_TB,smem>>>(x, y); }, reps);
+            return nv_timed(kn_dot<N>, smem, [&]{ kn_dot<N><<<grid,NV_DOT_TB,smem>>>(x, y); }, reps);
         }
         if (op == GEMV) {
             size_t smem = glass::nvidia::gemv_smem_size<float,N,N>();
             int tb = (int)glass::nvidia::gemv_threads<float,N,N>();
-            cudaFuncSetAttribute(kn_gemv<N>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
-            return time_ns_per_prob([&]{ kn_gemv<N><<<grid,tb,smem>>>(A, x, y); }, reps);
+            return nv_timed(kn_gemv<N>, smem, [&]{ kn_gemv<N><<<grid,tb,smem>>>(A, x, y); }, reps);
         }
         if (op == GEMM) {
             size_t smem = glass::nvidia::gemm_smem_size<float,N,N,N>();
             int tb = (int)glass::nvidia::gemm_threads<float,N,N,N>();
-            cudaFuncSetAttribute(kn_gemm<N>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
-            return time_ns_per_prob([&]{ kn_gemm<N><<<grid,tb,smem>>>(A, B, C); }, reps);
+            return nv_timed(kn_gemm<N>, smem, [&]{ kn_gemm<N><<<grid,tb,smem>>>(A, B, C); }, reps);
         }
     }
 #endif
@@ -212,18 +235,15 @@ static double nv_op_time(Op op, float* A, float* B, float* C, float* x, float* y
     if constexpr (nv_lapack_ok<N>()) {
         if (op == CHOL) {
             size_t smem = glass::nvidia::chol_inplace_smem_size<float,N,NV_LP_TB>();
-            cudaFuncSetAttribute(kn_chol<N>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
-            return time_ns_per_prob([&]{ kn_chol<N><<<grid,NV_LP_TB,smem>>>(A); }, reps);
+            return nv_timed(kn_chol<N>, smem, [&]{ kn_chol<N><<<grid,NV_LP_TB,smem>>>(A); }, reps);
         }
         if (op == TRSV) {
             size_t smem = glass::nvidia::trsm_smem_size<float,N,1,NV_LP_TB>();
-            cudaFuncSetAttribute(kn_trsv<N>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
-            return time_ns_per_prob([&]{ kn_trsv<N><<<grid,NV_LP_TB,smem>>>(A, x); }, reps);
+            return nv_timed(kn_trsv<N>, smem, [&]{ kn_trsv<N><<<grid,NV_LP_TB,smem>>>(A, x); }, reps);
         }
         if (op == POSV) {
             size_t smem = glass::nvidia::posv_smem_size<float,N,1,NV_LP_TB>();
-            cudaFuncSetAttribute(kn_posv<N>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
-            return time_ns_per_prob([&]{ kn_posv<N><<<grid,NV_LP_TB,smem>>>(A, x); }, reps);
+            return nv_timed(kn_posv<N>, smem, [&]{ kn_posv<N><<<grid,NV_LP_TB,smem>>>(A, x); }, reps);
         }
     }
 #endif
@@ -298,8 +318,9 @@ int main(int argc, char** argv) {
     int reps = (argc > 2) ? atoi(argv[2]) : 500;
     const char* dt = (argc > 3) ? argv[3] : "f32";
     bool f64 = (strcmp(dt, "f64") == 0 || strcmp(dt, "fp64") == 0 || strcmp(dt, "double") == 0);
-    printf("# mega sweep | NPROB=%d reps=%d dtype=%s | ns/problem (lower=better)\n", NPROB, reps, f64 ? "f64" : "f32");
-    printf("# contenders: BLOCK(SIMT, TB swept) | WARP(WPB swept) | NV(cuBLASDx/cuSOLVERDx, forced, float-only, N<=64)\n");
+    { int v = 48*1024; cudaDeviceGetAttribute(&v, cudaDevAttrMaxSharedMemoryPerBlockOptin, 0); g_optin_smem = (size_t)v; }
+    printf("# mega sweep | NPROB=%d reps=%d dtype=%s | ns/problem (lower=better) | optin_smem=%zuKB\n", NPROB, reps, f64 ? "f64" : "f32", g_optin_smem/1024);
+    printf("# contenders: BLOCK(SIMT, TB swept) | WARP(WPB swept) | NV(cuBLASDx/cuSOLVERDx, forced, float-only, N<=128)\n");
     if (f64) run_all<double>(reps);
     else     run_all<float>(reps);
     return 0;
