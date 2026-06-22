@@ -207,11 +207,11 @@ constexpr uint32_t gemm_threads() { return 256; }
 // ARCH is an integer literal SM architecture (e.g. 860). The parameter is
 // named ARCH (not SM) to avoid colliding with the cublasdx::SM<> token during
 // macro substitution.
-#define _GLASS_GEMM_NO_BD(M, N, K, LA, LB, LC, ARCH)                                            \
-    namespace _nvidia_gemm_impl_##M##x##N##x##K##_bd0_la##LA##_lb##LB##_lc##LC##_sm##ARCH {     \
+#define _GLASS_GEMM_NO_BD(M, N, K, LA, LB, LC, CT, ARCH)                                            \
+    namespace _nvidia_gemm_impl_##M##x##N##x##K##_bd0_la##LA##_lb##LB##_lc##LC##_##CT##_sm##ARCH {     \
         using GEMM = decltype(                                                                  \
             cublasdx::Size<M, N, K>()                                                           \
-            + cublasdx::Precision<float>()                                                      \
+            + cublasdx::Precision<CT>()                                                      \
             + cublasdx::Type<cublasdx::type::real>()                                            \
             + cublasdx::Function<cublasdx::function::MM>()                                      \
             + cublasdx::Arrangement<                                                            \
@@ -227,8 +227,8 @@ constexpr uint32_t gemm_threads() { return 256; }
         static constexpr std::size_t smem_bytes =                                               \
             cublasdx::get_shared_storage_size<GEMM>();                                          \
         template <bool TRAILING_SYNC>                                                           \
-        __device__ inline void run(float alpha, float* A, float* B,                             \
-                                   float beta,  float* C, char* smem)                           \
+        __device__ inline void run(CT alpha, CT* A, CT* B,                             \
+                                   CT beta,  CT* C, char* smem)                           \
         {                                                                                       \
             _GLASS_ASSERT_BLOCKDIM_GEQ(GEMM)                                                    \
             using align = cublasdx::alignment_of<GEMM>;                                         \
@@ -253,52 +253,52 @@ constexpr uint32_t gemm_threads() { return 256; }
         }                                                                                       \
     }                                                                                           \
     template <>                                                                                 \
-    __device__ inline void gemm<float, M, N, K, 0,                                              \
+    __device__ inline void gemm<CT, M, N, K, 0,                                              \
                                 static_cast<layout>(LA),                                        \
                                 static_cast<layout>(LB),                                        \
                                 static_cast<layout>(LC), ARCH, true>                            \
-                               (float alpha, float* A, float* B,                                \
-                                float beta,  float* C, char* smem)                              \
+                               (CT alpha, CT* A, CT* B,                                \
+                                CT beta,  CT* C, char* smem)                              \
     {                                                                                           \
-        _nvidia_gemm_impl_##M##x##N##x##K##_bd0_la##LA##_lb##LB##_lc##LC##_sm##ARCH             \
+        _nvidia_gemm_impl_##M##x##N##x##K##_bd0_la##LA##_lb##LB##_lc##LC##_##CT##_sm##ARCH             \
             ::template run<true>(alpha, A, B, beta, C, smem);                                   \
     }                                                                                           \
     template <>                                                                                 \
-    __device__ inline void gemm<float, M, N, K, 0,                                              \
+    __device__ inline void gemm<CT, M, N, K, 0,                                              \
                                 static_cast<layout>(LA),                                        \
                                 static_cast<layout>(LB),                                        \
                                 static_cast<layout>(LC), ARCH, false>                           \
-                               (float alpha, float* A, float* B,                                \
-                                float beta,  float* C, char* smem)                              \
+                               (CT alpha, CT* A, CT* B,                                \
+                                CT beta,  CT* C, char* smem)                              \
     {                                                                                           \
-        _nvidia_gemm_impl_##M##x##N##x##K##_bd0_la##LA##_lb##LB##_lc##LC##_sm##ARCH             \
+        _nvidia_gemm_impl_##M##x##N##x##K##_bd0_la##LA##_lb##LB##_lc##LC##_##CT##_sm##ARCH             \
             ::template run<false>(alpha, A, B, beta, C, smem);                                  \
     }                                                                                           \
     template <>                                                                                 \
-    constexpr std::size_t gemm_smem_size<float, M, N, K, 0,                                     \
+    constexpr std::size_t gemm_smem_size<CT, M, N, K, 0,                                     \
                                           static_cast<layout>(LA),                              \
                                           static_cast<layout>(LB),                              \
                                           static_cast<layout>(LC), ARCH>()                      \
     {                                                                                           \
-        return _nvidia_gemm_impl_##M##x##N##x##K##_bd0_la##LA##_lb##LB##_lc##LC##_sm##ARCH::smem_bytes; \
+        return _nvidia_gemm_impl_##M##x##N##x##K##_bd0_la##LA##_lb##LB##_lc##LC##_##CT##_sm##ARCH::smem_bytes; \
     }                                                                                           \
     template <>                                                                                 \
-    constexpr uint32_t gemm_threads<float, M, N, K, 0,                                          \
+    constexpr uint32_t gemm_threads<CT, M, N, K, 0,                                          \
                                      static_cast<layout>(LA),                                   \
                                      static_cast<layout>(LB),                                   \
                                      static_cast<layout>(LC), ARCH>()                           \
     {                                                                                           \
-        return _nvidia_gemm_impl_##M##x##N##x##K##_bd0_la##LA##_lb##LB##_lc##LC##_sm##ARCH::block_threads; \
+        return _nvidia_gemm_impl_##M##x##N##x##K##_bd0_la##LA##_lb##LB##_lc##LC##_##CT##_sm##ARCH::block_threads; \
     }
 
 // LA, LB, LC are integer literals 0 (col_major) or 1 (row_major).
 // TC is the pinned BlockDim thread count (1D); ARCH is the SM architecture
 // (parameter name avoids colliding with cublasdx::SM token).
-#define _GLASS_GEMM_BD(M, N, K, TC, LA, LB, LC, ARCH)                                           \
-    namespace _nvidia_gemm_impl_##M##x##N##x##K##_bd##TC##_la##LA##_lb##LB##_lc##LC##_sm##ARCH { \
+#define _GLASS_GEMM_BD(M, N, K, TC, LA, LB, LC, CT, ARCH)                                           \
+    namespace _nvidia_gemm_impl_##M##x##N##x##K##_bd##TC##_la##LA##_lb##LB##_lc##LC##_##CT##_sm##ARCH { \
         using GEMM = decltype(                                                                  \
             cublasdx::Size<M, N, K>()                                                           \
-            + cublasdx::Precision<float>()                                                      \
+            + cublasdx::Precision<CT>()                                                      \
             + cublasdx::Type<cublasdx::type::real>()                                            \
             + cublasdx::Function<cublasdx::function::MM>()                                      \
             + cublasdx::Arrangement<                                                            \
@@ -315,8 +315,8 @@ constexpr uint32_t gemm_threads() { return 256; }
         static constexpr std::size_t smem_bytes =                                               \
             cublasdx::get_shared_storage_size<GEMM>();                                          \
         template <bool TRAILING_SYNC>                                                           \
-        __device__ inline void run(float alpha, float* A, float* B,                             \
-                                   float beta,  float* C, char* smem)                           \
+        __device__ inline void run(CT alpha, CT* A, CT* B,                             \
+                                   CT beta,  CT* C, char* smem)                           \
         {                                                                                       \
             _GLASS_ASSERT_BLOCKDIM_GEQ(GEMM)                                                    \
             using align = cublasdx::alignment_of<GEMM>;                                         \
@@ -341,51 +341,51 @@ constexpr uint32_t gemm_threads() { return 256; }
         }                                                                                       \
     }                                                                                           \
     template <>                                                                                 \
-    __device__ inline void gemm<float, M, N, K, TC,                                             \
+    __device__ inline void gemm<CT, M, N, K, TC,                                             \
                                 static_cast<layout>(LA),                                        \
                                 static_cast<layout>(LB),                                        \
                                 static_cast<layout>(LC), ARCH, true>                            \
-                               (float alpha, float* A, float* B,                                \
-                                float beta,  float* C, char* smem)                              \
+                               (CT alpha, CT* A, CT* B,                                \
+                                CT beta,  CT* C, char* smem)                              \
     {                                                                                           \
-        _nvidia_gemm_impl_##M##x##N##x##K##_bd##TC##_la##LA##_lb##LB##_lc##LC##_sm##ARCH        \
+        _nvidia_gemm_impl_##M##x##N##x##K##_bd##TC##_la##LA##_lb##LB##_lc##LC##_##CT##_sm##ARCH        \
             ::template run<true>(alpha, A, B, beta, C, smem);                                   \
     }                                                                                           \
     template <>                                                                                 \
-    __device__ inline void gemm<float, M, N, K, TC,                                             \
+    __device__ inline void gemm<CT, M, N, K, TC,                                             \
                                 static_cast<layout>(LA),                                        \
                                 static_cast<layout>(LB),                                        \
                                 static_cast<layout>(LC), ARCH, false>                           \
-                               (float alpha, float* A, float* B,                                \
-                                float beta,  float* C, char* smem)                              \
+                               (CT alpha, CT* A, CT* B,                                \
+                                CT beta,  CT* C, char* smem)                              \
     {                                                                                           \
-        _nvidia_gemm_impl_##M##x##N##x##K##_bd##TC##_la##LA##_lb##LB##_lc##LC##_sm##ARCH        \
+        _nvidia_gemm_impl_##M##x##N##x##K##_bd##TC##_la##LA##_lb##LB##_lc##LC##_##CT##_sm##ARCH        \
             ::template run<false>(alpha, A, B, beta, C, smem);                                  \
     }                                                                                           \
     template <>                                                                                 \
-    constexpr std::size_t gemm_smem_size<float, M, N, K, TC,                                    \
+    constexpr std::size_t gemm_smem_size<CT, M, N, K, TC,                                    \
                                           static_cast<layout>(LA),                              \
                                           static_cast<layout>(LB),                              \
                                           static_cast<layout>(LC), ARCH>()                     \
     {                                                                                           \
-        return _nvidia_gemm_impl_##M##x##N##x##K##_bd##TC##_la##LA##_lb##LB##_lc##LC##_sm##ARCH::smem_bytes; \
+        return _nvidia_gemm_impl_##M##x##N##x##K##_bd##TC##_la##LA##_lb##LB##_lc##LC##_##CT##_sm##ARCH::smem_bytes; \
     }                                                                                           \
     template <>                                                                                 \
-    constexpr uint32_t gemm_threads<float, M, N, K, TC,                                         \
+    constexpr uint32_t gemm_threads<CT, M, N, K, TC,                                         \
                                      static_cast<layout>(LA),                                   \
                                      static_cast<layout>(LB),                                   \
                                      static_cast<layout>(LC), ARCH>()                          \
     {                                                                                           \
-        return _nvidia_gemm_impl_##M##x##N##x##K##_bd##TC##_la##LA##_lb##LB##_lc##LC##_sm##ARCH::block_threads; \
+        return _nvidia_gemm_impl_##M##x##N##x##K##_bd##TC##_la##LA##_lb##LB##_lc##LC##_##CT##_sm##ARCH::block_threads; \
     }
 
 // One-line indirection wrappers — exist solely to force the SMS macro (or any
 // macro passed as ARCH) to be expanded at the call boundary, BEFORE token
 // pasting in `_GLASS_GEMM_*` would freeze it as the literal text "SMS".
-#define _GLASS_GEMM_NO_BD_E(M, N, K, LA, LB, LC, ARCH)                                          \
-    _GLASS_GEMM_NO_BD(M, N, K, LA, LB, LC, ARCH)
-#define _GLASS_GEMM_BD_E(M, N, K, TC, LA, LB, LC, ARCH)                                         \
-    _GLASS_GEMM_BD(M, N, K, TC, LA, LB, LC, ARCH)
+#define _GLASS_GEMM_NO_BD_E(M, N, K, LA, LB, LC, CT, ARCH)                                          \
+    _GLASS_GEMM_NO_BD(M, N, K, LA, LB, LC, CT, ARCH)
+#define _GLASS_GEMM_BD_E(M, N, K, TC, LA, LB, LC, CT, ARCH)                                         \
+    _GLASS_GEMM_BD(M, N, K, TC, LA, LB, LC, CT, ARCH)
 
 // ---------------------------------------------------------------------------
 // Public DEFINE_NVIDIA_GEMM* convenience macros
@@ -396,36 +396,42 @@ constexpr uint32_t gemm_threads() { return 256; }
 
 // Default: cuBLASDx picks block_dim, all col_major, SM = SMS macro.
 #define DEFINE_NVIDIA_GEMM(M, N, K) \
-    _GLASS_GEMM_NO_BD_E(M, N, K, 0, 0, 0, SMS)
+    _GLASS_GEMM_NO_BD_E(M, N, K, 0, 0, 0, float, SMS)
 
 // Pinned BlockDim<TC,1,1>; all col_major; SM = SMS.
 #define DEFINE_NVIDIA_GEMM_BLOCKDIM(M, N, K, TC) \
-    _GLASS_GEMM_BD_E(M, N, K, TC, 0, 0, 0, SMS)
+    _GLASS_GEMM_BD_E(M, N, K, TC, 0, 0, 0, float, SMS)
 
 // Custom layouts; cuBLASDx picks block_dim; SM = SMS.
 // LA, LB, LC are integer literals 0 (col_major) or 1 (row_major).
 #define DEFINE_NVIDIA_GEMM_LAYOUT(M, N, K, LA, LB, LC) \
-    _GLASS_GEMM_NO_BD_E(M, N, K, LA, LB, LC, SMS)
+    _GLASS_GEMM_NO_BD_E(M, N, K, LA, LB, LC, float, SMS)
 
 // Pinned BlockDim<TC,1,1>; custom layouts; SM = SMS.
 #define DEFINE_NVIDIA_GEMM_BLOCKDIM_LAYOUT(M, N, K, TC, LA, LB, LC) \
-    _GLASS_GEMM_BD_E(M, N, K, TC, LA, LB, LC, SMS)
+    _GLASS_GEMM_BD_E(M, N, K, TC, LA, LB, LC, float, SMS)
 
 // cuBLASDx picks block_dim; all col_major; explicit SM.
 #define DEFINE_NVIDIA_GEMM_SM(M, N, K, SM) \
-    _GLASS_GEMM_NO_BD_E(M, N, K, 0, 0, 0, SM)
+    _GLASS_GEMM_NO_BD_E(M, N, K, 0, 0, 0, float, SM)
 
 // Pinned BlockDim<TC,1,1>; all col_major; explicit SM.
 #define DEFINE_NVIDIA_GEMM_BLOCKDIM_SM(M, N, K, TC, SM) \
-    _GLASS_GEMM_BD_E(M, N, K, TC, 0, 0, 0, SM)
+    _GLASS_GEMM_BD_E(M, N, K, TC, 0, 0, 0, float, SM)
+
+// precision-parametric variants (CT = float|double) — base + pinned-BlockDim, all col_major.
+#define DEFINE_NVIDIA_GEMM_PREC(M, N, K, CT) \
+    _GLASS_GEMM_NO_BD_E(M, N, K, 0, 0, 0, CT, SMS)
+#define DEFINE_NVIDIA_GEMM_BLOCKDIM_PREC(M, N, K, TC, CT) \
+    _GLASS_GEMM_BD_E(M, N, K, TC, 0, 0, 0, CT, SMS)
 
 // Custom layouts; cuBLASDx picks block_dim; explicit SM.
 #define DEFINE_NVIDIA_GEMM_LAYOUT_SM(M, N, K, LA, LB, LC, SM) \
-    _GLASS_GEMM_NO_BD_E(M, N, K, LA, LB, LC, SM)
+    _GLASS_GEMM_NO_BD_E(M, N, K, LA, LB, LC, float, SM)
 
 // All explicit: pinned BlockDim<TC,1,1>; custom layouts; explicit SM.
 #define DEFINE_NVIDIA_GEMM_BLOCKDIM_LAYOUT_SM(M, N, K, TC, LA, LB, LC, SM) \
-    _GLASS_GEMM_BD_E(M, N, K, TC, LA, LB, LC, SM)
+    _GLASS_GEMM_BD_E(M, N, K, TC, LA, LB, LC, float, SM)
 
 // ---------------------------------------------------------------------------
 // GRiD-friendly aliases (matching the existing TRANSPOSE_B flag in the shim).

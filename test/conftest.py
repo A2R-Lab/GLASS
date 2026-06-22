@@ -192,6 +192,33 @@ def bins(tmp_path_factory):
             "test_trailing_sync", build_dir, CUDA_ARCH, extra_flags=flags)
     except Exception as e:
         print(f"\nSkipping test_trailing_sync (compile failed): {e}", file=sys.stderr)
+
+    # test_nvidia_f64.cu validates the DOUBLE-precision nvidia path (cuSOLVERDx
+    # posv / cuBLASDx gemm,gemv). Needs cuSOLVERDx (headers + libcusolverdx.a,
+    # which is LTO so the link wants -rdc=true -dlto). Skipped if absent.
+    cusolverdx_available = (
+        cublasdx_available
+        and (pathlib.Path(mathdx) / "include" / "cusolverdx.hpp").exists()
+        and (pathlib.Path(mathdx) / "include" / "cusolverdx_io.hpp").exists()
+        and (pathlib.Path(mathdx) / "lib" / "libcusolverdx.a").exists()
+    )
+    if cusolverdx_available:
+        sms = CUDA_ARCH.replace("sm_", "") + "0"   # sm_120 -> 1200
+        try:
+            out["nvidia_f64"] = compile_binary(
+                "test_nvidia_f64", build_dir, CUDA_ARCH,
+                extra_flags=[
+                    "--expt-relaxed-constexpr",
+                    "-DGLASS_BENCH_CUBLASDX", "-DGLASS_BENCH_CUSOLVERDX",
+                    "-DCUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT", f"-DSMS={sms}",
+                    "-I", str(pathlib.Path(mathdx) / "include"),
+                    "-I", str(pathlib.Path(mathdx) / "external" / "cutlass" / "include"),
+                    "-rdc=true", "-dlto",
+                    "-L", str(pathlib.Path(mathdx) / "lib"),
+                    "-lcusolverdx", "-lcublas", "-lcusolver", "-lcudart",
+                ])
+        except Exception as e:
+            print(f"\nSkipping test_nvidia_f64 (compile failed): {e}", file=sys.stderr)
     return out
 
 
@@ -218,6 +245,14 @@ def bin_trailing_sync(bins):
     if "trailing_sync" not in bins:
         pytest.skip("test_trailing_sync failed to compile")
     return bins["trailing_sync"]
+
+
+@pytest.fixture(scope="session")
+def bin_nvidia_f64(bins):
+    """Double-precision nvidia path; skip if cuSOLVERDx isn't available."""
+    if "nvidia_f64" not in bins:
+        pytest.skip("test_nvidia_f64 needs MATHDX_ROOT + cuSOLVERDx")
+    return bins["nvidia_f64"]
 
 
 # ─── run_op helper ────────────────────────────────────────────────────────────

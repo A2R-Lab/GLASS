@@ -142,11 +142,11 @@ constexpr uint32_t trsm_threads() { return 256; }
 // ---------------------------------------------------------------------------
 
 // ARCH (not SM) avoids token collision with cusolverdx::SM<>.
-#define _GLASS_CHOL_NO_BD(N, ARCH)                                                            \
-    namespace _nvidia_chol_impl_##N##_bd0_sm##ARCH {                                          \
+#define _GLASS_CHOL_NO_BD(N, CT, ARCH)                                                            \
+    namespace _nvidia_chol_impl_##N##_##CT##_bd0_sm##ARCH {                                          \
         using SOLVER = decltype(                                                              \
             cusolverdx::Size<N, N>()                                                          \
-            + cusolverdx::Precision<float>()                                                  \
+            + cusolverdx::Precision<CT>()                                                  \
             + cusolverdx::Type<cusolverdx::type::real>()                                      \
             + cusolverdx::Function<cusolverdx::function::potrf>()                             \
             + cusolverdx::FillMode<cusolverdx::fill_mode::lower>()                            \
@@ -159,9 +159,9 @@ constexpr uint32_t trsm_threads() { return 256; }
                                   SOLVER::block_dim.z);                                       \
         static constexpr std::size_t smem_bytes = SOLVER::shared_memory_size;                 \
         template <bool TRAILING_SYNC>                                                         \
-        __device__ inline void run(float* A, char* smem) {                                    \
+        __device__ inline void run(CT* A, char* smem) {                                    \
             _GLASS_ASSERT_BLOCKDIM_GEQ(SOLVER)                                                \
-            float* As = reinterpret_cast<float*>(smem);                                       \
+            CT* As = reinterpret_cast<CT*>(smem);                                       \
             cusolverdx::copy_2d<SOLVER, N, N, cusolverdx::col_major>(A, N, As, SOLVER::lda); \
             __syncthreads();                                                                  \
             int info = 0;                                                                     \
@@ -174,31 +174,31 @@ constexpr uint32_t trsm_threads() { return 256; }
         }                                                                                     \
     }                                                                                         \
     template <>                                                                               \
-    __device__ inline void chol_inplace<float, N, 0, ARCH, true>(float* A, char* smem)        \
+    __device__ inline void chol_inplace<CT, N, 0, ARCH, true>(CT* A, char* smem)        \
     {                                                                                         \
-        _nvidia_chol_impl_##N##_bd0_sm##ARCH::template run<true>(A, smem);                    \
+        _nvidia_chol_impl_##N##_##CT##_bd0_sm##ARCH::template run<true>(A, smem);                    \
     }                                                                                         \
     template <>                                                                               \
-    __device__ inline void chol_inplace<float, N, 0, ARCH, false>(float* A, char* smem)       \
+    __device__ inline void chol_inplace<CT, N, 0, ARCH, false>(CT* A, char* smem)       \
     {                                                                                         \
-        _nvidia_chol_impl_##N##_bd0_sm##ARCH::template run<false>(A, smem);                   \
+        _nvidia_chol_impl_##N##_##CT##_bd0_sm##ARCH::template run<false>(A, smem);                   \
     }                                                                                         \
     template <>                                                                               \
-    constexpr std::size_t chol_inplace_smem_size<float, N, 0, ARCH>()                         \
+    constexpr std::size_t chol_inplace_smem_size<CT, N, 0, ARCH>()                         \
     {                                                                                         \
-        return _nvidia_chol_impl_##N##_bd0_sm##ARCH::smem_bytes;                              \
+        return _nvidia_chol_impl_##N##_##CT##_bd0_sm##ARCH::smem_bytes;                              \
     }                                                                                         \
     template <>                                                                               \
-    constexpr uint32_t chol_inplace_threads<float, N, 0, ARCH>()                              \
+    constexpr uint32_t chol_inplace_threads<CT, N, 0, ARCH>()                              \
     {                                                                                         \
-        return _nvidia_chol_impl_##N##_bd0_sm##ARCH::block_threads;                           \
+        return _nvidia_chol_impl_##N##_##CT##_bd0_sm##ARCH::block_threads;                           \
     }
 
-#define _GLASS_CHOL_BD(N, TC, ARCH)                                                           \
-    namespace _nvidia_chol_impl_##N##_bd##TC##_sm##ARCH {                                     \
+#define _GLASS_CHOL_BD(N, TC, CT, ARCH)                                                           \
+    namespace _nvidia_chol_impl_##N##_##CT##_bd##TC##_sm##ARCH {                                     \
         using SOLVER = decltype(                                                              \
             cusolverdx::Size<N, N>()                                                          \
-            + cusolverdx::Precision<float>()                                                  \
+            + cusolverdx::Precision<CT>()                                                  \
             + cusolverdx::Type<cusolverdx::type::real>()                                      \
             + cusolverdx::Function<cusolverdx::function::potrf>()                             \
             + cusolverdx::FillMode<cusolverdx::fill_mode::lower>()                            \
@@ -212,9 +212,9 @@ constexpr uint32_t trsm_threads() { return 256; }
                                   SOLVER::block_dim.z);                                       \
         static constexpr std::size_t smem_bytes = SOLVER::shared_memory_size;                 \
         template <bool TRAILING_SYNC>                                                         \
-        __device__ inline void run(float* A, char* smem) {                                    \
+        __device__ inline void run(CT* A, char* smem) {                                    \
             _GLASS_ASSERT_BLOCKDIM_GEQ(SOLVER)                                                \
-            float* As = reinterpret_cast<float*>(smem);                                       \
+            CT* As = reinterpret_cast<CT*>(smem);                                       \
             cusolverdx::copy_2d<SOLVER, N, N, cusolverdx::col_major>(A, N, As, SOLVER::lda); \
             __syncthreads();                                                                  \
             int info = 0;                                                                     \
@@ -227,38 +227,38 @@ constexpr uint32_t trsm_threads() { return 256; }
         }                                                                                     \
     }                                                                                         \
     template <>                                                                               \
-    __device__ inline void chol_inplace<float, N, TC, ARCH, true>(float* A, char* smem)       \
+    __device__ inline void chol_inplace<CT, N, TC, ARCH, true>(CT* A, char* smem)       \
     {                                                                                         \
-        _nvidia_chol_impl_##N##_bd##TC##_sm##ARCH::template run<true>(A, smem);               \
+        _nvidia_chol_impl_##N##_##CT##_bd##TC##_sm##ARCH::template run<true>(A, smem);               \
     }                                                                                         \
     template <>                                                                               \
-    __device__ inline void chol_inplace<float, N, TC, ARCH, false>(float* A, char* smem)      \
+    __device__ inline void chol_inplace<CT, N, TC, ARCH, false>(CT* A, char* smem)      \
     {                                                                                         \
-        _nvidia_chol_impl_##N##_bd##TC##_sm##ARCH::template run<false>(A, smem);              \
+        _nvidia_chol_impl_##N##_##CT##_bd##TC##_sm##ARCH::template run<false>(A, smem);              \
     }                                                                                         \
     template <>                                                                               \
-    constexpr std::size_t chol_inplace_smem_size<float, N, TC, ARCH>()                        \
+    constexpr std::size_t chol_inplace_smem_size<CT, N, TC, ARCH>()                        \
     {                                                                                         \
-        return _nvidia_chol_impl_##N##_bd##TC##_sm##ARCH::smem_bytes;                         \
+        return _nvidia_chol_impl_##N##_##CT##_bd##TC##_sm##ARCH::smem_bytes;                         \
     }                                                                                         \
     template <>                                                                               \
-    constexpr uint32_t chol_inplace_threads<float, N, TC, ARCH>()                             \
+    constexpr uint32_t chol_inplace_threads<CT, N, TC, ARCH>()                             \
     {                                                                                         \
-        return _nvidia_chol_impl_##N##_bd##TC##_sm##ARCH::block_threads;                      \
+        return _nvidia_chol_impl_##N##_##CT##_bd##TC##_sm##ARCH::block_threads;                      \
     }
 
-#define _GLASS_CHOL_NO_BD_E(N, ARCH)        _GLASS_CHOL_NO_BD(N, ARCH)
-#define _GLASS_CHOL_BD_E(N, TC, ARCH)       _GLASS_CHOL_BD(N, TC, ARCH)
+#define _GLASS_CHOL_NO_BD_E(N, CT, ARCH)        _GLASS_CHOL_NO_BD(N, CT, ARCH)
+#define _GLASS_CHOL_BD_E(N, TC, CT, ARCH)       _GLASS_CHOL_BD(N, TC, CT, ARCH)
 
 // ---------------------------------------------------------------------------
 // Private core macros — TRSM (left, lower, non_trans, non_unit, col_major)
 // ---------------------------------------------------------------------------
 
-#define _GLASS_TRSM_NO_BD(M, N, ARCH)                                                         \
-    namespace _nvidia_trsm_impl_##M##x##N##_bd0_sm##ARCH {                                    \
+#define _GLASS_TRSM_NO_BD(M, N, CT, ARCH)                                                         \
+    namespace _nvidia_trsm_impl_##M##x##N##_##CT##_bd0_sm##ARCH {                                    \
         using SOLVER = decltype(                                                              \
             cusolverdx::Size<M, N>()                                                          \
-            + cusolverdx::Precision<float>()                                                  \
+            + cusolverdx::Precision<CT>()                                                  \
             + cusolverdx::Type<cusolverdx::type::real>()                                      \
             + cusolverdx::Function<cusolverdx::function::trsm>()                              \
             + cusolverdx::Side<cusolverdx::side::left>()                                      \
@@ -274,10 +274,10 @@ constexpr uint32_t trsm_threads() { return 256; }
                                   SOLVER::block_dim.z);                                       \
         static constexpr std::size_t smem_bytes = SOLVER::shared_memory_size;                 \
         template <bool TRAILING_SYNC>                                                         \
-        __device__ inline void run(float alpha, float* L, float* B, char* smem) {             \
+        __device__ inline void run(CT alpha, CT* L, CT* B, char* smem) {             \
             _GLASS_ASSERT_BLOCKDIM_GEQ(SOLVER)                                                \
-            float* Ls = reinterpret_cast<float*>(smem);                                       \
-            float* Bs = Ls + (M * M);                                                         \
+            CT* Ls = reinterpret_cast<CT*>(smem);                                       \
+            CT* Bs = Ls + (M * M);                                                         \
             cusolverdx::copy_2d<SOLVER, M, M, cusolverdx::col_major>(L, M, Ls, M);           \
             cusolverdx::copy_2d<SOLVER, M, N, cusolverdx::col_major>(B, M, Bs, M);           \
             __syncthreads();                                                                  \
@@ -299,33 +299,33 @@ constexpr uint32_t trsm_threads() { return 256; }
         }                                                                                     \
     }                                                                                         \
     template <>                                                                               \
-    __device__ inline void trsm<float, M, N, 0, ARCH, true>                                   \
-        (float alpha, float* L, float* B, char* smem)                                         \
+    __device__ inline void trsm<CT, M, N, 0, ARCH, true>                                   \
+        (CT alpha, CT* L, CT* B, char* smem)                                         \
     {                                                                                         \
-        _nvidia_trsm_impl_##M##x##N##_bd0_sm##ARCH::template run<true>(alpha, L, B, smem);    \
+        _nvidia_trsm_impl_##M##x##N##_##CT##_bd0_sm##ARCH::template run<true>(alpha, L, B, smem);    \
     }                                                                                         \
     template <>                                                                               \
-    __device__ inline void trsm<float, M, N, 0, ARCH, false>                                  \
-        (float alpha, float* L, float* B, char* smem)                                         \
+    __device__ inline void trsm<CT, M, N, 0, ARCH, false>                                  \
+        (CT alpha, CT* L, CT* B, char* smem)                                         \
     {                                                                                         \
-        _nvidia_trsm_impl_##M##x##N##_bd0_sm##ARCH::template run<false>(alpha, L, B, smem);   \
+        _nvidia_trsm_impl_##M##x##N##_##CT##_bd0_sm##ARCH::template run<false>(alpha, L, B, smem);   \
     }                                                                                         \
     template <>                                                                               \
-    constexpr std::size_t trsm_smem_size<float, M, N, 0, ARCH>()                              \
+    constexpr std::size_t trsm_smem_size<CT, M, N, 0, ARCH>()                              \
     {                                                                                         \
-        return _nvidia_trsm_impl_##M##x##N##_bd0_sm##ARCH::smem_bytes;                        \
+        return _nvidia_trsm_impl_##M##x##N##_##CT##_bd0_sm##ARCH::smem_bytes;                        \
     }                                                                                         \
     template <>                                                                               \
-    constexpr uint32_t trsm_threads<float, M, N, 0, ARCH>()                                   \
+    constexpr uint32_t trsm_threads<CT, M, N, 0, ARCH>()                                   \
     {                                                                                         \
-        return _nvidia_trsm_impl_##M##x##N##_bd0_sm##ARCH::block_threads;                     \
+        return _nvidia_trsm_impl_##M##x##N##_##CT##_bd0_sm##ARCH::block_threads;                     \
     }
 
-#define _GLASS_TRSM_BD(M, N, TC, ARCH)                                                        \
-    namespace _nvidia_trsm_impl_##M##x##N##_bd##TC##_sm##ARCH {                               \
+#define _GLASS_TRSM_BD(M, N, TC, CT, ARCH)                                                        \
+    namespace _nvidia_trsm_impl_##M##x##N##_##CT##_bd##TC##_sm##ARCH {                               \
         using SOLVER = decltype(                                                              \
             cusolverdx::Size<M, N>()                                                          \
-            + cusolverdx::Precision<float>()                                                  \
+            + cusolverdx::Precision<CT>()                                                  \
             + cusolverdx::Type<cusolverdx::type::real>()                                      \
             + cusolverdx::Function<cusolverdx::function::trsm>()                              \
             + cusolverdx::Side<cusolverdx::side::left>()                                      \
@@ -342,10 +342,10 @@ constexpr uint32_t trsm_threads() { return 256; }
                                   SOLVER::block_dim.z);                                       \
         static constexpr std::size_t smem_bytes = SOLVER::shared_memory_size;                 \
         template <bool TRAILING_SYNC>                                                         \
-        __device__ inline void run(float alpha, float* L, float* B, char* smem) {             \
+        __device__ inline void run(CT alpha, CT* L, CT* B, char* smem) {             \
             _GLASS_ASSERT_BLOCKDIM_GEQ(SOLVER)                                                \
-            float* Ls = reinterpret_cast<float*>(smem);                                       \
-            float* Bs = Ls + (M * M);                                                         \
+            CT* Ls = reinterpret_cast<CT*>(smem);                                       \
+            CT* Bs = Ls + (M * M);                                                         \
             cusolverdx::copy_2d<SOLVER, M, M, cusolverdx::col_major>(L, M, Ls, M);           \
             cusolverdx::copy_2d<SOLVER, M, N, cusolverdx::col_major>(B, M, Bs, M);           \
             __syncthreads();                                                                  \
@@ -367,47 +367,57 @@ constexpr uint32_t trsm_threads() { return 256; }
         }                                                                                     \
     }                                                                                         \
     template <>                                                                               \
-    __device__ inline void trsm<float, M, N, TC, ARCH, true>                                  \
-        (float alpha, float* L, float* B, char* smem)                                         \
+    __device__ inline void trsm<CT, M, N, TC, ARCH, true>                                  \
+        (CT alpha, CT* L, CT* B, char* smem)                                         \
     {                                                                                         \
-        _nvidia_trsm_impl_##M##x##N##_bd##TC##_sm##ARCH::template run<true>(alpha, L, B, smem);\
+        _nvidia_trsm_impl_##M##x##N##_##CT##_bd##TC##_sm##ARCH::template run<true>(alpha, L, B, smem);\
     }                                                                                         \
     template <>                                                                               \
-    __device__ inline void trsm<float, M, N, TC, ARCH, false>                                 \
-        (float alpha, float* L, float* B, char* smem)                                         \
+    __device__ inline void trsm<CT, M, N, TC, ARCH, false>                                 \
+        (CT alpha, CT* L, CT* B, char* smem)                                         \
     {                                                                                         \
-        _nvidia_trsm_impl_##M##x##N##_bd##TC##_sm##ARCH::template run<false>(alpha, L, B, smem);\
+        _nvidia_trsm_impl_##M##x##N##_##CT##_bd##TC##_sm##ARCH::template run<false>(alpha, L, B, smem);\
     }                                                                                         \
     template <>                                                                               \
-    constexpr std::size_t trsm_smem_size<float, M, N, TC, ARCH>()                             \
+    constexpr std::size_t trsm_smem_size<CT, M, N, TC, ARCH>()                             \
     {                                                                                         \
-        return _nvidia_trsm_impl_##M##x##N##_bd##TC##_sm##ARCH::smem_bytes;                   \
+        return _nvidia_trsm_impl_##M##x##N##_##CT##_bd##TC##_sm##ARCH::smem_bytes;                   \
     }                                                                                         \
     template <>                                                                               \
-    constexpr uint32_t trsm_threads<float, M, N, TC, ARCH>()                                  \
+    constexpr uint32_t trsm_threads<CT, M, N, TC, ARCH>()                                  \
     {                                                                                         \
-        return _nvidia_trsm_impl_##M##x##N##_bd##TC##_sm##ARCH::block_threads;                \
+        return _nvidia_trsm_impl_##M##x##N##_##CT##_bd##TC##_sm##ARCH::block_threads;                \
     }
 
 // _E indirection wrappers force ARCH (often `SMS` macro) to be expanded
 // before token pasting freezes it as the literal text "SMS".
-#define _GLASS_TRSM_NO_BD_E(M, N, ARCH)         _GLASS_TRSM_NO_BD(M, N, ARCH)
-#define _GLASS_TRSM_BD_E(M, N, TC, ARCH)        _GLASS_TRSM_BD(M, N, TC, ARCH)
+#define _GLASS_TRSM_NO_BD_E(M, N, CT, ARCH)         _GLASS_TRSM_NO_BD(M, N, CT, ARCH)
+#define _GLASS_TRSM_BD_E(M, N, TC, CT, ARCH)        _GLASS_TRSM_BD(M, N, TC, CT, ARCH)
 
 // ---------------------------------------------------------------------------
 // Public DEFINE_NVIDIA_CHOL* / DEFINE_NVIDIA_TRSM* convenience macros
 // (route through _E indirection for SMS expansion)
 // ---------------------------------------------------------------------------
 
-#define DEFINE_NVIDIA_CHOL(N)                       _GLASS_CHOL_NO_BD_E(N, SMS)
-#define DEFINE_NVIDIA_CHOL_BLOCKDIM(N, TC)          _GLASS_CHOL_BD_E(N, TC, SMS)
-#define DEFINE_NVIDIA_CHOL_SM(N, SM)                _GLASS_CHOL_NO_BD_E(N, SM)
-#define DEFINE_NVIDIA_CHOL_BLOCKDIM_SM(N, TC, SM)   _GLASS_CHOL_BD_E(N, TC, SM)
+#define DEFINE_NVIDIA_CHOL(N)                       _GLASS_CHOL_NO_BD_E(N, float, SMS)
+#define DEFINE_NVIDIA_CHOL_BLOCKDIM(N, TC)          _GLASS_CHOL_BD_E(N, TC, float, SMS)
+#define DEFINE_NVIDIA_CHOL_SM(N, SM)                _GLASS_CHOL_NO_BD_E(N, float, SM)
+#define DEFINE_NVIDIA_CHOL_BLOCKDIM_SM(N, TC, SM)   _GLASS_CHOL_BD_E(N, TC, float, SM)
+// precision-parametric variants (CT = float|double) — same machinery, double-capable.
+#define DEFINE_NVIDIA_CHOL_PREC(N, CT)                       _GLASS_CHOL_NO_BD_E(N, CT, SMS)
+#define DEFINE_NVIDIA_CHOL_BLOCKDIM_PREC(N, TC, CT)          _GLASS_CHOL_BD_E(N, TC, CT, SMS)
+#define DEFINE_NVIDIA_CHOL_PREC_SM(N, CT, SM)                _GLASS_CHOL_NO_BD_E(N, CT, SM)
+#define DEFINE_NVIDIA_CHOL_BLOCKDIM_PREC_SM(N, TC, CT, SM)   _GLASS_CHOL_BD_E(N, TC, CT, SM)
 
-#define DEFINE_NVIDIA_TRSM(M, N)                       _GLASS_TRSM_NO_BD_E(M, N, SMS)
-#define DEFINE_NVIDIA_TRSM_BLOCKDIM(M, N, TC)          _GLASS_TRSM_BD_E(M, N, TC, SMS)
-#define DEFINE_NVIDIA_TRSM_SM(M, N, SM)                _GLASS_TRSM_NO_BD_E(M, N, SM)
-#define DEFINE_NVIDIA_TRSM_BLOCKDIM_SM(M, N, TC, SM)   _GLASS_TRSM_BD_E(M, N, TC, SM)
+#define DEFINE_NVIDIA_TRSM(M, N)                       _GLASS_TRSM_NO_BD_E(M, N, float, SMS)
+#define DEFINE_NVIDIA_TRSM_BLOCKDIM(M, N, TC)          _GLASS_TRSM_BD_E(M, N, TC, float, SMS)
+#define DEFINE_NVIDIA_TRSM_SM(M, N, SM)                _GLASS_TRSM_NO_BD_E(M, N, float, SM)
+#define DEFINE_NVIDIA_TRSM_BLOCKDIM_SM(M, N, TC, SM)   _GLASS_TRSM_BD_E(M, N, TC, float, SM)
+// precision-parametric variants (CT = float|double) — same machinery, double-capable.
+#define DEFINE_NVIDIA_TRSM_PREC(M, N, CT)                       _GLASS_TRSM_NO_BD_E(M, N, CT, SMS)
+#define DEFINE_NVIDIA_TRSM_BLOCKDIM_PREC(M, N, TC, CT)          _GLASS_TRSM_BD_E(M, N, TC, CT, SMS)
+#define DEFINE_NVIDIA_TRSM_PREC_SM(M, N, CT, SM)                _GLASS_TRSM_NO_BD_E(M, N, CT, SM)
+#define DEFINE_NVIDIA_TRSM_BLOCKDIM_PREC_SM(M, N, TC, CT, SM)   _GLASS_TRSM_BD_E(M, N, TC, CT, SM)
 
 // =============================================================================
 // Part 2 — Expanded cuSOLVERDx solver suite
@@ -472,11 +482,11 @@ template <typename T, uint32_t N, uint32_t NRHS,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
 constexpr uint32_t posv_threads() { return 256; }
 
-#define _GLASS_POSV_NO_BD(N, NRHS, ARCH)                                                         \
-    namespace _nvidia_posv_impl_##N##x##NRHS##_bd0_sm##ARCH {                                    \
+#define _GLASS_POSV_NO_BD(N, NRHS, CT, ARCH)                                                         \
+    namespace _nvidia_posv_impl_##N##x##NRHS##_##CT##_bd0_sm##ARCH {                                    \
         using SOLVER = decltype(                                                                 \
             cusolverdx::Size<N, N, NRHS>()                                                       \
-            + cusolverdx::Precision<float>()                                                     \
+            + cusolverdx::Precision<CT>()                                                     \
             + cusolverdx::Type<cusolverdx::type::real>()                                         \
             + cusolverdx::Function<cusolverdx::function::posv>()                                 \
             + cusolverdx::FillMode<cusolverdx::fill_mode::lower>()                               \
@@ -489,10 +499,10 @@ constexpr uint32_t posv_threads() { return 256; }
                                   SOLVER::block_dim.z);                                          \
         static constexpr std::size_t smem_bytes = SOLVER::shared_memory_size;                    \
         template <bool TRAILING_SYNC>                                                            \
-        __device__ inline void run(float* A, float* B, char* smem) {                             \
+        __device__ inline void run(CT* A, CT* B, char* smem) {                             \
             _GLASS_ASSERT_BLOCKDIM_GEQ(SOLVER)                                                   \
-            float* As = reinterpret_cast<float*>(smem);                                          \
-            float* Bs = As + (N * N);                                                            \
+            CT* As = reinterpret_cast<CT*>(smem);                                          \
+            CT* Bs = As + (N * N);                                                            \
             cusolverdx::copy_2d<SOLVER, N, N, cusolverdx::col_major>(A, N, As, N);              \
             cusolverdx::copy_2d<SOLVER, N, NRHS, cusolverdx::col_major>(B, N, Bs, N);           \
             __syncthreads();                                                                     \
@@ -507,23 +517,23 @@ constexpr uint32_t posv_threads() { return 256; }
         }                                                                                        \
     }                                                                                            \
     template <>                                                                                  \
-    __device__ inline void posv<float, N, NRHS, 0, ARCH, true>(float* A, float* B, char* smem)  \
-    { _nvidia_posv_impl_##N##x##NRHS##_bd0_sm##ARCH::template run<true>(A, B, smem); }           \
+    __device__ inline void posv<CT, N, NRHS, 0, ARCH, true>(CT* A, CT* B, char* smem)  \
+    { _nvidia_posv_impl_##N##x##NRHS##_##CT##_bd0_sm##ARCH::template run<true>(A, B, smem); }           \
     template <>                                                                                  \
-    __device__ inline void posv<float, N, NRHS, 0, ARCH, false>(float* A, float* B, char* smem) \
-    { _nvidia_posv_impl_##N##x##NRHS##_bd0_sm##ARCH::template run<false>(A, B, smem); }          \
+    __device__ inline void posv<CT, N, NRHS, 0, ARCH, false>(CT* A, CT* B, char* smem) \
+    { _nvidia_posv_impl_##N##x##NRHS##_##CT##_bd0_sm##ARCH::template run<false>(A, B, smem); }          \
     template <>                                                                                  \
-    constexpr std::size_t posv_smem_size<float, N, NRHS, 0, ARCH>()                             \
-    { return _nvidia_posv_impl_##N##x##NRHS##_bd0_sm##ARCH::smem_bytes; }                        \
+    constexpr std::size_t posv_smem_size<CT, N, NRHS, 0, ARCH>()                             \
+    { return _nvidia_posv_impl_##N##x##NRHS##_##CT##_bd0_sm##ARCH::smem_bytes; }                        \
     template <>                                                                                  \
-    constexpr uint32_t posv_threads<float, N, NRHS, 0, ARCH>()                                  \
-    { return _nvidia_posv_impl_##N##x##NRHS##_bd0_sm##ARCH::block_threads; }
+    constexpr uint32_t posv_threads<CT, N, NRHS, 0, ARCH>()                                  \
+    { return _nvidia_posv_impl_##N##x##NRHS##_##CT##_bd0_sm##ARCH::block_threads; }
 
-#define _GLASS_POSV_BD(N, NRHS, TC, ARCH)                                                        \
-    namespace _nvidia_posv_impl_##N##x##NRHS##_bd##TC##_sm##ARCH {                               \
+#define _GLASS_POSV_BD(N, NRHS, TC, CT, ARCH)                                                        \
+    namespace _nvidia_posv_impl_##N##x##NRHS##_##CT##_bd##TC##_sm##ARCH {                               \
         using SOLVER = decltype(                                                                 \
             cusolverdx::Size<N, N, NRHS>()                                                       \
-            + cusolverdx::Precision<float>()                                                     \
+            + cusolverdx::Precision<CT>()                                                     \
             + cusolverdx::Type<cusolverdx::type::real>()                                         \
             + cusolverdx::Function<cusolverdx::function::posv>()                                 \
             + cusolverdx::FillMode<cusolverdx::fill_mode::lower>()                               \
@@ -537,10 +547,10 @@ constexpr uint32_t posv_threads() { return 256; }
                                   SOLVER::block_dim.z);                                          \
         static constexpr std::size_t smem_bytes = SOLVER::shared_memory_size;                    \
         template <bool TRAILING_SYNC>                                                            \
-        __device__ inline void run(float* A, float* B, char* smem) {                             \
+        __device__ inline void run(CT* A, CT* B, char* smem) {                             \
             _GLASS_ASSERT_BLOCKDIM_GEQ(SOLVER)                                                   \
-            float* As = reinterpret_cast<float*>(smem);                                          \
-            float* Bs = As + (N * N);                                                            \
+            CT* As = reinterpret_cast<CT*>(smem);                                          \
+            CT* Bs = As + (N * N);                                                            \
             cusolverdx::copy_2d<SOLVER, N, N, cusolverdx::col_major>(A, N, As, N);              \
             cusolverdx::copy_2d<SOLVER, N, NRHS, cusolverdx::col_major>(B, N, Bs, N);           \
             __syncthreads();                                                                     \
@@ -555,25 +565,30 @@ constexpr uint32_t posv_threads() { return 256; }
         }                                                                                        \
     }                                                                                            \
     template <>                                                                                  \
-    __device__ inline void posv<float, N, NRHS, TC, ARCH, true>(float* A, float* B, char* smem) \
-    { _nvidia_posv_impl_##N##x##NRHS##_bd##TC##_sm##ARCH::template run<true>(A, B, smem); }      \
+    __device__ inline void posv<CT, N, NRHS, TC, ARCH, true>(CT* A, CT* B, char* smem) \
+    { _nvidia_posv_impl_##N##x##NRHS##_##CT##_bd##TC##_sm##ARCH::template run<true>(A, B, smem); }      \
     template <>                                                                                  \
-    __device__ inline void posv<float, N, NRHS, TC, ARCH, false>(float* A, float* B, char* smem)\
-    { _nvidia_posv_impl_##N##x##NRHS##_bd##TC##_sm##ARCH::template run<false>(A, B, smem); }     \
+    __device__ inline void posv<CT, N, NRHS, TC, ARCH, false>(CT* A, CT* B, char* smem)\
+    { _nvidia_posv_impl_##N##x##NRHS##_##CT##_bd##TC##_sm##ARCH::template run<false>(A, B, smem); }     \
     template <>                                                                                  \
-    constexpr std::size_t posv_smem_size<float, N, NRHS, TC, ARCH>()                            \
-    { return _nvidia_posv_impl_##N##x##NRHS##_bd##TC##_sm##ARCH::smem_bytes; }                   \
+    constexpr std::size_t posv_smem_size<CT, N, NRHS, TC, ARCH>()                            \
+    { return _nvidia_posv_impl_##N##x##NRHS##_##CT##_bd##TC##_sm##ARCH::smem_bytes; }                   \
     template <>                                                                                  \
-    constexpr uint32_t posv_threads<float, N, NRHS, TC, ARCH>()                                 \
-    { return _nvidia_posv_impl_##N##x##NRHS##_bd##TC##_sm##ARCH::block_threads; }
+    constexpr uint32_t posv_threads<CT, N, NRHS, TC, ARCH>()                                 \
+    { return _nvidia_posv_impl_##N##x##NRHS##_##CT##_bd##TC##_sm##ARCH::block_threads; }
 
-#define _GLASS_POSV_NO_BD_E(N, NRHS, ARCH)        _GLASS_POSV_NO_BD(N, NRHS, ARCH)
-#define _GLASS_POSV_BD_E(N, NRHS, TC, ARCH)       _GLASS_POSV_BD(N, NRHS, TC, ARCH)
+#define _GLASS_POSV_NO_BD_E(N, NRHS, CT, ARCH)        _GLASS_POSV_NO_BD(N, NRHS, CT, ARCH)
+#define _GLASS_POSV_BD_E(N, NRHS, TC, CT, ARCH)       _GLASS_POSV_BD(N, NRHS, TC, CT, ARCH)
 
-#define DEFINE_NVIDIA_POSV(N, NRHS)                          _GLASS_POSV_NO_BD_E(N, NRHS, SMS)
-#define DEFINE_NVIDIA_POSV_BLOCKDIM(N, NRHS, TC)             _GLASS_POSV_BD_E(N, NRHS, TC, SMS)
-#define DEFINE_NVIDIA_POSV_SM(N, NRHS, SM)                   _GLASS_POSV_NO_BD_E(N, NRHS, SM)
-#define DEFINE_NVIDIA_POSV_BLOCKDIM_SM(N, NRHS, TC, SM)      _GLASS_POSV_BD_E(N, NRHS, TC, SM)
+#define DEFINE_NVIDIA_POSV(N, NRHS)                          _GLASS_POSV_NO_BD_E(N, NRHS, float, SMS)
+#define DEFINE_NVIDIA_POSV_BLOCKDIM(N, NRHS, TC)             _GLASS_POSV_BD_E(N, NRHS, TC, float, SMS)
+#define DEFINE_NVIDIA_POSV_SM(N, NRHS, SM)                   _GLASS_POSV_NO_BD_E(N, NRHS, float, SM)
+#define DEFINE_NVIDIA_POSV_BLOCKDIM_SM(N, NRHS, TC, SM)      _GLASS_POSV_BD_E(N, NRHS, TC, float, SM)
+// precision-parametric variants (CT = float|double) — same machinery, double-capable.
+#define DEFINE_NVIDIA_POSV_PREC(N, NRHS, CT)                       _GLASS_POSV_NO_BD_E(N, NRHS, CT, SMS)
+#define DEFINE_NVIDIA_POSV_BLOCKDIM_PREC(N, NRHS, TC, CT)          _GLASS_POSV_BD_E(N, NRHS, TC, CT, SMS)
+#define DEFINE_NVIDIA_POSV_PREC_SM(N, NRHS, CT, SM)                _GLASS_POSV_NO_BD_E(N, NRHS, CT, SM)
+#define DEFINE_NVIDIA_POSV_BLOCKDIM_PREC_SM(N, NRHS, TC, CT, SM)   _GLASS_POSV_BD_E(N, NRHS, TC, CT, SM)
 
 // --- potrs (SPD solve given L) ----------------------------------------------
 // Solves L·L^T·X = B given the L factor from chol_inplace.  B is overwritten
