@@ -1,7 +1,7 @@
 // bench_mega_sweep.cu — three-contender scaling sweep:
 //   WARP   — one warp per problem,   <<<ceil(NPROB/WPB), dim3(32,WPB)>>>, WPB ∈ {1..32}
 //   BLOCK  — one block per problem,   <<<NPROB, TB>>>, TB ∈ {32,64,128,256} (pure-SIMT glass::)
-//   NVIDIA — cuBLASDx/cuSOLVERDx,     <<<NPROB, nv_threads(N)>>>, descriptor-fixed (FLOAT ONLY)
+//   NVIDIA — cuBLASDx/cuSOLVERDx,     <<<NPROB, nv_threads(N)>>>, descriptor-fixed (f32 to N128; f64 to N64)
 //
 // Answers "where do the breakevens fall on the warp → SIMT-block → MathDx ladder?" across
 // problem size N and batch count NPROB (single-problem latency → GPU-saturating throughput).
@@ -9,7 +9,7 @@
 // Ops (each has glass::<op>, glass::warp::<op>, and a glass::nvidia::<op> form):
 //   dot (L1)  gemv (L2)  gemm (L3)  chol (L3)  trsv (L3, nvidia=trsm)  posv (L3)
 //
-// dtype: f32 (full 3-way) or f64 (warp/block only — the nvidia wrappers are float-only).
+// dtype: f32 (3-way, nvidia to N128) or f64 (3-way, nvidia to N64 — f64 vendor descriptors fit a lower smem cap).
 // The nvidia leg is FORCED at every N: a DEFINE_NVIDIA_* macro is in scope for each N, so
 // glass::nvidia::<op><float,N,...> resolves to the cuBLASDx/cuSOLVERDx specialization
 // unconditionally (bypassing the shipped size-heuristic auto-dispatch) — we want the full
@@ -105,35 +105,43 @@ static void launch_warp(Op op, int WPB, T* A, T* B, T* C, T* x, T* y) {
     }
 }
 
-// ─── NVIDIA model (float-only): cuBLASDx / cuSOLVERDx, one block per problem ──
+// ─── NVIDIA model: cuBLASDx / cuSOLVERDx, one block per problem ──────────────
 // DEFINE_NVIDIA_* emit explicit specializations so the glass::nvidia::<op> call
 // resolves to the vendor path unconditionally (forced, no size-heuristic dispatch).
+// FLOAT: gemm 16/24/32/64 + gemv 4..64 are already cuBLASDx-specialized by
+// glass-nvidia.cuh/tuning_table.cuh (those shipped specializations ARE the forced
+// path) — we only add the float gaps. DOUBLE: nothing is shipped, so every size is
+// defined via the *_PREC(..., double) macros. Double caps at N<=64 (smem: a 99KB
+// opt-in limit fits f64 gemm only to 64, f64 chol/posv to ~96; we define <=64).
 #if MEGA_NV_BLAS
 static const int NV_DOT_TB = 256;   // CUB BlockReduce thread count for nvidia::dot
 namespace glass { namespace nvidia {
-    // gemm 16/24/32/48/64 and gemv 4..64 are already cuBLASDx-specialized by
-    // glass-nvidia.cuh / tuning_table.cuh (the shipped explicit specializations
-    // ARE the forced cuBLASDx path) — only force the gemm small shapes (4..12)
-    // that the header SIMT-routes, by adding an explicit DEFINE (overrides the
-    // primary's SIMT fallback). Defining the others would be a redefinition.
+    // float gaps (shipped: gemm 16/24/32/64, gemv 4..64)
     DEFINE_NVIDIA_GEMM(4, 4, 4)  DEFINE_NVIDIA_GEMM(6, 6, 6)
     DEFINE_NVIDIA_GEMM(8, 8, 8)  DEFINE_NVIDIA_GEMM(12, 12, 12)
-    DEFINE_NVIDIA_GEMM(48, 48, 48)                                   // shipped: 16/24/32/64; 48 is the gap
+    DEFINE_NVIDIA_GEMM(48, 48, 48)
     DEFINE_NVIDIA_GEMM(96, 96, 96)  DEFINE_NVIDIA_GEMM(128, 128, 128)
-    DEFINE_NVIDIA_GEMV(32, 32)  DEFINE_NVIDIA_GEMV(48, 48)           // shipped gemv: 4/6/8/12/16/24/64
+    DEFINE_NVIDIA_GEMV(32, 32)  DEFINE_NVIDIA_GEMV(48, 48)
     DEFINE_NVIDIA_GEMV(96, 96)  DEFINE_NVIDIA_GEMV(128, 128)
+    // double — all bench sizes <=64 (none shipped)
+    #define MEGA_GEMM_F64(N) DEFINE_NVIDIA_GEMM_PREC(N, N, N, double)
+    #define MEGA_GEMV_F64(N) DEFINE_NVIDIA_GEMV_PREC(N, N, double)
+    MEGA_GEMM_F64(4) MEGA_GEMM_F64(6) MEGA_GEMM_F64(8) MEGA_GEMM_F64(12)
+    MEGA_GEMM_F64(16) MEGA_GEMM_F64(24) MEGA_GEMM_F64(32) MEGA_GEMM_F64(48) MEGA_GEMM_F64(64)
+    MEGA_GEMV_F64(4) MEGA_GEMV_F64(6) MEGA_GEMV_F64(8) MEGA_GEMV_F64(12)
+    MEGA_GEMV_F64(16) MEGA_GEMV_F64(24) MEGA_GEMV_F64(32) MEGA_GEMV_F64(48) MEGA_GEMV_F64(64)
 }}
-template<int N> __global__ void kn_dot (float* x, float* y) {
+template<typename T,int N> __global__ void kn_dot (T* x, T* y) {
     extern __shared__ char s[]; int p=blockIdx.x;
-    glass::nvidia::dot<float,N,NV_DOT_TB>(x+p*N, y+p*N, y+p*N, reinterpret_cast<float*>(s));
+    glass::nvidia::dot<T,N,NV_DOT_TB>(x+p*N, y+p*N, y+p*N, reinterpret_cast<T*>(s));
 }
-template<int N> __global__ void kn_gemv(float* A, float* x, float* y) {
+template<typename T,int N> __global__ void kn_gemv(T* A, T* x, T* y) {
     extern __shared__ char s[]; int p=blockIdx.x;
-    glass::nvidia::gemv<float,N,N>(1.f, A+(size_t)p*N*N, x+p*N, 0.f, y+p*N, s);
+    glass::nvidia::gemv<T,N,N>((T)1, A+(size_t)p*N*N, x+p*N, (T)0, y+p*N, s);
 }
-template<int N> __global__ void kn_gemm(float* A, float* B, float* C) {
+template<typename T,int N> __global__ void kn_gemm(T* A, T* B, T* C) {
     extern __shared__ char s[]; int p=blockIdx.x;
-    glass::nvidia::gemm<float,N,N,N>(1.f, A+(size_t)p*N*N, B+(size_t)p*N*N, 0.f, C+(size_t)p*N*N, s);
+    glass::nvidia::gemm<T,N,N,N>((T)1, A+(size_t)p*N*N, B+(size_t)p*N*N, (T)0, C+(size_t)p*N*N, s);
 }
 #endif
 #if MEGA_NV_LAPACK
@@ -142,6 +150,9 @@ namespace glass { namespace nvidia {
     #define MEGA_CHOL_DEF(N) DEFINE_NVIDIA_CHOL_BLOCKDIM(N, NV_LP_TB)
     #define MEGA_TRSM_DEF(N) DEFINE_NVIDIA_TRSM_BLOCKDIM(N, 1, NV_LP_TB)
     #define MEGA_POSV_DEF(N) DEFINE_NVIDIA_POSV_BLOCKDIM(N, 1, NV_LP_TB)
+    #define MEGA_CHOL_F64(N) DEFINE_NVIDIA_CHOL_BLOCKDIM_PREC(N, NV_LP_TB, double)
+    #define MEGA_TRSM_F64(N) DEFINE_NVIDIA_TRSM_BLOCKDIM_PREC(N, 1, NV_LP_TB, double)
+    #define MEGA_POSV_F64(N) DEFINE_NVIDIA_POSV_BLOCKDIM_PREC(N, 1, NV_LP_TB, double)
     MEGA_CHOL_DEF(4)  MEGA_CHOL_DEF(6)  MEGA_CHOL_DEF(8)  MEGA_CHOL_DEF(12)
     MEGA_CHOL_DEF(16) MEGA_CHOL_DEF(24) MEGA_CHOL_DEF(32) MEGA_CHOL_DEF(48) MEGA_CHOL_DEF(64)
     MEGA_CHOL_DEF(96) MEGA_CHOL_DEF(128)
@@ -151,24 +162,34 @@ namespace glass { namespace nvidia {
     MEGA_POSV_DEF(4)  MEGA_POSV_DEF(6)  MEGA_POSV_DEF(8)  MEGA_POSV_DEF(12)
     MEGA_POSV_DEF(16) MEGA_POSV_DEF(24) MEGA_POSV_DEF(32) MEGA_POSV_DEF(48) MEGA_POSV_DEF(64)
     MEGA_POSV_DEF(96) MEGA_POSV_DEF(128)
+    // double — bench sizes <=64
+    MEGA_CHOL_F64(4)  MEGA_CHOL_F64(6)  MEGA_CHOL_F64(8)  MEGA_CHOL_F64(12)
+    MEGA_CHOL_F64(16) MEGA_CHOL_F64(24) MEGA_CHOL_F64(32) MEGA_CHOL_F64(48) MEGA_CHOL_F64(64)
+    MEGA_TRSM_F64(4)  MEGA_TRSM_F64(6)  MEGA_TRSM_F64(8)  MEGA_TRSM_F64(12)
+    MEGA_TRSM_F64(16) MEGA_TRSM_F64(24) MEGA_TRSM_F64(32) MEGA_TRSM_F64(48) MEGA_TRSM_F64(64)
+    MEGA_POSV_F64(4)  MEGA_POSV_F64(6)  MEGA_POSV_F64(8)  MEGA_POSV_F64(12)
+    MEGA_POSV_F64(16) MEGA_POSV_F64(24) MEGA_POSV_F64(32) MEGA_POSV_F64(48) MEGA_POSV_F64(64)
 }}
-template<int N> __global__ void kn_chol(float* A) {
+template<typename T,int N> __global__ void kn_chol(T* A) {
     extern __shared__ char s[]; int p=blockIdx.x;
-    glass::nvidia::chol_inplace<float,N,NV_LP_TB>(A+(size_t)p*N*N, s);
+    glass::nvidia::chol_inplace<T,N,NV_LP_TB>(A+(size_t)p*N*N, s);
 }
-template<int N> __global__ void kn_trsv(float* A, float* x) {
+template<typename T,int N> __global__ void kn_trsv(T* A, T* x) {
     extern __shared__ char s[]; int p=blockIdx.x;
-    glass::nvidia::trsm<float,N,1,NV_LP_TB>(1.f, A+(size_t)p*N*N, x+p*N, s);
+    glass::nvidia::trsm<T,N,1,NV_LP_TB>((T)1, A+(size_t)p*N*N, x+p*N, s);
 }
-template<int N> __global__ void kn_posv(float* A, float* b) {
+template<typename T,int N> __global__ void kn_posv(T* A, T* b) {
     extern __shared__ char s[]; int p=blockIdx.x;
-    glass::nvidia::posv<float,N,1,NV_LP_TB>(A+(size_t)p*N*N, b+p*N, s);
+    glass::nvidia::posv<T,N,1,NV_LP_TB>(A+(size_t)p*N*N, b+p*N, s);
 }
 #endif
 
 // True at compile time iff op@N has a forced nvidia variant defined above.
-template<int N> static constexpr bool nv_blas_ok()   { return MEGA_NV_BLAS   && N <= 128; }
-template<int N> static constexpr bool nv_lapack_ok() { return MEGA_NV_LAPACK && N <= 128; }
+// Double is defined only up to 64 (f64 descriptors/smem cap lower than float).
+template<typename T,int N> static constexpr bool nv_blas_ok()
+{ return MEGA_NV_BLAS   && (std::is_same_v<T,float> ? N <= 128 : N <= 64); }
+template<typename T,int N> static constexpr bool nv_lapack_ok()
+{ return MEGA_NV_LAPACK && (std::is_same_v<T,float> ? N <= 128 : N <= 64); }
 
 template<typename F>
 static double time_ns_per_prob(F launch, int reps) {
@@ -207,56 +228,54 @@ static double nv_timed(Kern kern, size_t smem, Launch launch, int reps) {
 }
 #endif
 
-// nvidia leg: needs dynamic smem opt-in for the larger descriptors (>48KB). float-only.
-// Returns best ns/problem for (op,N), or -1 if no nvidia variant or the launch can't fit.
-template<int N>
-static double nv_op_time(Op op, float* A, float* B, float* C, float* x, float* y, int reps) {
+// nvidia leg: needs dynamic smem opt-in for the larger descriptors (>48KB).
+// Returns best ns/problem for (op,N) at precision T, or -1 if no nvidia variant
+// (or the launch can't fit / isn't defined for this T,N — see nv_*_ok<T,N>).
+template<typename T,int N>
+static double nv_op_time(Op op, T* A, T* B, T* C, T* x, T* y, int reps) {
     (void)A;(void)B;(void)C;(void)x;(void)y;(void)reps;(void)op;
     dim3 grid(NPROB);
 #if MEGA_NV_BLAS
-    if constexpr (nv_blas_ok<N>()) {
+    if constexpr (nv_blas_ok<T,N>()) {
         if (op == DOT) {
-            size_t smem = glass::nvidia::reduce_smem_size<float,NV_DOT_TB>();
-            return nv_timed(kn_dot<N>, smem, [&]{ kn_dot<N><<<grid,NV_DOT_TB,smem>>>(x, y); }, reps);
+            size_t smem = glass::nvidia::reduce_smem_size<T,NV_DOT_TB>();
+            return nv_timed(kn_dot<T,N>, smem, [&]{ kn_dot<T,N><<<grid,NV_DOT_TB,smem>>>(x, y); }, reps);
         }
         if (op == GEMV) {
-            size_t smem = glass::nvidia::gemv_smem_size<float,N,N>();
-            int tb = (int)glass::nvidia::gemv_threads<float,N,N>();
-            return nv_timed(kn_gemv<N>, smem, [&]{ kn_gemv<N><<<grid,tb,smem>>>(A, x, y); }, reps);
+            size_t smem = glass::nvidia::gemv_smem_size<T,N,N>();
+            int tb = (int)glass::nvidia::gemv_threads<T,N,N>();
+            return nv_timed(kn_gemv<T,N>, smem, [&]{ kn_gemv<T,N><<<grid,tb,smem>>>(A, x, y); }, reps);
         }
         if (op == GEMM) {
-            size_t smem = glass::nvidia::gemm_smem_size<float,N,N,N>();
-            int tb = (int)glass::nvidia::gemm_threads<float,N,N,N>();
-            return nv_timed(kn_gemm<N>, smem, [&]{ kn_gemm<N><<<grid,tb,smem>>>(A, B, C); }, reps);
+            size_t smem = glass::nvidia::gemm_smem_size<T,N,N,N>();
+            int tb = (int)glass::nvidia::gemm_threads<T,N,N,N>();
+            return nv_timed(kn_gemm<T,N>, smem, [&]{ kn_gemm<T,N><<<grid,tb,smem>>>(A, B, C); }, reps);
         }
     }
 #endif
 #if MEGA_NV_LAPACK
-    if constexpr (nv_lapack_ok<N>()) {
+    if constexpr (nv_lapack_ok<T,N>()) {
         if (op == CHOL) {
-            size_t smem = glass::nvidia::chol_inplace_smem_size<float,N,NV_LP_TB>();
-            return nv_timed(kn_chol<N>, smem, [&]{ kn_chol<N><<<grid,NV_LP_TB,smem>>>(A); }, reps);
+            size_t smem = glass::nvidia::chol_inplace_smem_size<T,N,NV_LP_TB>();
+            return nv_timed(kn_chol<T,N>, smem, [&]{ kn_chol<T,N><<<grid,NV_LP_TB,smem>>>(A); }, reps);
         }
         if (op == TRSV) {
-            size_t smem = glass::nvidia::trsm_smem_size<float,N,1,NV_LP_TB>();
-            return nv_timed(kn_trsv<N>, smem, [&]{ kn_trsv<N><<<grid,NV_LP_TB,smem>>>(A, x); }, reps);
+            size_t smem = glass::nvidia::trsm_smem_size<T,N,1,NV_LP_TB>();
+            return nv_timed(kn_trsv<T,N>, smem, [&]{ kn_trsv<T,N><<<grid,NV_LP_TB,smem>>>(A, x); }, reps);
         }
         if (op == POSV) {
-            size_t smem = glass::nvidia::posv_smem_size<float,N,1,NV_LP_TB>();
-            return nv_timed(kn_posv<N>, smem, [&]{ kn_posv<N><<<grid,NV_LP_TB,smem>>>(A, x); }, reps);
+            size_t smem = glass::nvidia::posv_smem_size<T,N,1,NV_LP_TB>();
+            return nv_timed(kn_posv<T,N>, smem, [&]{ kn_posv<T,N><<<grid,NV_LP_TB,smem>>>(A, x); }, reps);
         }
     }
 #endif
     return -1.0;
 }
 
-// Dispatch nv_op_time only when T==float (the nvidia wrappers are float-only).
+// Dispatch the nvidia leg for the active precision (float full, double <=N64).
 template<typename T,int N>
 static double nv_dispatch(Op op, T* A, T* B, T* C, T* x, T* y, int reps) {
-    if constexpr (std::is_same_v<T,float>)
-        return nv_op_time<N>(op, A, B, C, x, y, reps);
-    else
-        { (void)op;(void)A;(void)B;(void)C;(void)x;(void)y;(void)reps; return -1.0; }
+    return nv_op_time<T,N>(op, A, B, C, x, y, reps);
 }
 
 template<typename T,int N>
@@ -320,7 +339,7 @@ int main(int argc, char** argv) {
     bool f64 = (strcmp(dt, "f64") == 0 || strcmp(dt, "fp64") == 0 || strcmp(dt, "double") == 0);
     { int v = 48*1024; cudaDeviceGetAttribute(&v, cudaDevAttrMaxSharedMemoryPerBlockOptin, 0); g_optin_smem = (size_t)v; }
     printf("# mega sweep | NPROB=%d reps=%d dtype=%s | ns/problem (lower=better) | optin_smem=%zuKB\n", NPROB, reps, f64 ? "f64" : "f32", g_optin_smem/1024);
-    printf("# contenders: BLOCK(SIMT, TB swept) | WARP(WPB swept) | NV(cuBLASDx/cuSOLVERDx, forced, float-only, N<=128)\n");
+    printf("# contenders: BLOCK(SIMT, TB swept) | WARP(WPB swept) | NV(cuBLASDx/cuSOLVERDx, forced; f32<=128, f64<=64)\n");
     if (f64) run_all<double>(reps);
     else     run_all<float>(reps);
     return 0;
