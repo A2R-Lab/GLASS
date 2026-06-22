@@ -24,7 +24,7 @@ __device__ void cholDecomp_InPlace(uint32_t n, T *s_A)
             T sum = static_cast<T>(0);
             T val = s_A[n*row + row];
             for (int32_t rl = 0; rl < (int32_t)row; rl++) sum += s_A[rl*n + row]*s_A[rl*n + row];
-            s_A[row*n + row] = sqrtf(val - sum);
+            s_A[row*n + row] = sqrt(val - sum);  // type-generic: float->float, double->double
         }
         __syncthreads();
         for (uint32_t col = rank + row + 1; col < n; col += size) {
@@ -74,7 +74,7 @@ __device__ void cholDecomp_InPlace(uint32_t K, const uint32_t *dims, uint32_t MA
                 T sum = static_cast<T>(0);
                 T val = s_A[n*row + row];
                 for (int32_t rl = 0; rl < (int32_t)row; rl++) sum += s_A[rl*n + row]*s_A[rl*n + row];
-                s_A[row*n + row] = sqrtf(val - sum);
+                s_A[row*n + row] = sqrt(val - sum);  // type-generic: float->float, double->double
             }
         }
         __syncthreads();

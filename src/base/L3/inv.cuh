@@ -193,7 +193,8 @@ __device__ void invertMatrix_pivoted(uint32_t dimA, T *A, T *s_temp)
  * @tparam N  Matrix dimension (A is N x N).
  * @param A       In/out augmented `[A | I]` buffer (column-major, N x 2*N);
  *                on return its right half holds `A^-1`.
- * @param s_temp  Shared scratch of `(2*N + 2) * sizeof(T)` bytes.
+ * @param s_temp  Shared scratch of `(3*N + 1) * sizeof(T)` bytes
+ *                (= `invertMatrix_pivoted_scratch_size<T>(N)`).
  */
 template <typename T, uint32_t N>
 __device__ void invertMatrix_pivoted(T *A, T *s_temp)
