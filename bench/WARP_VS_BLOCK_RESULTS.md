@@ -66,9 +66,16 @@ throughput-regime guidance above instead.
 
 ## Reproduce
 
+This 2-way (warp vs block) data is the MathDx-free build of `bench_mega_sweep.cu`
+(formerly `bench_warp_vs_block.cu`). The full **three-way** sweep that adds the
+`glass::nvidia` (cuBLASDx/cuSOLVERDx) leg lives in `run_mega_sweep.sh` /
+`MEGA_SWEEP_RESULTS.md`.
+
 ```bash
-cd bench && ./run_warp_block_sweep.sh sm_120     # full graduated sweep, ~tens of min, idle GPU
-# or a single regime:
-nvcc -std=c++17 -arch=sm_120 -O3 -Xptxas -O1 -I.. -I../src bench_warp_vs_block.cu -o bwvb
-./bwvb 8192 500        # throughput ; ./bwvb 1 3000  → single-problem latency
+# 2-way (warp vs block), no MathDx needed:
+nvcc -std=c++17 -arch=sm_120 -O3 -Xptxas -O1 -I.. -I../src bench_mega_sweep.cu -o bms
+./bms 8192 500 f32     # throughput ; ./bms 1 3000 f32 → single-problem latency ; f64 also valid
+
+# 3-way (adds nvidia/MathDx), full graduated sweep, ~tens of min, idle GPU:
+cd bench && ./run_mega_sweep.sh sm_120
 ```

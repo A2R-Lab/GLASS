@@ -1,0 +1,306 @@
+// bench_mega_sweep.cu — three-contender scaling sweep:
+//   WARP   — one warp per problem,   <<<ceil(NPROB/WPB), dim3(32,WPB)>>>, WPB ∈ {1..32}
+//   BLOCK  — one block per problem,   <<<NPROB, TB>>>, TB ∈ {32,64,128,256} (pure-SIMT glass::)
+//   NVIDIA — cuBLASDx/cuSOLVERDx,     <<<NPROB, nv_threads(N)>>>, descriptor-fixed (FLOAT ONLY)
+//
+// Answers "where do the breakevens fall on the warp → SIMT-block → MathDx ladder?" across
+// problem size N and batch count NPROB (single-problem latency → GPU-saturating throughput).
+//
+// Ops (each has glass::<op>, glass::warp::<op>, and a glass::nvidia::<op> form):
+//   dot (L1)  gemv (L2)  gemm (L3)  chol (L3)  trsv (L3, nvidia=trsm)  posv (L3)
+//
+// dtype: f32 (full 3-way) or f64 (warp/block only — the nvidia wrappers are float-only).
+// The nvidia leg is FORCED at every N: a DEFINE_NVIDIA_* macro is in scope for each N, so
+// glass::nvidia::<op><float,N,...> resolves to the cuBLASDx/cuSOLVERDx specialization
+// unconditionally (bypassing the shipped size-heuristic auto-dispatch) — we want the full
+// vendor curve so the crossover with block/warp is visible, not just the heuristic's verdict.
+//
+// Metric: ns per problem (wall / (reps*NPROB)), min of 3 trials. Lower = better. Timing-only:
+// inputs are factored/overwritten in place across reps (no per-rep reload) — uniform across
+// all three contenders, so the comparison is apples-to-apples.
+//
+// Compile (3-way, needs MathDx — set MATHDX_ROOT):
+//   nvcc -std=c++17 -arch=sm_120 -O3 --expt-relaxed-constexpr -Xptxas -O1 -I.. -I../src
+//        -I$MATHDX_ROOT/include -I$MATHDX_ROOT/external/cutlass/include
+//        -DGLASS_BENCH_CUBLASDX -DGLASS_BENCH_CUSOLVERDX -DSMS=1200
+//        -DCUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT -dlto
+//        -lcusolverdx -lcublas -lcusolver -lcudart bench_mega_sweep.cu -o bench_mega_sweep
+//   (omit the MathDx -I / -D / -l flags → compiles 2-way warp/block only, both dtypes.)
+// Usage: ./bench_mega_sweep [nprob=8192] [reps=500] [dtype=f32|f64]
+
+#include <cstdio>
+#include <cstdlib>
+#include <cstdint>
+#include <cstring>
+#include <ctime>
+#include <type_traits>
+
+#if defined(GLASS_BENCH_CUBLASDX)
+#include <cublasdx.hpp>
+#include "../glass-nvidia.cuh"     // pulls glass.cuh; CUB-backed L1 + cuBLASDx L2/L3
+#define MEGA_NV_BLAS 1             // dot (CUB), gemv, gemm (cuBLASDx)
+#else
+#include "../glass.cuh"
+#define MEGA_NV_BLAS 0
+#endif
+
+#if defined(GLASS_BENCH_CUSOLVERDX)
+#define MEGA_NV_LAPACK 1           // chol, trsm, posv (cuSOLVERDx)
+#else
+#define MEGA_NV_LAPACK 0
+#endif
+
+static int NPROB = 8192;
+
+static double elapsed_ms(struct timespec a, struct timespec b) {
+    return (double)(b.tv_sec - a.tv_sec) * 1e3 + (double)(b.tv_nsec - a.tv_nsec) * 1e-6;
+}
+
+// ─── BLOCK model: block b owns problem b ─────────────────────────────────────
+template<typename T,int N> __global__ void kb_dot (T* x, T* y) { int p=blockIdx.x; glass::dot<T,N>(x+p*N, y+p*N); }
+template<typename T,int N> __global__ void kb_gemv(T* A, T* x, T* y) { int p=blockIdx.x; glass::gemv<T,N,N>((T)1, A+(size_t)p*N*N, x+p*N, (T)0, y+p*N); }
+template<typename T,int N> __global__ void kb_gemm(T* A, T* B, T* C) { int p=blockIdx.x; glass::gemm<T,N,N,N>((T)1, A+(size_t)p*N*N, B+(size_t)p*N*N, (T)0, C+(size_t)p*N*N); }
+template<typename T,int N> __global__ void kb_chol(T* A) { int p=blockIdx.x; glass::cholDecomp_InPlace<T,N>(A+(size_t)p*N*N); }
+template<typename T,int N> __global__ void kb_trsv(T* A, T* x) { int p=blockIdx.x; glass::trsv<T,N>(A+(size_t)p*N*N, x+p*N); }
+template<typename T,int N> __global__ void kb_posv(T* A, T* b) { int p=blockIdx.x; glass::posv<T,N>(A+(size_t)p*N*N, b+p*N); }
+
+// ─── WARP model: warp (blockIdx.x*WPB + threadIdx.y) owns its problem ─────────
+template<typename T,int N> __global__ void kw_dot (T* x, T* y, int np) { int p=blockIdx.x*blockDim.y+threadIdx.y; if(p>=np)return; T r=glass::warp::dot<T,N>(x+p*N, y+p*N); if((threadIdx.x&31)==0) y[p*N]=r; }
+template<typename T,int N> __global__ void kw_gemv(T* A, T* x, T* y, int np) { int p=blockIdx.x*blockDim.y+threadIdx.y; if(p>=np)return; glass::warp::gemv<T,N,N>((T)1, A+(size_t)p*N*N, x+p*N, (T)0, y+p*N); }
+template<typename T,int N> __global__ void kw_gemm(T* A, T* B, T* C, int np) { int p=blockIdx.x*blockDim.y+threadIdx.y; if(p>=np)return; glass::warp::gemm<T,N,N,N>((T)1, A+(size_t)p*N*N, B+(size_t)p*N*N, (T)0, C+(size_t)p*N*N); }
+template<typename T,int N> __global__ void kw_chol(T* A, int np) { int p=blockIdx.x*blockDim.y+threadIdx.y; if(p>=np)return; glass::warp::cholDecomp_InPlace<T,N>(A+(size_t)p*N*N); }
+template<typename T,int N> __global__ void kw_trsv(T* A, T* x, int np) { int p=blockIdx.x*blockDim.y+threadIdx.y; if(p>=np)return; glass::warp::trsv<T,N>(A+(size_t)p*N*N, x+p*N); }
+template<typename T,int N> __global__ void kw_posv(T* A, T* b, int np) { int p=blockIdx.x*blockDim.y+threadIdx.y; if(p>=np)return; glass::warp::posv<T,N>(A+(size_t)p*N*N, b+p*N); }
+
+enum Op { DOT, GEMV, GEMM, CHOL, TRSV, POSV, NOP };
+static const char* op_name(Op o) {
+    const char* n[] = {"dot","gemv","gemm","chol","trsv","posv"};
+    return n[o];
+}
+
+template<typename T,int N>
+static void launch_block(Op op, int TB, T* A, T* B, T* C, T* x, T* y) {
+    dim3 grid(NPROB), blk(TB);
+    switch (op) {
+        case DOT:  kb_dot <T,N><<<grid,blk>>>(x, y); break;
+        case GEMV: kb_gemv<T,N><<<grid,blk>>>(A, x, y); break;
+        case GEMM: kb_gemm<T,N><<<grid,blk>>>(A, B, C); break;
+        case CHOL: kb_chol<T,N><<<grid,blk>>>(A); break;
+        case TRSV: kb_trsv<T,N><<<grid,blk>>>(A, x); break;
+        case POSV: kb_posv<T,N><<<grid,blk>>>(A, x); break;
+        default: break;
+    }
+}
+template<typename T,int N>
+static void launch_warp(Op op, int WPB, T* A, T* B, T* C, T* x, T* y) {
+    dim3 grid((NPROB + WPB - 1) / WPB), blk(32, WPB);
+    switch (op) {
+        case DOT:  kw_dot <T,N><<<grid,blk>>>(x, y, NPROB); break;
+        case GEMV: kw_gemv<T,N><<<grid,blk>>>(A, x, y, NPROB); break;
+        case GEMM: kw_gemm<T,N><<<grid,blk>>>(A, B, C, NPROB); break;
+        case CHOL: kw_chol<T,N><<<grid,blk>>>(A, NPROB); break;
+        case TRSV: kw_trsv<T,N><<<grid,blk>>>(A, x, NPROB); break;
+        case POSV: kw_posv<T,N><<<grid,blk>>>(A, x, NPROB); break;
+        default: break;
+    }
+}
+
+// ─── NVIDIA model (float-only): cuBLASDx / cuSOLVERDx, one block per problem ──
+// DEFINE_NVIDIA_* emit explicit specializations so the glass::nvidia::<op> call
+// resolves to the vendor path unconditionally (forced, no size-heuristic dispatch).
+#if MEGA_NV_BLAS
+static const int NV_DOT_TB = 256;   // CUB BlockReduce thread count for nvidia::dot
+namespace glass { namespace nvidia {
+    // gemm 16/24/32/48/64 and gemv 4..64 are already cuBLASDx-specialized by
+    // glass-nvidia.cuh / tuning_table.cuh (the shipped explicit specializations
+    // ARE the forced cuBLASDx path) — only force the gemm small shapes (4..12)
+    // that the header SIMT-routes, by adding an explicit DEFINE (overrides the
+    // primary's SIMT fallback). Defining the others would be a redefinition.
+    DEFINE_NVIDIA_GEMM(4, 4, 4)  DEFINE_NVIDIA_GEMM(6, 6, 6)
+    DEFINE_NVIDIA_GEMM(8, 8, 8)  DEFINE_NVIDIA_GEMM(12, 12, 12)
+    DEFINE_NVIDIA_GEMM(48, 48, 48)              // shipped: 16/24/32/64; 48 is the gap
+    DEFINE_NVIDIA_GEMV(32, 32)  DEFINE_NVIDIA_GEMV(48, 48)  // shipped gemv: 4/6/8/12/16/24/64
+}}
+template<int N> __global__ void kn_dot (float* x, float* y) {
+    extern __shared__ char s[]; int p=blockIdx.x;
+    glass::nvidia::dot<float,N,NV_DOT_TB>(x+p*N, y+p*N, y+p*N, reinterpret_cast<float*>(s));
+}
+template<int N> __global__ void kn_gemv(float* A, float* x, float* y) {
+    extern __shared__ char s[]; int p=blockIdx.x;
+    glass::nvidia::gemv<float,N,N>(1.f, A+(size_t)p*N*N, x+p*N, 0.f, y+p*N, s);
+}
+template<int N> __global__ void kn_gemm(float* A, float* B, float* C) {
+    extern __shared__ char s[]; int p=blockIdx.x;
+    glass::nvidia::gemm<float,N,N,N>(1.f, A+(size_t)p*N*N, B+(size_t)p*N*N, 0.f, C+(size_t)p*N*N, s);
+}
+#endif
+#if MEGA_NV_LAPACK
+static const int NV_LP_TB = 256;    // cuSOLVERDx pinned block dim
+namespace glass { namespace nvidia {
+    #define MEGA_CHOL_DEF(N) DEFINE_NVIDIA_CHOL_BLOCKDIM(N, NV_LP_TB)
+    #define MEGA_TRSM_DEF(N) DEFINE_NVIDIA_TRSM_BLOCKDIM(N, 1, NV_LP_TB)
+    #define MEGA_POSV_DEF(N) DEFINE_NVIDIA_POSV_BLOCKDIM(N, 1, NV_LP_TB)
+    MEGA_CHOL_DEF(4)  MEGA_CHOL_DEF(6)  MEGA_CHOL_DEF(8)  MEGA_CHOL_DEF(12)
+    MEGA_CHOL_DEF(16) MEGA_CHOL_DEF(24) MEGA_CHOL_DEF(32) MEGA_CHOL_DEF(48) MEGA_CHOL_DEF(64)
+    MEGA_TRSM_DEF(4)  MEGA_TRSM_DEF(6)  MEGA_TRSM_DEF(8)  MEGA_TRSM_DEF(12)
+    MEGA_TRSM_DEF(16) MEGA_TRSM_DEF(24) MEGA_TRSM_DEF(32) MEGA_TRSM_DEF(48) MEGA_TRSM_DEF(64)
+    MEGA_POSV_DEF(4)  MEGA_POSV_DEF(6)  MEGA_POSV_DEF(8)  MEGA_POSV_DEF(12)
+    MEGA_POSV_DEF(16) MEGA_POSV_DEF(24) MEGA_POSV_DEF(32) MEGA_POSV_DEF(48) MEGA_POSV_DEF(64)
+}}
+template<int N> __global__ void kn_chol(float* A) {
+    extern __shared__ char s[]; int p=blockIdx.x;
+    glass::nvidia::chol_inplace<float,N,NV_LP_TB>(A+(size_t)p*N*N, s);
+}
+template<int N> __global__ void kn_trsv(float* A, float* x) {
+    extern __shared__ char s[]; int p=blockIdx.x;
+    glass::nvidia::trsm<float,N,1,NV_LP_TB>(1.f, A+(size_t)p*N*N, x+p*N, s);
+}
+template<int N> __global__ void kn_posv(float* A, float* b) {
+    extern __shared__ char s[]; int p=blockIdx.x;
+    glass::nvidia::posv<float,N,1,NV_LP_TB>(A+(size_t)p*N*N, b+p*N, s);
+}
+#endif
+
+// True at compile time iff op@N has a forced nvidia variant defined above.
+template<int N> static constexpr bool nv_blas_ok()   { return MEGA_NV_BLAS   && N <= 64; }
+template<int N> static constexpr bool nv_lapack_ok() { return MEGA_NV_LAPACK && N <= 64; }
+
+template<typename F>
+static double time_ns_per_prob(F launch, int reps) {
+    launch(); cudaDeviceSynchronize();
+    double best = 1e30;
+    for (int t = 0; t < 3; t++) {
+        struct timespec t0, t1;
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (int r = 0; r < reps; r++) launch();
+        cudaDeviceSynchronize();
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        double ns = elapsed_ms(t0, t1) * 1e6 / ((double)reps * NPROB);
+        if (ns < best) best = ns;
+    }
+    return best;
+}
+
+// nvidia leg: needs dynamic smem opt-in for the larger descriptors (>48KB). float-only.
+// Returns best ns/problem for (op,N), or -1 if no nvidia variant for this (op,N).
+template<int N>
+static double nv_op_time(Op op, float* A, float* B, float* C, float* x, float* y, int reps) {
+    (void)A;(void)B;(void)C;(void)x;(void)y;(void)reps;(void)op;
+    dim3 grid(NPROB);
+#if MEGA_NV_BLAS
+    if constexpr (nv_blas_ok<N>()) {
+        if (op == DOT) {
+            size_t smem = glass::nvidia::reduce_smem_size<float,NV_DOT_TB>();
+            cudaFuncSetAttribute(kn_dot<N>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
+            return time_ns_per_prob([&]{ kn_dot<N><<<grid,NV_DOT_TB,smem>>>(x, y); }, reps);
+        }
+        if (op == GEMV) {
+            size_t smem = glass::nvidia::gemv_smem_size<float,N,N>();
+            int tb = (int)glass::nvidia::gemv_threads<float,N,N>();
+            cudaFuncSetAttribute(kn_gemv<N>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
+            return time_ns_per_prob([&]{ kn_gemv<N><<<grid,tb,smem>>>(A, x, y); }, reps);
+        }
+        if (op == GEMM) {
+            size_t smem = glass::nvidia::gemm_smem_size<float,N,N,N>();
+            int tb = (int)glass::nvidia::gemm_threads<float,N,N,N>();
+            cudaFuncSetAttribute(kn_gemm<N>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
+            return time_ns_per_prob([&]{ kn_gemm<N><<<grid,tb,smem>>>(A, B, C); }, reps);
+        }
+    }
+#endif
+#if MEGA_NV_LAPACK
+    if constexpr (nv_lapack_ok<N>()) {
+        if (op == CHOL) {
+            size_t smem = glass::nvidia::chol_inplace_smem_size<float,N,NV_LP_TB>();
+            cudaFuncSetAttribute(kn_chol<N>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
+            return time_ns_per_prob([&]{ kn_chol<N><<<grid,NV_LP_TB,smem>>>(A); }, reps);
+        }
+        if (op == TRSV) {
+            size_t smem = glass::nvidia::trsm_smem_size<float,N,1,NV_LP_TB>();
+            cudaFuncSetAttribute(kn_trsv<N>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
+            return time_ns_per_prob([&]{ kn_trsv<N><<<grid,NV_LP_TB,smem>>>(A, x); }, reps);
+        }
+        if (op == POSV) {
+            size_t smem = glass::nvidia::posv_smem_size<float,N,1,NV_LP_TB>();
+            cudaFuncSetAttribute(kn_posv<N>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
+            return time_ns_per_prob([&]{ kn_posv<N><<<grid,NV_LP_TB,smem>>>(A, x); }, reps);
+        }
+    }
+#endif
+    return -1.0;
+}
+
+// Dispatch nv_op_time only when T==float (the nvidia wrappers are float-only).
+template<typename T,int N>
+static double nv_dispatch(Op op, T* A, T* B, T* C, T* x, T* y, int reps) {
+    if constexpr (std::is_same_v<T,float>)
+        return nv_op_time<N>(op, A, B, C, x, y, reps);
+    else
+        { (void)op;(void)A;(void)B;(void)C;(void)x;(void)y;(void)reps; return -1.0; }
+}
+
+template<typename T,int N>
+static void bench_size(Op op, int reps) {
+    T *A, *B, *C, *x, *y;
+    size_t mm = (size_t)NPROB * N * N, vv = (size_t)NPROB * N;
+    cudaMalloc(&A, mm*sizeof(T)); cudaMalloc(&B, mm*sizeof(T)); cudaMalloc(&C, mm*sizeof(T));
+    cudaMalloc(&x, vv*sizeof(T)); cudaMalloc(&y, vv*sizeof(T));
+    // diagonally-dominant A (valid for chol/trsv/posv); broadcast one tile to all problems.
+    T* hA = (T*)malloc((size_t)N*N*sizeof(T));
+    for (int i=0;i<N;i++) for (int j=0;j<N;j++) hA[i+j*N] = (i==j)?(T)(N+2):(T)(0.1*((i+2*j)%5));
+    cudaMemcpy(A, hA, (size_t)N*N*sizeof(T), cudaMemcpyHostToDevice);
+    for (size_t p=1;p<(size_t)NPROB;p++) cudaMemcpy(A+p*N*N, A, (size_t)N*N*sizeof(T), cudaMemcpyDeviceToDevice);
+    cudaMemset(B, 1, mm*sizeof(T)); cudaMemset(C, 0, mm*sizeof(T));
+    cudaMemset(x, 1, vv*sizeof(T)); cudaMemset(y, 1, vv*sizeof(T));
+    free(hA);
+
+    double best_block=1e30, best_warp=1e30; int best_tb=0, best_wpb=0;
+    printf("%-5s N=%-3d | BLOCK", op_name(op), N);
+    for (int TB : {32, 64, 128, 256}) {
+        double ns = time_ns_per_prob([&]{ launch_block<T,N>(op, TB, A, B, C, x, y); }, reps);
+        printf("  tb%d=%.2f", TB, ns);
+        if (ns < best_block) { best_block = ns; best_tb = TB; }
+    }
+    printf("  | WARP");
+    for (int WPB : {1, 2, 4, 8, 16, 32}) {
+        if (WPB > NPROB) break;
+        double ns = time_ns_per_prob([&]{ launch_warp<T,N>(op, WPB, A, B, C, x, y); }, reps);
+        printf("  w%d=%.2f", WPB, ns);
+        if (ns < best_warp) { best_warp = ns; best_wpb = WPB; }
+    }
+    double nv = nv_dispatch<T,N>(op, A, B, C, x, y, reps);
+
+    // 3-way winner
+    double base = best_warp < best_block ? best_warp : best_block;
+    const char* base_winner = best_warp < best_block ? "WARP" : "BLOCK";
+    const char* winner; double margin;
+    if (nv > 0 && nv < base) { winner = "NVIDIA"; margin = base / nv; }
+    else if (nv > 0)         { winner = base_winner; margin = nv / base; }   // margin = how much NV trails
+    else                     { winner = base_winner; margin = best_warp < best_block ? best_block/best_warp : best_warp/best_block; }
+    printf("  || block tb%d=%.2f  warp w%d=%.2f", best_tb, best_block, best_wpb, best_warp);
+    if (nv > 0) printf("  nv=%.2f", nv);
+    printf("  -> %s (%.2fx)\n", winner, margin);
+    cudaFree(A); cudaFree(B); cudaFree(C); cudaFree(x); cudaFree(y);
+}
+
+template<typename T> static void run_all(int reps) {
+    for (Op op : {DOT, GEMV, GEMM, CHOL, TRSV, POSV}) {
+        bench_size<T,4>(op, reps);  bench_size<T,6>(op, reps);  bench_size<T,8>(op, reps);
+        bench_size<T,12>(op, reps); bench_size<T,16>(op, reps); bench_size<T,24>(op, reps);
+        bench_size<T,32>(op, reps); bench_size<T,48>(op, reps); bench_size<T,64>(op, reps);
+        bench_size<T,96>(op, reps); bench_size<T,128>(op, reps);
+        printf("\n");
+    }
+}
+
+int main(int argc, char** argv) {
+    NPROB    = (argc > 1) ? atoi(argv[1]) : 8192;
+    int reps = (argc > 2) ? atoi(argv[2]) : 500;
+    const char* dt = (argc > 3) ? argv[3] : "f32";
+    bool f64 = (strcmp(dt, "f64") == 0 || strcmp(dt, "fp64") == 0 || strcmp(dt, "double") == 0);
+    printf("# mega sweep | NPROB=%d reps=%d dtype=%s | ns/problem (lower=better)\n", NPROB, reps, f64 ? "f64" : "f32");
+    printf("# contenders: BLOCK(SIMT, TB swept) | WARP(WPB swept) | NV(cuBLASDx/cuSOLVERDx, forced, float-only, N<=64)\n");
+    if (f64) run_all<double>(reps);
+    else     run_all<float>(reps);
+    return 0;
+}
