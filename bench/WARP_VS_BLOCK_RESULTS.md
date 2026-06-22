@@ -1,62 +1,74 @@
 # Warp-per-problem vs one-block-per-problem — scaling results
 
-Measured by `bench/bench_warp_vs_block.cu` (throughput: NPROB=8192 independent
-problems, ns/problem, min of 3 trials × 500 reps). **RTX 5090, sm_120, 2026-06-21.**
-Throughput harness (many problems filling the GPU), NOT the single-block latency benches.
+Measured by `bench/bench_warp_vs_block.cu` (run via `run_warp_block_sweep.sh`).
+**RTX 5090, sm_120, 2026-06-21** (boost 3090 MHz). Metric: ns/problem, min of 3
+trials. Two packing models across problem size N and batch count NPROB:
 
-Two packing models compared as a function of problem size N:
 - **BLOCK** — one block per problem, `<<<NPROB, TB>>>`, TB ∈ {32,64,128,256}
-- **WARP** — one warp per problem, `<<<NPROB/WPB, dim3(32,WPB)>>>`, WPB ∈ {1,2,4,8,16,32}
+- **WARP** — one warp per problem, `<<<ceil(NPROB/WPB), dim3(32,WPB)>>>`, WPB ∈ {1..32}
 
-## Crossover summary (best-config each model, ns/problem, winner)
+Swept NPROB ∈ {1, 64, 1024, 8192, 32768} (single-problem latency → GPU-saturating
+throughput) × N ∈ {4,6,8,12,16,24,32} × ops {dot, gemv, gemm, chol, trsv, posv}.
+Raw data: `bench/warp_block_sweep_20260621_2147.txt`.
 
-| op   | N=4 | N=6 | N=8 | N=12 | N=16 | N=24 | N=32 | crossover |
-|------|-----|-----|-----|------|------|------|------|-----------|
-| gemm | **W** 2.5× | **W** 2.25× | **W** 1.9× | B 1.09× | B 1.14× | B 1.11× | B 1.63× | **warp ≤ 8, block ≥ 12** |
-| chol | **W** 1.73× | **W** 1.62× | **W** 1.16× | **W** 1.32× | **W** 1.28× | **W** 1.14× | ~tie | **warp ≤ 24, tie at 32** |
-| posv | **W** 1.24× | **W** 1.56× | **W** 1.49× | **W** 1.43× | **W** 1.40× | **W** 1.20× | **W** 1.32× | **warp wins everywhere ≤ 32** |
+## Recommended defaults (the headline)
 
-(W = warp-per-problem wins, B = block-per-problem wins; the factor is best-warp vs best-block.)
+| op | class | throughput default | block `TB` | warp `WPB` | notes |
+|------|-------|--------------------|-----------|-----------|-------|
+| **dot**  | L1 reduce | **WARP** (huge) | 64 | 8–32 | 2.6× at 8K, **5.6× at 32K problems**; warp scales hardest |
+| **gemv** | L2 matvec | **WARP** for N≤24 | 128 | 4–8 | ~tie at N=32; warp 2–5× small N |
+| **gemm** | L3 matmul | **warp N≤8 / BLOCK N≥12** | scales 64→256 with N | 2–8 (small N) | the ONLY op that flips to block; block 1.6–1.7× at N=32 |
+| **chol** | L3 factor | **WARP** | **32** | 2–4 | warp 1.1–1.8× (esp. small N + big batch); block: TB=32, more *hurts* |
+| **trsv** | L3 solve | **WARP** everywhere | **32** | 2–4 | warp 1.5–2.5× across all N and batch sizes |
+| **posv** | L3 solve | **WARP** everywhere | **32** | 2 | warp 1.2–1.7× across all N≤32 |
 
-## Findings / recommended defaults
+**One-line rule:** for batched small problems, **default to warp-per-problem for
+everything except GEMM at N≥12** (the one embarrassingly-parallel-per-problem op that
+prefers a whole block once it's big enough). Pack **2–8 warps/block** (8–32 for dot).
 
-1. **Factor & solve ops (chol, posv) → default to warp-per-problem** across the whole
-   small-matrix regime (N ≤ ~24–32), by 1.2–1.7×. Their serial pivot loops leave most
-   of a block's threads idle, so packing one problem per warp (many warps/block) keeps
-   the SMs full. posv (chol + 2 trsv, all serial) favors warp at *every* tested size.
+## Single problem (NPROB=1) — "if there's only one op, warp or block?"
 
-2. **GEMM → warp only for tiny N (≤ 8); block for N ≥ 12.** GEMM is embarrassingly
-   parallel per problem, so once N is big enough to use a block's threads (N≥12, ~144+
-   output cells), one-block-per-problem with a larger thread count wins (up to 1.63× at
-   N=32). For N≤8 the block is underutilized and warp packing wins up to 2.5×.
+Launch-overhead-bound (~1.78 µs floor) so for **small N it's a wash** (warp ≈ block).
+For **non-tiny N, BLOCK wins** — a lone warp is slow on a big problem while a block
+parallelizes it: **gemm block 1.7×→5.75× (N=12→32)**, chol/gemv likewise. Exceptions:
+trsv/posv (serial-pivot solves) marginally favor warp even at NPROB=1. **→ Your
+hypothesis confirmed: block unless tiny** (and "tiny" = launch-bound, where it doesn't
+matter). If the single op is *inside* a larger kernel (no separate launch), use the
+throughput-regime guidance above instead.
 
-3. **Block thread-count default is op-class-dependent** (the other half of "good defaults"):
-   - **Factor/solve (chol, posv): use TB=32.** More threads *hurt* — TB=256 is 2–3×
-     slower than TB=32 (serial pivot loop + barrier cost dominates; extra warps just wait).
-   - **GEMM: TB grows with N** — TB=64 best at N≤12, TB=128–256 best at N≥16.
+## Why these splits
 
-4. **Best warps-per-block is small: WPB = 2–8** (not 16–32). 2–4 warps/block is the
-   sweet spot for gemm/chol/posv; beyond ~8 the per-block scheduling/occupancy gains
-   flatten or regress.
+- **Reductions / matvec / factor / solve (dot, gemv, chol, trsv, posv)** leave most of
+  a block's threads idle — chol/trsv/posv have serial pivot loops, dot is a 1D reduction.
+  One warp does ~as much useful work per problem, so packing one problem per warp keeps
+  the SMs full. dot scales most dramatically (5.6× at 32K) because it's the cheapest op,
+  most dominated by per-block overhead in the block model.
+- **GEMM** is fully parallel per problem (N² output cells), so once N≥12 a block's extra
+  threads earn their keep and one-block-per-problem wins. Below N≈8–12 the block is
+  underutilized and warp packing wins (up to ~5× at huge batch).
+- **Block thread-count**: factor/solve want **TB=32** — extra warps just wait on the
+  serial pivot loop and add barrier cost (TB=256 is 2–3× slower than TB=32 at NPROB=8192).
+  GEMM wants TB to grow with N (tb64 small → tb128/256 at N≥16). dot/gemv: tb64–128.
+- **Throughput grows the warp advantage**: warp wins widen from NPROB=1 (launch-bound
+  tie) → 1024 → 8192 → 32768 as more problems expose the occupancy difference.
 
-## How this feeds the API
+## Feeding the API / next steps
 
-- For consumers packing many small SPD factor/solves (MPC/RBD — exactly GLASS's target),
-  the **warp surface is the throughput default**, not one-block-per-problem. Worth saying
-  so in the "Choosing the right backend" docs.
-- The block-thread-count guidance (factor/solve → 32; gemm → scale with N) is a concrete
-  default the wrappers / launch helpers can bake in.
+- The MPC/RBD workload GLASS targets is *many small SPD factor/solves* — squarely the
+  warp-favored regime. The "Choosing the right backend" docs and any launch helpers
+  should make **warp-per-problem the throughput default** (with the GEMM-N≥12 and
+  single-problem exceptions called out).
+- Block-thread-count defaults (factor/solve → 32; gemm → scale with N) are concrete
+  numbers the wrappers can bake in.
+- Not yet measured (block-only ops, no warp variant): syrk/ldlt/inv thread-count
+  scaling, and the nvidia-SIMT-vs-cuBLASDx axis (that's the separate `bench/autotune.py`).
+  See `docs/open-tasks/perf_autotune_breakeven.md` for the full planned matrix.
 
-## Reproduce / extend
+## Reproduce
 
 ```bash
-cd bench && nvcc -std=c++17 -arch=sm_120 -O3 -Xptxas -O1 -I.. -I../src \
-    bench_warp_vs_block.cu -o bench_warp_vs_block && ./bench_warp_vs_block 500
+cd bench && ./run_warp_block_sweep.sh sm_120     # full graduated sweep, ~tens of min, idle GPU
+# or a single regime:
+nvcc -std=c++17 -arch=sm_120 -O3 -Xptxas -O1 -I.. -I../src bench_warp_vs_block.cu -o bwvb
+./bwvb 8192 500        # throughput ; ./bwvb 1 3000  → single-problem latency
 ```
-
-The harness covers gemm/chol/posv (matmul / factor / composed-solve). Adding trsv, dot,
-gemv, syrk follows the same template (a `kb_<op>`/`kw_<op>` pair + a dispatch case);
-expected pattern from the above: serial-ish ops (trsv) track posv (warp-favored), and
-elementwise/L1 (dot) favor warp even more strongly at small N. The nvidia-SIMT-vs-cuBLASDx
-breakeven axis is the separate, existing `bench/autotune.py` flow (gemm/gemv/lapack).
-See also `docs/open-tasks/perf_autotune_breakeven.md` for the full planned matrix.
