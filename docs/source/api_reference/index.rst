@@ -9,8 +9,8 @@ intentionally excluded.
 The reference is organized by BLAS level and by backend:
 
 * **L1** — vector operations (axpy, copy, dot, reduce, norms, elementwise, …).
-* **L2** — matrix-vector operations (gemv, ger, strided/segmented gemv).
-* **L3** — matrix operations (gemm and variants, inverse, Cholesky, trsm).
+* **L2** — matrix-vector operations (gemv, ger, trsv, trmv, strided/segmented gemv).
+* **L3** — matrix operations (gemm and variants, inverse, Cholesky, trsm, syrk/syr2k, ldlt, posv/potrs).
 * **NVIDIA backend** — the ``glass::nvidia::`` CUB / cuBLASDx / cuSOLVERDx paths
   and their host-side query/size helpers.
 * **Warp-scoped** — the ``glass::warp::`` single-warp SIMT variants for

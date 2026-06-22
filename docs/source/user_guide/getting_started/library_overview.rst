@@ -65,17 +65,19 @@ block — one per warp:
      - ``glass-nvidia.cuh``
    * - ``glass::warp::``
      - warp
-     - Single-warp SIMT via ``__shfl_*_sync`` — *selected* L1/L3 ops, no ``__syncthreads`` / shared
-     - inline in the base L1/L3 headers
+     - Single-warp SIMT via ``__shfl_*_sync`` — selected L1/L2/L3 ops, no ``__syncthreads`` / shared
+     - inline in the base L1/L2/L3 headers
 
 The three **block-scoped** backends cover the full L1/L2/L3 surface and are
 interchangeable — switch by changing the namespace prefix when profiling shows
 one is faster at a given size. They preserve the same one-block ``__device__``
 calling convention, so a single kernel can mix hand-rolled and vendor-backed
 primitives without leaving the block. ``glass::warp::`` is a **warp-per-problem**
-variant covering a selected set (``reduce``, ``gemm``, ``cholDecomp_InPlace``,
-``trsm`` / ``trsm_transpose``); the warps run independently for intra-block
-parallelism, and it requires a full 32-lane warp.
+variant covering a selected set (``dot``, ``axpy``, ``copy``, ``scal``,
+``reduce``, ``gemv``, ``iamax``, ``gemm``, ``cholDecomp_InPlace``, ``trsv`` /
+``trsm`` / ``trsm_transpose``, and the composed ``posv`` SPD solve); the warps
+run independently for intra-block parallelism, and it requires a full 32-lane
+warp.
 
 Both ``glass::`` and ``glass::cgrps::`` offer **runtime** (size as a function
 argument) and **compile-time** (size as a template argument) overloads for every

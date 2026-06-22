@@ -48,8 +48,8 @@ both `AAᵀ` and `AᵀA` via a `TRANS` flag, `FillMode` Lower/Upper/Full); `ldlt
 `ldlt_solve` (L3 symmetric-indefinite LDLᵀ, non-pivoted, signature reserves
 `bool pivot`/`piv` for a future Bunch-Kaufman path); `posv` / `potrs` (L3 SPD
 solve = chol + 2×`trsv`); and **K-way fused** `invertMatrix` / `cholDecomp_InPlace`
-(invert/factor K independent matrices interleaved over one block — `inv2`/`inv3`
-are now thin wrappers). The warp surface adds `warp::{dot,axpy,copy,scal,gemv,trsv,iamax}`
+(invert/factor K independent matrices interleaved over one block — `inv2`/`inv3`,
+the 2-/3-matrix `invertMatrix` wrappers, are now thin wrappers). The warp surface adds `warp::{dot,axpy,copy,scal,gemv,trsv,iamax}`
 + the composed `warp::posv`.
 
 Robust/perf variants (perf user vs robustness user): `invertMatrix_pivoted`

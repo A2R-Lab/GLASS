@@ -527,6 +527,7 @@ All L1 functions accept `uint32_t n` (runtime) **or** `<T, N>` template args (co
 | `scal(n, alpha, x, y)` | `y = alpha*x` | `y = alpha*x` | none |
 | `swap(n, x, y)` | swap `x` and `y` | — | none |
 | `dot(n, x, y)` | `y[0] = x·y` (in-place, uses `y` as scratch) | `np.dot(x,y)` | none |
+| `iamax(n, x, out)` | `out[0] = argmax\|xᵢ\|` (index of max-abs; pivot primitive) | `np.argmax(np.abs(x))` | none |
 | `reduce(n, x)` | `x[0] = sum(x)` (in-place) | `np.sum(x)` | none |
 | `l2norm(n, x)` | `x[0] = ‖x‖₂` (in-place, destructive) | `np.linalg.norm(x)` | none |
 | `infnorm(n, x)` | `x[0] = ‖x‖∞` (in-place) | `np.max(np.abs(x))` | none |
@@ -583,6 +584,8 @@ Matrices default to **column-major** order. Pass `ROW_MAJOR=true` to use row-maj
 | `gemv<T,false,true>(m, n, alpha, A, x, beta, y)` | same, but A is row-major | `y = alpha*A@x + beta*y` |
 | `gemv_ex<T,TRANSPOSE,ROW_MAJOR_A>(...)` | per-matrix layout control | |
 | `ger(m, n, alpha, x, y, A)` | `A += alpha*x*yᵀ` | `A += alpha*np.outer(x,y)` |
+| `trsv<T,LOWER,UNIT,TRANS>(n, A, x)` | triangular solve `A*x = b` in-place (`LOWER`/`UNIT`/`TRANS` flags) | `scipy.linalg.solve_triangular(A,x,lower=...)` |
+| `trmv<T,LOWER,UNIT,TRANS>(n, A, x)` | triangular matvec `x = A*x` (`LOWER`/`UNIT`/`TRANS` flags) | `A @ x` (triangular A) |
 
 Compile-time overloads omit the `m, n` args:
 ```cpp
@@ -605,7 +608,16 @@ Matrices default to **column-major** order.
 | `gemm_tiled<T,TILE>(m,n,k, alpha, A, B, beta, C, s_A, s_B)` | tiled gemm using shared memory | | `(m*TILE + TILE*k)*sizeof(T)` |
 | `gemm_dispatch<T>(m,n,k, alpha, A, B, beta, C, s_A, s_B)` | auto-selects tiled or plain | | see below |
 | `invertMatrix(n, A, s_temp)` | `A = A⁻¹` in-place (Gauss-Jordan) | `np.linalg.inv(A)` | `(2n+1)*sizeof(T)` |
+| `invertMatrix_pivoted(n, A, s_temp)` | `A = A⁻¹` in-place, partial (row) pivoting (robust on small/zero leading pivots) | `np.linalg.inv(A)` | `(3n+1)*sizeof(T)` |
+| `invertMatrix(K, ns, As, s_temp)` | K-way fused: invert K independent matrices interleaved over one block | `[np.linalg.inv(A) for A in As]` | per-matrix `(2n+1)` |
 | `cholDecomp_InPlace(n, A)` | Cholesky `A → L` (lower triangular) | `np.linalg.cholesky(A)` | none |
+| `cholDecomp_InPlace(K, ns, As)` | K-way fused: factor K independent matrices interleaved over one block | `[np.linalg.cholesky(A) for A in As]` | none |
+| `syrk<T,TRANS,FILL>(n, k, alpha, A, beta, C)` | symmetric rank-k: `C = alpha*A*Aᵀ + beta*C` (or `AᵀA` with `TRANS`); `FILL` Lower/Upper/Full | `C = alpha*A@A.T + beta*C` | none |
+| `syr2k<T,TRANS,FILL>(n, k, alpha, A, B, beta, C)` | symmetric rank-2k: `C = alpha*(A*Bᵀ + B*Aᵀ) + beta*C` (or `AᵀB+BᵀA`) | `C = alpha*(A@B.T+B@A.T) + beta*C` | none |
+| `ldlt(n, A)` | symmetric-indefinite `A → L·D·Lᵀ` in-place (no sqrt; KKT/saddle systems) | `scipy.linalg.ldl(A)` | `(n+1)*sizeof(T)` |
+| `ldlt_solve(n, A, b)` | solve `A*x = b` from a prior `ldlt` factorization | — | `(n+1)*sizeof(T)` |
+| `posv(n, A, b)` | SPD solve `A*x = b` in-place (Cholesky + two triangular solves); multi-RHS `(n, nrhs, A, B)` | `np.linalg.solve(A, b)` (SPD A) | none |
+| `potrs(n, L, b)` | solve `A*x = b` from a prior Cholesky `L`; multi-RHS `(n, nrhs, L, B)` | `scipy.linalg.cho_solve((L,True), b)` | none |
 | `trsm(n, L, b)` | Solve `Lx=b` in-place (forward substitution) | `scipy.linalg.solve_triangular(L,b,lower=True)` | none |
 
 Compile-time overloads omit the `m, n, k` args:

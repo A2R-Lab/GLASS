@@ -47,8 +47,9 @@ racecheck (syrk, ldlt, fused K-way, warp posv) — 0 hazards.
   thread-invariance; default / `high_speed::` / `low_memory::` variants; skips NaN
   (documented divergence from numpy).
 - **K-way fused** `invertMatrix` / `cholDecomp_InPlace` (L3) — invert/factor K independent
-  matrices interleaved over one block (prefix-sum scratch offsets); `inv2`/`inv3` are now
-  thin wrappers over the K-way form (output identical, regression-clean).
+  matrices interleaved over one block (prefix-sum scratch offsets); `inv2`/`inv3`, the
+  2-/3-matrix `invertMatrix` wrappers, are now thin wrappers over the K-way form (output
+  identical, regression-clean).
 - **Warp buildout** — `warp::{dot,axpy,copy,scal,gemv,trsv}` + the composed `warp::posv`,
   closing the L1/L2 glue gap so a complete warp-per-problem solve composes; multi-warp
   (`<<<1,dim3(32,WARPS)>>>`) tests. Also fixed a real `_hash_sources` cache gap (5 L1/L2

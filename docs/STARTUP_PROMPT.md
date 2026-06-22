@@ -27,8 +27,13 @@ routines that run inside a single thread block (one block per problem). It backs
 invariant — test at 1 / 32 / partial-warp / many-warp block sizes, and put a
 `__syncthreads()` between any write phase and a dependent read.
 
-**Current state (2026-06-17):** `main` carries the docs-parity infra, the
+**Current state (2026-06-21):** `main` carries the docs-parity infra, the
 validated (internal) `box_qp` solver, the `glass::warp::` single-warp primitives
 (PR #15), and the GATO-unification `glass::bdmv` + `glass::pcg`
-block-tridiagonal solvers. Full suite **382 passing**. See `docs/HANDOFF.md` for
-the latest entry.
+block-tridiagonal solvers. The BLAS/LAPACK surface has since expanded with new
+L1/L2/L3 ops: `iamax` (L1 pivot primitive); `trsv`/`trmv` (L2 triangular
+solve/matvec); `syrk`/`syr2k` (L3 symmetric rank-k/2k); `ldlt`/`ldlt_solve` (L3
+symmetric-indefinite); `posv`/`potrs` (L3 SPD solve), plus `invertMatrix_pivoted`,
+multi-RHS `posv`/`potrs`, K-way fused `invertMatrix`/`cholDecomp_InPlace`, and the
+`glass::warp::{dot,axpy,copy,scal,gemv,trsv,iamax}` + composed `warp::posv` glue.
+Full suite **1592 passed**. See `docs/HANDOFF.md` for the latest entry.

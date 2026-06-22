@@ -26,8 +26,8 @@ faster than SIMT anyway, so these APIs are **pure SIMT**: a single 1D block of
 each group computes one independent GEMM. They need **no shared memory** and
 **no** ``DEFINE_NVIDIA_*`` macro — they are fully templated on ``T``.
 
-The three APIs
---------------
+The two APIs
+------------
 
 ``gemm_batched_1d``
 ~~~~~~~~~~~~~~~~~~~
@@ -66,13 +66,15 @@ This is the GRiD end-effector-pose-gradient case, where ``&s_Xhom[16*parent]``
 is the shared A for every batch element. ``B_STRIDE`` and ``C_STRIDE`` are
 template parameters (defaults: ``N*K`` and ``M*K`` for tight packing).
 
-``indexed_batched_gemm``
-~~~~~~~~~~~~~~~~~~~~~~~~~
+.. note::
 
-A batched GEMM whose operands are gathered through an index array rather than a
-contiguous stride — useful when the per-batch matrices live at irregular offsets
-(e.g. indexed by parent joint). It shares the same single-block SIMT
-partitioning model as the other two.
+   A related primitive, ``glass::indexed_batched_gemm``
+   (``src/base/L3/gemm_batched_indexed.cuh``), gathers per-batch operands
+   through an index array at irregular offsets. It lives in ``glass::`` (not
+   ``glass::nvidia::``) and uses a *different* model — a block stride over the
+   flattened output elements with atomic/transpose flags — **not** the TC-group
+   partitioning of the two 1D-partition APIs above. It is documented with the
+   other L3 ops, not here.
 
 When to use which
 -----------------
@@ -87,10 +89,8 @@ When to use which
      - Each batch element has its own independent A, B, and C pointer.
    * - ``gemm_strided_batched_1d``
      - One shared A applied to many B/C blocks at a regular stride (cleanest codegen — no pointer arrays).
-   * - ``indexed_batched_gemm``
-     - Per-batch operands are gathered through an index array at irregular offsets.
 
-All three run pure SIMT, need no shared memory, and are best for small shapes
+Both run pure SIMT, need no shared memory, and are best for small shapes
 (``max(M,N,K) ≲ 8``) where cuBLASDx's tile-load overhead dominates. They respect
 the ``TRAILING_SYNC`` template parameter (see :doc:`trailing_sync`).
 

@@ -15,7 +15,7 @@ Source map you will reference constantly:
 - Pure-SIMT surface: `glass.cuh` → `src/base/L1/*.cuh`, `src/base/L2/*.cuh`, `src/base/L3/*.cuh`.
 - Cooperative-groups surface: `glass-cgrps.cuh`.
 - Vendor backends: `glass-nvidia.cuh` → `src/nvidia/{l1,l2,l3,l3_simt,lapack,query_simt,tuning_table,types}.cuh`.
-- Warp-scoped variants: inline in the base L1/L3 headers (`src/base/L1/reduce.cuh`, `src/base/L3/{gemm,chol_InPlace,trsm}.cuh`), under `namespace warp`.
+- Warp-scoped variants: inline in the base L1/L2/L3 headers (`src/base/L1/{reduce,dot,axpy,copy,scal,iamax}.cuh`, `src/base/L2/gemv.cuh`, `src/base/L3/{gemm,chol_InPlace,trsv,trsm,posv}.cuh`), under `namespace warp`.
 - Block-tridiagonal: `glass::bdmv` (`src/base/banded/bdmv.cuh`), `glass::pcg` + `glass::pcg_smem_size` (`src/base/pcg/solve.cuh`).
 - Host smem helper: `glass_gemm_dispatch_smem` in `glass.cuh`.
 - Tests: `test/conftest.py` (compile + cache harness), `test/test_l{1,2,3}.py`,
