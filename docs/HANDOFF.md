@@ -3,6 +3,31 @@
 Living status doc. Update the top as work lands. For onboarding read
 `docs/STARTUP_PROMPT.md` first.
 
+## 2026-06-23 — mega sweep (warp/block/nvidia) + fp64 nvidia wrappers
+
+Built a three-contender scaling bench and extended the nvidia wrappers to double.
+
+- **`bench/bench_mega_sweep.cu`** (was `bench_warp_vs_block.cu`) — warp vs block(SIMT) vs
+  **nvidia** (cuBLASDx/cuSOLVERDx) on one ns/problem axis, N to 128, f32+f64, NPROB
+  1→32768. nvidia is FORCED at every N (explicit DEFINEs bypass the size-heuristic) to
+  draw the full vendor curve. Launches are **error-checked** — a descriptor whose smem
+  exceeds the device opt-in cap (99 KB on RTX 5090) is skipped, not mis-timed as a "win".
+  Runner: `run_mega_sweep.sh`. Results: **`bench/MEGA_SWEEP_RESULTS.md`** (raw:
+  `mega_sweep_20260623_0917.txt`). Headline: the warp→SIMT→MathDx ladder is *per-op* —
+  dot/gemv stay warp(+block); gemm/chol/posv hand off warp→**nvidia (N≥16)**→block (when
+  nvidia runs out of smem); trsv only mid-band (cuSOLVERDx trsm scales poorly). f64
+  narrows the nvidia band (caps at N=64).
+- **fp64 nvidia** — parameterized the cuBLASDx/cuSOLVERDx wrapper macros on the scalar
+  type (`src/nvidia/{l2,l3,lapack}.cuh`): chol/trsm/posv/gemm/gemv now have
+  `DEFINE_NVIDIA_*_PREC(..., double)` variants alongside the float defaults (back-compat
+  unchanged). potrs/getrf/getrs/gesv/geqrf/gels left float-only (out of scope). dot is
+  already `template<T>` (CUB).
+- **Validation** — new `test/test_nvidia_f64.py` + `test/cuda/test_nvidia_f64.cu`
+  (registered in conftest, gated on cuSOLVERDx): posv/gemm/gemv double vs numpy, 9 pass
+  at f64 tol (posv residual ~1e-15). Float regression: 75 existing nvidia/posv tests pass.
+- **Known limit**: f64 nvidia is smem-capped at N≤64 on sm_120 (99 KB opt-in); higher f64
+  N would need a tiled descriptor. Logged as a finding, not fixed.
+
 ## 2026-06-21 — follow-up wave: pivoting + multi-RHS + warp::iamax
 
 Four file-isolated follow-ups (parallel worktree agents → I verified + merged; zero
