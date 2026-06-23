@@ -145,6 +145,7 @@ def bins(tmp_path_factory):
         "fused": compile_binary("test_fused", build_dir, CUDA_ARCH),
         "warp": compile_binary("test_warp", build_dir, CUDA_ARCH),
         "posv": compile_binary("test_posv", build_dir, CUDA_ARCH),
+        "base_f64": compile_binary("test_base_f64", build_dir, CUDA_ARCH),
     }
     # test_l3_nvidia.cu includes glass-nvidia.cuh and exercises the SIMT-only
     # batched APIs (gemm_batched_1d, gemm_strided_batched_1d). It does NOT
@@ -253,6 +254,12 @@ def bin_nvidia_f64(bins):
     if "nvidia_f64" not in bins:
         pytest.skip("test_nvidia_f64 needs MATHDX_ROOT + cuSOLVERDx")
     return bins["nvidia_f64"]
+
+
+@pytest.fixture(scope="session")
+def bin_base_f64(bins):
+    """Double-precision base (glass::) + warp (glass::warp::) ops."""
+    return bins["base_f64"]
 
 
 # ─── run_op helper ────────────────────────────────────────────────────────────
