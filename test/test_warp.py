@@ -191,3 +191,20 @@ def test_posv(bins, n, W):
     for w in range(W):
         assert np.allclose(slices[w], oracles[w], rtol=RTOL, atol=ATOL), \
             f"warp {w} posv mismatch (n={n}, W={W})"
+
+
+# ─── gemm (C = alpha*A@B, implicit beta=0) ────────────────────────────────────
+# A, B column-major; C returned column-major (n*n per warp).
+@pytest.mark.parametrize("n", SIZES)
+@pytest.mark.parametrize("W", WARP_COUNTS)
+def test_gemm(bins, n, W):
+    alpha = 1.4
+    As = [RNG.standard_normal((n, n)).astype(np.float32) for _ in range(W)]
+    Bs = [RNG.standard_normal((n, n)).astype(np.float32) for _ in range(W)]
+    Aflat = np.concatenate([np.asfortranarray(A).ravel(order="F") for A in As])
+    Bflat = np.concatenate([np.asfortranarray(B).ravel(order="F") for B in Bs])
+    result = run_op(bins["warp"], "gemm", str(n), args=[W, alpha], inputs=[Aflat, Bflat])
+    for w in range(W):
+        Cw = result[w*n*n:(w+1)*n*n].reshape((n, n), order="F")
+        assert np.allclose(Cw, alpha * As[w] @ Bs[w], rtol=RTOL, atol=ATOL), \
+            f"warp {w} gemm mismatch (n={n}, W={W})"

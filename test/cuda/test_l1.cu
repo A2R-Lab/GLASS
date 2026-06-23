@@ -166,6 +166,25 @@ __global__ void k_elementwise_min_simple(int n, float* a, float* b, float* c) {
     glass::elementwise_min(n, a, b, c);
 }
 
+// ── comparison / logic / scalar elementwise (cg + simple) ───────────────────
+#define EW3(NAME) \
+  __global__ void k_##NAME##_cg(int n, float* a, float* b, float* c)     { glass::cgrps::NAME(n,a,b,c); } \
+  __global__ void k_##NAME##_simple(int n, float* a, float* b, float* c) { glass::NAME(n,a,b,c); }
+EW3(elementwise_less_than)
+EW3(elementwise_more_than)
+EW3(elementwise_less_than_or_eq)
+EW3(elementwise_and)
+__global__ void k_elementwise_not_cg(int n, float* a, float* c)     { glass::cgrps::elementwise_not(n,a,c); }
+__global__ void k_elementwise_not_simple(int n, float* a, float* c) { glass::elementwise_not(n,a,c); }
+#define EWS(NAME) \
+  __global__ void k_##NAME##_cg(int n, float* a, float b, float* c)     { glass::cgrps::NAME(n,a,b,c); } \
+  __global__ void k_##NAME##_simple(int n, float* a, float b, float* c) { glass::NAME(n,a,b,c); }
+EWS(elementwise_mult_scalar)
+EWS(elementwise_max_scalar)
+EWS(elementwise_min_scalar)
+// less_than_scalar has no cgrps variant — simple only.
+__global__ void k_elementwise_less_than_scalar_simple(int n, float* a, float b, float* c) { glass::elementwise_less_than_scalar(n,a,b,c); }
+
 __global__ void k_prefix_sum_excl_cg(int n, float* x, float* out) {
     glass::prefix_sum_exclusive(x, out, n);
 }
@@ -447,6 +466,49 @@ int main(int argc, char** argv) {
         float* dc = alloc_device_vec(n);
         if (is_cg(ver))  k_elementwise_min_cg<<<1, THREADS>>>(n, da, db, dc);
         else             k_elementwise_min_simple<<<1, THREADS>>>(n, da, db, dc);
+        cudaDeviceSynchronize();
+        print_device_vec(dc, n);
+
+#define EW3_DISPATCH(NAME) \
+    } else if (strcmp(op, #NAME) == 0) { \
+        float* da = read_device_vec(argv[4], n); \
+        float* db = read_device_vec(argv[5], n); \
+        float* dc = alloc_device_vec(n); \
+        if (is_cg(ver))  k_##NAME##_cg<<<1, THREADS>>>(n, da, db, dc); \
+        else             k_##NAME##_simple<<<1, THREADS>>>(n, da, db, dc); \
+        cudaDeviceSynchronize(); \
+        print_device_vec(dc, n);
+    EW3_DISPATCH(elementwise_less_than)
+    EW3_DISPATCH(elementwise_more_than)
+    EW3_DISPATCH(elementwise_less_than_or_eq)
+    EW3_DISPATCH(elementwise_and)
+
+    } else if (strcmp(op, "elementwise_not") == 0) {
+        float* da = read_device_vec(argv[4], n);
+        float* dc = alloc_device_vec(n);
+        if (is_cg(ver))  k_elementwise_not_cg<<<1, THREADS>>>(n, da, dc);
+        else             k_elementwise_not_simple<<<1, THREADS>>>(n, da, dc);
+        cudaDeviceSynchronize();
+        print_device_vec(dc, n);
+
+#define EWS_DISPATCH(NAME) \
+    } else if (strcmp(op, #NAME) == 0) { \
+        float scalar = atof(argv[4]); \
+        float* da = read_device_vec(argv[5], n); \
+        float* dc = alloc_device_vec(n); \
+        if (is_cg(ver))  k_##NAME##_cg<<<1, THREADS>>>(n, da, scalar, dc); \
+        else             k_##NAME##_simple<<<1, THREADS>>>(n, da, scalar, dc); \
+        cudaDeviceSynchronize(); \
+        print_device_vec(dc, n);
+    EWS_DISPATCH(elementwise_mult_scalar)
+    EWS_DISPATCH(elementwise_max_scalar)
+    EWS_DISPATCH(elementwise_min_scalar)
+
+    } else if (strcmp(op, "elementwise_less_than_scalar") == 0) {
+        float scalar = atof(argv[4]);
+        float* da = read_device_vec(argv[5], n);
+        float* dc = alloc_device_vec(n);
+        k_elementwise_less_than_scalar_simple<<<1, THREADS>>>(n, da, scalar, dc);
         cudaDeviceSynchronize();
         print_device_vec(dc, n);
 

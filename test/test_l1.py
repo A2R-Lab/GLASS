@@ -349,3 +349,59 @@ def test_prefix_sum_incl(bins, n, version):
     result = run_op(bins["l1"], "prefix_sum_incl", version, args=[n], inputs=[x])
     expected = np.cumsum(x).astype(np.float32)
     assert np.allclose(result, expected, rtol=1e-3, atol=1e-4)
+
+
+# ── comparison / logic / scalar elementwise (added coverage) ────────────────
+@pytest.mark.parametrize("n", SIZES)
+@pytest.mark.parametrize("version", CG_SIMPLE)
+@pytest.mark.parametrize("op,ref", [
+    ("elementwise_less_than",       lambda a, b: (a < b).astype(np.float32)),
+    ("elementwise_more_than",       lambda a, b: (a > b).astype(np.float32)),
+    ("elementwise_less_than_or_eq", lambda a, b: (a <= b).astype(np.float32)),
+])
+def test_elementwise_compare(bins, n, version, op, ref):
+    a = RNG.random(n).astype(np.float32)
+    b = RNG.random(n).astype(np.float32)
+    result = run_op(bins["l1"], op, version, args=[n], inputs=[a, b])
+    assert np.allclose(result, ref(a, b), rtol=RTOL, atol=ATOL)
+
+
+@pytest.mark.parametrize("n", SIZES)
+@pytest.mark.parametrize("version", CG_SIMPLE)
+def test_elementwise_and(bins, n, version):
+    # logical AND needs zeros to exercise both branches
+    a = RNG.integers(0, 2, n).astype(np.float32)
+    b = RNG.integers(0, 2, n).astype(np.float32)
+    result = run_op(bins["l1"], "elementwise_and", version, args=[n], inputs=[a, b])
+    assert np.allclose(result, ((a != 0) & (b != 0)).astype(np.float32), rtol=RTOL, atol=ATOL)
+
+
+@pytest.mark.parametrize("n", SIZES)
+@pytest.mark.parametrize("version", CG_SIMPLE)
+def test_elementwise_not(bins, n, version):
+    a = RNG.integers(0, 2, n).astype(np.float32)
+    result = run_op(bins["l1"], "elementwise_not", version, args=[n], inputs=[a])
+    assert np.allclose(result, (a == 0).astype(np.float32), rtol=RTOL, atol=ATOL)
+
+
+@pytest.mark.parametrize("n", SIZES)
+@pytest.mark.parametrize("version", CG_SIMPLE)
+@pytest.mark.parametrize("op,ref", [
+    ("elementwise_mult_scalar", lambda a, s: a * s),
+    ("elementwise_max_scalar",  lambda a, s: np.maximum(a, s)),
+    ("elementwise_min_scalar",  lambda a, s: np.minimum(a, s)),
+])
+def test_elementwise_scalar(bins, n, version, op, ref):
+    a = RNG.random(n).astype(np.float32)
+    s = np.float32(0.5)
+    result = run_op(bins["l1"], op, version, args=[n, float(s)], inputs=[a])
+    assert np.allclose(result, ref(a, s), rtol=RTOL, atol=ATOL)
+
+
+@pytest.mark.parametrize("n", SIZES)
+def test_elementwise_less_than_scalar(bins, n):
+    a = RNG.random(n).astype(np.float32)
+    s = np.float32(0.5)
+    result = run_op(bins["l1"], "elementwise_less_than_scalar", "simple",
+                    args=[n, float(s)], inputs=[a])
+    assert np.allclose(result, (a < s).astype(np.float32), rtol=RTOL, atol=ATOL)
