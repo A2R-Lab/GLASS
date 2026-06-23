@@ -43,6 +43,33 @@ An internal box-constrained QP solver, `glass::internal::box_qp` (`src/L3/box_qp
 First pick the **execution scope**: one block per problem (the default `glass::` /
 `glass::cgrps::` / `glass::nvidia::` surface) or one warp per problem
 (`glass::warp::`, when you're packing many tiny independent problems into a block).
+### Measured defaults (batched throughput)
+
+From the three-contender scaling sweep (`bench/MEGA_SWEEP_RESULTS.md`, **RTX 5090 /
+sm_120** — breakevens shift on other GPUs, so re-run `bench/run_mega_sweep.sh` on yours).
+
+**Most builds don't link MathDx — start here (warp vs block, no dependency):**
+
+| op | default | block `TB` | warp `WPB` | why |
+|----|---------|-----------|-----------|-----|
+| **dot** | **warp** at every N | 64 | 8–16 | a reduction can't use a block; warp wins 2–6× |
+| **gemv** | **warp** ≤ N≈32, **block** ≥ N≈48 | 64–128 | 2–4 | |
+| **gemm** | **warp** ≤ N≈8, else **block** | scale 64→256 with N | 2–4 | block's extra threads earn their keep once N≥12 |
+| **chol / trsv / posv** | **warp**, block fallback **TB=32** | **32** | 2–4 | extra threads idle on the serial pivot — TB>32 *hurts* |
+
+One rule: **warp-per-problem by default**; gemv → block past N≈48, gemm → block once
+it's non-tiny. Pack **2–4 warps/block** (8–16 for dot).
+
+**If you link MathDx** (`glass::nvidia::`), the vendor path wins a *middle band* (f32):
+gemm **N≈16–64** (block above — cuBLASDx is smem-capped past 64 here), chol/posv
+**N≥16 through 128** (cuSOLVERDx, 1.5–2.7×), trsv only **N≈16–32** (warp wins above —
+cuSOLVERDx's triangular solve scales poorly). **f64** is narrower (≈ N=16–64; the double
+descriptors hit the smem cap at 64). For a *single* large problem (batch≈1), the vendor
+path wins factor/solve/gemm from N≈32 (up to ~8×). Full per-op × per-precision tables:
+[`bench/MEGA_SWEEP_RESULTS.md`](bench/MEGA_SWEEP_RESULTS.md).
+
+### Decision procedure
+
 For the block-scoped backends, three questions decide which to call:
 
 1. **Are sizes known at compile time?**

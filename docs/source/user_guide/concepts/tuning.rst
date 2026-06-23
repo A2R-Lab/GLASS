@@ -16,6 +16,54 @@ Five per-API decision templates live in ``_glass_tuning`` (gemm, gemv,
 gemm_batched_1d, row_strided_gemm, row_strided_gemv); each can be specialized
 independently for a given (shape, SM).
 
+Picking a backend: measured defaults
+------------------------------------
+
+Before the nvidia dispatch table (below), the higher-level question is *warp vs
+block vs nvidia* for your op and size. The three-contender sweep
+(``bench/run_mega_sweep.sh`` → ``bench/MEGA_SWEEP_RESULTS.md``) measures all three on
+one ns/problem axis. Numbers below are **RTX 5090 / sm_120**; breakevens shift on other
+GPUs, so re-run the sweep on yours.
+
+**Most builds don't link MathDx — start with warp vs block (no dependency):**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 26 34 20 20
+
+   * - op
+     - default (batched throughput)
+     - block ``TB``
+     - warp ``WPB``
+   * - ``dot``
+     - **warp** at every N (2–6×)
+     - 64
+     - 8–16
+   * - ``gemv``
+     - **warp** ≤ N≈32, **block** ≥ N≈48
+     - 64–128
+     - 2–4
+   * - ``gemm``
+     - **warp** ≤ N≈8, else **block**
+     - scale 64→256 with N
+     - 2–4
+   * - ``chol`` / ``trsv`` / ``posv``
+     - **warp**; block fallback **TB=32**
+     - 32
+     - 2–4
+
+Rule of thumb: **warp-per-problem by default**; ``gemv`` → block past N≈48, ``gemm`` →
+block once non-tiny. Factor/solve want block ``TB=32`` — extra threads idle on the
+serial pivot and TB>32 *hurts*.
+
+**If you link MathDx** (``glass::nvidia::``), the vendor path wins a middle band (f32):
+``gemm`` N≈16–64 (block above; cuBLASDx is smem-capped past 64 here), ``chol``/``posv``
+N≥16 through 128 (cuSOLVERDx, 1.5–2.7×), ``trsv`` only N≈16–32 (warp wins above). In
+**f64** the band is narrower (≈ N=16–64; the double descriptors hit the ~99 KB opt-in
+smem cap at 64). For a *single* large problem (batch≈1), the vendor path wins
+factor/solve/gemm from N≈32 (up to ~8×). See ``bench/MEGA_SWEEP_RESULTS.md`` for the full
+per-op × per-precision tables.
+
 Why bother?
 -----------
 
