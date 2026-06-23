@@ -84,7 +84,7 @@ For the block-scoped backends, three questions decide which to call:
 | Compile-time sizes inside an existing kernel that uses a different thread count (e.g. GRiD's 352-thread launches) | `glass::nvidia::gemm<float, M, N, K, TC>(...)` with `DEFINE_NVIDIA_GEMM_BLOCKDIM(M,N,K,TC)` | Pins cuBLASDx's `BlockDim<TC,1,1>`; lets you launch with any thread count ≥ TC ([P0-1 in the design doc](glass-rfc-batched-1d.md)) |
 | Need a transposed B (or row-major A/B/C) in the NVIDIA path | `glass::nvidia::gemm<...,LA,LB,LC>` with `DEFINE_NVIDIA_GEMM_BLOCKDIM_LAYOUT(...)` or `_TRANSB` alias | cuBLASDx Arrangement; pure-SIMT fallback no longer needed |
 | Linear solve (`Mx = b` for SPD `M`) | `glass::nvidia::posv<float, N, NRHS>(...)` | cuSOLVERDx fused factor + solve; faster than chol+trsm at N ≥ 8 |
-| Cholesky alone (factor only, custom solve) | `glass::nvidia::chol_inplace<float, N>(...)` | cuSOLVERDx potrf |
+| Cholesky alone (factor only, custom solve) | `glass::nvidia::cholDecomp_InPlace<float, N>(...)` | cuSOLVERDx potrf |
 | General linear solve (non-SPD) | `glass::nvidia::gesv_no_pivot<float, N, NRHS>(...)` | cuSOLVERDx LU + solve |
 | Least-squares / over- or under-determined | `glass::nvidia::gels<float, M, N, NRHS>(...)` | cuSOLVERDx QR (or LQ for under-det) + solve |
 | `BATCH` independent GEMMs of the same shape, want to amortize launch | `glass::nvidia::gemm_batched<...,BATCH,TC>` | Single block, all batches active via `threadIdx.y` |
@@ -240,7 +240,7 @@ Where it applies (full surface as of 2026-05):
   `_GLASS_GEMM_BD` / `_GLASS_GEMM_BATCHED_BD`.
 - **L3 SIMT** (`l3_simt.cuh`): `gemm_batched_1d`,
   `gemm_strided_batched_1d`.
-- **LAPACK** (`lapack.cuh`): `posv`, `chol_inplace`, `gesv_no_pivot`,
+- **LAPACK** (`lapack.cuh`): `posv`, `cholDecomp_InPlace`, `gesv_no_pivot`,
   `gels`, `trsm` — primary templates and macro-emitted
   specializations. Interior factor / solve / writeback syncs are NOT
   gated; only the final barrier before return is.
@@ -428,7 +428,7 @@ __global__ void k(float* A, float* B, float* C) {
 }
 ```
 
-#### 5e. Linear solvers (cuSOLVERDx — `chol_inplace`, `trsm`, `posv`, …)
+#### 5e. Linear solvers (cuSOLVERDx — `cholDecomp_InPlace`, `trsm`, `posv`, …)
 
 ```cpp
 #include "glass-nvidia.cuh"
@@ -451,7 +451,7 @@ Available cuSOLVERDx wrappers (all follow the same `DEFINE_NVIDIA_<NAME>` / `_BL
 
 | Function | Signature | NumPy / SciPy equivalent |
 |----------|-----------|--------------------------|
-| `chol_inplace<T, N>` | `(A, smem)` | `np.linalg.cholesky(A)` (lower) |
+| `cholDecomp_InPlace<T, N>` | `(A, smem)` | `np.linalg.cholesky(A)` (lower) |
 | `trsm<T, M, N>` | `(alpha, L, B, smem)` | `scipy.linalg.solve_triangular(L, alpha*B, lower=True)` |
 | `posv<T, N, NRHS>` | `(A, B, smem)` | `np.linalg.solve(A, B)` (SPD A; A is destroyed) |
 | `potrs<T, N, NRHS>` | `(L, B, smem)` | `scipy.linalg.cho_solve((L, True), B)` |
@@ -799,7 +799,7 @@ The benchmark suite compares GLASS variants against block-level CUDA library bas
 | `bench_blockdim.cu` | `glass::nvidia::gemm` with cuBLASDx-chosen block_dim vs caller-pinned `BlockDim<128>` vs `BlockDim<352>` (the GRiD iiwa14 launch that pre-fix would have deadlocked) |
 | `bench_gemm_batched.cu` | `glass::nvidia::gemm_batched<...,BATCH>` vs naive `for(b)` loop calling `gemm` BATCH times, for BATCH ∈ {4, 8, 16, 32} |
 | `bench_gemm_batched_1d.cu` | New 1D-launch `glass::nvidia::gemm_batched_1d` (SIMT vs cuBLASDx), for BATCH ∈ {4, 8, 16, 32} — feeds the autotune table |
-| `bench_lapack.cu` *(needs cuSOLVERDx)* | pure-SIMT `glass::cholDecomp_InPlace` / `glass::trsm` vs `glass::nvidia::chol_inplace` / `trsm` / `posv` (fused) |
+| `bench_lapack.cu` *(needs cuSOLVERDx)* | pure-SIMT `glass::cholDecomp_InPlace` / `glass::trsm` vs `glass::nvidia::cholDecomp_InPlace` / `trsm` / `posv` (fused) |
 
 CUB is bundled with CUDA 11+. cuBLASDx and cuSOLVERDx ship together in NVIDIA MathDx (see [`bench/INSTALL.md`](bench/INSTALL.md)).
 

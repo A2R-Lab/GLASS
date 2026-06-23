@@ -73,7 +73,7 @@ The MathDx-specific flags:
 | `-I$MATHDX_ROOT/include` | cuBLASDx headers |
 | `-I$MATHDX_ROOT/external/cutlass/include` | CUTLASS headers cuBLASDx depends on |
 
-> The cuSOLVERDx (LAPACK: `chol_inplace` / `posv` / `gels` / …) path is **not**
+> The cuSOLVERDx (LAPACK: `cholDecomp_InPlace` / `posv` / `gels` / …) path is **not**
 > covered by these examples — it additionally requires linking a precompiled
 > device library (`-rdc=true -dlto -L$MATHDX_ROOT/lib -lcusolverdx -lcublas
 > -lcusolver -lcudart`). See the top-level README section 5e and

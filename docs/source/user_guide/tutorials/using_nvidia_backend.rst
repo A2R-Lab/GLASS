@@ -169,7 +169,7 @@ Linear solvers (cuSOLVERDx)
    constexpr auto smem = glass::nvidia::posv_smem_size<float, 7, 1, 256>();
    k<<<1, 256, smem>>>(dA, db);
 
-Available cuSOLVERDx wrappers: ``chol_inplace``, ``trsm``, ``posv``, ``potrs``,
+Available cuSOLVERDx wrappers: ``cholDecomp_InPlace``, ``trsm``, ``posv``, ``potrs``,
 ``getrf_no_pivot``, ``getrs_no_pivot``, ``gesv_no_pivot``, ``geqrf``, ``gels``.
 All follow the same ``DEFINE_NVIDIA_<NAME>`` macro pattern and are **not**
 pre-instantiated — call the macro per size you need.

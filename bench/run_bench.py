@@ -313,7 +313,7 @@ def main():
         print_table("Batched GEMM (1D launch)", batched_1d_rows)
         all_results["gemm_batched_1d"] = batched_1d_rows
 
-    # bench_lapack: cuSOLVERDx-backed chol_inplace / trsm / posv vs pure-SIMT
+    # bench_lapack: cuSOLVERDx-backed cholDecomp_InPlace / trsm / posv vs pure-SIMT
     if "bench_lapack" in binaries:
         print("\nRunning bench_lapack (chol/trsm/posv: pure-SIMT vs cuSOLVERDx)...")
         lapack_rows = []

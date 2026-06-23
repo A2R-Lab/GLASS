@@ -52,7 +52,7 @@ The full surface as of 2026-05:
   ``_GLASS_GEMM_BATCHED_BD``.
 * **L3 SIMT** (``l3_simt.cuh``): ``gemm_batched_1d``,
   ``gemm_strided_batched_1d``.
-* **LAPACK** (``lapack.cuh``): ``posv``, ``chol_inplace``, ``gesv_no_pivot``,
+* **LAPACK** (``lapack.cuh``): ``posv``, ``cholDecomp_InPlace``, ``gesv_no_pivot``,
   ``gels``, ``trsm`` — primary templates and macro-emitted specializations.
 
 .. note::

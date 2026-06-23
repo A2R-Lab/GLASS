@@ -172,7 +172,7 @@ namespace glass { namespace nvidia {
 }}
 template<typename T,int N> __global__ void kn_chol(T* A) {
     extern __shared__ char s[]; int p=blockIdx.x;
-    glass::nvidia::chol_inplace<T,N,NV_LP_TB>(A+(size_t)p*N*N, s);
+    glass::nvidia::cholDecomp_InPlace<T,N,NV_LP_TB>(A+(size_t)p*N*N, s);
 }
 template<typename T,int N> __global__ void kn_trsv(T* A, T* x) {
     extern __shared__ char s[]; int p=blockIdx.x;
@@ -256,7 +256,7 @@ static double nv_op_time(Op op, T* A, T* B, T* C, T* x, T* y, int reps) {
 #if MEGA_NV_LAPACK
     if constexpr (nv_lapack_ok<T,N>()) {
         if (op == CHOL) {
-            size_t smem = glass::nvidia::chol_inplace_smem_size<T,N,NV_LP_TB>();
+            size_t smem = glass::nvidia::cholDecomp_InPlace_smem_size<T,N,NV_LP_TB>();
             return nv_timed(kn_chol<T,N>, smem, [&]{ kn_chol<T,N><<<grid,NV_LP_TB,smem>>>(A); }, reps);
         }
         if (op == TRSV) {

@@ -4,7 +4,7 @@
  * @brief cuSOLVERDx-backed single-block LAPACK wrappers for `glass::nvidia::`.
  *
  * Block-level, compile-time-size factorizations and solves: Cholesky
- * (chol_inplace), triangular solve (trsm), SPD solve (posv / potrs), unpivoted
+ * (cholDecomp_InPlace), triangular solve (trsm), SPD solve (posv / potrs), unpivoted
  * LU (getrf_no_pivot / getrs_no_pivot / gesv_no_pivot), QR (geqrf), and
  * least-squares (gels). Each is a static_assert stub by default; instantiate a
  * shape with the matching `DEFINE_NVIDIA_<NAME>` / `_BLOCKDIM` / `_SM` /
@@ -24,7 +24,7 @@
 // glass::nvidia LAPACK — cuSOLVERDx-backed Cholesky and triangular solve.
 //
 // Currently supported (matching GRiD's chol_InPlace + trsm contract):
-//   chol_inplace<T, N>(A, smem)
+//   cholDecomp_InPlace<T, N>(A, smem)
 //       In-place Cholesky factorization of an N×N column-major SPD matrix:
 //       A := L  s.t.  A = L * L^T  (lower-triangular fill mode).
 //
@@ -39,10 +39,10 @@
 //
 // Example:
 //   DEFINE_NVIDIA_CHOL_BLOCKDIM(7, 352)
-//   constexpr auto smem    = glass::nvidia::chol_inplace_smem_size<float, 7, 352>();
-//   constexpr auto threads = glass::nvidia::chol_inplace_threads<float, 7, 352>();
+//   constexpr auto smem    = glass::nvidia::cholDecomp_InPlace_smem_size<float, 7, 352>();
+//   constexpr auto threads = glass::nvidia::cholDecomp_InPlace_threads<float, 7, 352>();
 //   kernel<<<1, threads, smem>>>(d_A);
-//   glass::nvidia::chol_inplace<float, 7, 352>(A, smem_ptr);
+//   glass::nvidia::cholDecomp_InPlace<float, 7, 352>(A, smem_ptr);
 
 #ifndef SMS
 #define SMS 860
@@ -66,30 +66,30 @@
  * @tparam SM_VAL        Target SM architecture (default = SMS).
  * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
  * @param  A             Pointer to the N×N column-major SPD matrix; overwritten with L.
- * @param  smem          Shared scratch (>= chol_inplace_smem_size<...>()).
+ * @param  smem          Shared scratch (>= cholDecomp_InPlace_smem_size<...>()).
  */
 template <typename T, uint32_t N, uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS,
           bool TRAILING_SYNC = true>
-__device__ void chol_inplace(T* A, char* smem)
+__device__ void cholDecomp_InPlace(T* A, char* smem)
 {
     static_assert(sizeof(T) == 0,
-        "glass::nvidia::chol_inplace<T,N,BLOCK_THREADS,SM_VAL> not available — "
+        "glass::nvidia::cholDecomp_InPlace<T,N,BLOCK_THREADS,SM_VAL> not available — "
         "add DEFINE_NVIDIA_CHOL* in your .cu file.");
 }
 
 /**
- * @brief Shared-memory bytes needed by `chol_inplace<...>` (host-callable, constexpr).
+ * @brief Shared-memory bytes needed by `cholDecomp_InPlace<...>` (host-callable, constexpr).
  * @tparam T T scalar; @tparam N dim; @tparam BLOCK_THREADS pinned BlockDim; @tparam SM_VAL SM arch.
  */
 template <typename T, uint32_t N, uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
-constexpr std::size_t chol_inplace_smem_size() { return 0; }
+constexpr std::size_t cholDecomp_InPlace_smem_size() { return 0; }
 
 /**
- * @brief Thread count cuSOLVERDx wants for `chol_inplace<...>` (host-callable, constexpr).
+ * @brief Thread count cuSOLVERDx wants for `cholDecomp_InPlace<...>` (host-callable, constexpr).
  * @tparam T scalar; @tparam N dim; @tparam BLOCK_THREADS pinned BlockDim; @tparam SM_VAL SM arch.
  */
 template <typename T, uint32_t N, uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
-constexpr uint32_t chol_inplace_threads() { return 256; }
+constexpr uint32_t cholDecomp_InPlace_threads() { return 256; }
 
 /**
  * @brief Lower-triangular solve `L*X = alpha*B` in place (cuSOLVERDx trsm).
@@ -174,22 +174,22 @@ constexpr uint32_t trsm_threads() { return 256; }
         }                                                                                     \
     }                                                                                         \
     template <>                                                                               \
-    __device__ inline void chol_inplace<CT, N, 0, ARCH, true>(CT* A, char* smem)        \
+    __device__ inline void cholDecomp_InPlace<CT, N, 0, ARCH, true>(CT* A, char* smem)        \
     {                                                                                         \
         _nvidia_chol_impl_##N##_##CT##_bd0_sm##ARCH::template run<true>(A, smem);                    \
     }                                                                                         \
     template <>                                                                               \
-    __device__ inline void chol_inplace<CT, N, 0, ARCH, false>(CT* A, char* smem)       \
+    __device__ inline void cholDecomp_InPlace<CT, N, 0, ARCH, false>(CT* A, char* smem)       \
     {                                                                                         \
         _nvidia_chol_impl_##N##_##CT##_bd0_sm##ARCH::template run<false>(A, smem);                   \
     }                                                                                         \
     template <>                                                                               \
-    constexpr std::size_t chol_inplace_smem_size<CT, N, 0, ARCH>()                         \
+    constexpr std::size_t cholDecomp_InPlace_smem_size<CT, N, 0, ARCH>()                         \
     {                                                                                         \
         return _nvidia_chol_impl_##N##_##CT##_bd0_sm##ARCH::smem_bytes;                              \
     }                                                                                         \
     template <>                                                                               \
-    constexpr uint32_t chol_inplace_threads<CT, N, 0, ARCH>()                              \
+    constexpr uint32_t cholDecomp_InPlace_threads<CT, N, 0, ARCH>()                              \
     {                                                                                         \
         return _nvidia_chol_impl_##N##_##CT##_bd0_sm##ARCH::block_threads;                           \
     }
@@ -227,22 +227,22 @@ constexpr uint32_t trsm_threads() { return 256; }
         }                                                                                     \
     }                                                                                         \
     template <>                                                                               \
-    __device__ inline void chol_inplace<CT, N, TC, ARCH, true>(CT* A, char* smem)       \
+    __device__ inline void cholDecomp_InPlace<CT, N, TC, ARCH, true>(CT* A, char* smem)       \
     {                                                                                         \
         _nvidia_chol_impl_##N##_##CT##_bd##TC##_sm##ARCH::template run<true>(A, smem);               \
     }                                                                                         \
     template <>                                                                               \
-    __device__ inline void chol_inplace<CT, N, TC, ARCH, false>(CT* A, char* smem)      \
+    __device__ inline void cholDecomp_InPlace<CT, N, TC, ARCH, false>(CT* A, char* smem)      \
     {                                                                                         \
         _nvidia_chol_impl_##N##_##CT##_bd##TC##_sm##ARCH::template run<false>(A, smem);              \
     }                                                                                         \
     template <>                                                                               \
-    constexpr std::size_t chol_inplace_smem_size<CT, N, TC, ARCH>()                        \
+    constexpr std::size_t cholDecomp_InPlace_smem_size<CT, N, TC, ARCH>()                        \
     {                                                                                         \
         return _nvidia_chol_impl_##N##_##CT##_bd##TC##_sm##ARCH::smem_bytes;                         \
     }                                                                                         \
     template <>                                                                               \
-    constexpr uint32_t chol_inplace_threads<CT, N, TC, ARCH>()                             \
+    constexpr uint32_t cholDecomp_InPlace_threads<CT, N, TC, ARCH>()                             \
     {                                                                                         \
         return _nvidia_chol_impl_##N##_##CT##_bd##TC##_sm##ARCH::block_threads;                      \
     }
@@ -422,7 +422,7 @@ constexpr uint32_t trsm_threads() { return 256; }
 // =============================================================================
 // Part 2 — Expanded cuSOLVERDx solver suite
 //   posv          — SPD factor + solve in one call
-//   potrs         — SPD solve given the L factor from chol_inplace
+//   potrs         — SPD solve given the L factor from cholDecomp_InPlace
 //   getrf_no_pivot — LU (no pivoting) factor in place
 //   getrs_no_pivot — LU solve given the LU factor
 //   gesv_no_pivot  — LU + solve in one call
@@ -430,7 +430,7 @@ constexpr uint32_t trsm_threads() { return 256; }
 //   gels           — least-squares solve (over- or under-determined)
 //
 // All seven follow the same primary-template + private-core-macro + _E
-// indirection + public DEFINE convenience-macro pattern as chol_inplace/trsm.
+// indirection + public DEFINE convenience-macro pattern as cholDecomp_InPlace/trsm.
 // Each provides _smem_size and _threads constexpr queries.
 // =============================================================================
 
@@ -591,13 +591,13 @@ constexpr uint32_t posv_threads() { return 256; }
 #define DEFINE_NVIDIA_POSV_BLOCKDIM_PREC_SM(N, NRHS, TC, CT, SM)   _GLASS_POSV_BD_E(N, NRHS, TC, CT, SM)
 
 // --- potrs (SPD solve given L) ----------------------------------------------
-// Solves L·L^T·X = B given the L factor from chol_inplace.  B is overwritten
+// Solves L·L^T·X = B given the L factor from cholDecomp_InPlace.  B is overwritten
 // with X.  Smem layout: [Ls: N*N] [Bs: N*NRHS] [solver_smem].
 
 /**
  * @brief SPD solve given the Cholesky factor (cuSOLVERDx potrs).
  *
- * Solves `L*Lᵀ*X = B` given the lower factor L from chol_inplace; B is
+ * Solves `L*Lᵀ*X = B` given the lower factor L from cholDecomp_InPlace; B is
  * overwritten with X. Primary template is a static_assert stub — add a
  * `DEFINE_NVIDIA_POTRS*` specialization. Requires cuSOLVERDx / MathDx
  * (MATHDX_ROOT). SciPy equivalent: `cho_solve((L, True), B)`.

@@ -33,7 +33,7 @@ What's in ``bench/``
      - 1D-launch ``gemm_batched_1d`` (SIMT vs cuBLASDx) — feeds the autotune table
    * - ``bench_lapack.cu`` *(needs cuSOLVERDx)*
      - pure-SIMT ``glass::cholDecomp_InPlace`` / ``trsm`` vs
-       ``glass::nvidia::chol_inplace`` / ``trsm`` / ``posv`` (fused)
+       ``glass::nvidia::cholDecomp_InPlace`` / ``trsm`` / ``posv`` (fused)
 
 CUB ships with CUDA 11+. cuBLASDx and cuSOLVERDx ship together in NVIDIA MathDx
 — see :doc:`../getting_started/installation`.
