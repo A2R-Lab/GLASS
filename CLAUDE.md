@@ -28,7 +28,7 @@ backends, plus a **warp-scoped** surface for warp-per-problem kernels:
 | Namespace | Scope | What it is | Header |
 |-----------|-------|------------|--------|
 | `glass::` | block | Hand-rolled pure-SIMT (`threadIdx`/`blockDim`). No deps. | `glass.cuh` |
-| `glass::cgrps::` | block | Same surface via cooperative groups. | `glass-cgrps.cuh` |
+| `glass::cgrps::` | block | Convenience alias of `glass::` — identical numerics (same SIMT loop, indexed via a `thread_group`); for cooperative-groups callers / arbitrary sub-block tiles. NOT a separately-tuned backend. | `glass-cgrps.cuh` |
 | `glass::nvidia::` | block | CUB / cuBLASDx / cuSOLVERDx, auto-dispatched by size. Needs MathDx (`MATHDX_ROOT`). | `glass-nvidia.cuh` |
 | `glass::warp::` | warp | Single-warp SIMT (`__shfl_*_sync`), *selected* L1/L2/L3 ops; `glass::warp::posv` is the composed warp-per-problem SPD solve (chol → forward/back `trsv`). Lives inline in the base L1/L2/L3 headers. | via `glass.cuh` |
 
