@@ -3,6 +3,31 @@
 Living status doc. Update the top as work lands. For onboarding read
 `docs/STARTUP_PROMPT.md` first.
 
+## 2026-06-23 — backend picker API + naming unification + coverage + examples
+
+Follow-on to the mega sweep / fp64 work (entry below): turned the measured ladder into a
+queryable API, unified op naming, closed test-coverage gaps, and added usage examples.
+
+- **Naming unified (clean break)** — `glass::nvidia::chol_inplace` → **`cholDecomp_InPlace`**
+  (+ `_smem_size`/`_threads` helpers) to match the base/warp op name (one operation, one name
+  across surfaces). No back-compat alias.
+- **Backend picker API** — `glass-defaults.cuh`: `suggested_backend<op,N,T>()` +
+  `suggested_block_threads<>()` / `suggested_warps_per_block<>()`, constexpr, seeded from the
+  sm_120 sweep. Host-/codegen-side (warp/block/nvidia need different launches). No-MathDx build
+  collapses the `nvidia` tier to its warp/block runner-up. Per-host override hook
+  (`GLASS_DEFAULTS_TABLE_LOCAL`) fed by **`autotune.py --emit-defaults <mega_sweep.txt>`**.
+  Validated by `test/cuda/test_defaults.cu` (static_asserts).
+- **Coverage closed** — f64 of the base+warp ops (`test_base_f64`, 54 cases incl. f64
+  thread-invariance for the barrier ops); 9 missing elementwise ops (compare/logic/scalar,
+  cg+simple); `warp::gemm` multi-warp. The audit's "warp::chol untested" + "gemv/gemm arg-order
+  divergent" were false alarms (tested; matches the compile-time base signature).
+- **cgrps reframed** — documented as a convenience alias of `glass::` (identical numerics, not a
+  tuned/timed backend); out of the picker/autotune scope.
+- **Examples** — `examples/09_backend_picker.cu` (query → dispatch a real solve) +
+  `bench/explore_sweep.ipynb` (plot the ladder + winner table from a sweep run).
+- Decisions/plan for the remaining "longer tail" (autotune as the one generator; query-helpers,
+  no runtime dispatcher; GRiD consumes) live in `docs/open-tasks/launch_helper_api.md` (local).
+
 ## 2026-06-23 — mega sweep (warp/block/nvidia) + fp64 nvidia wrappers
 
 Built a three-contender scaling bench and extended the nvidia wrappers to double.

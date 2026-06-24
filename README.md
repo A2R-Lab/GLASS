@@ -137,6 +137,14 @@ you can override these defaults via the tuning table — see
 > heuristic flags as SIMT territory. Only larger shapes still need a
 > `DEFINE_NVIDIA_GEMM*` macro.
 
+**Precision (`float` / `double`).** The `glass::nvidia::` wrappers — `gemm`, `gemv`,
+`cholDecomp_InPlace`, `trsm`, `posv` — support both `float` and `double`. The plain
+`DEFINE_NVIDIA_*(...)` macros instantiate the `float` path (back-compat); the
+`DEFINE_NVIDIA_*_PREC(..., double)` variants instantiate the double path
+(`cublasdx`/`cusolverdx` `Precision<double>`). Note that double descriptors use 2× the
+shared memory, so the largest `N` that fits the per-block opt-in cap is smaller than for
+`float` (e.g. on RTX 5090 / sm_120 the f64 `nvidia` band is roughly `N ≈ 16–64`).
+
 **When NOT to use `glass::nvidia`**:
 - Sizes only known at runtime (the templates require compile-time `M`, `N`, `K`).
 - You can't add a `DEFINE_NVIDIA_GEMM*` macro for the size you need (e.g. you want every conceivable `(M, N, K)` triple — the macro instantiation cost grows fast).

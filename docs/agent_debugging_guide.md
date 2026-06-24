@@ -356,6 +356,30 @@ NOT. Rules:
 
 ---
 
+## 6. Vendor-descriptor + precision gotchas (2026-06-23 mega-sweep / fp64 work)
+
+- **Dynamic-smem opt-in cap is GPU-specific and lower than you think.** RTX 5090 / sm_120
+  caps opt-in dynamic shared memory at **99 KB** (`cudaDevAttrMaxSharedMemoryPerBlockOptin`),
+  not the 227 KB of data-center Blackwell. A cuBLASDx/cuSOLVERDx descriptor whose
+  `shared_memory_size` exceeds that fails to launch. Query the cap at runtime; don't assume.
+- **An unchecked failed launch reads as a *win* in a timing bench.** When a launch fails
+  (e.g. smem > opt-in cap, or `cudaFuncSetAttribute` rejected), the kernel never runs and the
+  timing loop measures ~1 ns/problem — which the "lower is better" comparison reports as a
+  huge speedup. ALWAYS check `cudaGetLastError()` / the sync return after a vendor launch and
+  drop the data point (return -1) on failure. See `bench/bench_mega_sweep.cu::nv_timed`.
+- **Parameterizing the float-only nvidia macros on a scalar type.** The cuBLASDx/cuSOLVERDx
+  wrapper macros were `float`-hardcoded. To add `double`: within each core macro, every literal
+  `float` → a `CT` token (safe — no other `f`-word collides: `1.0f`/`FillMode`/`fill_mode` don't
+  contain "float"), thread `CT` before the always-last `ARCH` param, and add a `##CT##` segment
+  to the impl-namespace name so float/double instances don't collide. Keep the existing
+  `DEFINE_NVIDIA_*` as `_PREC(..., float)` aliases (back-compat). Validate BOTH precisions
+  (`*_smem_size` doubling for f64 is the cheap first signal; a numpy-oracle residual is the real one).
+- **fp64 vendor descriptors hit the smem cap sooner.** f64 doubles every byte, so the nvidia
+  leg caps at a smaller N than f32 (gemm f64 ~N64 vs f32 ~N64-but-via-different-bytes; chol/posv
+  f64 to ~96). The backend picker (`glass-defaults.cuh`) encodes a narrower f64 nvidia band.
+
+---
+
 ### Quick reference: which bug class fits the symptom
 
 | Symptom | Most-likely class |
@@ -370,3 +394,5 @@ NOT. Rules:
 | Edits seem to have no effect | Stale compile cache / header not hashed (§4) |
 | Warp op correct standalone, wrong only in a larger `__restrict__` kernel | Shared-reread broadcast miscompile — use `__shfl` (§1g) |
 | Block-tridiagonal `glass::bdmv`/`pcg` wrong at edges or non-warp thread count | Layout/launch contract (§1f) |
+| Vendor op times ~1 ns / "wins" by 100×+ | Failed launch (smem > opt-in cap) read as a win — error-check it (§6) |
+| f64 vendor op won't launch above some N | f64 descriptor smem > opt-in cap; cap is lower for double (§6) |
