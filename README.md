@@ -99,7 +99,7 @@ For the block-scoped backends, three questions decide which to call:
 | Sizes only known at runtime | `glass::gemm(m, n, k, ...)` | Pure-SIMT, accepts dynamic args |
 | Compile-time sizes, small matrices (≤ ~8×8), simple kernel | `glass::gemm<float, M, N, K>(...)` | Compiler unrolls inner loops; ~1 µs/op overhead is hard to beat for tiny sizes |
 | Compile-time sizes, larger matrices, tensor-core hardware | `glass::nvidia::gemm<float, M, N, K>(...)` | cuBLASDx generates SM-specific tensor-core code |
-| Compile-time sizes inside an existing kernel that uses a different thread count (e.g. GRiD's 352-thread launches) | `glass::nvidia::gemm<float, M, N, K, TC>(...)` with `DEFINE_NVIDIA_GEMM_BLOCKDIM(M,N,K,TC)` | Pins cuBLASDx's `BlockDim<TC,1,1>`; lets you launch with any thread count ≥ TC ([P0-1 in the design doc](glass-rfc-batched-1d.md)) |
+| Compile-time sizes inside an existing kernel that uses a different thread count (e.g. GRiD's 352-thread launches) | `glass::nvidia::gemm<float, M, N, K, TC>(...)` with `DEFINE_NVIDIA_GEMM_BLOCKDIM(M,N,K,TC)` | Pins cuBLASDx's `BlockDim<TC,1,1>`; lets you launch with any thread count ≥ TC (see the [Batched-1D concept guide](docs/source/user_guide/concepts/batched_1d.rst)) |
 | Need a transposed B (or row-major A/B/C) in the NVIDIA path | `glass::nvidia::gemm<...,LA,LB,LC>` with `DEFINE_NVIDIA_GEMM_BLOCKDIM_LAYOUT(...)` or `_TRANSB` alias | cuBLASDx Arrangement; pure-SIMT fallback no longer needed |
 | Linear solve (`Mx = b` for SPD `M`) | `glass::nvidia::posv<float, N, NRHS>(...)` | cuSOLVERDx fused factor + solve; faster than chol+trsm at N ≥ 8 |
 | Cholesky alone (factor only, custom solve) | `glass::nvidia::cholDecomp_InPlace<float, N>(...)` | cuSOLVERDx potrf |
@@ -107,7 +107,7 @@ For the block-scoped backends, three questions decide which to call:
 | Least-squares / over- or under-determined | `glass::nvidia::gels<float, M, N, NRHS>(...)` | cuSOLVERDx QR (or LQ for under-det) + solve |
 | `BATCH` independent GEMMs of the same shape, want to amortize launch | `glass::nvidia::gemm_batched<...,BATCH,TC>` | Single block, all batches active via `threadIdx.y` |
 
-**Auto-dispatch.** As of round-2, `glass::nvidia::gemm<>`, `gemv<>`,
+**Auto-dispatch.** `glass::nvidia::gemm<>`, `gemv<>`,
 `row_strided_*`, and `gemm_batched_1d<>` are **auto-dispatching primary
 templates** that route to the pure-SIMT path (`::glass::*`) for shapes
 where SIMT wins, and to cuBLASDx via the `DEFINE_NVIDIA_*` macros for
@@ -130,7 +130,7 @@ compile-time message when missing.
 you can override these defaults via the tuning table — see
 "Tuning your local build" below.
 
-> **As of P1-4** (the auto-fallback PR), you can always write
+> You can always write
 > `glass::nvidia::gemm<float, M, N, K>(...)` regardless of size. The primary
 > template consults `should_use_cublasdx<T,M,N,K,SM>()` (see [Backend dispatch](#backend-dispatch--when-does-glassnvidiagemm-run-cublasdx-vs-simt)
 > below) and silently falls through to `glass::gemm<...>` for shapes the
@@ -154,7 +154,7 @@ shared memory, so the largest `N` that fits the per-block opt-in cap is smaller 
 
 ## Backend dispatch — when does `glass::nvidia::gemm` run cuBLASDx vs SIMT?
 
-As of [P1-4](glass-rfc-batched-1d.md), the primary `glass::nvidia::gemm<T,M,N,K,...>` template auto-dispatches:
+The primary `glass::nvidia::gemm<T,M,N,K,...>` template auto-dispatches:
 
 ```
                   caller writes:  glass::nvidia::gemm<float, M, N, K>(...)
@@ -195,11 +195,11 @@ glass::nvidia::print_dispatch<float, 32, 32, 32>();
 | Force cuBLASDx for a shape the heuristic puts in SIMT | Add `DEFINE_NVIDIA_GEMM(M,N,K)` in your `.cu` file. The explicit specialization always overrides the primary template. |
 | Force SIMT for a shape the heuristic puts in cuBLASDx | Call `::glass::gemm<T,M,N,K>(...)` directly (skip the `nvidia::` path). |
 | Per-host tuning without editing source | Run `python bench/autotune.py` to generate `bench/tuning/<hostname>.cuh`, then compile with `-DGLASS_TUNING_TABLE_LOCAL='"bench/tuning/<hostname>.cuh"'`. See `bench/TUNING.md`. |
-| Different SM in-tree (for a PR) | `python bench/autotune.py --in-tree` rewrites the marker-delimited specializations section inside `src/nvidia/tuning_table.cuh`, preserving the round-2 primaries above it. |
+| Different SM in-tree (for a PR) | `python bench/autotune.py --in-tree` rewrites the marker-delimited specializations section inside `src/nvidia/tuning_table.cuh`, preserving the auto-dispatching primaries above it. |
 
 #### Auto-tune for your hardware
 
-The shipped values are sensible defaults but small-GEMM perf is highly SM-dependent. The autotune covers all five round-2 primaries (`gemm`, `gemv`, `row_strided_gemv`, `row_strided_gemm`, `gemm_batched_1d`).
+The shipped values are sensible defaults but small-GEMM perf is highly SM-dependent. The autotune covers all five auto-dispatching primaries (`gemm`, `gemv`, `row_strided_gemv`, `row_strided_gemm`, `gemm_batched_1d`).
 
 ```bash
 # Detect SM, measure all default shapes for all 5 APIs, write per-host
@@ -788,7 +788,7 @@ constexpr bool     glass::nvidia::gemv_block_threads_valid<T, M, N, BT, SM_VAL>(
 
 These do **not** require a `DEFINE_NVIDIA_*` macro — they construct the GEMM type inline and read `block_dim` directly. Useful for codegen that wants to pick `MAX_PERF_LEVEL_THREADS` at generation time.
 
-#### Debug assertions (P1-4)
+#### Debug assertions
 
 Compile without `-DNDEBUG` and the wrappers `assert(blockDim >= GEMM::block_dim)` inside every `run()`. Misconfigured launches now fail with a clean assertion message rather than silently deadlocking. The assertions compile out under `-DNDEBUG`.
 
@@ -852,7 +852,7 @@ with **actual measurements on your hardware**:
 
 ```bash
 python3 bench/autotune.py
-# → measures all 5 round-2 primaries, writes bench/tuning/<hostname>.cuh.
+# → measures all 5 auto-dispatching primaries, writes bench/tuning/<hostname>.cuh.
 # → does NOT modify src/nvidia/tuning_table.cuh.
 #
 # Compile your project with:
@@ -867,7 +867,7 @@ The shipped global table (`src/nvidia/tuning_table.cuh`) is grown
 collaboratively — contributions are welcomed via PR. See
 [`bench/TUNING.md`](bench/TUNING.md) for the contributor workflow,
 including `autotune.py --in-tree` (writes specializations directly
-into the shipped table, preserving the round-2 primaries above it).
+into the shipped table, preserving the auto-dispatching primaries above it).
 
 Timing uses the GRiD pattern — the iteration loop runs inside the kernel to amortize launch overhead. Results are printed as a Markdown table and saved to `bench/results/bench_<hostname>.json`.
 

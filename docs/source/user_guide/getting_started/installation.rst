@@ -148,5 +148,13 @@ Required nvcc flags and known issues
   ``CUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT`` to silence the static asserts, but
   verify correctness on your target arch first.
 
+Next steps
+----------
+
+* :doc:`library_overview` — the single-block model and the call surfaces.
+* :doc:`../tutorials/quickstart` — a minimal end-to-end kernel.
+* :doc:`../tutorials/using_nvidia_backend` — a full compile-and-call walkthrough
+  for the MathDx backend.
+
 See :doc:`../tutorials/using_nvidia_backend` for a full compile-and-call
 walkthrough.

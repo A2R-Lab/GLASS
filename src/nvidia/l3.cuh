@@ -142,7 +142,7 @@ __device__ void gemm(T alpha, T* A, T* B, T beta, T* C, char* smem)
             "glass::nvidia::gemm<T,M,N,K,BLOCK_THREADS,LA,LB,LC,SM_VAL> is not "
             "available — should_use_cublasdx<> says cuBLASDx wins for this "
             "shape, so add a DEFINE_NVIDIA_GEMM* macro in your .cu file. "
-            "(See glass-rfc-batched-1d.md and bench/autotune.py.)");
+            "(See the Batched-1D concept guide in docs and bench/autotune.py.)");
     }
 }
 

@@ -95,15 +95,13 @@ Quick start
    saxpy_kernel<<<1, 256>>>(n, 2.0f, d_x, d_y);
 
 See :doc:`user_guide/tutorials/quickstart` for a complete, compilable example,
-and the :doc:`examples in the repository <user_guide/tutorials/quickstart>`.
+and :doc:`user_guide/tutorials/examples` for a worked program per concept.
 
 .. toctree::
    :hidden:
-   :caption: User Guide
+   :caption: Getting Started
 
-   user_guide/landing_page
-   user_guide/getting_started/installation
-   user_guide/getting_started/library_overview
+   user_guide/getting_started/index
 
 .. toctree::
    :hidden:
@@ -125,7 +123,7 @@ and the :doc:`examples in the repository <user_guide/tutorials/quickstart>`.
 
 .. toctree::
    :hidden:
-   :caption: Project info
+   :caption: Developer Guide
 
    contribution_guidelines
    sphinx_edit_guide

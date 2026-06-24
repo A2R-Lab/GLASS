@@ -67,4 +67,6 @@ sweep run and point ``GLASS_DEFAULTS_TABLE_LOCAL`` at it:
    python3 autotune.py --emit-defaults mega_sweep_<ts>.txt        # -> bench/tuning/<host>_defaults.cuh
    nvcc ... -DGLASS_DEFAULTS_TABLE_LOCAL='"bench/tuning/<host>_defaults.cuh"' ...
 
-``bench/explore_sweep.ipynb`` visualizes a sweep (ladder plot + winner table).
+``bench/explore_sweep.ipynb`` visualizes a sweep (ladder plot + winner table);
+:doc:`../user_guide/tutorials/sweep_results` shows the rendered ladder + winner
+table the defaults are seeded from.

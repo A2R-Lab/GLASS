@@ -115,7 +115,7 @@ Quick start
 
    cd GLASS
    python3 bench/autotune.py
-   # → measures all 5 round-2 primaries (gemm, gemv, row_strided_gemv,
+   # → measures all 5 auto-dispatching primaries (gemm, gemv, row_strided_gemv,
    #   row_strided_gemm, gemm_batched_1d) across each one's default shape grid
    # → writes bench/tuning/<hostname>.cuh with the per-host specializations
 

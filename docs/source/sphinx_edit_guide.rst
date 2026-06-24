@@ -16,9 +16,24 @@ Layout
    ├── requirements.txt    # Sphinx + breathe pins
    └── source/
        ├── conf.py         # Sphinx config (breathe_projects -> ../doxygen/xml)
-       ├── index.rst       # landing page
+       ├── index.rst       # landing page + the top-level navbar toctrees
+       ├── _static/        # committed images (e.g. the sweep-ladder figures)
        ├── api_reference/  # Breathe `.. doxygenfile::` pages (auto-generated API)
-       └── user_guide/     # hand-written narrative (getting_started/concepts/tutorials)
+       ├── user_guide/     # hand-written narrative (getting_started/concepts/tutorials)
+       └── {contribution_guidelines,sphinx_edit_guide}.rst  # Developer Guide section
+
+Site navigation
+---------------
+
+The top navbar is built from the ``:caption:`` toctrees in ``index.rst`` —
+**Getting Started · Concepts · Tutorials · API Reference · Developer Guide**.
+Each narrative section owns an ``index.rst`` (e.g.
+``user_guide/getting_started/index.rst``) whose ``.. toctree::`` lists its child
+pages; that toctree is what populates the left sidebar when you are inside the
+section. **To add a page, add it to its section's** ``index.rst`` **toctree** —
+do not list leaf pages directly in the root ``index.rst`` (that flattens the
+hierarchy and leaves the sidebar empty on deep pages). Keep one index page per
+navbar section so the sidebar always shows sibling pages.
 
 Build locally
 -------------

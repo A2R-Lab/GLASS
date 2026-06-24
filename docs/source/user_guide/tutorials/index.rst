@@ -2,8 +2,8 @@ Tutorials
 =========
 
 Hands-on walkthroughs: a minimal end-to-end kernel, compiling against the
-``glass::nvidia::`` MathDx backend, running the test suite, and running the
-benchmark suite.
+``glass::nvidia::`` MathDx backend, running the test suite, running the benchmark
+suite, the worked examples, and the measured backend-sweep results.
 
 .. toctree::
    :maxdepth: 1
@@ -12,3 +12,5 @@ benchmark suite.
    using_nvidia_backend
    running_tests
    benchmarks
+   examples
+   sweep_results

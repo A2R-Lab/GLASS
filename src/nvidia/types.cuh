@@ -54,7 +54,7 @@ namespace nvidia {
            blockDim.y >= GEMM_T::block_dim.y &&                                 \
            blockDim.z >= GEMM_T::block_dim.z &&                                 \
            "glass::nvidia: launched blockDim < GEMM::block_dim "                \
-           "(see glass-rfc-batched-1d.md)");                                    \
+           "(see the Batched-1D concept guide in docs)");                       \
     assert((blockDim.x * blockDim.y * blockDim.z) >=                            \
            (GEMM_T::block_dim.x * GEMM_T::block_dim.y * GEMM_T::block_dim.z) && \
            "glass::nvidia: total threads < GEMM::block_dim product");
