@@ -22,6 +22,7 @@ build. For the full API surface and the backend-choice guide, read that README.
 | [`06_nvidia_gemm.cu`](06_nvidia_gemm.cu) | the cuBLASDx-backed `glass::nvidia::gemm` path | **requires NVIDIA MathDx** |
 | [`07_warp_ops.cu`](07_warp_ops.cu) | single-warp `glass::warp::` ops (`reduce`, 4×4 `gemm`, SPD `cholDecomp_InPlace`+`trsm`+`trsm_transpose`), launched `<<<1,32>>>` | pure SIMT — no extra deps |
 | [`08_pcg_solve.cu`](08_pcg_solve.cu) | block-tridiagonal PCG solve `glass::pcg` (`[L\|D\|R]` strips, padded vectors, block-Jacobi preconditioner) | pure SIMT — no extra deps |
+| [`09_backend_picker.cu`](09_backend_picker.cu) | choose a backend + launch config with `glass-defaults.cuh` (`suggested_backend` / `suggested_block_threads` / `suggested_warps_per_block`), then dispatch a real SPD solve to the picked launch | pure SIMT — no extra deps |
 
 **Examples 01–05, 07 and 08 are pure SIMT** — they build with plain `nvcc` and
 need no external libraries. **Only `06_nvidia_gemm.cu` needs MathDx** (cuBLASDx);
@@ -45,6 +46,7 @@ nvcc -std=c++17 -arch=sm_75 -I.. 04_cgrps.cu        -o cgrps    && ./cgrps
 nvcc -std=c++17 -arch=sm_75 -I.. 05_gemm_dispatch.cu -o dispatch && ./dispatch
 nvcc -std=c++17 -arch=sm_75 -I.. 07_warp_ops.cu     -o warp_ops && ./warp_ops
 nvcc -std=c++17 -arch=sm_75 -I.. 08_pcg_solve.cu    -o pcg      && ./pcg
+nvcc -std=c++17 -arch=sm_75 -I.. 09_backend_picker.cu -o picker  && ./picker
 ```
 
 ### NVIDIA / cuBLASDx example (06) — requires MathDx
