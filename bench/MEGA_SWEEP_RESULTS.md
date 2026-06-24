@@ -88,6 +88,12 @@ problems expose the occupancy gap. No crossover moved between 8192 and 32768 —
 - The nvidia f64 leg is **smem-capped at N=64 on this GPU** (99 KB opt-in). Reaching higher
   f64 N would need a tiled/streamed descriptor — out of scope here, logged as a finding.
 
+## Explore
+
+`bench/explore_sweep.ipynb` (numpy + matplotlib) loads a `mega_sweep_*.txt` run and plots
+the ns/problem ladder per backend + the winner-by-(op,N) table — the data behind
+`glass-defaults.cuh`'s `suggested_backend<>()`.
+
 ## Reproduce
 
 ```bash
