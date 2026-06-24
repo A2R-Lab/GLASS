@@ -64,6 +64,15 @@ smem cap at 64). For a *single* large problem (batch≈1), the vendor path wins
 factor/solve/gemm from N≈32 (up to ~8×). See ``bench/MEGA_SWEEP_RESULTS.md`` for the full
 per-op × per-precision tables.
 
+These defaults are also exposed as ``constexpr`` helpers in ``glass-defaults.cuh`` —
+``glass::suggested_backend<op, N, T>()``, ``suggested_block_threads<>()`` and
+``suggested_warps_per_block<>()`` — so callers and codegen can pick a backend + launch
+config without hand-copying the table. Include it after ``glass.cuh`` (and after
+``glass-nvidia.cuh`` to make the ``nvidia`` tier eligible; otherwise it collapses to the
+warp/block runner-up). The pick is host-/codegen-side because warp/block/nvidia need
+different ``<<<grid, block>>>`` launches. Numbers are sm_120-seeded; ``bench/autotune.py``
+regenerates a per-host table.
+
 Why bother?
 -----------
 

@@ -76,6 +76,7 @@ def _hash_sources(cu_path: pathlib.Path) -> str:
               GLASS_DIR / "src" / "base" / "L3" / "gemm_batched_indexed.cuh",
               GLASS_DIR / "src" / "base" / "banded" / "bdmv.cuh",
               GLASS_DIR / "src" / "base" / "pcg" / "solve.cuh",
+              GLASS_DIR / "glass-defaults.cuh",
               GLASS_DIR / "glass-nvidia.cuh",
               GLASS_DIR / "src" / "nvidia" / "types.cuh",
               GLASS_DIR / "src" / "nvidia" / "l1.cuh",
@@ -146,6 +147,7 @@ def bins(tmp_path_factory):
         "warp": compile_binary("test_warp", build_dir, CUDA_ARCH),
         "posv": compile_binary("test_posv", build_dir, CUDA_ARCH),
         "base_f64": compile_binary("test_base_f64", build_dir, CUDA_ARCH),
+        "defaults": compile_binary("test_defaults", build_dir, CUDA_ARCH),
     }
     # test_l3_nvidia.cu includes glass-nvidia.cuh and exercises the SIMT-only
     # batched APIs (gemm_batched_1d, gemm_strided_batched_1d). It does NOT
@@ -260,6 +262,12 @@ def bin_nvidia_f64(bins):
 def bin_base_f64(bins):
     """Double-precision base (glass::) + warp (glass::warp::) ops."""
     return bins["base_f64"]
+
+
+@pytest.fixture(scope="session")
+def bin_defaults(bins):
+    """Compile-time backend-defaults helpers (static_asserts validate at compile)."""
+    return bins["defaults"]
 
 
 # ─── run_op helper ────────────────────────────────────────────────────────────

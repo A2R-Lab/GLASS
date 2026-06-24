@@ -68,6 +68,24 @@ descriptors hit the smem cap at 64). For a *single* large problem (batch≈1), t
 path wins factor/solve/gemm from N≈32 (up to ~8×). Full per-op × per-precision tables:
 [`bench/MEGA_SWEEP_RESULTS.md`](bench/MEGA_SWEEP_RESULTS.md).
 
+**Query it from code.** These defaults are also exposed as `constexpr` helpers in
+`glass-defaults.cuh`, so callers (and codegen) can pick a backend + launch config without
+hand-copying the table:
+
+```cpp
+#include "glass.cuh"
+#include "glass-defaults.cuh"   // include after glass-nvidia.cuh too, to allow the nvidia tier
+
+constexpr auto be = glass::suggested_backend<glass::op::chol, N, float>();
+if      constexpr (be == glass::backend::nvidia) { /* cuSOLVERDx launch */ }
+else if constexpr (be == glass::backend::warp)   { /* <<<ceil(P/WPB), {32,WPB}>>> */ }
+else /* block */ { constexpr int TB = glass::suggested_block_threads<glass::op::chol, N, float>(); /* <<<P, TB>>> */ }
+```
+
+The pick is host-/codegen-side (warp/block/nvidia need different launches, so it can't be a
+device function). With only `glass.cuh` (no MathDx), the `nvidia` tier collapses to its
+warp/block runner-up. Numbers are sm_120-seeded; regenerate for your GPU with `bench/autotune.py`.
+
 ### Decision procedure
 
 For the block-scoped backends, three questions decide which to call:
