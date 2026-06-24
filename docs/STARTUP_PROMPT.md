@@ -36,4 +36,4 @@ solve/matvec); `syrk`/`syr2k` (L3 symmetric rank-k/2k); `ldlt`/`ldlt_solve` (L3
 symmetric-indefinite); `posv`/`potrs` (L3 SPD solve), plus `invertMatrix_pivoted`,
 multi-RHS `posv`/`potrs`, K-way fused `invertMatrix`/`cholDecomp_InPlace`, and the
 `glass::warp::{dot,axpy,copy,scal,gemv,trsv,iamax}` + composed `warp::posv` glue.
-Full suite **1592 passed**. See `docs/HANDOFF.md` for the latest entry.
+Full suite **1725 passed**. See `docs/HANDOFF.md` for the latest entry.
