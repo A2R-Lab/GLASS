@@ -10,6 +10,15 @@ gemv
 
 .. doxygenfile:: src/base/L2/gemv.cuh
 
+Contraction-parallel gemv (``gemv_reduced``)
+--------------------------------------------
+
+One warp owns each output element and its lanes split the contraction — the L2
+sibling of ``gemm_reduced``. See
+:doc:`../user_guide/concepts/contraction_parallel`.
+
+.. doxygenfile:: src/base/L2/gemv_reduced.cuh
+
 Strided / segmented gemv
 ------------------------
 

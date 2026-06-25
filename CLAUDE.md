@@ -58,6 +58,25 @@ pivot=true, piv)` (symmetric 1×1 diagonal pivoting; full Bunch-Kaufman 2×2 sti
 deferred), and multi-RHS `posv`/`potrs` (`(n, nrhs, A, B)` — factor once, solve N
 columns; B column-major).
 
+Contraction-parallel + higher-level families (block + `warp::` + `cgrps::`, all
+single-block, thread-count invariant; see
+`docs/source/user_guide/concepts/contraction_parallel.rst`): the **`*_reduced`**
+ops `gemm_reduced` / `gemv_reduced` / `syrk_reduced` map one warp to one output
+and split the contraction across its lanes; **tensor** ops `tensor_vec_contract`
+(`CONTRACT` axis enum + `SYMMETRIC`) / `vec_tensor_vec`; **congruence** forms
+`congruence_sym` (XᵀMX) / `bilinear` (XᵀMY); and `riccati_gain`
+(= congruence + bilinear + checked `posv`). Robustness rides as **compile-out
+`bool` flags** (default-false, byte-identical PTX when off): `CHECK` on
+`cholDecomp_InPlace` / `ldlt` (+ `inertia`), `REGULARIZE`+`CHECK` on multi-RHS
+`posv` (the fused regularize→factor→solve). **Naming rule:** namespace = scope,
+different decomposition = a name suffix (`_reduced`), additive behavior = a
+compile-out flag (see `concepts/namespaces.rst`). **Perf caveat (measured, sm_120,
+`bench/REDUCED_SWEEP_RESULTS.md`):** `*_reduced` is *slower* than serial in almost
+every shape — `glass::suggested_use_reduced<n_out,K,blockDim>()` returns true only
+in a narrow corner. The tensor/congruence families are for **expressiveness +
+fusion**, not for beating a tight serial loop. The shared 32-way invariance
+primitive `reduced_tree32` lives in `L1/reduce.cuh`.
+
 ## Source layout
 
 - `src/base/{L1,L2,L3}/` — **the live public API** (pulled into `namespace glass`

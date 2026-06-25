@@ -36,4 +36,10 @@ solve/matvec); `syrk`/`syr2k` (L3 symmetric rank-k/2k); `ldlt`/`ldlt_solve` (L3
 symmetric-indefinite); `posv`/`potrs` (L3 SPD solve), plus `invertMatrix_pivoted`,
 multi-RHS `posv`/`potrs`, K-way fused `invertMatrix`/`cholDecomp_InPlace`, and the
 `glass::warp::{dot,axpy,copy,scal,gemv,trsv,iamax}` + composed `warp::posv` glue.
-Full suite **1725 passed**. See `docs/HANDOFF.md` for the latest entry.
+Most recently (2026-06-24) a **contraction-parallel + higher-level family**:
+`gemm_reduced`/`gemv_reduced`/`syrk_reduced`, the `tensor_vec_contract` /
+`vec_tensor_vec` / `congruence_sym` / `bilinear` ops, `riccati_gain`, and
+compile-out robustness flags (`CHECK` on chol/ldlt, `REGULARIZE`+`CHECK` on
+`posv`) — see `concepts/contraction_parallel.rst` (and its **measured** caveat:
+`*_reduced` is slower than serial on sm_120 in almost all shapes).
+Full suite **2083 passed**. See `docs/HANDOFF.md` for the latest entry.

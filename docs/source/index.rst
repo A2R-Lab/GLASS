@@ -61,7 +61,13 @@ Higher-level solvers
 Built on those primitives (and likewise single-block): ``glass::bdmv``
 (block-tridiagonal matvec) and ``glass::pcg`` (preconditioned conjugate
 gradient) for the block-tridiagonal SPD systems of trajectory optimization /
-MPC — see :doc:`user_guide/concepts/block_tridiagonal`.
+MPC — see :doc:`user_guide/concepts/block_tridiagonal`. For dense trajectory-knot
+work there is also a **contraction-parallel + fused family** — ``gemm_reduced`` /
+``gemv_reduced`` / ``syrk_reduced``, the ``tensor_vec_contract`` /
+``vec_tensor_vec`` / ``congruence_sym`` / ``bilinear`` ops, and ``riccati_gain``,
+plus compile-out robustness flags on ``cholDecomp_InPlace`` / ``ldlt`` / ``posv``
+— see :doc:`user_guide/concepts/contraction_parallel` (mind its measured perf
+caveat) and :doc:`user_guide/concepts/namespaces` for the naming convention.
 
 .. grid:: 2
    :gutter: 3
