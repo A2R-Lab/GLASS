@@ -42,6 +42,7 @@ namespace glass {
 
     /*      L2      */
     #include "./src/base/L2/gemv.cuh"
+    #include "./src/base/L2/gemv_reduced.cuh"
     #include "./src/base/L2/trsv.cuh"
     #include "./src/base/L2/ger.cuh"
     #include "./src/base/L2/gemv_strided.cuh"
@@ -49,6 +50,10 @@ namespace glass {
 
     /*      L3      */
     #include "./src/base/L3/gemm.cuh"
+    #include "./src/base/L3/gemm_reduced.cuh"
+    #include "./src/base/L3/syrk_reduced.cuh"
+    #include "./src/base/L3/tensor_contract.cuh"
+    #include "./src/base/L3/congruence.cuh"
     #include "./src/base/L3/syrk.cuh"
     #include "./src/base/L3/gemm_strided.cuh"
     #include "./src/base/L3/gemm_batched_indexed.cuh"
@@ -57,6 +62,7 @@ namespace glass {
     #include "./src/base/L3/trsm.cuh"
     #include "./src/base/L3/ldlt.cuh"
     #include "./src/base/L3/posv.cuh"
+    #include "./src/base/L3/riccati.cuh"
 
     /*  block-tridiagonal: glass::bdmv (matvec) + glass::pcg (solver)  */
     #include "./src/base/banded/bdmv.cuh"

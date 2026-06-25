@@ -278,3 +278,26 @@ namespace warp {
         return __shfl_sync(0xffffffff, val, 0);
     }
 }
+
+/**
+ * @brief Fixed 32-way pairwise tree reduce of a register array (returns the sum in p[0]).
+ *
+ * Combines 32 partials in the EXACT pairwise grouping that `glass::warp::reduce`
+ * produces in lane 0 (a `__shfl_down_sync` tree with offsets 16,8,4,2,1), so a
+ * serial caller (e.g. a sub-warp fallback below 32 threads) matches the
+ * full-warp caller bit-for-bit. This is the shared primitive that lets the
+ * contraction-parallel `*_reduced` engines stay thread-count invariant across the
+ * 32-thread boundary. NumPy equivalent: `np.sum(p)` (different rounding).
+ *
+ * @tparam T  Scalar type.
+ * @param p  In/out array of 32 partials; on return `p[0]` holds the total (p is clobbered).
+ * @return The sum of `p[0..31]`.
+ */
+template <typename T>
+__device__ __forceinline__ T reduced_tree32(T p[32])
+{
+    #pragma unroll
+    for (uint32_t off = 16; off > 0; off >>= 1)
+        for (uint32_t l = 0; l < off; ++l) p[l] += p[l + off];
+    return p[0];
+}

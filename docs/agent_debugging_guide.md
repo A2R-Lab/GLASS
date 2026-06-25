@@ -378,6 +378,40 @@ NOT. Rules:
   leg caps at a smaller N than f32 (gemm f64 ~N64 vs f32 ~N64-but-via-different-bytes; chol/posv
   f64 to ~96). The backend picker (`glass-defaults.cuh`) encodes a narrower f64 nvidia band.
 
+## 7. Contraction-parallel `*_reduced` engine + flagged ops (2026-06-24 feature expansion)
+
+- **Sub-warp invariance requires reproducing the warp-shuffle tree EXACTLY, not a serial sum.**
+  The `*_reduced` engines reduce each output across a warp's lanes via `glass::warp::reduce`
+  (a `__shfl_down` tree, offsets 16/8/4/2/1). A block with `< 32` threads can't run that shuffle,
+  so the fallback must combine 32 register partials in the **same pairwise grouping** —
+  `glass::reduced_tree32` (`L1/reduce.cuh`) does exactly that, so results are bit-identical across
+  the 32-thread boundary. A naive serial `for k: sum += p[k]` fallback would round differently and
+  FAIL the 1-vs-32 invariance check on non-integer inputs. Verify with the thread sweep
+  `1/7/31/32/33/57/64/...` using `np.array_equal` (not allclose).
+- **Trailing partial warp must IDLE; never call `__shfl_*_sync(0xffffffff,...)` from a partial warp.**
+  Use `n_warps = blockDim >> 5` (full warps only); warps `>= n_warps` skip the loop and fall through
+  to the trailing barrier. A partial warp calling the full-mask shuffle is UB.
+- **Cross-surface is NOT bit-identical for composed (two-step) ops — that's FMA, not a bug.**
+  Single-step engines (`gemm_reduced`, `tensor_vec_contract`) match bit-for-bit across block/warp/cgrps.
+  But `congruence_sym`/`bilinear`/`riccati_gain` run a separate gemm in step 1 whose `a*b` the compiler
+  may fuse into an FMA differently per instantiation → ~1 ULP cross-surface drift. Confirm benign with
+  `nvcc --fmad=false` (block==warp exactly); test cross-surface with `allclose`, reserve `array_equal`
+  for WITHIN-surface thread-invariance.
+- **Compile-out flags must be byte-identical when off.** `CHECK`/`REGULARIZE`/`SYMMETRIC` etc. guard their
+  extra work behind `if constexpr (FLAG)` with the flag defaulted false. Prove the off-path unchanged by
+  the EXISTING golden suite (`test_l3` chol, `test_ldlt`, `test_posv`) still passing — not just the new flag test.
+- **Adding a bool flag to one of two same-named overloads can make calls ambiguous.** `posv` has a 2-template-param
+  single-RHS and a 3-param multi-RHS overload. Putting `REGULARIZE`/`CHECK` (with the same trailing arg shape)
+  on BOTH makes `posv<T,N>(A,b)` ambiguous. Fix: flag only the multi-RHS form (single-RHS = `NRHS=1`); the
+  single-RHS overload stays untouched. See `posv.cuh`.
+- **`std::size_t` inside `namespace glass` resolves to `glass::std`.** The base headers are `#include`d *inside*
+  `namespace glass {}`, so a `#include <cstddef>` there nests `std`, and `std::size_t` fails to compile. Use a
+  plain `uint32_t` return (these are small single-block byte counts) or pre-include the system header at global scope.
+- **A `*_reduced` op is a measured LOSS on sm_120 — don't assume parallelizing the contraction helps.** The
+  serial one-thread-per-output loop over shared memory is very hard to beat; the warp-shuffle path is 10–100×
+  slower except in a tiny corner (`n_out <= blockDim/32` AND `K >= 32`). ALWAYS bench before claiming a speedup
+  (`bench/REDUCED_SWEEP_RESULTS.md`); the picker `glass::suggested_use_reduced<>()` recommends serial almost always.
+
 ---
 
 ### Quick reference: which bug class fits the symptom
@@ -396,3 +430,8 @@ NOT. Rules:
 | Block-tridiagonal `glass::bdmv`/`pcg` wrong at edges or non-warp thread count | Layout/launch contract (§1f) |
 | Vendor op times ~1 ns / "wins" by 100×+ | Failed launch (smem > opt-in cap) read as a win — error-check it (§6) |
 | f64 vendor op won't launch above some N | f64 descriptor smem > opt-in cap; cap is lower for double (§6) |
+| `*_reduced` op correct at 32+ threads but differs at 1/7/31 | Sub-warp fallback not reproducing the shuffle tree — use `reduced_tree32` (§7) |
+| Two-step `congruence`/`bilinear`/`riccati` differs warp-vs-block by ~1 ULP | Benign FMA-context drift; compare cross-surface with `allclose` (§7) |
+| `posv<T,N>(A,b)` suddenly ambiguous after adding a flag | Flagged both posv overloads — flag only multi-RHS (§7) |
+| `std::size_t` undefined / `glass::std` error in a base header | `std` nested by an in-namespace include — return `uint32_t` (§7) |
+| `*_reduced` op far slower than serial | Expected on sm_120 — use `suggested_use_reduced<>()`, prefer serial (§7) |

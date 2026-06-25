@@ -12,6 +12,8 @@ single 1D thread block, and the block-tridiagonal layout used by the
    :maxdepth: 1
 
    backend_dispatch
+   contraction_parallel
+   namespaces
    trailing_sync
    tuning
    batched_1d

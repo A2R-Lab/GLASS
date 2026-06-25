@@ -18,6 +18,35 @@ gemm
 
 .. doxygenfile:: src/base/L3/gemm.cuh
 
+Contraction-parallel gemm (``gemm_reduced``)
+--------------------------------------------
+
+One warp owns each output element and its lanes split the contraction — a
+thread-utilization variant for small outputs. See
+:doc:`../user_guide/concepts/contraction_parallel` for the honest win-condition.
+
+.. doxygenfile:: src/base/L3/gemm_reduced.cuh
+
+Tensor ⊗ vector contractions (``tensor_vec_contract`` / ``vec_tensor_vec``)
+---------------------------------------------------------------------------
+
+.. doxygenfile:: src/base/L3/tensor_contract.cuh
+
+Congruence / bilinear forms (``congruence_sym`` / ``bilinear``)
+---------------------------------------------------------------
+
+.. doxygenfile:: src/base/L3/congruence.cuh
+
+Contraction-parallel syrk (``syrk_reduced``)
+--------------------------------------------
+
+.. doxygenfile:: src/base/L3/syrk_reduced.cuh
+
+Riccati feedback gain (``riccati_gain``)
+----------------------------------------
+
+.. doxygenfile:: src/base/L3/riccati.cuh
+
 Strided gemm
 ------------
 
