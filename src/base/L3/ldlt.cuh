@@ -64,7 +64,17 @@
  * - Prefer `double` for ill-conditioned / KKT systems — small pivots amplify
  *   round-off badly; pivoting mitigates but does not eliminate this.
  *
+ * When `CHECK` is true the factorization additionally reports, via two optional
+ * (null-skippable) outputs written by rank 0:
+ *   - `s_fail` — set to 1 if any pivot `D_j` is exactly zero or NaN (a singular /
+ *     non-factorable breakdown of the non-pivoted recurrence), else 0;
+ *   - `s_inertia` — three counts `{n_pos, n_neg, n_zero}` of the pivot signs (the
+ *     matrix **inertia**: e.g. a well-posed KKT system has a known +/- split).
+ * `CHECK` defaults false and the whole reporting path compiles out (`if
+ * constexpr`), so the unchecked instantiation is byte-identical to the original.
+ *
  * @tparam T  Scalar type (use `double` for ill-conditioned KKT systems).
+ * @tparam CHECK  If true, report zero/NaN pivots and the inertia (default false, compiles out).
  * @param n       Matrix dimension (A is n x n).
  * @param A       In/out n x n matrix (column-major); on return its diagonal holds
  *                `D` and its strict lower triangle holds `L`.
@@ -77,12 +87,21 @@
  * @param pivot   If true, apply symmetric 1×1 diagonal pivoting (see above).
  * @param piv     Out pivot array of `n` entries (pivot path only); `piv[k]` is the
  *                index swapped into position `k`. May be `nullptr` when `!pivot`.
+ * @param s_fail     Optional flag (CHECK only): 1 on a zero/NaN pivot, else 0. Ignored when null.
+ * @param s_inertia  Optional 3 ints (CHECK only): `{n_pos, n_neg, n_zero}` pivot-sign counts. Ignored when null.
  */
-template <typename T>
-__device__ void ldlt(uint32_t n, T *A, T *s_temp, bool pivot = false, uint32_t *piv = nullptr)
+template <typename T, bool CHECK = false>
+__device__ void ldlt(uint32_t n, T *A, T *s_temp, bool pivot = false, uint32_t *piv = nullptr,
+                     int *s_fail = nullptr, int *s_inertia = nullptr)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    if constexpr (CHECK) {       // only rank 0 writes the reporting outputs
+        if (rank == 0) {
+            if (s_fail) *s_fail = 0;
+            if (s_inertia) { s_inertia[0] = 0; s_inertia[1] = 0; s_inertia[2] = 0; }
+        }
+    }
     // s_temp layout (pivot path only): [0] holds the broadcast pivot index (read
     // as uint32_t); [1 .. n] hold the n-j working-diagonal magnitudes argmax'd by
     // the no-scratch glass::low_memory::iamax (thread-0 serial scan — keeps the
@@ -142,6 +161,15 @@ __device__ void ldlt(uint32_t n, T *A, T *s_temp, bool pivot = false, uint32_t *
                 sum += Ljk * Ljk * A[k*n + k];  // * D_k (diagonal slot)
             }
             A[j*n + j] -= sum;               // overwrite diagonal with D_j
+            if constexpr (CHECK) {
+                T Dj_ = A[j*n + j];
+                if (s_fail && (Dj_ == static_cast<T>(0) || isnan(Dj_))) *s_fail = 1;
+                if (s_inertia) {
+                    if (Dj_ > static_cast<T>(0)) s_inertia[0]++;
+                    else if (Dj_ < static_cast<T>(0)) s_inertia[1]++;
+                    else s_inertia[2]++;
+                }
+            }
         }
         __syncthreads();                     // all threads read finished D_j
         T Dj = A[j*n + j];
@@ -163,19 +191,27 @@ __device__ void ldlt(uint32_t n, T *A, T *s_temp, bool pivot = false, uint32_t *
  * letting the compiler bake `N` in. Factors a symmetric (possibly indefinite)
  * `A = L * D * Lᵀ` in place. SciPy equivalence: `lu, d, _ = scipy.linalg.ldl(A)`.
  *
+ * When `CHECK` is true, reports zero/NaN pivots via `s_fail` and the inertia via
+ * `s_inertia` (see the runtime overload). `CHECK` defaults false and compiles
+ * out, so the unchecked instantiation is byte-identical to the original.
+ *
  * @tparam T  Scalar type.
  * @tparam N  Matrix dimension (A is N x N).
+ * @tparam CHECK  If true, report zero/NaN pivots and the inertia (default false, compiles out).
  * @param A       In/out N x N matrix (column-major); diagonal holds `D`, strict
  *                lower holds `L` on return.
  * @param s_temp  Shared scratch advertised as `(N + 1)` elements (used by the
  *                pivot path; non-pivoted path accepts `nullptr`).
  * @param pivot   If true, apply symmetric 1×1 diagonal pivoting (no 2×2 path).
  * @param piv     Out pivot array of `N` entries (pivot path only); may be `nullptr`.
+ * @param s_fail     Optional flag (CHECK only): 1 on a zero/NaN pivot, else 0. Ignored when null.
+ * @param s_inertia  Optional 3 ints (CHECK only): `{n_pos, n_neg, n_zero}`. Ignored when null.
  */
-template <typename T, uint32_t N>
-__device__ void ldlt(T *A, T *s_temp, bool pivot = false, uint32_t *piv = nullptr)
+template <typename T, uint32_t N, bool CHECK = false>
+__device__ void ldlt(T *A, T *s_temp, bool pivot = false, uint32_t *piv = nullptr,
+                     int *s_fail = nullptr, int *s_inertia = nullptr)
 {
-    ldlt<T>(N, A, s_temp, pivot, piv);
+    ldlt<T, CHECK>(N, A, s_temp, pivot, piv, s_fail, s_inertia);
 }
 
 /**

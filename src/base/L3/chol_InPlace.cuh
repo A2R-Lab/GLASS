@@ -10,21 +10,33 @@
  * values). Single-block, column-major storage, in-place. `A` must be symmetric
  * positive-definite. NumPy equivalent: `L = np.linalg.cholesky(A)`.
  *
+ * When `CHECK` is true and `s_fail` is non-null, the factorization sets
+ * `*s_fail = 1` if any diagonal radicand is `<= 0` or NaN (i.e. `A` is not
+ * positive-definite), leaving it `0` otherwise — so callers can trigger a
+ * regularize-and-retry without a separate test. `CHECK` defaults false and the
+ * check compiles out entirely (`if constexpr`), so the unchecked instantiation
+ * is byte-identical to the original.
+ *
  * @tparam T  Scalar type.
- * @param n    Matrix dimension (A is n x n).
- * @param s_A  In/out n x n matrix (column-major); on return its lower triangle holds L.
+ * @tparam CHECK  If true, detect a non-PD pivot and report it via `s_fail` (default false, compiles out).
+ * @param n       Matrix dimension (A is n x n).
+ * @param s_A     In/out n x n matrix (column-major); on return its lower triangle holds L.
+ * @param s_fail  Optional flag (CHECK only): set to 1 on a non-PD / NaN pivot, else 0. Ignored when null.
  */
-template <typename T>
-__device__ void cholDecomp_InPlace(uint32_t n, T *s_A)
+template <typename T, bool CHECK = false>
+__device__ void cholDecomp_InPlace(uint32_t n, T *s_A, int *s_fail = nullptr)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    if constexpr (CHECK) { if (rank == 0 && s_fail) *s_fail = 0; }   // only rank 0 writes s_fail
     for (uint32_t row = 0; row < n; row++) {
         if (rank == 0) {
             T sum = static_cast<T>(0);
             T val = s_A[n*row + row];
             for (int32_t rl = 0; rl < (int32_t)row; rl++) sum += s_A[rl*n + row]*s_A[rl*n + row];
-            s_A[row*n + row] = sqrt(val - sum);  // type-generic: float->float, double->double
+            T d = val - sum;
+            if constexpr (CHECK) { if (s_fail && (d <= static_cast<T>(0) || isnan(d))) *s_fail = 1; }
+            s_A[row*n + row] = sqrt(d);  // type-generic: float->float, double->double
         }
         __syncthreads();
         for (uint32_t col = rank + row + 1; col < n; col += size) {
@@ -142,14 +154,20 @@ __device__ void cholDecomp_InPlace(uint32_t dimA, uint32_t dimB, uint32_t dimC, 
  * place, writing only the lower triangle. NumPy equivalent:
  * `L = np.linalg.cholesky(A)`.
  *
+ * When `CHECK` is true and `s_fail` is non-null, reports a non-PD / NaN pivot
+ * via `*s_fail` (see the runtime overload). `CHECK` defaults false and compiles
+ * out, so the unchecked instantiation is byte-identical to the original.
+ *
  * @tparam T  Scalar type.
  * @tparam N  Matrix dimension (A is N x N).
- * @param s_A  In/out N x N matrix (column-major); on return its lower triangle holds L.
+ * @tparam CHECK  If true, detect a non-PD pivot and report it via `s_fail` (default false, compiles out).
+ * @param s_A     In/out N x N matrix (column-major); on return its lower triangle holds L.
+ * @param s_fail  Optional flag (CHECK only): set to 1 on a non-PD / NaN pivot, else 0. Ignored when null.
  */
-template <typename T, uint32_t N>
-__device__ void cholDecomp_InPlace(T *s_A)
+template <typename T, uint32_t N, bool CHECK = false>
+__device__ void cholDecomp_InPlace(T *s_A, int *s_fail = nullptr)
 {
-    cholDecomp_InPlace<T>(N, s_A);
+    cholDecomp_InPlace<T, CHECK>(N, s_A, s_fail);
 }
 
 namespace warp {
@@ -164,21 +182,31 @@ namespace warp {
      * `__syncthreads`. `A` must be SPD. NumPy equivalent:
      * `L = np.linalg.cholesky(A)`.
      *
+     * When `CHECK` is true and `s_fail` is non-null, reports a non-PD / NaN pivot
+     * via `*s_fail` (lane 0 writes it, mirroring the block overload). `CHECK`
+     * defaults false and compiles out, so the unchecked instantiation is
+     * byte-identical to the original.
+     *
      * @tparam T  Scalar type (use `double` for stability on ill-conditioned A).
      * @tparam N  Matrix dimension (A is N x N).
-     * @param s_A  In/out N x N matrix (column-major); on return its lower triangle holds L.
+     * @tparam CHECK  If true, detect a non-PD pivot and report it via `s_fail` (default false, compiles out).
+     * @param s_A     In/out N x N matrix (column-major); on return its lower triangle holds L.
+     * @param s_fail  Optional flag (CHECK only): set to 1 on a non-PD / NaN pivot, else 0. Ignored when null.
      */
-    template <typename T, uint32_t N>
-    __device__ void cholDecomp_InPlace(T *s_A)
+    template <typename T, uint32_t N, bool CHECK = false>
+    __device__ void cholDecomp_InPlace(T *s_A, int *s_fail = nullptr)
     {
         uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+        if constexpr (CHECK) { if (lane == 0 && s_fail) *s_fail = 0; }
         for (uint32_t k = 0; k < N; k++) {
             T diag = static_cast<T>(0);
             if (lane == 0) {
                 T sum = static_cast<T>(0);
                 T val = s_A[k*N + k];
                 for (uint32_t r = 0; r < k; r++) sum += s_A[r*N + k]*s_A[r*N + k];
-                diag = sqrt(val - sum);
+                T d = val - sum;
+                if constexpr (CHECK) { if (s_fail && (d <= static_cast<T>(0) || isnan(d))) *s_fail = 1; }
+                diag = sqrt(d);
                 s_A[k*N + k] = diag;
             }
             // Broadcast the pivot from lane 0's REGISTER via __shfl_sync rather than having

@@ -194,3 +194,39 @@ __device__ void ger(T alpha, T *x, T *y, T *A,
             A[row + col*M] += ay * x[row];
     }
 }
+
+// ─── contraction-parallel GEMV (cooperative-groups variant) ──────────────────
+// Delegates to the shared glass::detail engine; pass a warp-multiple group so
+// every output is owned by a full warp.
+
+/**
+ * @brief Contraction-parallel GEMV: `y = alpha * op(A) * x + beta * y` (cooperative-groups variant).
+ *
+ * Cooperative-groups form of `glass::gemv_reduced`. See it for semantics.
+ *
+ * @tparam T,M,N,TRANS  See glass::gemv_reduced.
+ * @tparam TRAILING_SYNC  Emit a trailing `g.sync()` (default true).
+ * @param alpha,A,x,beta,y  See glass::gemv_reduced.
+ * @param g  Cooperative thread group (defaults to the whole block; pass a warp-multiple group).
+ */
+template <typename T, uint32_t M, uint32_t N, bool TRANS = false, bool TRAILING_SYNC = true>
+__device__ void gemv_reduced(T alpha, const T* A, const T* x, T beta, T* y,
+                             cgrps::thread_group g = cgrps::this_thread_block())
+{
+    glass::detail::gemv_reduced_impl<T, M, N, TRANS, true>(g.thread_rank(), g.size(), alpha, A, x, beta, y);
+    if constexpr (TRAILING_SYNC) g.sync();
+}
+
+/**
+ * @brief Contraction-parallel GEMV with implicit `beta = 0`: `y = alpha * op(A) * x` (cooperative-groups variant).
+ *
+ * @tparam T,M,N,TRANS,TRAILING_SYNC  See the beta overload.
+ * @param alpha,A,x,y,g  See the beta overload.
+ */
+template <typename T, uint32_t M, uint32_t N, bool TRANS = false, bool TRAILING_SYNC = true>
+__device__ void gemv_reduced(T alpha, const T* A, const T* x, T* y,
+                             cgrps::thread_group g = cgrps::this_thread_block())
+{
+    glass::detail::gemv_reduced_impl<T, M, N, TRANS, false>(g.thread_rank(), g.size(), alpha, A, x, static_cast<T>(0), y);
+    if constexpr (TRAILING_SYNC) g.sync();
+}

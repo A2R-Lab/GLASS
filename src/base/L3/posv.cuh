@@ -95,16 +95,35 @@ __device__ void potrs(const T *L, T *b) { potrs<T>(N, L, b); }
  * `trsv` self-syncs, so no extra barrier is needed between columns. Thread-count
  * invariant. NumPy equivalent: `X = np.linalg.solve(A, B)` (A SPD, B `n×nrhs`).
  *
+ * @par Regularize + check (`REGULARIZE` / `CHECK`, both compile-out, default off)
+ * `REGULARIZE` adds `rho·I` to `A`'s diagonal before factoring — the
+ * Levenberg-style shift used to push a borderline-indefinite Hessian (e.g. `Huu`)
+ * back to SPD; `CHECK` forwards to the checked Cholesky and sets `*s_fail = 1` on
+ * a non-PD pivot, so a caller can escalate `rho` and retry. Both default false and
+ * compile out (`if constexpr`), leaving the unflagged instantiation byte-identical
+ * to the original. This is the fused "regularize → factor → solve" path: e.g.
+ * `posv<T, N, NRHS, true, true>(A, B, rho, s_fail)`.
+ *
  * @tparam T     Scalar type (e.g. `float`, `double`).
+ * @tparam REGULARIZE  If true, add `rho·I` to A before factoring (default false, compiles out).
+ * @tparam CHECK  If true, report a non-PD pivot via `s_fail` (default false, compiles out).
  * @param n      Dimension (`A` is `n×n`, each column of `B` has length `n`).
  * @param nrhs   Number of right-hand sides (columns of `B`).
  * @param A      In/out SPD matrix (column-major); overwritten with its factor `L`.
  * @param B      In/out right-hand sides (`n×nrhs`, column-major); on return holds `X`.
+ * @param rho    Diagonal shift added to A when REGULARIZE (ignored otherwise).
+ * @param s_fail Optional non-PD flag when CHECK (set to 1 on a non-PD pivot, else 0).
  */
-template <typename T>
-__device__ void posv(uint32_t n, uint32_t nrhs, T *A, T *B)
+template <typename T, bool REGULARIZE = false, bool CHECK = false>
+__device__ void posv(uint32_t n, uint32_t nrhs, T *A, T *B, T rho = T(0), int *s_fail = nullptr)
 {
-    cholDecomp_InPlace<T>(n, A);                  // A -> L (lower); trailing __syncthreads
+    if constexpr (REGULARIZE) {                   // A += rho*I (Levenberg shift)
+        uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+        uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+        for (uint32_t i = rank; i < n; i += size) A[i*n + i] += rho;
+        __syncthreads();
+    }
+    cholDecomp_InPlace<T, CHECK>(n, A, s_fail);   // A -> L (lower); trailing __syncthreads
     for (uint32_t c = 0; c < nrhs; c++) {
         T *Bc = B + c * n;                        // column c (column-major)
         trsv<T, true, false, false>(n, A, Bc);    // forward: L y = b
@@ -120,14 +139,25 @@ __device__ void posv(uint32_t n, uint32_t nrhs, T *A, T *B)
  * `B + c*N`). Factored once, solved per column. NumPy equivalent:
  * `X = np.linalg.solve(A, B)` (A SPD).
  *
+ * The optional `REGULARIZE` / `CHECK` flags (default off, compile out) add a
+ * `rho·I` shift before factoring and report a non-PD pivot via `s_fail` — the
+ * fused regularize→factor→solve path `posv<T, N, NRHS, true, true>(A, B, rho, s_fail)`.
+ *
  * @tparam T     Scalar type.
  * @tparam N     Dimension (`A` is `N×N`, each column of `B` has length `N`).
  * @tparam NRHS  Number of right-hand sides (columns of `B`).
+ * @tparam REGULARIZE  If true, add `rho·I` to A before factoring (default false, compiles out).
+ * @tparam CHECK  If true, report a non-PD pivot via `s_fail` (default false, compiles out).
  * @param A  In/out SPD matrix (column-major); overwritten with its factor `L`.
  * @param B  In/out right-hand sides (`N×NRHS`, column-major); on return holds `X`.
+ * @param rho    Diagonal shift added to A when REGULARIZE (ignored otherwise).
+ * @param s_fail Optional non-PD flag when CHECK (set to 1 on a non-PD pivot, else 0).
  */
-template <typename T, uint32_t N, uint32_t NRHS>
-__device__ void posv(T *A, T *B) { posv<T>(N, NRHS, A, B); }
+template <typename T, uint32_t N, uint32_t NRHS, bool REGULARIZE = false, bool CHECK = false>
+__device__ void posv(T *A, T *B, T rho = T(0), int *s_fail = nullptr)
+{
+    posv<T, REGULARIZE, CHECK>(N, NRHS, A, B, rho, s_fail);
+}
 
 /**
  * @brief Multi-RHS SPD solve `A X = B` from a precomputed Cholesky factor (LAPACK potrs).
