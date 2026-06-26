@@ -1,9 +1,10 @@
 # GLASS agent guide — debugging, bug classes, and refactor traps
 
 Hard-won institutional knowledge for working on **GLASS** (*GPU Linear Algebra Simple
-Subroutines*) — the header-only, single-block GPU linear-algebra library: block-scoped
-backends `glass::` (SIMT), `glass::cgrps::` (cooperative-groups), `glass::nvidia::`
-(CUB/cuBLASDx/cuSOLVERDx), plus the warp-scoped `glass::warp::` set and the
+Subroutines*) — the comprehensive, header-only, single-block GPU linear-algebra library.
+Three primary interfaces: **Block** `glass::` (SIMT), **Warp** `glass::warp::`
+(single-warp), and **Nvidia** `glass::nvidia::` (CUB/cuBLASDx/cuSOLVERDx);
+`glass::cgrps::` is a cooperative-groups convenience alias of Block. Plus the
 block-tridiagonal `glass::bdmv` / `glass::pcg`. **Read this before you change any
 primitive or do a refactor.** Every GLASS function is a `__device__` helper that assumes it
 runs inside **one CUDA block**, cooperating across `threadIdx`/`blockDim` (or a cooperative

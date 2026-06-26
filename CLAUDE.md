@@ -23,17 +23,23 @@ identical output at 1 thread, 32, a partial warp, or many warps. The #1 bug is a
 missing barrier between a write phase and a dependent read: invisible at 32
 threads (one warp runs lockstep), a race at 64+.
 
-## Call surfaces
+## Interfaces
 
-Primitives are **block-scoped** by default in three numerically-interchangeable
-backends, plus a **warp-scoped** surface for warp-per-problem kernels:
+Three **primary interfaces** — **Block** (`glass::`), **Warp** (`glass::warp::`),
+and **Nvidia** (`glass::nvidia::`) — picked by how the problem maps onto the GPU.
+Block and Nvidia are block-scoped (one block per problem); Warp is warp-scoped (one
+warp per problem, for packing many small problems into a block):
 
-| Namespace | Scope | What it is | Header |
+| Interface | Scope | What it is | Header |
 |-----------|-------|------------|--------|
-| `glass::` | block | Hand-rolled pure-SIMT (`threadIdx`/`blockDim`). No deps. | `glass.cuh` |
-| `glass::cgrps::` | block | Convenience alias of `glass::` — identical numerics (same SIMT loop, indexed via a `thread_group`); for cooperative-groups callers / arbitrary sub-block tiles. NOT a separately-tuned backend. | `glass-cgrps.cuh` |
-| `glass::nvidia::` | block | CUB / cuBLASDx / cuSOLVERDx, auto-dispatched by size. Needs MathDx (`MATHDX_ROOT`). | `glass-nvidia.cuh` |
-| `glass::warp::` | warp | Single-warp SIMT (`__shfl_*_sync`), *selected* L1/L2/L3 ops; `glass::warp::posv` is the composed warp-per-problem SPD solve (chol → forward/back `trsv`). Lives inline in the base L1/L2/L3 headers. | via `glass.cuh` |
+| `glass::` (Block) | block | Hand-rolled pure-SIMT (`threadIdx`/`blockDim`). No deps. | `glass.cuh` |
+| `glass::warp::` (Warp) | warp | Single-warp SIMT (`__shfl_*_sync`), *selected* L1/L2/L3 ops; `glass::warp::posv` is the composed warp-per-problem SPD solve (chol → forward/back `trsv`). Inline in the base L1/L2/L3 headers. | via `glass.cuh` |
+| `glass::nvidia::` (Nvidia) | block | CUB / cuBLASDx / cuSOLVERDx, auto-dispatched by size. Needs MathDx (`MATHDX_ROOT`). | `glass-nvidia.cuh` |
+
+`glass::cgrps::` (header `glass-cgrps.cuh`) is a **convenience alias** of the Block
+interface — identical numerics (the same SIMT loop, indexed via a `thread_group`),
+for cooperative-groups callers / arbitrary sub-block tiles. NOT a separately-tuned
+backend.
 
 Convention: **namespace = scope/backend; function name = operation.** So a warp
 band matvec would be `glass::warp::bdmv`, never a `banded::` namespace.
