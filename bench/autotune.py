@@ -221,7 +221,7 @@ _ROW_STRIDED_GEMV_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
 
     __global__ void k_simt(float* A, float* x, float* y, volatile float* sink, int iters) {{
         for (int rep = 0; rep < iters; rep++) {{
-            glass::gemv_strided<float, M, N, ROW_STRIDE>(A, x, y, 1.f, 0.f);
+            glass::gemv_strided<float, M, N, ROW_STRIDE>(1.f, A, x, 0.f, y);
             __syncthreads();
             if (threadIdx.x == 0) sink[rep & 0xFF] = y[0];
             __syncthreads();
@@ -284,7 +284,7 @@ _ROW_STRIDED_GEMM_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
 
     __global__ void k_simt(float* A, float* B, float* C, volatile float* sink, int iters) {{
         for (int rep = 0; rep < iters; rep++) {{
-            glass::gemm_strided<float, M, N, K, A_RS, B_RS>(A, B, C, 1.f, 0.f);
+            glass::gemm_strided<float, M, N, K, A_RS, B_RS>(1.f, A, B, 0.f, C);
             __syncthreads();
             if (threadIdx.x == 0) sink[rep & 0xFF] = C[0];
             __syncthreads();
