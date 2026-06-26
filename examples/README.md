@@ -98,6 +98,3 @@ The MathDx-specific flags:
 - Reductions (`reduce`, `dot`, `nrm2`) write their result **in place** to
   `x[0]` and may consume the input as scratch (the `glass::warp::` forms return
   the value instead).
-- **Migrating from the old API?** See [`MIGRATION.md`](MIGRATION.md) for the
-  one-line OLD→NEW changes (the `gemm` dim swap, `gemm_ex` removal, `row_strided_*`
-  arg order, `l2norm`→`nrm2`).

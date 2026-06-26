@@ -5,6 +5,24 @@
 // convention as posv.cuh → cholDecomp_InPlace / trsv (no local #include).
 
 /**
+ * @brief Scratch size in bytes for `ldlt`.
+ *
+ * The pivot path uses `n + 1` scratch elements (one broadcast slot for the chosen
+ * pivot index + the `n` working-diagonal magnitudes fed to the argmax); the
+ * non-pivoted path does not read it. Allocate `ldlt_scratch_bytes<T>(n)` bytes the
+ * `s_scratch` argument so it is sized for both paths.
+ *
+ * @tparam T  Scalar type.
+ * @param n  Matrix dimension (A is n x n).
+ * @return Bytes to allocate for `ldlt`'s `s_scratch`.
+ */
+template <typename T>
+__host__ __device__ constexpr std::size_t ldlt_scratch_bytes(uint32_t n)
+{
+    return static_cast<std::size_t>(n + 1) * sizeof(T);
+}
+
+/**
  * @brief In-place LDLᵀ factorization of a symmetric (possibly INDEFINITE) matrix
  *        (LAPACK `sytrf` analogue, lower, optional symmetric 1×1 pivoting).
  *
@@ -90,24 +108,6 @@
  * @param s_fail     Optional flag (CHECK only): 1 on a zero/NaN pivot, else 0. Ignored when null.
  * @param s_inertia  Optional 3 ints (CHECK only): `{n_pos, n_neg, n_zero}` pivot-sign counts. Ignored when null.
  */
-/**
- * @brief Scratch size in bytes for `ldlt`.
- *
- * The pivot path uses `n + 1` scratch elements (one broadcast slot for the chosen
- * pivot index + the `n` working-diagonal magnitudes fed to the argmax); the
- * non-pivoted path does not read it. Allocate `ldlt_scratch_bytes<T>(n)` bytes the
- * `s_scratch` argument so it is sized for both paths.
- *
- * @tparam T  Scalar type.
- * @param n  Matrix dimension (A is n x n).
- * @return Bytes to allocate for `ldlt`'s `s_scratch`.
- */
-template <typename T>
-__host__ __device__ constexpr std::size_t ldlt_scratch_bytes(uint32_t n)
-{
-    return static_cast<std::size_t>(n + 1) * sizeof(T);
-}
-
 template <typename T, bool CHECK = false>
 __device__ void ldlt(uint32_t n, T *A, T *s_scratch, bool pivot = false, uint32_t *piv = nullptr,
                      int *s_fail = nullptr, int *s_inertia = nullptr)

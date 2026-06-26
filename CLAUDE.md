@@ -1,12 +1,15 @@
 # CLAUDE.md — orientation for AI agents (and humans) working on GLASS
 
-GLASS is **GPU Linear Algebra Simple Subroutines**: a header-only CUDA
-library of BLAS/LAPACK-style `__device__` routines that run **inside one CUDA
-block**. You launch one block per independent problem; the block's threads
-cooperate over data already in shared/global memory. Block-scoped by default,
-now expanding to warp-level primitives (`glass::warp::`) for packing many small
-problems into one block. GLASS is the linear-algebra layer under
-[GRiD](https://github.com/A2R-Lab/GRiD).
+GLASS is a **comprehensive, header-only CUDA C++ `__device__` template library
+for block-local linear algebra on GPUs** — BLAS, LAPACK-style factorizations and
+triangular solves, dense linear-system solvers, and related algorithms under one
+calling convention. Routines run **inside one CUDA block**: you launch one block
+per independent problem and the block's threads cooperate over data already in
+shared/global memory. Three primary interfaces — **Block** (`glass::`), **Warp**
+(`glass::warp::`, for packing many small problems into one block), and **Nvidia**
+(`glass::nvidia::`, vendor-backed). GLASS is the foundational linear-algebra layer
+under [GRiD](https://github.com/A2R-Lab/GRiD), MPCGPU, GATO, HJCD-IK, and other
+A2R Lab GPU solvers.
 
 **Before changing any primitive, read `docs/agent_debugging_guide.md`** — it is
 the runbook for the recurring single-block CUDA bug classes (missing

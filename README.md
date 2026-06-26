@@ -1,8 +1,13 @@
 # GLASS
 
-**GPU Linear Algebra Simple Subroutines.** Composable `__device__` BLAS/LAPACK-style
-subroutines that run inside a single CUDA block, plus warp-level primitives for packing
-many small problems into one block.
+**GLASS is a comprehensive, header-only CUDA C++ `__device__` template library for
+block-local linear algebra on GPUs** — BLAS, LAPACK-style factorizations and triangular
+solves, dense linear-system solvers, and related algorithms, all under one single-block
+calling convention. It is the foundational linear-algebra layer underneath
+[GRiD](https://github.com/A2R-Lab/GRiD),
+[MPCGPU](https://a2r-lab.org/publication/mpcgpu/),
+[GATO](http://a2r-lab.org/GATO/),
+[HJCD-IK](https://a2r-lab.org/publication/hjcdik/), and other A2R Lab GPU solvers.
 
 📖 **Full documentation: <https://a2r-lab.github.io/GLASS/>** (source under [`docs/source/`](docs/source/)).
 
@@ -20,18 +25,22 @@ also wraps NVIDIA's device-side libraries — CUB (L1), cuBLASDx (L2/L3), cuSOLV
 under one `__device__` calling convention, so one kernel can mix hand-rolled and vendor-backed
 primitives without leaving the block.
 
-### Call surfaces
+### Interfaces
 
-GLASS primitives are **block-scoped** by default (one block per problem) across three
-numerically-interchangeable backends, plus a **warp-scoped** surface for packing many tiny
-problems into one block (one per warp):
+GLASS exposes **three primary interfaces** — pick the one that matches how your problem maps
+onto the GPU. Two are **block-scoped** (one block per problem), one is **warp-scoped** (one
+warp per problem, for packing many tiny problems into a block); all share the same operations:
 
-| Namespace | Scope | Backend | Header |
-|-----------|-------|---------|--------|
-| `glass::` | block | Hand-rolled SIMT, `threadIdx` / `blockDim` — no deps | `glass.cuh` |
-| `glass::cgrps::` | block | Same SIMT loop indexed via a `cooperative_groups::thread_group` — a numerically-identical convenience alias, **not** a separately-tuned backend | `glass-cgrps.cuh` |
-| `glass::nvidia::` | block | CUB + cuBLASDx + cuSOLVERDx, auto-dispatched against SIMT by size (compile-time sizes) | `glass-nvidia.cuh` |
-| `glass::warp::` | **warp** | Single-warp SIMT via `__shfl_*_sync` — *selected* L1/L2/L3 ops, no `__syncthreads` | inline in the base headers (via `glass.cuh`) |
+| Interface | Scope | What it is / when to choose it | Header |
+|-----------|-------|--------------------------------|--------|
+| `glass::` (**Block**) | block | Hand-rolled SIMT, `threadIdx` / `blockDim` — no deps. The default; one moderate-to-large problem per block | `glass.cuh` |
+| `glass::warp::` (**Warp**) | **warp** | Single-warp SIMT via `__shfl_*_sync` (*selected* L1/L2/L3 ops, no `__syncthreads`). Pack many small independent problems into one block | inline in the base headers (via `glass.cuh`) |
+| `glass::nvidia::` (**Nvidia**) | block | CUB + cuBLASDx + cuSOLVERDx, auto-dispatched against SIMT by size (compile-time sizes). When a vendor tensor-core kernel wins at your size | `glass-nvidia.cuh` |
+
+> **Note:** `glass::cgrps::` (header `glass-cgrps.cuh`) is a convenience cooperative-groups
+> *alias* of the Block interface — the same SIMT loop indexed via a
+> `cooperative_groups::thread_group`, numerically identical and **not** a separately-tuned
+> backend.
 
 Both `glass::` and `glass::cgrps::` offer **runtime** (size as arg) and **compile-time** (size
 as template arg) overloads. Reductions additionally offer `_lowmem` (no scratch)
@@ -68,8 +77,7 @@ my_kernel<<<num_items, 256>>>(A, B, C, m, n, k);   // one block per data item
 Runnable, self-contained programs (one concept each) live in [`examples/`](examples/). GEMM
 follows the **standard BLAS convention** — `C` is M×N, contraction K (`A` is M×K, `B` is K×N) —
 with `TRANSPOSE_A` / `TRANSPOSE_B` operand flags and a single `ROW_MAJOR_C` output flag; a
-row-major operand is just a transpose. See [`examples/10_gemm_basics.cu`](examples/10_gemm_basics.cu)
-and [`examples/MIGRATION.md`](examples/MIGRATION.md).
+row-major operand is just a transpose. See [`examples/10_gemm_basics.cu`](examples/10_gemm_basics.cu).
 
 ## Installation
 

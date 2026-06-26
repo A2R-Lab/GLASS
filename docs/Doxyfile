@@ -20,6 +20,10 @@ RECURSIVE              = YES
 # dirs are legacy duplicates not included by any header — keep them out of the
 # API reference to avoid duplicate-symbol noise.
 EXCLUDE                = ../src/L1 ../src/L2 ../src/L3
+# Internal shared-body helpers (`*_impl`, taking a barrier-policy `Bar bar`) are
+# not public API — keep them out of the reference (and silence their
+# undocumented-`bar` param warnings).
+EXCLUDE_SYMBOLS        = *_impl
 FILE_PATTERNS          = *.cuh *.cu
 # Treat CUDA headers as C++ so __device__/templates parse correctly.
 EXTENSION_MAPPING      = cuh=C++ cu=C++

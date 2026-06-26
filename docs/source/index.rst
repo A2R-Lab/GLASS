@@ -1,73 +1,85 @@
 GLASS: GPU Linear Algebra Simple Subroutines
 ============================================
 
-**Composable** ``__device__`` **BLAS/LAPACK-style subroutines that run inside a
-single CUDA block. Now expanding to warp-level primitives for packing many small
-problems into one block.**
+`GLASS <http://a2r-lab.org/GLASS/>`_ **is a comprehensive, header-only CUDA C++**
+``__device__`` **template library for block-local linear algebra on GPUs.** It is
+the foundational linear-algebra layer underneath
+`GRiD <https://github.com/A2R-Lab/GRiD>`_,
+`MPCGPU <https://a2r-lab.org/publication/mpcgpu/>`_,
+`GATO <http://a2r-lab.org/GATO/>`_,
+`HJCD-IK <https://a2r-lab.org/publication/hjcdik/>`_, and other A2R Lab GPU solvers.
 
-GLASS is a header-only CUDA library of BLAS/LAPACK-style ``__device__`` routines.
-You launch one block per independent problem; the block's threads cooperate over
-data already resident in shared or global memory. It is the linear-algebra layer
-underneath `GRiD <https://github.com/A2R-Lab/GRiD>`_ and other A2R Lab GPU
-solvers.
+Like Eigen on the CPU, GLASS aims to be *comprehensive* — it covers all
+block-local linear algebra in one consistent ``__device__`` calling convention:
+**BLAS** (L1/L2/L3), **LAPACK-style factorizations and triangular solves**
+(Cholesky, LDLᵀ, and LU/QR via vendor backends), **dense linear-system solvers**
+(``posv`` / ``ldlt`` / ``gesv``), and **related algorithms** — block-tridiagonal
+``bdmv`` / ``pcg`` for trajectory optimization and MPC, plus a contraction-parallel
++ fused family. You launch one block per independent problem; the block's threads
+cooperate over data already resident in shared or global memory.
 
-Call surfaces
--------------
+Interfaces
+----------
 
-GLASS primitives are **block-scoped** by default (one block per problem) in three
-numerically-interchangeable backends, plus a **warp-scoped** surface for kernels
-that pack many small independent problems into one block — one per warp:
+GLASS exposes **three primary interfaces** — pick the one that matches how your
+problem maps onto the GPU. They cover the same operations under one calling
+convention, so you switch between them by changing the namespace prefix:
 
-.. grid:: 2
+.. grid:: 3
    :gutter: 3
 
-   .. grid-item-card:: ``glass::`` — block, SIMT
+   .. grid-item-card:: Block — ``glass::``
       :link: user_guide/getting_started/library_overview
       :link-type: doc
 
-      Hand-rolled pure-SIMT (``threadIdx``/``blockDim``), runtime- and
-      compile-time-sized. **No dependencies** — ``#include "glass.cuh"``.
+      The default. One **block** per problem; the block's threads cooperate over
+      shared/global data. Pure SIMT, **no dependencies**
+      (``#include "glass.cuh"``). Choose this for a single moderate-to-large
+      problem per block.
 
-   .. grid-item-card:: ``glass::cgrps::`` — block, coop groups
-      :link: user_guide/getting_started/library_overview
-      :link-type: doc
-
-      The same surface via cooperative groups (``g.thread_rank()`` /
-      ``g.size()``). ``#include "glass-cgrps.cuh"``.
-
-   .. grid-item-card:: ``glass::nvidia::`` — block, vendor
-      :link: user_guide/concepts/backend_dispatch
-      :link-type: doc
-
-      CUB / cuBLASDx / cuSOLVERDx, auto-dispatched against SIMT by size.
-      Needs NVIDIA MathDx.
-
-   .. grid-item-card:: ``glass::warp::`` — warp-per-problem
+   .. grid-item-card:: Warp — ``glass::warp::``
       :link: api_reference/warp
       :link-type: doc
 
-      Single-warp SIMT variants of selected L1/L3 ops (``reduce``, ``gemm``,
-      ``cholDecomp_InPlace``, ``trsm``) via ``__shfl_*_sync`` — no
-      ``__syncthreads``, so warps run independently for **intra-block
-      parallelism**.
+      One **warp** per problem (``__shfl_*_sync``, no ``__syncthreads``), so warps
+      run independently. Choose this to pack **many small independent problems**
+      into one block for intra-block parallelism. Requires a full 32-lane warp.
 
-The three block-scoped backends cover the full L1/L2/L3 surface and are
-interchangeable (switch by namespace prefix). ``glass::warp::`` is a selected,
-warp-scoped set; it requires a full 32-lane warp.
+   .. grid-item-card:: Nvidia — ``glass::nvidia::``
+      :link: user_guide/concepts/backend_dispatch
+      :link-type: doc
 
-Higher-level solvers
---------------------
+      CUB / cuBLASDx / cuSOLVERDx, auto-dispatched against SIMT by size. Choose
+      this when a vendor **tensor-core** kernel wins at your size (needs NVIDIA
+      MathDx).
 
-Built on those primitives (and likewise single-block): ``glass::bdmv``
-(block-tridiagonal matvec) and ``glass::pcg`` (preconditioned conjugate
-gradient) for the block-tridiagonal SPD systems of trajectory optimization /
-MPC — see :doc:`user_guide/concepts/block_tridiagonal`. For dense trajectory-knot
-work there is also a **contraction-parallel + fused family** — ``gemm_reduced`` /
-``gemv_reduced`` / ``syrk_reduced``, the ``tensor_vec_contract`` /
-``vec_tensor_vec`` / ``congruence_sym`` / ``bilinear`` ops, and ``riccati_gain``,
-plus compile-out robustness flags on ``cholDecomp_InPlace`` / ``ldlt`` / ``posv``
-— see :doc:`user_guide/concepts/contraction_parallel` (mind its measured perf
-caveat) and :doc:`user_guide/concepts/namespaces` for the naming convention.
+.. note::
+
+   ``glass::cgrps::`` is a convenience cooperative-groups *alias* of the **Block**
+   interface — identical numerics (the same SIMT loop, indexed via a
+   ``thread_group`` handle), for callers already in a cooperative-groups context
+   or tiling arbitrary sub-block groups. It is **not** a separately-tuned backend.
+   ``#include "glass-cgrps.cuh"``.
+
+Performance
+-----------
+
+The three interfaces are numerically interchangeable, so GLASS can pick the
+fastest one per ``(operation, size, dtype)`` from a measured ladder:
+``glass::suggested_backend<op, N, T>()`` returns the winning interface and a
+launch config for codegen and host-side dispatch. The shipped defaults are tuned
+on an RTX 5090 (sm_120); you can regenerate the table for your own GPU with the
+GLASS autotune workflow. See :doc:`user_guide/concepts/tuning` for how the
+benchmarks drive the defaults, and the :ref:`measured ladders <measured-performance>`
+at the bottom of this page.
+
+The **contraction-parallel + fused family** (``gemm_reduced`` / ``gemv_reduced`` /
+``syrk_reduced``, the ``tensor_vec_contract`` / ``vec_tensor_vec`` /
+``congruence_sym`` / ``bilinear`` ops, ``riccati_gain``, and compile-out
+robustness flags on ``cholDecomp_InPlace`` / ``ldlt`` / ``posv``) targets dense
+trajectory-knot work — see :doc:`user_guide/concepts/contraction_parallel` (mind
+its measured perf caveat) and :doc:`user_guide/concepts/namespaces` for the
+naming convention.
 
 .. grid:: 2
    :gutter: 3
@@ -102,6 +114,23 @@ Quick start
 
 See :doc:`user_guide/tutorials/quickstart` for a complete, compilable example,
 and :doc:`user_guide/tutorials/examples` for a worked program per concept.
+
+.. _measured-performance:
+
+Measured performance
+--------------------
+
+The measured warp / block / nvidia ladder on an RTX 5090 (sm_120) — each op's
+fastest interface across problem size, in ns/problem (the data behind
+``glass::suggested_backend<>``):
+
+.. image:: _static/mega_sweep_ladder_f32.png
+   :alt: GLASS measured backend ladder, float32, RTX 5090 / sm_120
+   :width: 100%
+
+.. image:: _static/mega_sweep_ladder_f64.png
+   :alt: GLASS measured backend ladder, float64, RTX 5090 / sm_120
+   :width: 100%
 
 .. toctree::
    :hidden:

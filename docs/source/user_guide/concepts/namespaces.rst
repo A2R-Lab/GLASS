@@ -7,15 +7,18 @@ lives on tells you what to expect from it.
 Axis A — scope / backend (the namespace)
 ----------------------------------------
 
-The namespace says **who cooperates and how**, never *what* the operation is:
+The namespace says **who cooperates and how**, never *what* the operation is.
+There are **three primary interfaces** — Block (``glass::``), Warp
+(``glass::warp::``), and Nvidia (``glass::nvidia::``) — plus ``glass::cgrps::``, a
+convenience alias of the Block interface:
 
 ================================  ======  =================================================
 Namespace                         Scope   What it is
 ================================  ======  =================================================
-``glass::``                       block   Hand-rolled pure-SIMT (``threadIdx`` / ``blockDim``).
-``glass::cgrps::``                block   Same SIMT loop via a cooperative-groups handle.
-``glass::nvidia::``               block   CUB / cuBLASDx / cuSOLVERDx, auto-dispatched by size.
-``glass::warp::``                 warp    Single-warp SIMT (``__shfl_*_sync``), warp-per-problem.
+``glass::``                       block   **Block** — hand-rolled pure-SIMT (``threadIdx`` / ``blockDim``).
+``glass::warp::``                 warp    **Warp** — single-warp SIMT (``__shfl_*_sync``), warp-per-problem.
+``glass::nvidia::``               block   **Nvidia** — CUB / cuBLASDx / cuSOLVERDx, auto-dispatched by size.
+``glass::cgrps::``                block   *Convenience alias* of Block via a cooperative-groups handle (same numerics; not a separately-tuned backend).
 ================================  ======  =================================================
 
 The convention is **namespace = scope, function name = operation**. So a warp

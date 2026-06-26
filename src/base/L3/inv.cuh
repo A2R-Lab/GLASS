@@ -347,35 +347,6 @@ __device__ void invertMatrix(uint32_t dimA, uint32_t dimB, uint32_t dimC, uint32
 
 
 /**
- * @brief Dense (no augmented buffer) in-place matrix inverse via dual-update Gauss-Jordan.
- *
- * Inverts a column-major `dimA x dimA` matrix without materializing the `[A | I]`
- * augmented layout: tracks A and a separate inverse buffer through the same
- * `[A | I] -> [I | A^{-1}]` reduction. On return BOTH `A` and `Ainv` hold
- * `A^{-1}` (callers that want the original A preserved should copy it first).
- * Single-block: serial pivot loop, block-parallel per-pivot updates. NumPy
- * equivalent: `Ainv = np.linalg.inv(A)`.
- *
- * @tparam T  Scalar type.
- * @param dimA    Matrix dimension (A is dimA x dimA).
- * @param A       In/out column-major dimA x dimA matrix; on return holds `A^{-1}`.
- * @param Ainv    Workspace column-major dimA x dimA; on return also holds `A^{-1}`.
- * @param s_scratch  Shared scratch of `3 * dimA * sizeof(T)` bytes.
- */
-// Block-cooperative Gauss-Jordan inversion of a dimA×dimA matrix.
-//   A:    in/out, column-major dimA×dimA.  On return: A := A^{-1}.
-//   Ainv: workspace, column-major dimA×dimA (overwritten).  On return: A^{-1}.
-//          (Some callers want A unchanged + a separate inverse — they get both.)
-//   s_scratch: shared scratch of size (3*dimA)*sizeof(T).
-// Pivot loop is serial (pivot-to-pivot data dependency); within each pivot, the
-// dimA save and the dimA*dimA cell update are parallelized across the block.
-//
-// Algorithm: same dual-update (A, Ainv) Gauss-Jordan as a classic [A | I] →
-// [I | A^{-1}] reduction but without materializing the augmented layout. A and
-// Ainv are tracked in separate buffers so callers that need A^{-1} alongside
-// the original A get it without extra copies.
-
-/**
  * @brief Scratch size in bytes for `invertMatrix_dense`.
  *
  * The dual-buffer dense path saves one `3*dimA`-element pivot working set. Allocate
@@ -391,6 +362,35 @@ __host__ __device__ constexpr std::size_t invertMatrix_dense_scratch_bytes(uint3
     return static_cast<std::size_t>(3 * dimA) * sizeof(T);
 }
 
+// Block-cooperative Gauss-Jordan inversion of a dimA×dimA matrix.
+//   A:    in/out, column-major dimA×dimA.  On return: A := A^{-1}.
+//   Ainv: workspace, column-major dimA×dimA (overwritten).  On return: A^{-1}.
+//          (Some callers want A unchanged + a separate inverse — they get both.)
+//   s_scratch: shared scratch of size (3*dimA)*sizeof(T).
+// Pivot loop is serial (pivot-to-pivot data dependency); within each pivot, the
+// dimA save and the dimA*dimA cell update are parallelized across the block.
+//
+// Algorithm: same dual-update (A, Ainv) Gauss-Jordan as a classic [A | I] →
+// [I | A^{-1}] reduction but without materializing the augmented layout. A and
+// Ainv are tracked in separate buffers so callers that need A^{-1} alongside
+// the original A get it without extra copies.
+
+/**
+ * @brief Dense (no augmented buffer) in-place matrix inverse via dual-update Gauss-Jordan.
+ *
+ * Inverts a column-major `dimA x dimA` matrix without materializing the `[A | I]`
+ * augmented layout: tracks A and a separate inverse buffer through the same
+ * `[A | I] -> [I | A^{-1}]` reduction. On return BOTH `A` and `Ainv` hold
+ * `A^{-1}` (callers that want the original A preserved should copy it first).
+ * Single-block: serial pivot loop, block-parallel per-pivot updates. NumPy
+ * equivalent: `Ainv = np.linalg.inv(A)`.
+ *
+ * @tparam T  Scalar type.
+ * @param dimA    Matrix dimension (A is dimA x dimA).
+ * @param A       In/out column-major dimA x dimA matrix; on return holds `A^{-1}`.
+ * @param Ainv    Workspace column-major dimA x dimA; on return also holds `A^{-1}`.
+ * @param s_scratch  Shared scratch of `3 * dimA * sizeof(T)` bytes.
+ */
 template <typename T>
 __device__ void invertMatrix_dense(uint32_t dimA, T *A, T *Ainv, T *s_scratch)
 {

@@ -1,9 +1,10 @@
 Library Overview
 ================
 
-**GLASS** — *GPU Linear Algebra Simple Subroutines*. Composable ``__device__``
-BLAS/LAPACK-style subroutines that run inside a single CUDA block. Now expanding
-to warp-level primitives for packing many small problems into one block.
+**GLASS** is a comprehensive, header-only CUDA C++ ``__device__`` template
+library for block-local linear algebra on GPUs — BLAS, LAPACK-style
+factorizations and triangular solves, dense linear-system solvers, and related
+algorithms, all under one single-block calling convention.
 
 What GLASS is
 -------------
@@ -35,40 +36,36 @@ design enables composable GPU kernels for applications such as model-predictive
 control and rigid-body dynamics, where many small independent linear-algebra
 problems run in parallel — one per block.
 
-Call surfaces
--------------
+Interfaces
+----------
 
-Primitives are **block-scoped** by default (one block per problem) in three
-numerically-interchangeable backends, plus a **warp-scoped** surface
-(``glass::warp::``) for kernels that pack many small independent problems into one
-block — one per warp:
+GLASS exposes **three primary interfaces**. Two are **block-scoped** (one block
+per problem) — ``glass::`` (the default) and the vendor-backed ``glass::nvidia::``
+— and one is **warp-scoped**, ``glass::warp::`` (one warp per problem), for kernels
+that pack many small independent problems into a block:
 
 .. list-table::
    :header-rows: 1
-   :widths: 20 14 40 26
+   :widths: 22 12 40 26
 
-   * - Namespace
+   * - Interface
      - Scope
-     - Backend
+     - What it is
      - Header
-   * - ``glass::``
+   * - ``glass::`` (Block)
      - block
-     - Hand-rolled SIMT, ``threadIdx.{x,y,z}`` / ``blockDim.*`` (no cooperative-groups dependency)
+     - Hand-rolled SIMT, ``threadIdx.{x,y,z}`` / ``blockDim.*`` (no dependencies)
      - ``glass.cuh``
-   * - ``glass::cgrps::``
-     - block
-     - Hand-rolled SIMT, ``g.thread_rank()`` / ``g.size()`` (cooperative groups)
-     - ``glass-cgrps.cuh``
-   * - ``glass::nvidia::``
-     - block
-     - CUB (L1) + cuBLASDx (L2/L3, batched) + cuSOLVERDx (LAPACK) — compile-time sizes only
-     - ``glass-nvidia.cuh``
-   * - ``glass::warp::``
+   * - ``glass::warp::`` (Warp)
      - warp
      - Single-warp SIMT via ``__shfl_*_sync`` — selected L1/L2/L3 ops, no ``__syncthreads`` / shared
      - inline in the base L1/L2/L3 headers
+   * - ``glass::nvidia::`` (Nvidia)
+     - block
+     - CUB (L1) + cuBLASDx (L2/L3, batched) + cuSOLVERDx (LAPACK) — compile-time sizes only
+     - ``glass-nvidia.cuh``
 
-The three **block-scoped** backends cover the full L1/L2/L3 surface and are
+The two block-scoped interfaces cover the full L1/L2/L3 surface and are
 interchangeable — switch by changing the namespace prefix when profiling shows
 one is faster at a given size. They preserve the same one-block ``__device__``
 calling convention, so a single kernel can mix hand-rolled and vendor-backed
@@ -78,6 +75,14 @@ variant covering a selected set (``dot``, ``axpy``, ``copy``, ``scal``,
 ``trsm`` / ``trsm_transpose``, and the composed ``posv`` SPD solve); the warps
 run independently for intra-block parallelism, and it requires a full 32-lane
 warp.
+
+.. note::
+
+   ``glass::cgrps::`` (header ``glass-cgrps.cuh``) is a **convenience
+   cooperative-groups alias** of the Block interface — the same SIMT loop indexed
+   via a ``g.thread_rank()`` / ``g.size()`` handle, with identical numerics. Use
+   it from cooperative-groups code or to tile an arbitrary sub-block group; it is
+   **not** a separately-tuned backend.
 
 Both ``glass::`` and ``glass::cgrps::`` offer **runtime** (size as a function
 argument) and **compile-time** (size as a template argument) overloads for every
