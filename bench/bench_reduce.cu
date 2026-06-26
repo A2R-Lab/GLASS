@@ -64,7 +64,7 @@ __global__ void k_glass_reduce(float* x, int n, int iters) {
         // reload from global each iteration to avoid dead-code elimination
         for (int i = threadIdx.x; i < n; i += blockDim.x) smem[i] = x[i];
         __syncthreads();
-        glass::high_speed::reduce(n, smem, smem + n);
+        glass::reduce_fast(n, smem, smem + n);
         __syncthreads();
     }
     if (threadIdx.x == 0) x[0] = smem[0]; // prevent dead-code elimination
@@ -75,7 +75,7 @@ __global__ void k_glass_dot(float* x, float* y, int n, int iters) {
     for (int rep = 0; rep < iters; rep++) {
         for (int i = threadIdx.x; i < n; i += blockDim.x) smem[i] = x[i];
         __syncthreads();
-        glass::high_speed::dot(n, smem, y, smem + n, smem + n + 1);
+        glass::dot_fast(n, smem, y, smem + n, smem + n + 1);
         __syncthreads();
     }
     if (threadIdx.x == 0) x[0] = smem[0];
@@ -86,7 +86,7 @@ __global__ void k_glass_nrm2(float* x, int n, int iters) {
     for (int rep = 0; rep < iters; rep++) {
         for (int i = threadIdx.x; i < n; i += blockDim.x) smem[i] = x[i];
         __syncthreads();
-        glass::high_speed::nrm2(n, smem, smem + n);
+        glass::nrm2_fast(n, smem, smem + n);
         __syncthreads();
     }
     if (threadIdx.x == 0) x[0] = smem[0];
@@ -114,7 +114,7 @@ __global__ void k_cub_reduce(float* x, float* out, int n, int iters) {
             for (int rep = 0; rep < iters; rep++) {                                           \
                 for (int i = threadIdx.x; i < N; i += blockDim.x) smem[i] = x[i];           \
                 __syncthreads();                                                              \
-                glass::high_speed::reduce<float, N>(smem, smem + N);                         \
+                glass::reduce_fast<float, N>(smem, smem + N);                         \
                 __syncthreads();                                                              \
             }                                                                                 \
             if (threadIdx.x == 0) x[0] = smem[0];                                            \
@@ -124,7 +124,7 @@ __global__ void k_cub_reduce(float* x, float* out, int n, int iters) {
             for (int rep = 0; rep < iters; rep++) {                                           \
                 for (int i = threadIdx.x; i < N; i += blockDim.x) smem[i] = x[i];           \
                 __syncthreads();                                                              \
-                glass::high_speed::dot<float, N>(smem, y, smem + N, smem + N + 1);          \
+                glass::dot_fast<float, N>(smem, y, smem + N, smem + N + 1);          \
                 __syncthreads();                                                              \
             }                                                                                 \
             if (threadIdx.x == 0) x[0] = smem[0];                                            \
@@ -134,7 +134,7 @@ __global__ void k_cub_reduce(float* x, float* out, int n, int iters) {
             for (int rep = 0; rep < iters; rep++) {                                           \
                 for (int i = threadIdx.x; i < N; i += blockDim.x) smem[i] = x[i];           \
                 __syncthreads();                                                              \
-                glass::high_speed::nrm2<float, N>(smem, smem + N);                         \
+                glass::nrm2_fast<float, N>(smem, smem + N);                         \
                 __syncthreads();                                                              \
             }                                                                                 \
             if (threadIdx.x == 0) x[0] = smem[0];                                            \
@@ -191,26 +191,26 @@ int main(int argc, char** argv) {
 
     struct timespec t0, t1;
 
-    // ─── glass::high_speed::reduce ────────────────────────────────────
+    // ─── glass::reduce_fast ────────────────────────────────────
     clock_gettime(CLOCK_MONOTONIC, &t0);
     k_glass_reduce<<<1, THREADS, smem_bytes>>>(dx, n, iters);
     cudaDeviceSynchronize();
     clock_gettime(CLOCK_MONOTONIC, &t1);
-    printf("glass::high_speed::reduce    n=%3d  %.3f us/op\n", n, elapsed_us(t0, t1) / iters);
+    printf("glass::reduce_fast    n=%3d  %.3f us/op\n", n, elapsed_us(t0, t1) / iters);
 
-    // ─── glass::high_speed::dot ───────────────────────────────────────
+    // ─── glass::dot_fast ───────────────────────────────────────
     clock_gettime(CLOCK_MONOTONIC, &t0);
     k_glass_dot<<<1, THREADS, smem_bytes>>>(dx, dy, n, iters);
     cudaDeviceSynchronize();
     clock_gettime(CLOCK_MONOTONIC, &t1);
-    printf("glass::high_speed::dot       n=%3d  %.3f us/op\n", n, elapsed_us(t0, t1) / iters);
+    printf("glass::dot_fast       n=%3d  %.3f us/op\n", n, elapsed_us(t0, t1) / iters);
 
-    // ─── glass::high_speed::nrm2 ────────────────────────────────────
+    // ─── glass::nrm2_fast ────────────────────────────────────
     clock_gettime(CLOCK_MONOTONIC, &t0);
     k_glass_nrm2<<<1, THREADS, smem_bytes>>>(dx, n, iters);
     cudaDeviceSynchronize();
     clock_gettime(CLOCK_MONOTONIC, &t1);
-    printf("glass::high_speed::nrm2    n=%3d  %.3f us/op\n", n, elapsed_us(t0, t1) / iters);
+    printf("glass::nrm2_fast    n=%3d  %.3f us/op\n", n, elapsed_us(t0, t1) / iters);
 
     // ─── cub::BlockReduce ────────────────────────────────────────────────────
     clock_gettime(CLOCK_MONOTONIC, &t0);

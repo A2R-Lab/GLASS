@@ -97,7 +97,7 @@ def test_reduce(bins, n, version):
     assert np.allclose(float(result[0]), expected, rtol=1e-3, atol=1e-4)
 
 
-# ─── high_speed::reduce register-partial overload ─────────────────────────────
+# ─── reduce_fast register-partial overload ─────────────────────────────
 # Each thread forms a per-thread partial (strided slice of x) and passes it
 # directly to reduce(partial, scratch); the returned block total is broadcast to
 # every thread. Reference is the plain sum (the partials, summed, must equal it).

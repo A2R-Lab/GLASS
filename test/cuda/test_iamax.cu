@@ -3,8 +3,8 @@
 //
 // ops:
 //   iamax      — glass::iamax            (default, threadIdx-strided + scratch)
-//   iamax_lm   — glass::low_memory::iamax (serial on thread 0, no scratch)
-//   iamax_hs   — glass::high_speed::iamax (warp-shuffle + per-warp scratch)
+//   iamax_lm   — glass::iamax_lowmem (serial on thread 0, no scratch)
+//   iamax_hs   — glass::iamax_fast (warp-shuffle + per-warp scratch)
 //   iamax_val  — glass::iamax value form: prints index THEN max|x| (two lines)
 //   iamax_warp — glass::warp::iamax: WARPS independent vectors, one 32-lane warp
 //                each (launched <<<1, dim3(32, WARPS)>>>); arg 4 carries WARPS
@@ -40,10 +40,10 @@ __global__ void k_iamax_simple(int n, float* x, uint32_t* out, float* s_temp) {
     glass::iamax(static_cast<uint32_t>(n), x, out, s_temp);
 }
 __global__ void k_iamax_lm(int n, float* x, uint32_t* out) {
-    glass::low_memory::iamax(static_cast<uint32_t>(n), x, out);
+    glass::iamax_lowmem(static_cast<uint32_t>(n), x, out);
 }
 __global__ void k_iamax_hs(int n, float* x, uint32_t* out, float* s_temp) {
-    glass::high_speed::iamax(static_cast<uint32_t>(n), x, out, s_temp);
+    glass::iamax_fast(static_cast<uint32_t>(n), x, out, s_temp);
 }
 __global__ void k_iamax_val(int n, float* x, uint32_t* out, float* out_val, float* s_temp) {
     glass::iamax(static_cast<uint32_t>(n), x, out, out_val, s_temp);

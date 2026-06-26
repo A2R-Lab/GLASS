@@ -4,8 +4,8 @@
 // Versions:
 //   cg        — glass::cgrps:: (cooperative groups)
 //   simple    — glass::        (threadIdx, default)
-//   simple_lm — glass::low_memory::
-//   simple_hs — glass::high_speed::
+//   simple_lm — glass::*_lowmem
+//   simple_hs — glass::*_fast
 
 #include <cstdio>
 #include <cstdlib>
@@ -49,16 +49,16 @@ __global__ void k_dot_cg(int n, float* x, float* y) {
     glass::cgrps::dot(n, x, y);
 }
 __global__ void k_dot_simple_lm(int n, float* x, float* y, float* out) {
-    glass::low_memory::dot(n, x, y, out);
+    glass::dot_lowmem(n, x, y, out);
 }
 __global__ void k_dot_simple_hs(int n, float* x, float* y, float* out, float* scratch) {
-    glass::high_speed::dot(n, x, y, out, scratch);
+    glass::dot_fast(n, x, y, out, scratch);
 }
 
 __global__ void k_reduce_cg(int n, float* x) { glass::cgrps::reduce(n, x); }
-__global__ void k_reduce_simple_lm(int n, float* x) { glass::low_memory::reduce(n, x); }
+__global__ void k_reduce_simple_lm(int n, float* x) { glass::reduce_lowmem(n, x); }
 __global__ void k_reduce_simple_hs(int n, float* x, float* scratch) {
-    glass::high_speed::reduce(n, x, scratch);
+    glass::reduce_fast(n, x, scratch);
 }
 // Single-warp reduce (launch <<<1,32>>>): raw __shfl, no scratch, no inter-warp combine.
 __global__ void k_reduce_warp(int n, float* x) { glass::warp::reduce(n, x); }
@@ -80,14 +80,14 @@ __global__ void k_reduce_partial_hs(int n, float* x, float* out, float* scratch)
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
     float partial = 0.0f;
     for (uint32_t i = rank; i < (uint32_t)n; i += size) partial += x[i];
-    float total = glass::high_speed::reduce(partial, scratch);
+    float total = glass::reduce_fast(partial, scratch);
     out[0] = total;   // broadcast check: every thread holds the same `total`
 }
 
 __global__ void k_nrm2_cg(int n, float* x) { glass::cgrps::nrm2(n, x); }
-__global__ void k_nrm2_simple_lm(int n, float* x) { glass::low_memory::nrm2(n, x); }
+__global__ void k_nrm2_simple_lm(int n, float* x) { glass::nrm2_lowmem(n, x); }
 __global__ void k_nrm2_simple_hs(int n, float* x, float* scratch) {
-    glass::high_speed::nrm2(n, x, scratch);
+    glass::nrm2_fast(n, x, scratch);
 }
 
 __global__ void k_infnorm_cg(int n, float* x) { glass::cgrps::infnorm(n, x); }
@@ -95,10 +95,10 @@ __global__ void k_infnorm_simple(int n, float* x) { glass::infnorm(n, x); }
 
 __global__ void k_asum_cg(int n, float* x, float* out) { glass::cgrps::asum(n, x, out); }
 __global__ void k_asum_simple_lm(int n, float* x, float* out) {
-    glass::low_memory::asum(n, x, out);
+    glass::asum_lowmem(n, x, out);
 }
 __global__ void k_asum_simple_hs(int n, float* x, float* scratch) {
-    glass::high_speed::asum(n, x, scratch);
+    glass::asum_fast(n, x, scratch);
 }
 
 __global__ void k_clip_cg(int n, float* x, float* l, float* u) { glass::cgrps::clip(n, x, l, u); }

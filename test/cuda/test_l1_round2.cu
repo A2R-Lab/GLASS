@@ -15,10 +15,10 @@
 
 // ─── nrm1_diff ────────────────────────────────────────────────────────────────
 __global__ void k_nrm1_lm(uint32_t n, const float* x, const float* y, float* out) {
-    glass::low_memory::nrm1_diff<float>(n, x, y, out);            // result in out[0]
+    glass::nrm1_diff_lowmem<float>(n, x, y, out);            // result in out[0]
 }
 __global__ void k_nrm1_hs(uint32_t n, const float* x, const float* y, float* out, float* scr) {
-    glass::high_speed::nrm1_diff<float>(n, x, y, out, scr);        // result in out[0]
+    glass::nrm1_diff_fast<float>(n, x, y, out, scr);        // result in out[0]
 }
 __global__ void k_nrm1_warp(uint32_t n, const float* x, const float* y, float* out) {
     float r = glass::warp::nrm1_diff<float>(n, x, y);

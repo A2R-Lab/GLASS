@@ -53,7 +53,7 @@ struct QPResult {
 
 // Scratch elements (of type T) the solver needs: five length-n work vectors
 // (grad, xnew, d, Px, tmp). `tmp` is the reduction scratch for the dot products
-// — low_memory::dot writes the full length-n buffer and reduces into [0], so the
+// — dot_lowmem writes the full length-n buffer and reduces into [0], so the
 // accumulators must be length n, not single scalars.
 template <typename T>
 __host__ __device__ constexpr std::size_t box_qp_scratch_bytes(std::uint32_t n)
@@ -69,9 +69,9 @@ __device__ T qp_objective(std::uint32_t n, T *P, T *x, T *q, T *Px, T *tmp)
     // Px = P @ x  (n×n · n×1). P symmetric ⇒ xᵀP x == xᵀ(P x).
     gemm<T>(n, 1, n, (T)1, P, x, Px);
     __syncthreads();
-    low_memory::dot<T>(n, Px, x, tmp);     // tmp[0] = xᵀP x (uses tmp[0..n-1])
+    dot_lowmem<T>(n, Px, x, tmp);     // tmp[0] = xᵀP x (uses tmp[0..n-1])
     T xPx = tmp[0];
-    low_memory::dot<T>(n, q, x, tmp);      // tmp[0] = qᵀx
+    dot_lowmem<T>(n, q, x, tmp);      // tmp[0] = qᵀx
     T qx = tmp[0];
     return (T)0.5 * xPx + qx;
 }
@@ -131,7 +131,7 @@ __device__ QPResult<T> box_qp(std::uint32_t n, T *P, T *q, T *l, T *u, T *x,
             __syncthreads();
             elementwise_sub<T>(n, xnew, x, d);                 // d = xnew - x
             __syncthreads();
-            low_memory::dot<T>(n, grad, d, tmp);               // tmp[0] = grad·d (<=0)
+            dot_lowmem<T>(n, grad, d, tmp);               // tmp[0] = grad·d (<=0)
             __syncthreads();
             T gd = tmp[0];
             T f_new = qp_objective<T>(n, P, xnew, q, Px, tmp);

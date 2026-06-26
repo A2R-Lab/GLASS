@@ -17,7 +17,7 @@ __global__ void reduce_kernel(float *x, int n) {
 __global__ void reduce_hs_kernel(float *x, int n) {
     // Scratch: one float per warp = ceil(blockDim.x / 32) floats.
     extern __shared__ float scratch[];
-    glass::high_speed::reduce(static_cast<uint32_t>(n), x, scratch);   // x[0] = sum(x)
+    glass::reduce_fast(static_cast<uint32_t>(n), x, scratch);   // x[0] = sum(x)
 }
 
 int main() {
@@ -41,7 +41,7 @@ int main() {
     reduce_hs_kernel<<<1, threads, smem>>>(dx, n);
     cudaDeviceSynchronize();
     cudaMemcpy(&out, dx, sizeof(float), cudaMemcpyDeviceToHost);
-    printf("glass::high_speed::reduce sum(1..8) = %.0f (expect 36)\n", out);
+    printf("glass::reduce_fast sum(1..8) = %.0f (expect 36)\n", out);
 
     cudaFree(dx);
     return 0;

@@ -34,8 +34,8 @@ problems into one block (one per warp):
 | `glass::warp::` | **warp** | Single-warp SIMT via `__shfl_*_sync` — *selected* L1/L2/L3 ops, no `__syncthreads` | inline in the base headers (via `glass.cuh`) |
 
 Both `glass::` and `glass::cgrps::` offer **runtime** (size as arg) and **compile-time** (size
-as template arg) overloads. Reductions additionally offer `glass::low_memory::` (no scratch)
-and `glass::high_speed::` (warp-shuffle) forms. The dense surface covers `gemm`/`gemv`/`ger`,
+as template arg) overloads. Reductions additionally offer `_lowmem` (no scratch)
+and `_fast` (warp-shuffle) suffixed forms (e.g. `glass::reduce_lowmem` / `glass::reduce_fast`). The dense surface covers `gemm`/`gemv`/`ger`,
 `iamax`, `trsv`/`trmv`, `syrk`/`syr2k`, `inv`/`cholDecomp_InPlace` (single **and K-way fused**),
 `ldlt`/`ldlt_solve`, and `posv`/`potrs`; plus contraction-parallel `*_reduced`, `tensor_*`, and
 `congruence_*` families. See the [namespace & naming guide](docs/source/user_guide/concepts/namespaces.rst).

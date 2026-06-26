@@ -35,10 +35,12 @@ backends, plus a **warp-scoped** surface for warp-per-problem kernels:
 Convention: **namespace = scope/backend; function name = operation.** So a warp
 band matvec would be `glass::warp::bdmv`, never a `banded::` namespace.
 
-Also in the base headers: `glass::high_speed::` / `glass::low_memory::` (perf vs
-scratch trade-offs of reductions/dots), and the block-tridiagonal **functions**
-`glass::bdmv` (matvec) and `glass::pcg` (preconditioned conjugate gradient, with
-`glass::pcg_smem_size`). An internal `glass::internal::box_qp` lives in the tree
+Also in the base headers: the `_fast` (warp-shuffle) / `_lowmem` (thread-0 serial)
+reduction-strategy suffixes on the reduction family (`reduce`/`dot`/`nrm2`/`asum`/
+`vector_norm`/`nrm1_diff`/`iamax`) — a strategy rides on the function name, not a
+namespace (these were `high_speed::`/`low_memory::` until the 2026-06 convergence).
+Plus the block-tridiagonal **functions** `glass::bdmv` (matvec) and `glass::pcg`
+(preconditioned conjugate gradient, with `glass::pcg_scratch_bytes`). An internal `glass::internal::box_qp` lives in the tree
 but is not part of the public surface (see `docs/open-tasks/qp_solver_scope.md`).
 
 Recent L1/L2/L3 additions (all single-block, thread-count invariant): `iamax`

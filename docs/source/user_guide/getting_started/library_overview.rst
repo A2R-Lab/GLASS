@@ -81,9 +81,10 @@ warp.
 
 Both ``glass::`` and ``glass::cgrps::`` offer **runtime** (size as a function
 argument) and **compile-time** (size as a template argument) overloads for every
-function. Reduction operations additionally offer ``glass::low_memory::`` (no
-scratch, thread 0 accumulates) and ``glass::high_speed::`` (warp-shuffle plus
-shared-memory inter-warp reduction) sub-namespaces.
+function. Reduction operations additionally offer ``_lowmem`` (no
+scratch, thread 0 accumulates) and ``_fast`` (warp-shuffle plus shared-memory
+inter-warp reduction) suffixed forms — e.g. ``glass::reduce_lowmem`` /
+``glass::reduce_fast`` — keeping namespace = scope.
 
 **Higher-level solvers** build on these primitives (and are likewise
 single-block): ``glass::bdmv`` (block-tridiagonal matvec) and ``glass::pcg``

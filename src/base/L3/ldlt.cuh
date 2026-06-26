@@ -1,6 +1,6 @@
 #pragma once
 #include <cstdint>
-// glass.cuh includes L1/iamax.cuh (glass::low_memory::iamax) before this header,
+// glass.cuh includes L1/iamax.cuh (glass::iamax_lowmem) before this header,
 // so the pivot path below calls it unqualified — same intra-namespace dependency
 // convention as posv.cuh → cholDecomp_InPlace / trsv (no local #include).
 
@@ -81,7 +81,7 @@
  * @param s_scratch  Shared scratch advertised as `(n + 1)` elements, used by the
  *                pivot path: slot [0] broadcasts the chosen pivot index and slots
  *                [1..n] hold the working-diagonal magnitudes fed to the no-scratch
- *                `glass::low_memory::iamax` argmax (so the scratch stays within
+ *                `glass::iamax_lowmem` argmax (so the scratch stays within
  *                `(n+1)` for any block size). The non-pivoted path does not use it
  *                and accepts `nullptr`.
  * @param pivot   If true, apply symmetric 1×1 diagonal pivoting (see above).
@@ -122,7 +122,7 @@ __device__ void ldlt(uint32_t n, T *A, T *s_scratch, bool pivot = false, uint32_
     }
     // s_scratch layout (pivot path only): [0] holds the broadcast pivot index (read
     // as uint32_t); [1 .. n] hold the n-j working-diagonal magnitudes argmax'd by
-    // the no-scratch glass::low_memory::iamax (thread-0 serial scan — keeps the
+    // the no-scratch glass::iamax_lowmem (thread-0 serial scan — keeps the
     // scratch within the advertised (n+1) elements regardless of block size).
     if (!pivot) { (void)s_scratch; (void)piv; }
     for (uint32_t j = 0; j < n; j++) {
@@ -145,7 +145,7 @@ __device__ void ldlt(uint32_t n, T *A, T *s_scratch, bool pivot = false, uint32_
             // writes the winning index into s_idx[0] and ends on __syncthreads(),
             // so the pivot index is block-visible without a racy re-read.
             uint32_t *s_idx = reinterpret_cast<uint32_t *>(s_scratch);
-            low_memory::iamax<T>(n - j, s_diag, s_idx);
+            iamax_lowmem<T>(n - j, s_diag, s_idx);
             uint32_t p = j + s_idx[0];        // absolute pivot row/col
             if (rank == 0) piv[j] = p;
             // --- symmetric swap of rows/cols j and p in the lower factor ---

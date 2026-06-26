@@ -81,7 +81,7 @@ that thread *j* has not yet written.
 - **The fix / the rule:** every phase boundary that crosses threads needs a barrier. Look at the
   correct examples already in-tree: `reduce` in `src/base/L1/reduce.cuh` syncs once per halving
   round (`__syncthreads()` after each `for (i=rank; i<left; i+=size) x[i] += x[i+left];`);
-  `high_speed::reduce` syncs after the inter-warp `s_scratch` write; `gemm_tiled` in
+  `reduce_fast` syncs after the inter-warp `s_scratch` write; `gemm_tiled` in
   `src/base/L3/gemm.cuh` syncs around each tile load (`__syncthreads()` before and after the
   inner-product over the tile). The matrix factor/solve flows (`inv.cuh`, `chol_InPlace.cuh`,
   `trsm.cuh`, `ldlt.cuh`, `posv.cuh`) sync between elimination steps. `inv.cuh` and
@@ -180,7 +180,7 @@ Functions that take `extern __shared__` scratch (or an explicit scratch pointer)
   is not warranted: `m >= 32` or `m*k > block_threads`). `test_l3.cu`'s `gemm_tiled` op hard-codes
   the matching `(m*8 + 8*n)*sizeof(float)` with `TILE=8` — if you change the tile size on one side
   you MUST change it on both. A too-small allocation overruns `s_B`.
-- **`high_speed::reduce` / `dot` / `nrm2`:** need `ceil(blockDim/32)*sizeof(T)` bytes of
+- **`reduce_fast` / `dot` / `nrm2`:** need `ceil(blockDim/32)*sizeof(T)` bytes of
   `s_scratch` (one slot per warp). Under-sizing this overflows when `blockDim > 32*available`.
 - **`glass::nvidia::` (CUB) L1:** scratch is `sizeof(cub::BlockReduce<T,THREADS>::TempStorage)`;
   query it with `glass::nvidia::reduce_smem_size<T,THREADS>()`. For the cuBLASDx/cuSOLVERDx
@@ -198,7 +198,7 @@ The banded matvec and PCG solver carry layout/launch preconditions that fail *si
   their absent `L`/`R` against **zero pad** — if the pads hold garbage, the edge rows are wrong.
   `glass::pcg` zeroes its internal vectors (`set_const`), but a hand-rolled `glass::bdmv` caller must
   zero the pads itself.
-- **`glass::pcg` needs `blockDim.x` a multiple of 32.** Its inner dot is `high_speed::dot`
+- **`glass::pcg` needs `blockDim.x` a multiple of 32.** Its inner dot is `dot_fast`
   (warp-shuffle); a non-warp-multiple thread count drops the partial warp's contribution. (This
   is the one place the usual "any thread count" invariance does **not** hold — it's a documented
   contract, asserted-by-convention.)

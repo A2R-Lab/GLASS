@@ -21,15 +21,18 @@ Namespace                         Scope   What it is
 The convention is **namespace = scope, function name = operation**. So a warp
 band-matvec is ``glass::warp::bdmv`` — never a ``glass::banded::`` namespace.
 
-Axis B — reduction strategy (sub-namespaces, vector reductions only)
---------------------------------------------------------------------
+Axis B — reduction strategy (function-name suffixes, vector reductions only)
+---------------------------------------------------------------------------
 
-A second, *historical* axis lives on the reduction primitives only: bare
-``glass::reduce`` (halving), ``glass::high_speed::reduce`` (warp-shuffle + shared
-inter-warp), ``glass::low_memory::reduce`` (thread-0 serial, no scratch). These
-are performance/scratch trade-offs of the **same** result. They are the one place
-where a sub-namespace encodes something other than scope — a wrinkle the
-convergence proposal (below) proposes to retire.
+A second axis lives on the reduction primitives only: bare ``glass::reduce``
+(halving), ``glass::reduce_fast`` (warp-shuffle + shared inter-warp), and
+``glass::reduce_lowmem`` (thread-0 serial, no scratch) — performance/scratch
+trade-offs of the **same** result. The same ``_fast`` / ``_lowmem`` suffixes
+apply across the reduction family (``dot``, ``nrm2``, ``asum``, ``vector_norm``,
+``nrm1_diff``, ``iamax``). This is a strategy, not a scope, so it rides on the
+*function name*, never a sub-namespace — keeping **namespace = scope** true
+everywhere. (These were ``glass::high_speed::`` / ``glass::low_memory::``
+sub-namespaces until the 2026-06 convergence; that clean break is done.)
 
 The naming rule for new code
 ----------------------------
@@ -54,6 +57,6 @@ So: *scope* picks the namespace, *additive behavior* picks a flag, and *a genuin
 different computation* picks a new name. Following that keeps the surface
 predictable — you can guess the spelling of an op you have not seen.
 
-See also the convergence proposal in ``docs/open-tasks/`` for the planned
-clean-break that folds the Axis-B reduction sub-namespaces into name suffixes, so
-that namespace means *scope* everywhere.
+As of the 2026-06 convergence, namespace means *scope* everywhere — the
+former ``high_speed::`` / ``low_memory::`` reduction sub-namespaces are now the
+``_fast`` / ``_lowmem`` suffixes described above.

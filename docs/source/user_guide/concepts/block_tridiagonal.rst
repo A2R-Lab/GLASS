@@ -78,7 +78,7 @@ Sizing and launch:
   padded work vectors + the warp-dot scratch); five scalars live in static
   ``__shared__``.
 * The block thread count **must be a multiple of 32** — the inner dot product
-  uses a warp-shuffle reduction (``glass::high_speed::dot``).
+  uses a warp-shuffle reduction (``glass::dot_fast``).
 * Seed ``x`` with an initial guess (zeros are fine); the solution is written back
   into ``x`` and the iteration count into ``iters``.
 

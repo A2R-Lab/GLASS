@@ -22,7 +22,7 @@ repository.
      - ``gemm`` (``C = αAB + βC``), runtime + compile-time overloads, column-major
      - pure SIMT
    * - ``03_reduce``
-     - block reduction: ``glass::reduce`` and warp-shuffle ``glass::high_speed::reduce``
+     - block reduction: ``glass::reduce`` and warp-shuffle ``glass::reduce_fast``
      - pure SIMT
    * - ``04_cgrps``
      - the cooperative-groups variant ``glass::cgrps::gemm``

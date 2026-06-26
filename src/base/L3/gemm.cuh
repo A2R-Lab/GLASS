@@ -358,30 +358,3 @@ __device__ void gemm_dispatch(uint32_t m, uint32_t n, uint32_t k,
     else
         gemm<T>(m, n, k, alpha, A, B, beta, C);
 }
-
-namespace high_speed {
-    /**
-     * @brief High-speed (tiled) GEMM: `C = alpha * A * B + beta * C` (column-major).
-     *
-     * `glass::high_speed::gemm` — a thin alias that always takes the shared-memory
-     * tiled path (`gemm_tiled`). Requires the caller to supply scratch. Standard
-     * convention: C is m×n, contraction k. NumPy: `C = alpha * A @ B + beta * C`.
-     *
-     * @tparam T  Scalar type.
-     * @tparam TILE  Tile width passed through to `gemm_tiled`.
-     * @param m,n,k  Dimensions: A is m×k, B is k×n, C is m×n.
-     * @param alpha  Scalar multiplier on the product.
-     * @param A,B    Input matrices (column-major).
-     * @param beta   Scalar multiplier on the existing C (C is read; caller must initialize it).
-     * @param C      In/out result matrix.
-     * @param s_A    Shared scratch of `m * TILE` elements for the A tile.
-     * @param s_B    Shared scratch of `TILE * n` elements for the B tile.
-     */
-    template <typename T, int TILE = 8>
-    __device__ void gemm(uint32_t m, uint32_t n, uint32_t k,
-                         T alpha, const T *A, const T *B, T beta, T *C,
-                         T *s_A, T *s_B)
-    {
-        gemm_tiled<T, TILE>(m, n, k, alpha, A, B, beta, C, s_A, s_B);
-    }
-}

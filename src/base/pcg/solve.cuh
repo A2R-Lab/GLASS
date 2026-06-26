@@ -92,7 +92,7 @@ __device__ void pcg(T *x, T *S, T *Pinv, T *b, T *s_mem,
     bdmv<T, knot_points, state_size>(s_z, s_p, Pinv, s_r);     // z = p = Pinv r
     __syncthreads();
 
-    high_speed::dot<T, VEC>(s_r, s_z, &s_rho, s_scr);                  // rho = rᵀ z
+    dot_fast<T, VEC>(s_r, s_z, &s_rho, s_scr);                  // rho = rᵀ z
     __syncthreads();
 
     T arho = (s_rho < static_cast<T>(0)) ? -s_rho : s_rho;
@@ -112,7 +112,7 @@ __device__ void pcg(T *x, T *S, T *Pinv, T *b, T *s_mem,
         bdmv<T, knot_points, state_size>(s_Ap, S, s_p);        // Ap = S p
         __syncthreads();
 
-        high_speed::dot<T, VEC>(s_p, s_Ap, &s_alpha, s_scr);          // pᵀ Ap
+        dot_fast<T, VEC>(s_p, s_Ap, &s_alpha, s_scr);          // pᵀ Ap
         __syncthreads();
         if (rank == 0) s_alpha = s_rho / s_alpha;                      // alpha
         __syncthreads();
@@ -124,7 +124,7 @@ __device__ void pcg(T *x, T *S, T *Pinv, T *b, T *s_mem,
         bdmv<T, knot_points, state_size>(s_z, Pinv, s_r);     // z = Pinv r
         __syncthreads();
 
-        high_speed::dot<T, VEC>(s_r, s_z, &s_rho_new, s_scr);        // rho_new = rᵀ z
+        dot_fast<T, VEC>(s_r, s_z, &s_rho_new, s_scr);        // rho_new = rᵀ z
         __syncthreads();
 
         T arho_new = (s_rho_new < static_cast<T>(0)) ? -s_rho_new : s_rho_new;

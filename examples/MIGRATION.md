@@ -52,8 +52,8 @@ transpose flags instead (see `11_rowmajor_is_transpose.cu`):
 ## 4. `l2norm` → `nrm2` (BLAS name; Eigen `x.norm()`)
 
 ```cpp
-- glass::high_speed::l2norm<float, N>(x, scratch);   glass::warp::l2norm<float>(n, x);
-+ glass::high_speed::nrm2  <float, N>(x, scratch);   glass::warp::nrm2  <float>(n, x);
+- glass::l2norm_fast<float, N>(x, scratch);   glass::warp::l2norm<float>(n, x);
++ glass::nrm2_fast  <float, N>(x, scratch);   glass::warp::nrm2  <float>(n, x);
 ```
 
 ## 5. `gemv` — `gemv_ex` removed; `gemv` keeps `ROW_MAJOR`

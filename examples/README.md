@@ -20,7 +20,7 @@ build. For the full API surface and the backend-choice guide, read that README.
 | [`11_rowmajor_is_transpose.cu`](11_rowmajor_is_transpose.cu) | **"row-major is just a transpose"** — a row-major operand read with `TRANSPOSE_*` gives bit-identical output (why per-operand `ROW_MAJOR` was pruned) | pure SIMT — no extra deps |
 | [`12_nrm2.cu`](12_nrm2.cu) | Euclidean norm `nrm2` (BLAS name; `np.linalg.norm` / Eigen `x.norm()`), block + warp forms | pure SIMT — no extra deps |
 | [`13_gemm_strided.cu`](13_gemm_strided.cu) | `gemm_strided` — GEMM on column-major sub-blocks with explicit leading dims, `alpha`/`beta` at the front | pure SIMT — no extra deps |
-| [`03_reduce.cu`](03_reduce.cu) | block reduction: `glass::reduce` and the warp-shuffle `glass::high_speed::reduce` (with scratch) | pure SIMT — no extra deps |
+| [`03_reduce.cu`](03_reduce.cu) | block reduction: `glass::reduce` and the warp-shuffle `glass::reduce_fast` (with scratch) | pure SIMT — no extra deps |
 | [`04_cgrps.cu`](04_cgrps.cu) | the **cooperative-groups** variant `glass::cgrps::gemm` (whole-block or warp-tile) | pure SIMT — no extra deps |
 | [`05_gemm_dispatch.cu`](05_gemm_dispatch.cu) | `glass::gemm_dispatch` + dynamic shared memory via the `glass_gemm_dispatch_smem` host helper (tiled path) | pure SIMT — no extra deps |
 | [`06_nvidia_gemm.cu`](06_nvidia_gemm.cu) | the cuBLASDx-backed `glass::nvidia::gemm` path | **requires NVIDIA MathDx** |

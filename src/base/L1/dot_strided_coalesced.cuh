@@ -23,7 +23,7 @@
 //     case in GRiD), transposing the iteration this way makes the per-warp load
 //     a coalesced burst instead of a strided gather.  Partial sums are then
 //     combined with a warp-shuffle + shared-scratch block reduction (same idiom
-//     as glass::high_speed::reduce).
+//     as glass::reduce_fast).
 //
 // Because it performs a block reduction it REQUIRES a block-wide launch and a
 // __syncthreads-safe context; it writes the scalar result to *out (visible to

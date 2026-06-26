@@ -42,7 +42,7 @@ Where it applies
 As of the 2026-06-25 uniformity wave, ``TRAILING_SYNC`` is on **every** public op
 that has a *separable* trailing barrier — all of L1 (``reduce``/``dot``/elementwise/
 ``axpy``/``copy``/``scal``/``swap``/``clip``/``set_const``/``ident``/``transpose``/
-``infnorm``/``asum``/``nrm2`` + the ``high_speed::``/``low_memory::`` reductions),
+``infnorm``/``asum``/``nrm2`` + the ``_fast``/``_lowmem`` reduction variants),
 L2 (``gemv``/``ger`` + ``gemv_strided``/``gemv_segmented``/``gemv_reduced``), and L3
 (``gemm`` + ``gemm_strided``/``gemm_batched_indexed``/``gemm_reduced``/``syrk``/
 ``syr2k``/``syrk_reduced``/tensor/congruence) — plus the cuBLASDx-backed
