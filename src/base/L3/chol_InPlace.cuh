@@ -1,4 +1,5 @@
 #pragma once
+#include "../barrier.cuh"
 #include <cstdint>
 #include <math.h>
 
@@ -23,11 +24,13 @@
  * @param s_A     In/out n x n matrix (column-major); on return its lower triangle holds L.
  * @param s_fail  Optional flag (CHECK only): set to 1 on a non-PD / NaN pivot, else 0. Ignored when null.
  */
-template <typename T, bool CHECK = false>
-__device__ void cholDecomp_InPlace(uint32_t n, T *s_A, int *s_fail = nullptr)
+// Shared body: in-place lower Cholesky; barrier policy supplies rank/size + the
+// two per-row syncs, so the glass:: and cgrps:: surfaces share this one body.
+// (No separable TRAILING_SYNC: the algorithm's final step is itself a barrier.)
+template <typename Bar, typename T, bool CHECK = false>
+__device__ void cholDecomp_InPlace_impl(Bar bar, uint32_t n, T *s_A, int *s_fail)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = bar.rank(), size = bar.size();
     if constexpr (CHECK) { if (rank == 0 && s_fail) *s_fail = 0; }   // only rank 0 writes s_fail
     for (uint32_t row = 0; row < n; row++) {
         if (rank == 0) {
@@ -38,14 +41,20 @@ __device__ void cholDecomp_InPlace(uint32_t n, T *s_A, int *s_fail = nullptr)
             if constexpr (CHECK) { if (s_fail && (d <= static_cast<T>(0) || isnan(d))) *s_fail = 1; }
             s_A[row*n + row] = sqrt(d);  // type-generic: float->float, double->double
         }
-        __syncthreads();
+        bar.sync();
         for (uint32_t col = rank + row + 1; col < n; col += size) {
             T sum = static_cast<T>(0);
             for (uint32_t kk = 0; kk < row; kk++) sum += s_A[kk*n + col]*s_A[kk*n + row];
             s_A[row*n + col] = (static_cast<T>(1)/s_A[row*n + row])*(s_A[row*n + col] - sum);
         }
-        __syncthreads();
+        bar.sync();
     }
+}
+
+template <typename T, bool CHECK = false>
+__device__ void cholDecomp_InPlace(uint32_t n, T *s_A, int *s_fail = nullptr)
+{
+    cholDecomp_InPlace_impl<BlockBarrier, T, CHECK>(BlockBarrier{}, n, s_A, s_fail);
 }
 
 /**

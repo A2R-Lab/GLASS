@@ -40,6 +40,104 @@ def detect_arch() -> str:
 CUDA_ARCH = detect_arch()
 
 
+# ─── thread-count sweeps (single source of truth) ─────────────────────────────
+#
+# GLASS's #1 invariant is thread-count invariance: every single-block op must
+# produce BIT-IDENTICAL output at any block size. The bugs this catches hide at
+# the counts most tests historically used (a full warp / 256), so the canonical
+# sweep deliberately spans four regimes:
+#
+#   • 1            — single thread (serializes every grid-stride loop; exposes
+#                    "loop wrote to the wrong place because size==1" bugs).
+#   • 7            — low partial warp, ODD (fewer threads than most problem dims;
+#                    exposes missing tail handling).
+#   • 31           — one BELOW a warp boundary, odd (off-by-one at the warp edge).
+#   • 32, 64       — exact warp boundaries. NOTE: races between same-value writers
+#                    are INVISIBLE here (a warp runs lockstep) — these are the
+#                    counts that let the inv.cuh `ind++` race pass for months.
+#                    Kept so a real *value* divergence at the boundary still shows.
+#   • 33, 57       — just ABOVE a warp / mid, both ODD and NON-warp-boundary
+#                    (partial trailing warp + a full warp; the load-bearing cases).
+#   • 96, 128, 256 — multi-warp (3,4,8 warps); exercises cross-warp reductions.
+#
+# Use THREAD_SWEEP for an op's dedicated thread-invariance test (one representative
+# input). For tests that already fan out over a large parameter matrix, use
+# THREAD_SWEEP_CORE — a cheap 4-count subset that still includes a low partial (7),
+# an odd non-boundary count (33), and a multi-warp count (256). Runtime cost of a
+# binary invocation is ~ms; the only real cost is the one-time nvcc recompile, so
+# prefer the full sweep wherever a single input suffices.
+THREAD_SWEEP      = [1, 7, 31, 32, 33, 57, 64, 96, 128, 256]
+THREAD_SWEEP_CORE = [1, 7, 33, 256]
+
+
+# ─── input variety (single source of truth) ───────────────────────────────────
+#
+# A correctness test that only ever sees one well-conditioned random matrix can
+# miss sign-handling, conditioning, and pivot bugs. These makers give every test
+# the same vocabulary of "kinds of input". All return float32, seedable so a
+# failure reproduces. Pass distinct `seed`s to vary the draw within a sweep.
+
+def make_spd(n, seed=0, cond=None, rng=None):
+    """Random n x n symmetric positive-definite matrix (float32).
+
+    cond=None: well-conditioned (A Aᵀ + n·I). Pass a float `cond` to force an
+    approximate 2-norm condition number (eigenvalues geometrically spaced in
+    [1, cond]) for ill-conditioned / near-singular factorization tests.
+
+    Pass an existing `rng` (np.random.Generator) to draw from a caller-owned
+    stream — lets a test module advance one RNG across calls for varied draws;
+    otherwise a fresh `default_rng(seed)` is used (deterministic per seed)."""
+    import numpy as np
+    if rng is None:
+        rng = np.random.default_rng(seed)
+    if cond is None:
+        A = rng.standard_normal((n, n)).astype(np.float32)
+        return (A @ A.T + n * np.eye(n, dtype=np.float32)).astype(np.float32)
+    # Q Λ Qᵀ with a controlled spectrum.
+    Q, _ = np.linalg.qr(rng.standard_normal((n, n)))
+    eig = np.geomspace(1.0, float(cond), n)
+    return (Q @ np.diag(eig) @ Q.T).astype(np.float32)
+
+
+def make_general(m, n=None, seed=0, scale=1.0, rng=None):
+    """Random m x n general matrix (float32), mean-zero so signs are mixed.
+
+    Pass an existing `rng` to draw from a caller-owned stream (see make_spd)."""
+    import numpy as np
+    n = m if n is None else n
+    if rng is None:
+        rng = np.random.default_rng(seed)
+    return (scale * rng.standard_normal((m, n))).astype(np.float32)
+
+
+def make_lower_triangular(n, seed=0, rng=None):
+    """Random n x n lower-triangular matrix with a positive diagonal (float32).
+
+    Pass an existing `rng` to draw from a caller-owned stream (see make_spd)."""
+    import numpy as np
+    if rng is None:
+        rng = np.random.default_rng(seed)
+    L = np.tril(rng.standard_normal((n, n)).astype(np.float32))
+    np.fill_diagonal(L, np.abs(L.diagonal()) + 0.5)
+    return L.astype(np.float32)
+
+
+def make_vec(n, seed=0, kind="normal"):
+    """Random length-n vector (float32). kind: 'normal' (mixed sign), 'pos'
+    (strictly positive), 'mixed' (alternating large/small magnitudes to stress
+    reductions and 1-norms)."""
+    import numpy as np
+    rng = np.random.default_rng(seed)
+    if kind == "pos":
+        return (np.abs(rng.standard_normal(n)) + 0.1).astype(np.float32)
+    if kind == "mixed":
+        v = rng.standard_normal(n).astype(np.float32)
+        v[::2] *= 1e3
+        v[1::2] *= 1e-3
+        return v
+    return rng.standard_normal(n).astype(np.float32)
+
+
 # ─── source hashing ───────────────────────────────────────────────────────────
 
 def _hash_sources(cu_path: pathlib.Path) -> str:
@@ -57,12 +155,20 @@ def _hash_sources(cu_path: pathlib.Path) -> str:
               GLASS_DIR / "src" / "base" / "L1" / "axpy.cuh",
               GLASS_DIR / "src" / "base" / "L1" / "copy.cuh",
               GLASS_DIR / "src" / "base" / "L1" / "scal.cuh",
+              GLASS_DIR / "src" / "base" / "L1" / "asum.cuh",
+              GLASS_DIR / "src" / "base" / "L1" / "nrm2.cuh",
+              GLASS_DIR / "src" / "base" / "L1" / "nrm1_diff.cuh",
+              GLASS_DIR / "src" / "base" / "L1" / "axpy_strided.cuh",
+              GLASS_DIR / "src" / "base" / "L1" / "copy_strided.cuh",
+              GLASS_DIR / "test" / "cuda" / "test_l1_round2.cu",
               GLASS_DIR / "src" / "base" / "L2" / "gemv.cuh",
+              GLASS_DIR / "src" / "base" / "L2" / "gemv_strided.cuh",
               GLASS_DIR / "src" / "base" / "L2" / "gemv_reduced.cuh",
               GLASS_DIR / "src" / "base" / "L3" / "syrk_reduced.cuh",
               GLASS_DIR / "test" / "cuda" / "test_reduced_blas.cu",
               GLASS_DIR / "test" / "cuda" / "test_warp.cu",
               GLASS_DIR / "src" / "base" / "L3" / "gemm.cuh",
+              GLASS_DIR / "src" / "base" / "L3" / "gemm_strided.cuh",
               GLASS_DIR / "src" / "base" / "L3" / "gemm_reduced.cuh",
               GLASS_DIR / "test" / "cuda" / "test_reduced.cu",
               GLASS_DIR / "src" / "base" / "L3" / "tensor_contract.cuh",
@@ -88,6 +194,8 @@ def _hash_sources(cu_path: pathlib.Path) -> str:
               GLASS_DIR / "test" / "cuda" / "test_solve.cu",
               GLASS_DIR / "src" / "base" / "L3" / "gemm_batched_indexed.cuh",
               GLASS_DIR / "src" / "base" / "banded" / "bdmv.cuh",
+              GLASS_DIR / "src" / "base" / "banded" / "block_access.cuh",
+              GLASS_DIR / "test" / "cuda" / "test_block_access.cu",
               GLASS_DIR / "src" / "base" / "pcg" / "solve.cuh",
               GLASS_DIR / "glass-defaults.cuh",
               GLASS_DIR / "glass-nvidia.cuh",
@@ -167,6 +275,8 @@ def bins(tmp_path_factory):
         "reduced_blas": compile_binary("test_reduced_blas", build_dir, CUDA_ARCH),
         "base_f64": compile_binary("test_base_f64", build_dir, CUDA_ARCH),
         "defaults": compile_binary("test_defaults", build_dir, CUDA_ARCH),
+        "l1_round2": compile_binary("test_l1_round2", build_dir, CUDA_ARCH),
+        "block_access": compile_binary("test_block_access", build_dir, CUDA_ARCH),
     }
     # test_l3_nvidia.cu includes glass-nvidia.cuh and exercises the SIMT-only
     # batched APIs (gemm_batched_1d, gemm_strided_batched_1d). It does NOT

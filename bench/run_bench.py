@@ -262,7 +262,7 @@ def main():
     all_results = {}
 
     # bench_reduce (L1): powers-of-2 vector sizes up to block limit (256)
-    print("Running L1 reductions (reduce, dot, l2norm vs CUB)...")
+    print("Running L1 reductions (reduce, dot, nrm2 vs CUB)...")
     reduce_rows = []
     for n in [8, 16, 32, 64, 128, 256]:
         print(f"  n={n} ...", end=" ", flush=True)

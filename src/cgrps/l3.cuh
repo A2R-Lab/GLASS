@@ -15,22 +15,24 @@ namespace cgrps = cooperative_groups;
  * NumPy equivalent: `C = alpha * A @ B + beta * C`.
  *
  * @tparam T  Scalar type.
- * @tparam TRANSPOSE_B  If true, computes `A @ B^T` (pure-SIMT path requires B square).
- * @tparam ROW_MAJOR  Storage order for A, B and C (false = column-major).
- * @param m,n,k  Dimensions: A is m x n, B is n x k (or k x n when TRANSPOSE_B), C is m x (TRANSPOSE_B ? n : k).
+ * @tparam TRANSPOSE_A  If true, `A` is `k×m` and `op(A)=Aᵀ` (else `A` is `m×k`).
+ * @tparam TRANSPOSE_B  If true, `B` is `n×k` and `op(B)=Bᵀ` (else `B` is `k×n`).
+ * @tparam ROW_MAJOR_C  Output storage order (false = column-major).
+ * @param m,n,k  Dimensions: `C` is `m×n`, contraction `k`.
  * @param alpha  Scalar multiplier on the product.
  * @param A,B    Input matrices.
  * @param beta   Scalar multiplier on the existing C (C is read; caller must initialize it).
  * @param C      In/out result matrix.
  * @param g      Cooperative thread group (defaults to the whole block).
  */
-template <typename T, bool TRANSPOSE_B = false, bool ROW_MAJOR = false>
+template <typename T, bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
 __device__ void gemm(uint32_t m, uint32_t n, uint32_t k,
-                     T alpha, T *A, T *B, T beta, T *C,
+                     T alpha, const T *A, const T *B, T beta, T *C,
                      cgrps::thread_group g = cgrps::this_thread_block())
 {
-    gemm_impl<T, TRANSPOSE_B, ROW_MAJOR, ROW_MAJOR, ROW_MAJOR>(
+    gemm_impl<T, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C>(
         g.thread_rank(), g.size(), m, n, k, alpha, A, B, beta, C);
+    if constexpr (TRAILING_SYNC) cgrps::sync(g);
 }
 
 /**
@@ -40,59 +42,36 @@ __device__ void gemm(uint32_t m, uint32_t n, uint32_t k,
  * equivalent: `C = alpha * A @ B`.
  *
  * @tparam T  Scalar type.
- * @tparam TRANSPOSE_B  If true, computes `A @ B^T` (pure-SIMT path requires B square).
- * @tparam ROW_MAJOR  Storage order for A, B and C (false = column-major).
- * @param m,n,k  Dimensions: A is m x n, B is n x k (or k x n when TRANSPOSE_B), C is m x (TRANSPOSE_B ? n : k).
+ * @tparam TRANSPOSE_A  If true, `A` is `k×m` and `op(A)=Aᵀ` (else `A` is `m×k`).
+ * @tparam TRANSPOSE_B  If true, `B` is `n×k` and `op(B)=Bᵀ` (else `B` is `k×n`).
+ * @tparam ROW_MAJOR_C  Output storage order (false = column-major).
+ * @param m,n,k  Dimensions: `C` is `m×n`, contraction `k`.
  * @param alpha  Scalar multiplier on the product.
  * @param A,B    Input matrices.
  * @param C      Output result matrix (overwritten).
  * @param g      Cooperative thread group (defaults to the whole block).
  */
-template <typename T, bool TRANSPOSE_B = false, bool ROW_MAJOR = false>
+template <typename T, bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
 __device__ void gemm(uint32_t m, uint32_t n, uint32_t k,
-                     T alpha, T *A, T *B, T *C,
+                     T alpha, const T *A, const T *B, T *C,
                      cgrps::thread_group g = cgrps::this_thread_block())
 {
-    gemm_impl<T, TRANSPOSE_B, ROW_MAJOR, ROW_MAJOR, ROW_MAJOR>(
+    gemm_impl<T, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C>(
         g.thread_rank(), g.size(), m, n, k, alpha, A, B, C);
+    if constexpr (TRAILING_SYNC) cgrps::sync(g);
 }
 
 /**
- * @brief GEMM with per-matrix layout control: `C = alpha * A * op(B) + beta * C` (cooperative-groups variant).
+ * @brief Compile-time-size GEMM: `C = alpha * op(A) * op(B) + beta * C` (cooperative-groups variant).
  *
- * Like `gemm` but the storage order of A, B and C is set independently. NumPy
- * equivalent: `C = alpha * A @ B + beta * C`.
- *
- * @tparam T  Scalar type.
- * @tparam TRANSPOSE_B  If true, computes `A @ B^T`.
- * @tparam ROW_MAJOR_A/ROW_MAJOR_B/ROW_MAJOR_C  Storage order per matrix (false = column-major).
- * @param m,n,k  Dimensions: A is m x n, B is n x k (or k x n when TRANSPOSE_B), C is m x (TRANSPOSE_B ? n : k).
- * @param alpha  Scalar multiplier on the product.
- * @param A,B    Input matrices.
- * @param beta   Scalar multiplier on the existing C (C is read; caller must initialize it).
- * @param C      In/out result matrix.
- * @param g      Cooperative thread group (defaults to the whole block).
- */
-template <typename T, bool TRANSPOSE_B,
-          bool ROW_MAJOR_A, bool ROW_MAJOR_B, bool ROW_MAJOR_C>
-__device__ void gemm_ex(uint32_t m, uint32_t n, uint32_t k,
-                         T alpha, T *A, T *B, T beta, T *C,
-                         cgrps::thread_group g = cgrps::this_thread_block())
-{
-    gemm_impl<T, TRANSPOSE_B, ROW_MAJOR_A, ROW_MAJOR_B, ROW_MAJOR_C>(
-        g.thread_rank(), g.size(), m, n, k, alpha, A, B, beta, C);
-}
-
-/**
- * @brief Compile-time-size GEMM: `C = alpha * A * op(B) + beta * C` (cooperative-groups variant).
- *
- * Dimensions baked in as template parameters; uniform storage order. NumPy
- * equivalent: `C = alpha * A @ B + beta * C`.
+ * Dimensions baked in as template parameters; standard convention (C is M×N,
+ * contraction K). NumPy: `C = alpha * opA(A) @ opB(B) + beta * C`.
  *
  * @tparam T  Scalar type.
- * @tparam M,N,K  Compile-time dimensions: A is M x N, B is N x K (or K x N when TRANSPOSE_B), C is M x (TRANSPOSE_B ? N : K).
- * @tparam TRANSPOSE_B  If true, computes `A @ B^T`.
- * @tparam ROW_MAJOR  Storage order for A, B and C (false = column-major).
+ * @tparam M,N,K  `C` is `M×N`, contraction `K` (see gemm.cuh).
+ * @tparam TRANSPOSE_A  If true, `A` is `K×M` and `op(A)=Aᵀ`.
+ * @tparam TRANSPOSE_B  If true, `B` is `N×K` and `op(B)=Bᵀ`.
+ * @tparam ROW_MAJOR_C  Output storage order (false = column-major).
  * @param alpha  Scalar multiplier on the product.
  * @param A,B    Input matrices.
  * @param beta   Scalar multiplier on the existing C (C is read; caller must initialize it).
@@ -100,35 +79,38 @@ __device__ void gemm_ex(uint32_t m, uint32_t n, uint32_t k,
  * @param g      Cooperative thread group (defaults to the whole block).
  */
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
-          bool TRANSPOSE_B = false, bool ROW_MAJOR = false>
-__device__ void gemm(T alpha, T *A, T *B, T beta, T *C,
+          bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
+__device__ void gemm(T alpha, const T *A, const T *B, T beta, T *C,
                      cgrps::thread_group g = cgrps::this_thread_block())
 {
-    gemm_impl<T, TRANSPOSE_B, ROW_MAJOR, ROW_MAJOR, ROW_MAJOR>(
-        g.thread_rank(), g.size(), M, N, K, alpha, A, B, beta, C);
+    gemm_impl_ct<T, M, N, K, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C>(
+        g.thread_rank(), g.size(), alpha, A, B, beta, C);
+    if constexpr (TRAILING_SYNC) cgrps::sync(g);
 }
 
 /**
- * @brief Compile-time-size GEMM with implicit `beta = 0`: `C = alpha * A * op(B)` (cooperative-groups variant).
+ * @brief Compile-time-size GEMM with implicit `beta = 0`: `C = alpha * op(A) * op(B)` (cooperative-groups variant).
  *
- * Overwrites C (the existing C is not read). NumPy equivalent: `C = alpha * A @ B`.
+ * Overwrites C (the existing C is not read). NumPy: `C = alpha * opA(A) @ opB(B)`.
  *
  * @tparam T  Scalar type.
- * @tparam M,N,K  Compile-time dimensions: A is M x N, B is N x K (or K x N when TRANSPOSE_B), C is M x (TRANSPOSE_B ? N : K).
- * @tparam TRANSPOSE_B  If true, computes `A @ B^T`.
- * @tparam ROW_MAJOR  Storage order for A, B and C (false = column-major).
+ * @tparam M,N,K  `C` is `M×N`, contraction `K` (see gemm.cuh).
+ * @tparam TRANSPOSE_A  If true, `A` is `K×M` and `op(A)=Aᵀ`.
+ * @tparam TRANSPOSE_B  If true, `B` is `N×K` and `op(B)=Bᵀ`.
+ * @tparam ROW_MAJOR_C  Output storage order (false = column-major).
  * @param alpha  Scalar multiplier on the product.
  * @param A,B    Input matrices.
  * @param C      Output result matrix (overwritten).
  * @param g      Cooperative thread group (defaults to the whole block).
  */
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
-          bool TRANSPOSE_B = false, bool ROW_MAJOR = false>
-__device__ void gemm(T alpha, T *A, T *B, T *C,
+          bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
+__device__ void gemm(T alpha, const T *A, const T *B, T *C,
                      cgrps::thread_group g = cgrps::this_thread_block())
 {
-    gemm_impl<T, TRANSPOSE_B, ROW_MAJOR, ROW_MAJOR, ROW_MAJOR>(
-        g.thread_rank(), g.size(), M, N, K, alpha, A, B, C);
+    gemm_impl_ct<T, M, N, K, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C>(
+        g.thread_rank(), g.size(), alpha, A, B, C);
+    if constexpr (TRAILING_SYNC) cgrps::sync(g);
 }
 
 /**
@@ -142,30 +124,15 @@ __device__ void gemm(T alpha, T *A, T *B, T *C,
  * @param dimA    Matrix dimension (A is dimA x dimA).
  * @param A       In/out augmented `[A | I]` buffer (column-major, dimA x 2*dimA);
  *                on return its right half holds `A^-1`.
- * @param s_temp  Shared scratch of `(2*dimA + 1) * sizeof(T)` bytes.
+ * @param s_scratch  Shared scratch of `(2*dimA + 1) * sizeof(T)` bytes.
  * @param g       Cooperative thread group (defaults to the whole block).
  */
-// invertMatrix — no cgrps variant needed (already uses __syncthreads internally)
-// Exposed here for API completeness via glass::cgrps::invertMatrix
+// Delegates to the shared glass::invertMatrix_impl with a GroupBarrier.
 template <typename T>
-__device__ void invertMatrix(uint32_t dimA, T *A, T *s_temp,
+__device__ void invertMatrix(uint32_t dimA, T *A, T *s_scratch,
                               cgrps::thread_group g = cgrps::this_thread_block())
 {
-    for (unsigned pivRC = 0; pivRC < dimA; pivRC++) {
-        unsigned pivOff = pivRC * dimA;
-        T pvInv = static_cast<T>(1) / A[pivRC + pivOff];
-        for (unsigned ind = g.thread_rank(); ind < 2*dimA+1; ind++) {
-            unsigned AInd = (ind < dimA) ? (ind + pivOff) : (pivRC + pivOff + (ind-dimA)*dimA);
-            s_temp[ind] = A[AInd];
-        }
-        g.sync();
-        for (unsigned ind = g.thread_rank(); ind < dimA*(dimA+1); ind += g.size()) {
-            unsigned row = ind % dimA, col = ind / dimA, coff = ind - row;
-            if (row == pivRC) A[row + pivOff + coff] *= pvInv;
-            else A[row + pivOff + coff] -= s_temp[row]*pvInv*s_temp[dimA+col];
-        }
-        g.sync();
-    }
+    invertMatrix_impl<GroupBarrier, T>(GroupBarrier{g}, dimA, A, s_scratch);
 }
 
 /**
@@ -190,33 +157,17 @@ __device__ void invertMatrix(uint32_t dimA, T *A, T *s_temp,
 // CHECK (compile-out, default false): when true and s_fail non-null, rank 0 sets
 // *s_fail=1 on a non-PD / NaN pivot (else 0) — mirrors the base block overload.
 // s_fail is placed after g so existing (n, s_A[, g]) callers are unaffected.
+// Delegates to the shared glass::cholDecomp_InPlace_impl with a GroupBarrier.
+// NOTE on warp-tiled groups: the pivot is broadcast by re-reading shared after
+// the barrier. Safe for a block group (the default — a full block fence). A
+// shared re-read at warp scope can be cached stale by nvcc under caller
+// __restrict__ — prefer glass::warp::cholDecomp_InPlace there (it shfl-broadcasts).
 template <typename T, bool CHECK = false>
 __device__ void cholDecomp_InPlace(uint32_t n, T *s_A,
                                     cgrps::thread_group g = cgrps::this_thread_block(),
                                     int *s_fail = nullptr)
 {
-    if constexpr (CHECK) { if (g.thread_rank() == 0 && s_fail) *s_fail = 0; }
-    for (uint32_t row = 0; row < n; row++) {
-        if (g.thread_rank() == 0) {
-            T sum = static_cast<T>(0), val = s_A[n*row + row];
-            for (int32_t rl = 0; rl < (int32_t)row; rl++) sum += s_A[rl*n+row]*s_A[rl*n+row];
-            T d = val - sum;
-            if constexpr (CHECK) { if (s_fail && (d <= static_cast<T>(0) || isnan(d))) *s_fail = 1; }
-            s_A[row*n + row] = sqrtf(d);
-        }
-        g.sync();
-        // NOTE: the pivot s_A[row*n+row] is broadcast by re-reading shared after g.sync().
-        // Safe for a block group (the default — g.sync() is a full block fence). If this is
-        // ever called with a warp-tiled group, prefer g.shfl(pivot, 0) — a shared re-read at
-        // warp scope can be cached stale by nvcc under caller __restrict__ (see the
-        // glass::warp::cholDecomp_InPlace shfl fix in base/L3/chol_InPlace.cuh).
-        for (uint32_t col = g.thread_rank() + row + 1; col < n; col += g.size()) {
-            T sum = static_cast<T>(0);
-            for (uint32_t kk = 0; kk < row; kk++) sum += s_A[kk*n+col]*s_A[kk*n+row];
-            s_A[row*n+col] = (static_cast<T>(1)/s_A[row*n+row])*(s_A[row*n+col] - sum);
-        }
-        g.sync();
-    }
+    cholDecomp_InPlace_impl<GroupBarrier, T, CHECK>(GroupBarrier{g}, n, s_A, s_fail);
 }
 
 /**
@@ -232,21 +183,13 @@ __device__ void cholDecomp_InPlace(uint32_t n, T *s_A,
  * @param b  In/out right-hand side; on return holds the solution x.
  * @param g  Cooperative thread group (defaults to the whole block).
  */
-// trsm
+// Delegates to the shared glass::trsm_impl with a GroupBarrier. For a warp-tiled
+// group prefer glass::warp::trsm (register-broadcast pivot) — see base/L3/trsm.cuh.
 template <typename T>
 __device__ void trsm(uint32_t n, T *L, T *b,
                      cgrps::thread_group g = cgrps::this_thread_block())
 {
-    for (uint32_t col = 0; col < n; col++) {
-        if (g.thread_rank() == 0) b[col] /= L[col*n + col];
-        g.sync();
-        // broadcast via shared re-read; safe for a block group (full fence). For a warp-tiled
-        // group prefer g.shfl(b[col], 0) — see the glass::warp::trsm shfl fix (base/L3/trsm.cuh).
-        T factor = b[col];
-        for (uint32_t row = g.thread_rank() + col + 1; row < n; row += g.size())
-            b[row] -= L[col*n + row] * factor;
-        g.sync();
-    }
+    trsm_impl<GroupBarrier, T>(GroupBarrier{g}, n, L, b);
 }
 
 // ─── contraction-parallel GEMM (cooperative-groups variant) ──────────────────
@@ -262,9 +205,10 @@ __device__ void trsm(uint32_t n, T *L, T *b,
  * output and its lanes split the contraction. Pass a warp-multiple group.
  *
  * @tparam T  Scalar type.
- * @tparam M,N,K  Compile-time dimensions: A is M x N, B is N x K (or K x N when TRANSPOSE_B), C is M x (TRANSPOSE_B ? N : K).
- * @tparam TRANSPOSE_B  If true, computes `A @ B^T` (requires B square: N == K).
- * @tparam ROW_MAJOR  Storage order for A, B and C (false = column-major).
+ * @tparam M,N,K  `C` is `M×N`, contraction `K` (see gemm.cuh).
+ * @tparam TRANSPOSE_A  If true, `A` is `K×M` and `op(A)=Aᵀ`.
+ * @tparam TRANSPOSE_B  If true, `B` is `N×K` and `op(B)=Bᵀ`.
+ * @tparam ROW_MAJOR_C  Output storage order (false = column-major).
  * @tparam TRAILING_SYNC  Emit a trailing `g.sync()` (default true).
  * @param alpha  Scalar multiplier on the product.
  * @param A,B    Input matrices.
@@ -273,11 +217,11 @@ __device__ void trsm(uint32_t n, T *L, T *b,
  * @param g      Cooperative thread group (defaults to the whole block).
  */
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
-          bool TRANSPOSE_B = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
+          bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
 __device__ void gemm_reduced(T alpha, T *A, T *B, T beta, T *C,
                              cgrps::thread_group g = cgrps::this_thread_block())
 {
-    glass::gemm_reduced_impl_ct<T, M, N, K, TRANSPOSE_B, ROW_MAJOR, ROW_MAJOR, ROW_MAJOR, true>(
+    glass::gemm_reduced_impl_ct<T, M, N, K, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C, true>(
         g.thread_rank(), g.size(), alpha, A, B, beta, C);
     if constexpr (TRAILING_SYNC) g.sync();
 }
@@ -289,9 +233,10 @@ __device__ void gemm_reduced(T alpha, T *A, T *B, T beta, T *C,
  * overload above; pass a warp-multiple group.
  *
  * @tparam T  Scalar type.
- * @tparam M,N,K  Compile-time dimensions: A is M x N, B is N x K (or K x N when TRANSPOSE_B), C is M x (TRANSPOSE_B ? N : K).
- * @tparam TRANSPOSE_B  If true, computes `A @ B^T` (requires B square: N == K).
- * @tparam ROW_MAJOR  Storage order for A, B and C (false = column-major).
+ * @tparam M,N,K  `C` is `M×N`, contraction `K` (see gemm.cuh).
+ * @tparam TRANSPOSE_A  If true, `A` is `K×M` and `op(A)=Aᵀ`.
+ * @tparam TRANSPOSE_B  If true, `B` is `N×K` and `op(B)=Bᵀ`.
+ * @tparam ROW_MAJOR_C  Output storage order (false = column-major).
  * @tparam TRAILING_SYNC  Emit a trailing `g.sync()` (default true).
  * @param alpha  Scalar multiplier on the product.
  * @param A,B    Input matrices.
@@ -299,11 +244,11 @@ __device__ void gemm_reduced(T alpha, T *A, T *B, T beta, T *C,
  * @param g      Cooperative thread group (defaults to the whole block).
  */
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
-          bool TRANSPOSE_B = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
+          bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
 __device__ void gemm_reduced(T alpha, T *A, T *B, T *C,
                              cgrps::thread_group g = cgrps::this_thread_block())
 {
-    glass::gemm_reduced_impl_ct<T, M, N, K, TRANSPOSE_B, ROW_MAJOR, ROW_MAJOR, ROW_MAJOR, false>(
+    glass::gemm_reduced_impl_ct<T, M, N, K, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C, false>(
         g.thread_rank(), g.size(), alpha, A, B, static_cast<T>(0), C);
     if constexpr (TRAILING_SYNC) g.sync();
 }
@@ -364,18 +309,18 @@ __device__ void vec_tensor_vec(const T* Tns, const T* u, const T* w, T* s,
  *
  * @tparam T,N,Kdim,ACCUMULATE  See glass::congruence_sym.
  * @tparam TRAILING_SYNC  Emit a trailing `g.sync()` (default true).
- * @param alpha,X,M,beta,Q,s_temp  See glass::congruence_sym.
+ * @param alpha,X,M,beta,Q,s_scratch  See glass::congruence_sym.
  * @param g  Cooperative thread group (defaults to the whole block; pass a warp-multiple group).
  */
 template <typename T, uint32_t N, uint32_t Kdim,
           bool ACCUMULATE = false, bool TRAILING_SYNC = true>
-__device__ void congruence_sym(T alpha, const T* X, const T* M, T beta, T* Q, T* s_temp,
+__device__ void congruence_sym(T alpha, const T* X, const T* M, T beta, T* Q, T* s_scratch,
                                cgrps::thread_group g = cgrps::this_thread_block())
 {
-    gemm(N, N, Kdim, static_cast<T>(1), const_cast<T*>(M), const_cast<T*>(X), s_temp, g);
+    gemm(N, Kdim, N, static_cast<T>(1), const_cast<T*>(M), const_cast<T*>(X), s_scratch, g);
     g.sync();
     glass::detail::xtY_impl<T, N, Kdim, Kdim, true, ACCUMULATE>(
-        g.thread_rank(), g.size(), alpha, X, s_temp, beta, Q);
+        g.thread_rank(), g.size(), alpha, X, s_scratch, beta, Q);
     if constexpr (TRAILING_SYNC) g.sync();
 }
 
@@ -386,18 +331,18 @@ __device__ void congruence_sym(T alpha, const T* X, const T* M, T beta, T* Q, T*
  *
  * @tparam T,N,P,Qd,ACCUMULATE  See glass::bilinear.
  * @tparam TRAILING_SYNC  Emit a trailing `g.sync()` (default true).
- * @param alpha,X,M,Y,beta,R,s_temp  See glass::bilinear.
+ * @param alpha,X,M,Y,beta,R,s_scratch  See glass::bilinear.
  * @param g  Cooperative thread group (defaults to the whole block; pass a warp-multiple group).
  */
 template <typename T, uint32_t N, uint32_t P, uint32_t Qd,
           bool ACCUMULATE = false, bool TRAILING_SYNC = true>
-__device__ void bilinear(T alpha, const T* X, const T* M, const T* Y, T beta, T* R, T* s_temp,
+__device__ void bilinear(T alpha, const T* X, const T* M, const T* Y, T beta, T* R, T* s_scratch,
                          cgrps::thread_group g = cgrps::this_thread_block())
 {
-    gemm(N, N, Qd, static_cast<T>(1), const_cast<T*>(M), const_cast<T*>(Y), s_temp, g);
+    gemm(N, Qd, N, static_cast<T>(1), const_cast<T*>(M), const_cast<T*>(Y), s_scratch, g);
     g.sync();
     glass::detail::xtY_impl<T, N, P, Qd, false, ACCUMULATE>(
-        g.thread_rank(), g.size(), alpha, X, s_temp, beta, R);
+        g.thread_rank(), g.size(), alpha, X, s_scratch, beta, R);
     if constexpr (TRAILING_SYNC) g.sync();
 }
 
@@ -408,29 +353,29 @@ __device__ void bilinear(T alpha, const T* X, const T* M, const T* Y, T beta, T*
  *
  * Cooperative-groups form of `glass::syrk_reduced`. Pass a warp-multiple group.
  *
- * @tparam T,ROWS,COLS,TRANS  See glass::syrk_reduced.
+ * @tparam T,ROWS,COLS,TRANSPOSE  See glass::syrk_reduced.
  * @tparam TRAILING_SYNC  Emit a trailing `g.sync()` (default true).
  * @param alpha,A,beta,C  See glass::syrk_reduced.
  * @param g  Cooperative thread group (defaults to the whole block; pass a warp-multiple group).
  */
-template <typename T, uint32_t ROWS, uint32_t COLS, bool TRANS = false, bool TRAILING_SYNC = true>
+template <typename T, uint32_t ROWS, uint32_t COLS, bool TRANSPOSE = false, bool TRAILING_SYNC = true>
 __device__ void syrk_reduced(T alpha, const T* A, T beta, T* C,
                              cgrps::thread_group g = cgrps::this_thread_block())
 {
-    glass::detail::syrk_reduced_impl<T, ROWS, COLS, TRANS, true>(g.thread_rank(), g.size(), alpha, A, beta, C);
+    glass::detail::syrk_reduced_impl<T, ROWS, COLS, TRANSPOSE, true>(g.thread_rank(), g.size(), alpha, A, beta, C);
     if constexpr (TRAILING_SYNC) g.sync();
 }
 
 /**
  * @brief Contraction-parallel SYRK with implicit `beta = 0`: `C = alpha * A·op(A)` (cooperative-groups variant).
  *
- * @tparam T,ROWS,COLS,TRANS,TRAILING_SYNC  See the beta overload.
+ * @tparam T,ROWS,COLS,TRANSPOSE,TRAILING_SYNC  See the beta overload.
  * @param alpha,A,C,g  See the beta overload.
  */
-template <typename T, uint32_t ROWS, uint32_t COLS, bool TRANS = false, bool TRAILING_SYNC = true>
+template <typename T, uint32_t ROWS, uint32_t COLS, bool TRANSPOSE = false, bool TRAILING_SYNC = true>
 __device__ void syrk_reduced(T alpha, const T* A, T* C,
                              cgrps::thread_group g = cgrps::this_thread_block())
 {
-    glass::detail::syrk_reduced_impl<T, ROWS, COLS, TRANS, false>(g.thread_rank(), g.size(), alpha, A, static_cast<T>(0), C);
+    glass::detail::syrk_reduced_impl<T, ROWS, COLS, TRANSPOSE, false>(g.thread_rank(), g.size(), alpha, A, static_cast<T>(0), C);
     if constexpr (TRAILING_SYNC) g.sync();
 }

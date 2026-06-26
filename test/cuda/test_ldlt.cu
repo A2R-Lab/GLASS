@@ -33,6 +33,17 @@ __global__ void k_ldlt_solve(uint32_t n, float* A, float* s_temp, float* b,
     glass::ldlt_solve<float>(n, A, b, pivot != 0 ? piv : nullptr);
 }
 
+// ─── warp forms (compile-time N, non-pivoted) ─────────────────────────────────
+template <uint32_t N, bool CHECK>
+__global__ void k_ldlt_warp(float* A, int* s_fail, int* s_inertia) {
+    glass::warp::ldlt<float, N, CHECK>(A, s_fail, s_inertia);
+}
+template <uint32_t N>
+__global__ void k_ldlt_solve_warp(float* A, float* b) {
+    glass::warp::ldlt<float, N>(A);
+    glass::warp::ldlt_solve<float, N>(A, b);
+}
+
 // Print n device uint32 values (the pivot array) as space-separated ints.
 __global__ void print_piv_kernel(uint32_t* d, int n) {
     for (int i = 0; i < n; i++) {
@@ -71,6 +82,40 @@ int main(int argc, char** argv) {
         if (argc < 7) { fprintf(stderr, "ldlt_solve needs <b.bin>\n"); return 1; }
         float* db = read_device_vec(argv[6], n);
         k_ldlt_solve<<<1, threads>>>((uint32_t)n, dA, dscr, db, pivot, dpiv);
+        cudaDeviceSynchronize();
+        print_device_vec(db, n);
+    } else if (strcmp(op, "ldlt_warp") == 0) {
+        // factor only; prints n*n factored buffer (D diag, unit-L strict-lower).
+#define MAC(N) k_ldlt_warp<N,false><<<1,threads>>>(dA, nullptr, nullptr)
+        switch (n) { case 3:MAC(3);break; case 4:MAC(4);break; case 5:MAC(5);break;
+                     case 6:MAC(6);break; case 7:MAC(7);break; case 8:MAC(8);break;
+                     default: fprintf(stderr,"warp ldlt: n must be 3..8\n"); return 1; }
+#undef MAC
+        cudaDeviceSynchronize();
+        print_device_vec(dA, n * n);
+    } else if (strcmp(op, "ldlt_warp_check") == 0) {
+        // CHECK path: prints factor (line 1), then "s_fail pos neg zero" (line 2).
+        int *d_fail, *d_inertia;
+        cudaMalloc(&d_fail, sizeof(int)); cudaMalloc(&d_inertia, 3*sizeof(int));
+#define MAC(N) k_ldlt_warp<N,true><<<1,threads>>>(dA, d_fail, d_inertia)
+        switch (n) { case 3:MAC(3);break; case 4:MAC(4);break; case 5:MAC(5);break;
+                     case 6:MAC(6);break; case 7:MAC(7);break; case 8:MAC(8);break;
+                     default: fprintf(stderr,"warp ldlt: n must be 3..8\n"); return 1; }
+#undef MAC
+        cudaDeviceSynchronize();
+        print_device_vec(dA, n * n);
+        int h_fail, h_in[3];
+        cudaMemcpy(&h_fail, d_fail, sizeof(int), cudaMemcpyDeviceToHost);
+        cudaMemcpy(h_in, d_inertia, 3*sizeof(int), cudaMemcpyDeviceToHost);
+        printf("%d %d %d %d\n", h_fail, h_in[0], h_in[1], h_in[2]);
+    } else if (strcmp(op, "ldlt_solve_warp") == 0) {
+        if (argc < 7) { fprintf(stderr, "ldlt_solve_warp needs <b.bin>\n"); return 1; }
+        float* db = read_device_vec(argv[6], n);
+#define MAC(N) k_ldlt_solve_warp<N><<<1,threads>>>(dA, db)
+        switch (n) { case 3:MAC(3);break; case 4:MAC(4);break; case 5:MAC(5);break;
+                     case 6:MAC(6);break; case 7:MAC(7);break; case 8:MAC(8);break;
+                     default: fprintf(stderr,"warp ldlt: n must be 3..8\n"); return 1; }
+#undef MAC
         cudaDeviceSynchronize();
         print_device_vec(db, n);
     } else {

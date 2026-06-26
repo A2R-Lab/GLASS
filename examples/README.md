@@ -16,6 +16,10 @@ build. For the full API surface and the backend-choice guide, read that README.
 |------|-------|----------------|
 | [`01_axpy_simt.cu`](01_axpy_simt.cu) | L1 vector op `axpy` (`y = αx + y`), **runtime size** | pure SIMT — no extra deps |
 | [`02_gemm.cu`](02_gemm.cu) | single-block `gemm` (`C = αAB + βC`), runtime + **compile-time** size overloads, column-major | pure SIMT — no extra deps |
+| [`10_gemm_basics.cu`](10_gemm_basics.cu) | the **standard-BLAS GEMM convention** (`C` is M×N, contraction K) and all four `TRANSPOSE_A`/`TRANSPOSE_B` combos, verified at a non-square shape | pure SIMT — no extra deps |
+| [`11_rowmajor_is_transpose.cu`](11_rowmajor_is_transpose.cu) | **"row-major is just a transpose"** — a row-major operand read with `TRANSPOSE_*` gives bit-identical output (why per-operand `ROW_MAJOR` was pruned) | pure SIMT — no extra deps |
+| [`12_nrm2.cu`](12_nrm2.cu) | Euclidean norm `nrm2` (BLAS name; `np.linalg.norm` / Eigen `x.norm()`), block + warp forms | pure SIMT — no extra deps |
+| [`13_gemm_strided.cu`](13_gemm_strided.cu) | `gemm_strided` — GEMM on column-major sub-blocks with explicit leading dims, `alpha`/`beta` at the front | pure SIMT — no extra deps |
 | [`03_reduce.cu`](03_reduce.cu) | block reduction: `glass::reduce` and the warp-shuffle `glass::high_speed::reduce` (with scratch) | pure SIMT — no extra deps |
 | [`04_cgrps.cu`](04_cgrps.cu) | the **cooperative-groups** variant `glass::cgrps::gemm` (whole-block or warp-tile) | pure SIMT — no extra deps |
 | [`05_gemm_dispatch.cu`](05_gemm_dispatch.cu) | `glass::gemm_dispatch` + dynamic shared memory via the `glass_gemm_dispatch_smem` host helper (tiled path) | pure SIMT — no extra deps |
@@ -87,7 +91,13 @@ The MathDx-specific flags:
   single CUDA block; these examples all launch `<<<1, threads>>>`. To process
   many independent items, launch one block each (`<<<num_items, threads>>>`).
 - **Column-major by default.** Matrices are Fortran/column-major (`A[row +
-  col*m]`), matching cuBLAS. The pure-SIMT path takes a `ROW_MAJOR=true`
-  template parameter; the `glass::nvidia::` path uses the `layout` enum.
-- Reductions (`reduce`, `dot`, `l2norm`) write their result **in place** to
-  `x[0]` and may consume the input as scratch.
+  col*m]`), matching cuBLAS / Eigen. GEMM follows the standard BLAS convention
+  (`C` is M×N, contraction K) with `TRANSPOSE_A` / `TRANSPOSE_B` / `ROW_MAJOR_C`
+  flags; a row-major operand is just a transpose (`11_rowmajor_is_transpose.cu`).
+  The `glass::nvidia::` path uses the `layout` enum.
+- Reductions (`reduce`, `dot`, `nrm2`) write their result **in place** to
+  `x[0]` and may consume the input as scratch (the `glass::warp::` forms return
+  the value instead).
+- **Migrating from the old API?** See [`MIGRATION.md`](MIGRATION.md) for the
+  one-line OLD→NEW changes (the `gemm` dim swap, `gemm_ex` removal, `row_strided_*`
+  arg order, `l2norm`→`nrm2`).

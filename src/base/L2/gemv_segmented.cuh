@@ -8,7 +8,7 @@
 // A_seg is M rows x N cols, column-major with leading dimension ROW_STRIDE
 // (A_seg[i][j] = A[seg_a_off[seg] + i + j*ROW_STRIDE]).  M, N, ROW_STRIDE are
 // compile-time so the inner column loop is fully unrolled.  This is the
-// segmented analogue of row_strided_gemv<T,M,N,ROW_STRIDE>: instead of one
+// segmented analogue of gemv_strided<T,M,N,ROW_STRIDE>: instead of one
 // matrix it walks `segments` of them, with per-segment base offsets supplied by
 // the descriptor arrays seg_a_off / seg_x_off / seg_y_off.
 //
@@ -99,7 +99,7 @@
 template <typename T, uint32_t M, uint32_t N, uint32_t ROW_STRIDE = M,
           bool FUSE_SCALED_ADD = false, bool TRANSPOSE = false,
           bool ATOMIC_Y = false, typename IDX_T = int>
-__device__ void segmented_row_strided_gemv(
+__device__ void gemv_segmented(
     uint32_t segments,
     const IDX_T* seg_a_off, const IDX_T* seg_x_off, const IDX_T* seg_y_off,
     const T* A, const T* x, T* y, T alpha, T beta,
@@ -141,7 +141,7 @@ __device__ void segmented_row_strided_gemv(
 /**
  * @brief Segmented (batched) column-major GEMV, no-beta overload: `y_seg = alpha*A_seg*x_seg` per segment.
  *
- * No-`beta` variant of `segmented_row_strided_gemv`: each segment overwrites its
+ * No-`beta` variant of `gemv_segmented`: each segment overwrites its
  * `y_seg` (optionally plus the fused scaled-add) or computes the transpose. This
  * also serves as the `ATOMIC_Y` entry point, since atomic accumulate takes no
  * `beta` (see the full overload's note on beta-under-atomic).
@@ -172,7 +172,7 @@ __device__ void segmented_row_strided_gemv(
 template <typename T, uint32_t M, uint32_t N, uint32_t ROW_STRIDE = M,
           bool FUSE_SCALED_ADD = false, bool TRANSPOSE = false,
           bool ATOMIC_Y = false, typename IDX_T = int>
-__device__ void segmented_row_strided_gemv(
+__device__ void gemv_segmented(
     uint32_t segments,
     const IDX_T* seg_a_off, const IDX_T* seg_x_off, const IDX_T* seg_y_off,
     const T* A, const T* x, T* y, T alpha,

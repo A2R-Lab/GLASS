@@ -3,8 +3,9 @@
 // Build (from this examples/ dir):
 //   nvcc -std=c++17 -arch=sm_75 -I.. 02_gemm.cu -o gemm && ./gemm
 //
-// Computes C = alpha*A*B + beta*C, column-major. A is m x n, B is n x k,
-// C is m x k. Uses both the runtime-size and compile-time-size overloads.
+// Computes C = alpha*op(A)*op(B) + beta*C, column-major (standard BLAS): C is
+// m x n, contraction k; A is m x k, B is k x n. Uses the runtime-size and
+// compile-time-size overloads (TRANSPOSE_A/TRANSPOSE_B/ROW_MAJOR_C flags default off).
 
 #include "glass.cuh"
 #include <cstdio>

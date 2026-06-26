@@ -68,7 +68,7 @@ template parameters (defaults: ``N*K`` and ``M*K`` for tight packing).
 
 .. note::
 
-   A related primitive, ``glass::indexed_batched_gemm``
+   A related primitive, ``glass::gemm_batched_indexed``
    (``src/base/L3/gemm_batched_indexed.cuh``), gathers per-batch operands
    through an index array at irregular offsets. It lives in ``glass::`` (not
    ``glass::nvidia::``) and uses a *different* model — a block stride over the

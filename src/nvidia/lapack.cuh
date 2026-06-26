@@ -9,7 +9,7 @@
  * least-squares (gels). Each is a static_assert stub by default; instantiate a
  * shape with the matching `DEFINE_NVIDIA_<NAME>` / `_BLOCKDIM` / `_SM` /
  * `_BLOCKDIM_SM` macro in your `.cu` (inside `namespace glass::nvidia`). Each
- * also ships `*_smem_size` / `*_threads` host-callable constexpr queries.
+ * also ships `*_scratch_bytes` / `*_threads` host-callable constexpr queries.
  *
  * Requires cuSOLVERDx / NVIDIA MathDx (MATHDX_ROOT) and linking the precompiled
  * device library (`-rdc=true -dlto -lcusolverdx -lcublas -lcusolver -lcudart`).
@@ -39,7 +39,7 @@
 //
 // Example:
 //   DEFINE_NVIDIA_CHOL_BLOCKDIM(7, 352)
-//   constexpr auto smem    = glass::nvidia::cholDecomp_InPlace_smem_size<float, 7, 352>();
+//   constexpr auto smem    = glass::nvidia::cholDecomp_InPlace_scratch_bytes<float, 7, 352>();
 //   constexpr auto threads = glass::nvidia::cholDecomp_InPlace_threads<float, 7, 352>();
 //   kernel<<<1, threads, smem>>>(d_A);
 //   glass::nvidia::cholDecomp_InPlace<float, 7, 352>(A, smem_ptr);
@@ -66,7 +66,7 @@
  * @tparam SM_VAL        Target SM architecture (default = SMS).
  * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
  * @param  A             Pointer to the N×N column-major SPD matrix; overwritten with L.
- * @param  smem          Shared scratch (>= cholDecomp_InPlace_smem_size<...>()).
+ * @param  smem          Shared scratch (>= cholDecomp_InPlace_scratch_bytes<...>()).
  */
 template <typename T, uint32_t N, uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS,
           bool TRAILING_SYNC = true>
@@ -82,7 +82,7 @@ __device__ void cholDecomp_InPlace(T* A, char* smem)
  * @tparam T T scalar; @tparam N dim; @tparam BLOCK_THREADS pinned BlockDim; @tparam SM_VAL SM arch.
  */
 template <typename T, uint32_t N, uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
-constexpr std::size_t cholDecomp_InPlace_smem_size() { return 0; }
+constexpr std::size_t cholDecomp_InPlace_scratch_bytes() { return 0; }
 
 /**
  * @brief Thread count cuSOLVERDx wants for `cholDecomp_InPlace<...>` (host-callable, constexpr).
@@ -109,7 +109,7 @@ constexpr uint32_t cholDecomp_InPlace_threads() { return 256; }
  * @param  alpha         Scaling factor applied to B before the solve.
  * @param  L             Pointer to the M×M lower-triangular matrix.
  * @param  B             Pointer to the M×N right-hand sides; overwritten with X.
- * @param  smem          Shared scratch (>= trsm_smem_size<...>()).
+ * @param  smem          Shared scratch (>= trsm_scratch_bytes<...>()).
  */
 template <typename T, uint32_t M, uint32_t N,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS,
@@ -127,7 +127,7 @@ __device__ void trsm(T alpha, T* L, T* B, char* smem)
  */
 template <typename T, uint32_t M, uint32_t N,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
-constexpr std::size_t trsm_smem_size() { return 0; }
+constexpr std::size_t trsm_scratch_bytes() { return 0; }
 
 /**
  * @brief Thread count cuSOLVERDx wants for `trsm<...>` (host-callable, constexpr).
@@ -184,7 +184,7 @@ constexpr uint32_t trsm_threads() { return 256; }
         _nvidia_chol_impl_##N##_##CT##_bd0_sm##ARCH::template run<false>(A, smem);                   \
     }                                                                                         \
     template <>                                                                               \
-    constexpr std::size_t cholDecomp_InPlace_smem_size<CT, N, 0, ARCH>()                         \
+    constexpr std::size_t cholDecomp_InPlace_scratch_bytes<CT, N, 0, ARCH>()                         \
     {                                                                                         \
         return _nvidia_chol_impl_##N##_##CT##_bd0_sm##ARCH::smem_bytes;                              \
     }                                                                                         \
@@ -237,7 +237,7 @@ constexpr uint32_t trsm_threads() { return 256; }
         _nvidia_chol_impl_##N##_##CT##_bd##TC##_sm##ARCH::template run<false>(A, smem);              \
     }                                                                                         \
     template <>                                                                               \
-    constexpr std::size_t cholDecomp_InPlace_smem_size<CT, N, TC, ARCH>()                        \
+    constexpr std::size_t cholDecomp_InPlace_scratch_bytes<CT, N, TC, ARCH>()                        \
     {                                                                                         \
         return _nvidia_chol_impl_##N##_##CT##_bd##TC##_sm##ARCH::smem_bytes;                         \
     }                                                                                         \
@@ -311,7 +311,7 @@ constexpr uint32_t trsm_threads() { return 256; }
         _nvidia_trsm_impl_##M##x##N##_##CT##_bd0_sm##ARCH::template run<false>(alpha, L, B, smem);   \
     }                                                                                         \
     template <>                                                                               \
-    constexpr std::size_t trsm_smem_size<CT, M, N, 0, ARCH>()                              \
+    constexpr std::size_t trsm_scratch_bytes<CT, M, N, 0, ARCH>()                              \
     {                                                                                         \
         return _nvidia_trsm_impl_##M##x##N##_##CT##_bd0_sm##ARCH::smem_bytes;                        \
     }                                                                                         \
@@ -379,7 +379,7 @@ constexpr uint32_t trsm_threads() { return 256; }
         _nvidia_trsm_impl_##M##x##N##_##CT##_bd##TC##_sm##ARCH::template run<false>(alpha, L, B, smem);\
     }                                                                                         \
     template <>                                                                               \
-    constexpr std::size_t trsm_smem_size<CT, M, N, TC, ARCH>()                             \
+    constexpr std::size_t trsm_scratch_bytes<CT, M, N, TC, ARCH>()                             \
     {                                                                                         \
         return _nvidia_trsm_impl_##M##x##N##_##CT##_bd##TC##_sm##ARCH::smem_bytes;                   \
     }                                                                                         \
@@ -431,7 +431,7 @@ constexpr uint32_t trsm_threads() { return 256; }
 //
 // All seven follow the same primary-template + private-core-macro + _E
 // indirection + public DEFINE convenience-macro pattern as cholDecomp_InPlace/trsm.
-// Each provides _smem_size and _threads constexpr queries.
+// Each provides _scratch_bytes and _threads constexpr queries.
 // =============================================================================
 
 // --- posv (SPD factor + solve) ----------------------------------------------
@@ -454,7 +454,7 @@ constexpr uint32_t trsm_threads() { return 256; }
  * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
  * @param  A             Pointer to the N×N SPD matrix; overwritten with L.
  * @param  B             Pointer to the N×NRHS right-hand sides; overwritten with X.
- * @param  smem          Shared scratch (>= posv_smem_size<...>()).
+ * @param  smem          Shared scratch (>= posv_scratch_bytes<...>()).
  */
 template <typename T, uint32_t N, uint32_t NRHS,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS,
@@ -472,7 +472,7 @@ __device__ void posv(T* A, T* B, char* smem)
  */
 template <typename T, uint32_t N, uint32_t NRHS,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
-constexpr std::size_t posv_smem_size() { return 0; }
+constexpr std::size_t posv_scratch_bytes() { return 0; }
 
 /**
  * @brief Thread count cuSOLVERDx wants for `posv<...>` (host-callable, constexpr).
@@ -523,7 +523,7 @@ constexpr uint32_t posv_threads() { return 256; }
     __device__ inline void posv<CT, N, NRHS, 0, ARCH, false>(CT* A, CT* B, char* smem) \
     { _nvidia_posv_impl_##N##x##NRHS##_##CT##_bd0_sm##ARCH::template run<false>(A, B, smem); }          \
     template <>                                                                                  \
-    constexpr std::size_t posv_smem_size<CT, N, NRHS, 0, ARCH>()                             \
+    constexpr std::size_t posv_scratch_bytes<CT, N, NRHS, 0, ARCH>()                             \
     { return _nvidia_posv_impl_##N##x##NRHS##_##CT##_bd0_sm##ARCH::smem_bytes; }                        \
     template <>                                                                                  \
     constexpr uint32_t posv_threads<CT, N, NRHS, 0, ARCH>()                                  \
@@ -571,7 +571,7 @@ constexpr uint32_t posv_threads() { return 256; }
     __device__ inline void posv<CT, N, NRHS, TC, ARCH, false>(CT* A, CT* B, char* smem)\
     { _nvidia_posv_impl_##N##x##NRHS##_##CT##_bd##TC##_sm##ARCH::template run<false>(A, B, smem); }     \
     template <>                                                                                  \
-    constexpr std::size_t posv_smem_size<CT, N, NRHS, TC, ARCH>()                            \
+    constexpr std::size_t posv_scratch_bytes<CT, N, NRHS, TC, ARCH>()                            \
     { return _nvidia_posv_impl_##N##x##NRHS##_##CT##_bd##TC##_sm##ARCH::smem_bytes; }                   \
     template <>                                                                                  \
     constexpr uint32_t posv_threads<CT, N, NRHS, TC, ARCH>()                                 \
@@ -609,7 +609,7 @@ constexpr uint32_t posv_threads() { return 256; }
  * @tparam SM_VAL        Target SM architecture (default = SMS).
  * @param  L             Pointer to the N×N lower Cholesky factor (read-only).
  * @param  B             Pointer to the N×NRHS right-hand sides; overwritten with X.
- * @param  smem          Shared scratch (>= potrs_smem_size<...>()).
+ * @param  smem          Shared scratch (>= potrs_scratch_bytes<...>()).
  */
 template <typename T, uint32_t N, uint32_t NRHS,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
@@ -626,7 +626,7 @@ __device__ void potrs(const T* L, T* B, char* smem)
  */
 template <typename T, uint32_t N, uint32_t NRHS,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
-constexpr std::size_t potrs_smem_size() { return 0; }
+constexpr std::size_t potrs_scratch_bytes() { return 0; }
 
 /**
  * @brief Thread count cuSOLVERDx wants for `potrs<...>` (host-callable, constexpr).
@@ -669,7 +669,7 @@ constexpr uint32_t potrs_threads() { return 256; }
     __device__ inline void potrs<float, N, NRHS, 0, ARCH>(const float* L, float* B, char* smem) \
     { _nvidia_potrs_impl_##N##x##NRHS##_bd0_sm##ARCH::run(L, B, smem); }                         \
     template <>                                                                                  \
-    constexpr std::size_t potrs_smem_size<float, N, NRHS, 0, ARCH>()                            \
+    constexpr std::size_t potrs_scratch_bytes<float, N, NRHS, 0, ARCH>()                            \
     { return _nvidia_potrs_impl_##N##x##NRHS##_bd0_sm##ARCH::smem_bytes; }                       \
     template <>                                                                                  \
     constexpr uint32_t potrs_threads<float, N, NRHS, 0, ARCH>()                                 \
@@ -709,7 +709,7 @@ constexpr uint32_t potrs_threads() { return 256; }
     __device__ inline void potrs<float, N, NRHS, TC, ARCH>(const float* L, float* B, char* smem)\
     { _nvidia_potrs_impl_##N##x##NRHS##_bd##TC##_sm##ARCH::run(L, B, smem); }                    \
     template <>                                                                                  \
-    constexpr std::size_t potrs_smem_size<float, N, NRHS, TC, ARCH>()                           \
+    constexpr std::size_t potrs_scratch_bytes<float, N, NRHS, TC, ARCH>()                           \
     { return _nvidia_potrs_impl_##N##x##NRHS##_bd##TC##_sm##ARCH::smem_bytes; }                  \
     template <>                                                                                  \
     constexpr uint32_t potrs_threads<float, N, NRHS, TC, ARCH>()                                \
@@ -740,7 +740,7 @@ constexpr uint32_t potrs_threads() { return 256; }
  * @tparam BLOCK_THREADS Pinned cuSOLVERDx BlockDim (0 = vendor picks).
  * @tparam SM_VAL        Target SM architecture (default = SMS).
  * @param  A             Pointer to the N×N matrix; overwritten with the LU factors.
- * @param  smem          Shared scratch (>= getrf_no_pivot_smem_size<...>()).
+ * @param  smem          Shared scratch (>= getrf_no_pivot_scratch_bytes<...>()).
  */
 template <typename T, uint32_t N,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
@@ -756,7 +756,7 @@ __device__ void getrf_no_pivot(T* A, char* smem)
  * @tparam T scalar; @tparam N dim; @tparam BLOCK_THREADS pinned BlockDim; @tparam SM_VAL SM arch.
  */
 template <typename T, uint32_t N, uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
-constexpr std::size_t getrf_no_pivot_smem_size() { return 0; }
+constexpr std::size_t getrf_no_pivot_scratch_bytes() { return 0; }
 
 /**
  * @brief Thread count cuSOLVERDx wants for `getrf_no_pivot<...>` (host-callable, constexpr).
@@ -796,7 +796,7 @@ constexpr uint32_t getrf_no_pivot_threads() { return 256; }
     __device__ inline void getrf_no_pivot<float, N, 0, ARCH>(float* A, char* smem)              \
     { _nvidia_getrf_impl_##N##_bd0_sm##ARCH::run(A, smem); }                                     \
     template <>                                                                                  \
-    constexpr std::size_t getrf_no_pivot_smem_size<float, N, 0, ARCH>()                         \
+    constexpr std::size_t getrf_no_pivot_scratch_bytes<float, N, 0, ARCH>()                         \
     { return _nvidia_getrf_impl_##N##_bd0_sm##ARCH::smem_bytes; }                                \
     template <>                                                                                  \
     constexpr uint32_t getrf_no_pivot_threads<float, N, 0, ARCH>()                              \
@@ -834,7 +834,7 @@ constexpr uint32_t getrf_no_pivot_threads() { return 256; }
     __device__ inline void getrf_no_pivot<float, N, TC, ARCH>(float* A, char* smem)             \
     { _nvidia_getrf_impl_##N##_bd##TC##_sm##ARCH::run(A, smem); }                                \
     template <>                                                                                  \
-    constexpr std::size_t getrf_no_pivot_smem_size<float, N, TC, ARCH>()                        \
+    constexpr std::size_t getrf_no_pivot_scratch_bytes<float, N, TC, ARCH>()                        \
     { return _nvidia_getrf_impl_##N##_bd##TC##_sm##ARCH::smem_bytes; }                           \
     template <>                                                                                  \
     constexpr uint32_t getrf_no_pivot_threads<float, N, TC, ARCH>()                             \
@@ -867,7 +867,7 @@ constexpr uint32_t getrf_no_pivot_threads() { return 256; }
  * @tparam SM_VAL        Target SM architecture (default = SMS).
  * @param  LU            Pointer to the N×N LU factor (read-only).
  * @param  B             Pointer to the N×NRHS right-hand sides; overwritten with X.
- * @param  smem          Shared scratch (>= getrs_no_pivot_smem_size<...>()).
+ * @param  smem          Shared scratch (>= getrs_no_pivot_scratch_bytes<...>()).
  */
 template <typename T, uint32_t N, uint32_t NRHS,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
@@ -884,7 +884,7 @@ __device__ void getrs_no_pivot(const T* LU, T* B, char* smem)
  */
 template <typename T, uint32_t N, uint32_t NRHS,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
-constexpr std::size_t getrs_no_pivot_smem_size() { return 0; }
+constexpr std::size_t getrs_no_pivot_scratch_bytes() { return 0; }
 
 /**
  * @brief Thread count cuSOLVERDx wants for `getrs_no_pivot<...>` (host-callable, constexpr).
@@ -926,7 +926,7 @@ constexpr uint32_t getrs_no_pivot_threads() { return 256; }
     __device__ inline void getrs_no_pivot<float, N, NRHS, 0, ARCH>(const float* LU, float* B, char* smem) \
     { _nvidia_getrs_impl_##N##x##NRHS##_bd0_sm##ARCH::run(LU, B, smem); }                        \
     template <>                                                                                  \
-    constexpr std::size_t getrs_no_pivot_smem_size<float, N, NRHS, 0, ARCH>()                   \
+    constexpr std::size_t getrs_no_pivot_scratch_bytes<float, N, NRHS, 0, ARCH>()                   \
     { return _nvidia_getrs_impl_##N##x##NRHS##_bd0_sm##ARCH::smem_bytes; }                       \
     template <>                                                                                  \
     constexpr uint32_t getrs_no_pivot_threads<float, N, NRHS, 0, ARCH>()                        \
@@ -965,7 +965,7 @@ constexpr uint32_t getrs_no_pivot_threads() { return 256; }
     __device__ inline void getrs_no_pivot<float, N, NRHS, TC, ARCH>(const float* LU, float* B, char* smem) \
     { _nvidia_getrs_impl_##N##x##NRHS##_bd##TC##_sm##ARCH::run(LU, B, smem); }                   \
     template <>                                                                                  \
-    constexpr std::size_t getrs_no_pivot_smem_size<float, N, NRHS, TC, ARCH>()                  \
+    constexpr std::size_t getrs_no_pivot_scratch_bytes<float, N, NRHS, TC, ARCH>()                  \
     { return _nvidia_getrs_impl_##N##x##NRHS##_bd##TC##_sm##ARCH::smem_bytes; }                  \
     template <>                                                                                  \
     constexpr uint32_t getrs_no_pivot_threads<float, N, NRHS, TC, ARCH>()                       \
@@ -999,7 +999,7 @@ constexpr uint32_t getrs_no_pivot_threads() { return 256; }
  * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
  * @param  A             Pointer to the N×N matrix; destroyed (holds LU on exit).
  * @param  B             Pointer to the N×NRHS right-hand sides; overwritten with X.
- * @param  smem          Shared scratch (>= gesv_no_pivot_smem_size<...>()).
+ * @param  smem          Shared scratch (>= gesv_no_pivot_scratch_bytes<...>()).
  */
 template <typename T, uint32_t N, uint32_t NRHS,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS,
@@ -1017,7 +1017,7 @@ __device__ void gesv_no_pivot(T* A, T* B, char* smem)
  */
 template <typename T, uint32_t N, uint32_t NRHS,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
-constexpr std::size_t gesv_no_pivot_smem_size() { return 0; }
+constexpr std::size_t gesv_no_pivot_scratch_bytes() { return 0; }
 
 /**
  * @brief Thread count cuSOLVERDx wants for `gesv_no_pivot<...>` (host-callable, constexpr).
@@ -1067,7 +1067,7 @@ constexpr uint32_t gesv_no_pivot_threads() { return 256; }
     __device__ inline void gesv_no_pivot<float, N, NRHS, 0, ARCH, false>(float* A, float* B, char* smem) \
     { _nvidia_gesv_impl_##N##x##NRHS##_bd0_sm##ARCH::template run<false>(A, B, smem); }          \
     template <>                                                                                  \
-    constexpr std::size_t gesv_no_pivot_smem_size<float, N, NRHS, 0, ARCH>()                    \
+    constexpr std::size_t gesv_no_pivot_scratch_bytes<float, N, NRHS, 0, ARCH>()                    \
     { return _nvidia_gesv_impl_##N##x##NRHS##_bd0_sm##ARCH::smem_bytes; }                        \
     template <>                                                                                  \
     constexpr uint32_t gesv_no_pivot_threads<float, N, NRHS, 0, ARCH>()                         \
@@ -1114,7 +1114,7 @@ constexpr uint32_t gesv_no_pivot_threads() { return 256; }
     __device__ inline void gesv_no_pivot<float, N, NRHS, TC, ARCH, false>(float* A, float* B, char* smem) \
     { _nvidia_gesv_impl_##N##x##NRHS##_bd##TC##_sm##ARCH::template run<false>(A, B, smem); }     \
     template <>                                                                                  \
-    constexpr std::size_t gesv_no_pivot_smem_size<float, N, NRHS, TC, ARCH>()                   \
+    constexpr std::size_t gesv_no_pivot_scratch_bytes<float, N, NRHS, TC, ARCH>()                   \
     { return _nvidia_gesv_impl_##N##x##NRHS##_bd##TC##_sm##ARCH::smem_bytes; }                   \
     template <>                                                                                  \
     constexpr uint32_t gesv_no_pivot_threads<float, N, NRHS, TC, ARCH>()                        \
@@ -1150,7 +1150,7 @@ constexpr uint32_t gesv_no_pivot_threads() { return 256; }
  * @tparam SM_VAL        Target SM architecture (default = SMS).
  * @param  A             Pointer to the M×N matrix; overwritten with R + reflectors.
  * @param  tau           Caller-provided output array of min(M,N) scalars.
- * @param  smem          Shared scratch (>= geqrf_smem_size<...>()).
+ * @param  smem          Shared scratch (>= geqrf_scratch_bytes<...>()).
  */
 template <typename T, uint32_t M, uint32_t N,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
@@ -1167,7 +1167,7 @@ __device__ void geqrf(T* A, T* tau, char* smem)
  */
 template <typename T, uint32_t M, uint32_t N,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
-constexpr std::size_t geqrf_smem_size() { return 0; }
+constexpr std::size_t geqrf_scratch_bytes() { return 0; }
 
 /**
  * @brief Thread count cuSOLVERDx wants for `geqrf<...>` (host-callable, constexpr).
@@ -1207,7 +1207,7 @@ constexpr uint32_t geqrf_threads() { return 256; }
     __device__ inline void geqrf<float, M, N, 0, ARCH>(float* A, float* tau, char* smem)        \
     { _nvidia_geqrf_impl_##M##x##N##_bd0_sm##ARCH::run(A, tau, smem); }                          \
     template <>                                                                                  \
-    constexpr std::size_t geqrf_smem_size<float, M, N, 0, ARCH>()                               \
+    constexpr std::size_t geqrf_scratch_bytes<float, M, N, 0, ARCH>()                               \
     { return _nvidia_geqrf_impl_##M##x##N##_bd0_sm##ARCH::smem_bytes; }                          \
     template <>                                                                                  \
     constexpr uint32_t geqrf_threads<float, M, N, 0, ARCH>()                                    \
@@ -1244,7 +1244,7 @@ constexpr uint32_t geqrf_threads() { return 256; }
     __device__ inline void geqrf<float, M, N, TC, ARCH>(float* A, float* tau, char* smem)       \
     { _nvidia_geqrf_impl_##M##x##N##_bd##TC##_sm##ARCH::run(A, tau, smem); }                     \
     template <>                                                                                  \
-    constexpr std::size_t geqrf_smem_size<float, M, N, TC, ARCH>()                              \
+    constexpr std::size_t geqrf_scratch_bytes<float, M, N, TC, ARCH>()                              \
     { return _nvidia_geqrf_impl_##M##x##N##_bd##TC##_sm##ARCH::smem_bytes; }                     \
     template <>                                                                                  \
     constexpr uint32_t geqrf_threads<float, M, N, TC, ARCH>()                                   \
@@ -1283,7 +1283,7 @@ constexpr uint32_t geqrf_threads() { return 256; }
  * @param  A             Pointer to the M×N matrix; destroyed during the solve.
  * @param  tau           Caller-provided workspace of min(M,N) scalars.
  * @param  B             Right-hand sides (max(M,N)×NRHS storage); overwritten with X.
- * @param  smem          Shared scratch (>= gels_smem_size<...>()).
+ * @param  smem          Shared scratch (>= gels_scratch_bytes<...>()).
  */
 template <typename T, uint32_t M, uint32_t N, uint32_t NRHS,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS,
@@ -1301,7 +1301,7 @@ __device__ void gels(T* A, T* tau, T* B, char* smem)
  */
 template <typename T, uint32_t M, uint32_t N, uint32_t NRHS,
           uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = SMS>
-constexpr std::size_t gels_smem_size() { return 0; }
+constexpr std::size_t gels_scratch_bytes() { return 0; }
 
 /**
  * @brief Thread count cuSOLVERDx wants for `gels<...>` (host-callable, constexpr).
@@ -1352,7 +1352,7 @@ constexpr uint32_t gels_threads() { return 256; }
     __device__ inline void gels<float, M, N, NRHS, 0, ARCH, false>(float* A, float* tau, float* B, char* smem) \
     { _nvidia_gels_impl_##M##x##N##x##NRHS##_bd0_sm##ARCH::template run<false>(A, tau, B, smem); }\
     template <>                                                                                  \
-    constexpr std::size_t gels_smem_size<float, M, N, NRHS, 0, ARCH>()                          \
+    constexpr std::size_t gels_scratch_bytes<float, M, N, NRHS, 0, ARCH>()                          \
     { return _nvidia_gels_impl_##M##x##N##x##NRHS##_bd0_sm##ARCH::smem_bytes; }                  \
     template <>                                                                                  \
     constexpr uint32_t gels_threads<float, M, N, NRHS, 0, ARCH>()                               \
@@ -1398,7 +1398,7 @@ constexpr uint32_t gels_threads() { return 256; }
     __device__ inline void gels<float, M, N, NRHS, TC, ARCH, false>(float* A, float* tau, float* B, char* smem) \
     { _nvidia_gels_impl_##M##x##N##x##NRHS##_bd##TC##_sm##ARCH::template run<false>(A, tau, B, smem); }\
     template <>                                                                                  \
-    constexpr std::size_t gels_smem_size<float, M, N, NRHS, TC, ARCH>()                         \
+    constexpr std::size_t gels_scratch_bytes<float, M, N, NRHS, TC, ARCH>()                         \
     { return _nvidia_gels_impl_##M##x##N##x##NRHS##_bd##TC##_sm##ARCH::smem_bytes; }             \
     template <>                                                                                  \
     constexpr uint32_t gels_threads<float, M, N, NRHS, TC, ARCH>()                              \

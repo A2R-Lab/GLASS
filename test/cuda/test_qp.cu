@@ -76,7 +76,7 @@ static int run(int n, int threads, int max_iter, double tol,
     T *dx = read_device_vec<T>(px0, n);
 
     T *dscratch, *dinfo;
-    cudaMalloc(&dscratch, glass::internal::box_qp_scratch_size<T>(n) * sizeof(T));
+    cudaMalloc(&dscratch, glass::internal::box_qp_scratch_bytes<T>(n));
     cudaMalloc(&dinfo, 3 * sizeof(T));
 
     run_box_qp<T><<<1, threads>>>(n, dP, dq, dl, du, dx, dscratch, dinfo,

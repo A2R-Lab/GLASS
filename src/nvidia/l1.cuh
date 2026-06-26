@@ -3,7 +3,7 @@
 #include <cassert>
 #include <cub/cub.cuh>
 
-// glass::nvidia L1 — CUB-backed reduce / dot / l2norm
+// glass::nvidia L1 — CUB-backed reduce / dot / nrm2
 // All functions are compile-time only: T, N, THREADS must be template parameters.
 // THREADS defaults to 256; set it to match your kernel's blockDim.x.
 //
@@ -47,7 +47,7 @@
  * @tparam THREADS       Block thread count (must equal blockDim.x).
  * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
  * @param  x             Input array of length N; result lands in x[0].
- * @param  s_scratch     Shared scratch >= reduce_smem_size<T, THREADS>() bytes.
+ * @param  s_scratch     Shared scratch >= reduce_scratch_bytes<T, THREADS>() bytes.
  */
 template <typename T, uint32_t N, uint32_t THREADS = 256, bool TRAILING_SYNC = true>
 __device__ void reduce(T *x, T *s_scratch)
@@ -80,7 +80,7 @@ __device__ void reduce(T *x, T *s_scratch)
  * @param  x             First input vector (length N).
  * @param  y             Second input vector (length N).
  * @param  out           Output pointer for the resulting scalar.
- * @param  s_scratch     Shared scratch >= reduce_smem_size<T, THREADS>() bytes.
+ * @param  s_scratch     Shared scratch >= reduce_scratch_bytes<T, THREADS>() bytes.
  */
 template <typename T, uint32_t N, uint32_t THREADS = 256, bool TRAILING_SYNC = true>
 __device__ void dot(T *x, T *y, T *out, T *s_scratch)
@@ -112,10 +112,10 @@ __device__ void dot(T *x, T *y, T *out, T *s_scratch)
  * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
  * @param  x             Input vector (length N).
  * @param  out           Output pointer for the resulting scalar norm.
- * @param  s_scratch     Shared scratch >= reduce_smem_size<T, THREADS>() bytes.
+ * @param  s_scratch     Shared scratch >= reduce_scratch_bytes<T, THREADS>() bytes.
  */
 template <typename T, uint32_t N, uint32_t THREADS = 256, bool TRAILING_SYNC = true>
-__device__ void l2norm(T *x, T *out, T *s_scratch)
+__device__ void nrm2(T *x, T *out, T *s_scratch)
 {
     _GLASS_ASSERT_THREADS_EQ(THREADS)
     using BlockReduce = cub::BlockReduce<T, THREADS>;
@@ -132,7 +132,7 @@ __device__ void l2norm(T *x, T *out, T *s_scratch)
 }
 
 /**
- * @brief Shared-memory bytes needed for the L1 reduce/dot/l2norm scratch (host-callable).
+ * @brief Shared-memory bytes needed for the L1 reduce/dot/nrm2 scratch (host-callable).
  *
  * Returns `sizeof(cub::BlockReduce<T, THREADS>::TempStorage)` — the size of
  * the `s_scratch` buffer these CUB-backed reductions require. constexpr.
@@ -142,7 +142,7 @@ __device__ void l2norm(T *x, T *out, T *s_scratch)
  * @return Required scratch size in bytes.
  */
 template <typename T, uint32_t THREADS = 256>
-inline constexpr std::size_t reduce_smem_size()
+inline constexpr std::size_t reduce_scratch_bytes()
 {
     return sizeof(typename cub::BlockReduce<T, THREADS>::TempStorage);
 }

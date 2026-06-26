@@ -16,8 +16,8 @@
  * @param A      In/out matrix of `m*n` elements (column-major).
  */
 // A += alpha * x * y^T  (A is m×n column-major)
-template <typename T>
-__device__ void ger(uint32_t m, uint32_t n, T alpha, T *x, T *y, T *A)
+template <typename T, bool TRAILING_SYNC = true>
+__device__ void ger(uint32_t m, uint32_t n, T alpha, const T *x, const T *y, T *A)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
@@ -26,6 +26,7 @@ __device__ void ger(uint32_t m, uint32_t n, T alpha, T *x, T *y, T *A)
         for (uint32_t row = rank; row < m; row += size)
             A[row + col*m] += ay * x[row];
     }
+    if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
 /**
@@ -42,8 +43,8 @@ __device__ void ger(uint32_t m, uint32_t n, T alpha, T *x, T *y, T *A)
  * @param y      Input vector of length `N`.
  * @param A      In/out matrix of `M*N` elements (column-major).
  */
-template <typename T, uint32_t M, uint32_t N>
-__device__ void ger(T alpha, T *x, T *y, T *A)
+template <typename T, uint32_t M, uint32_t N, bool TRAILING_SYNC = true>
+__device__ void ger(T alpha, const T *x, const T *y, T *A)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
@@ -52,4 +53,5 @@ __device__ void ger(T alpha, T *x, T *y, T *A)
         for (uint32_t row = rank; row < M; row += size)
             A[row + col*M] += ay * x[row];
     }
+    if constexpr (TRAILING_SYNC) __syncthreads();
 }

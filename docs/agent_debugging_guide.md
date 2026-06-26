@@ -46,8 +46,11 @@ Source map you will reference constantly:
    thread assumption (§1).
 4. **Check both layouts where relevant.** Storage order is a compile-time flag, not a runtime
    crash — wrong layout = silently wrong numbers. For any L2/L3 change, validate **column-major
-   (default) AND row-major** (and `TRANSPOSE_B` for `gemm`). `test_l3.py` already has
-   `test_gemm`, `test_gemm_t`, `test_gemm_rowmajor`, `test_gemm_ex` — extend them, don't bypass.
+   (default) AND all transpose combos** (`TRANSPOSE_A`/`TRANSPOSE_B` for `gemm`; a row-major
+   operand is a transpose, so there is no per-operand row-major flag — only `ROW_MAJOR_C`).
+   `test_l3.py` already has `test_gemm_rt`, `test_gemm_ct`, `test_gemm_warp`,
+   `test_gemm_rowmajor_is_transpose` (the non-square + all-distinct-`M,N,K` net that catches the
+   silent-on-square dim mapping) — extend them, don't bypass.
 5. **Check the `beta = 0` path and uninitialized destinations** (§1c). If your op writes a
    destination via a beta-form GEMM, make sure the caller initializes C.
 6. **MathDx-optional paths must still build and skip gracefully without it** (§3). Run the suite
@@ -130,13 +133,13 @@ GLASS's beta-form GEMM computes `C[cidx] = alpha*res + beta*C[cidx]` — it **re
 "C is read; caller must initialize it"). If `C` is an **uninitialized scratch slot**, its leftover
 bit pattern can be `NaN`/`Inf`, and `0 * NaN == NaN` poisons the result even though beta is 0.
 
-- **Where this applies:** every beta-taking path — `glass::gemm` / `gemm_ex` / `gemm_impl`,
-  `gemm_tiled`, `row_strided_gemm`, and the `_1d` batched variants — when called with
+- **Where this applies:** every beta-taking path — `glass::gemm` / `gemm_impl`,
+  `gemm_tiled`, `gemm_strided`, and the `_1d` batched variants — when called with
   `beta = 0` into a destination the caller did not initialize.
 - **The fix:** the **caller must initialize `C`** before a `beta = 0` write into cold scratch
   (a tiny `for (i=rank; i<size; i+=size) C[i] = 0;` + `__syncthreads()`), OR use a GLASS
   overload that has no `beta*C` term. `gemm.cuh` provides implicit-`beta=0` overloads (the
-  `gemm`/`gemm_ex` forms documented "with implicit `beta = 0`") that write `C` directly and never
+  `gemm` forms documented "with implicit `beta = 0`") that write `C` directly and never
   read it — prefer those for write-into-fresh-scratch.
 - **The tell:** a discrepancy that is **thread-count-dependent and vanishes when isolated / run at
   1 thread** is the signature of reading cold scratch (the leftover bytes are nondeterministic
@@ -146,22 +149,25 @@ bit pattern can be `NaN`/`Inf`, and `0 * NaN == NaN` poisons the result even tho
 
 ### 1d. Storage-order / layout-flag mistakes
 
-`ROW_MAJOR_A` / `ROW_MAJOR_B` / `ROW_MAJOR_C` and `TRANSPOSE_B` are **compile-time template
+`TRANSPOSE_A` / `TRANSPOSE_B` and `ROW_MAJOR_C` are **compile-time template
 flags** (default column-major). Passing data in the wrong order does **not crash** — it silently
 indexes the wrong elements and produces wrong numbers.
 
-- Column-major (default): `A[row + col*m]`. Row-major: `A[row*cols + col]`. `gemm_impl` selects
-  per-matrix via `ROW_MAJOR_? ? A[row*n+ind] : A[ind*m+row]` etc. (see `gemm.cuh`). On the
+- Column-major (default): `A[row + col*m]`. Row-major: `A[row*cols + col]`. `gemm_impl` selects the
+  operand index via the `TRANSPOSE_A`/`TRANSPOSE_B` flags (a row-major operand == its
+  transposed column-major view), and the output index via `ROW_MAJOR_C` (see `gemm.cuh`). On the
   `glass::nvidia::` path the equivalent is the `layout` enum (`LA`, `LB`, `LC`) mapping to
   cuBLASDx `Arrangement`.
-- **Catch it by testing both layouts.** Mirror `test_l3.py`: `test_gemm` (col-major), and
-  `test_gemm_rowmajor` / `test_gemm_ex` feed `A.ravel()` (C-order) vs
+- **Catch it by testing both layouts.** Mirror `test_l3.py`: `test_gemm_rt`/`test_gemm_ct` (all transpose combos), and
+  `test_gemm_rowmajor_is_transpose` feeds a row-major operand (C-order) vs
   `np.asfortranarray(B).ravel(order='F')` (F-order) deliberately, and reshape the result with the
   matching order. If you add a layout, add the paired test; a layout bug is invisible to a
   same-layout round-trip.
-- **Known restriction:** pure-SIMT `glass::gemm` with `TRANSPOSE_B=true` requires `B` square
-  (n×n) — see `test_gemm_t`'s comment. The `glass::nvidia::` path (`LB=row_major`) has no such
-  restriction. Don't "fix" the SIMT path to accept non-square B without updating that test.
+- **No squareness restriction (since the BLAS-convention standardization):** `glass::gemm`
+  follows standard BLAS — `C` is `M×N`, contraction `K`, with independent `TRANSPOSE_A`
+  (`A` is `K×M`) and `TRANSPOSE_B` (`B` is `N×K`) flags. All four transpose combos work at any
+  rectangular `M,N,K` (the old "`TRANSPOSE_B` requires `B` square" limitation is gone). The
+  `test_gemm_rt`/`test_gemm_ct` matrices exercise all combos at non-square, all-distinct dims.
 
 ### 1e. Shared-memory sizing — dynamic scratch must match the host-side size helper
 
@@ -172,9 +178,9 @@ Functions that take `extern __shared__` scratch (or an explicit scratch pointer)
   split into `s_A = smem` and `s_B = smem + m*TILE`. The host size is computed by
   `glass_gemm_dispatch_smem<T>(m, k, block_threads, tile)` in `glass.cuh` (returns 0 when tiling
   is not warranted: `m >= 32` or `m*k > block_threads`). `test_l3.cu`'s `gemm_tiled` op hard-codes
-  the matching `(m*8 + 8*k)*sizeof(float)` with `TILE=8` — if you change the tile size on one side
+  the matching `(m*8 + 8*n)*sizeof(float)` with `TILE=8` — if you change the tile size on one side
   you MUST change it on both. A too-small allocation overruns `s_B`.
-- **`high_speed::reduce` / `dot` / `l2norm`:** need `ceil(blockDim/32)*sizeof(T)` bytes of
+- **`high_speed::reduce` / `dot` / `nrm2`:** need `ceil(blockDim/32)*sizeof(T)` bytes of
   `s_scratch` (one slot per warp). Under-sizing this overflows when `blockDim > 32*available`.
 - **`glass::nvidia::` (CUB) L1:** scratch is `sizeof(cub::BlockReduce<T,THREADS>::TempStorage)`;
   query it with `glass::nvidia::reduce_smem_size<T,THREADS>()`. For the cuBLASDx/cuSOLVERDx

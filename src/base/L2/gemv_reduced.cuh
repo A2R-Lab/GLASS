@@ -14,14 +14,14 @@
 
 namespace detail {
     // y[out] = alpha * sum_c A(.)·x[c] + (HAS_BETA ? beta*y[out] : 0), compile-time
-    // M×N A. TRANS=false: out=row i in [0,M), contract c over N, A[i + c*M].
-    //        TRANS=true : out=col j in [0,N), contract c over M, A[c + j*M].
-    template <typename T, uint32_t M, uint32_t N, bool TRANS, bool HAS_BETA>
+    // M×N A. TRANSPOSE=false: out=row i in [0,M), contract c over N, A[i + c*M].
+    //        TRANSPOSE=true : out=col j in [0,N), contract c over M, A[c + j*M].
+    template <typename T, uint32_t M, uint32_t N, bool TRANSPOSE, bool HAS_BETA>
     __device__ void gemv_reduced_impl(uint32_t rank, uint32_t size,
                                       T alpha, const T* A, const T* x, T beta, T* y)
     {
-        constexpr uint32_t n_out = TRANS ? N : M;
-        constexpr uint32_t CDIM  = TRANS ? M : N;
+        constexpr uint32_t n_out = TRANSPOSE ? N : M;
+        constexpr uint32_t CDIM  = TRANSPOSE ? M : N;
         if (size < 32u) {
             for (uint32_t o = rank; o < n_out; o += size) {
                 T p[32];
@@ -29,7 +29,7 @@ namespace detail {
                 for (uint32_t vlane = 0; vlane < 32u; ++vlane) {
                     T acc = static_cast<T>(0);
                     for (uint32_t c = vlane; c < CDIM; c += 32u)
-                        acc += (TRANS ? A[c + o*M] : A[o + c*M]) * x[c];
+                        acc += (TRANSPOSE ? A[c + o*M] : A[o + c*M]) * x[c];
                     p[vlane] = acc;
                 }
                 const T res = reduced_tree32<T>(p);
@@ -43,7 +43,7 @@ namespace detail {
             for (uint32_t o = warp; o < n_out; o += n_warps) {
                 T partial = static_cast<T>(0);
                 for (uint32_t c = lane; c < CDIM; c += 32u)
-                    partial += (TRANS ? A[c + o*M] : A[o + c*M]) * x[c];
+                    partial += (TRANSPOSE ? A[c + o*M] : A[o + c*M]) * x[c];
                 const T res = warp::reduce<T>(partial);
                 if (lane == 0) y[o] = HAS_BETA ? (alpha*res + beta*y[o]) : (alpha*res);
             }
@@ -61,20 +61,20 @@ namespace detail {
  *
  * @tparam T  Scalar type.
  * @tparam M,N  A is M x N (column-major).
- * @tparam TRANS  If true, computes `Aᵀ x` (output length N, contract over M); else `A x` (length M, contract over N).
+ * @tparam TRANSPOSE  If true, computes `Aᵀ x` (output length N, contract over M); else `A x` (length M, contract over N).
  * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
  * @param alpha  Scalar on the product.
  * @param A      Input matrix (M x N, column-major).
- * @param x      Input vector (length N if !TRANS else M).
+ * @param x      Input vector (length N if !TRANSPOSE else M).
  * @param beta   Scalar on the existing y (read; caller must initialize it).
- * @param y      In/out result (length M if !TRANS else N).
+ * @param y      In/out result (length M if !TRANSPOSE else N).
  */
-template <typename T, uint32_t M, uint32_t N, bool TRANS = false, bool TRAILING_SYNC = true>
+template <typename T, uint32_t M, uint32_t N, bool TRANSPOSE = false, bool TRAILING_SYNC = true>
 __device__ void gemv_reduced(T alpha, const T* A, const T* x, T beta, T* y)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    detail::gemv_reduced_impl<T, M, N, TRANS, true>(rank, size, alpha, A, x, beta, y);
+    detail::gemv_reduced_impl<T, M, N, TRANSPOSE, true>(rank, size, alpha, A, x, beta, y);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -83,16 +83,16 @@ __device__ void gemv_reduced(T alpha, const T* A, const T* x, T beta, T* y)
  *
  * Overwrites y (not read). Otherwise identical to the beta overload.
  *
- * @tparam T,M,N,TRANS,TRAILING_SYNC  See the beta overload.
+ * @tparam T,M,N,TRANSPOSE,TRAILING_SYNC  See the beta overload.
  * @param alpha,A,x  See the beta overload.
  * @param y  Output (overwritten).
  */
-template <typename T, uint32_t M, uint32_t N, bool TRANS = false, bool TRAILING_SYNC = true>
+template <typename T, uint32_t M, uint32_t N, bool TRANSPOSE = false, bool TRAILING_SYNC = true>
 __device__ void gemv_reduced(T alpha, const T* A, const T* x, T* y)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    detail::gemv_reduced_impl<T, M, N, TRANS, false>(rank, size, alpha, A, x, static_cast<T>(0), y);
+    detail::gemv_reduced_impl<T, M, N, TRANSPOSE, false>(rank, size, alpha, A, x, static_cast<T>(0), y);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -102,29 +102,29 @@ namespace warp {
      *
      * Warp-per-problem analogue of `glass::gemv_reduced`; one full 32-lane warp.
      *
-     * @tparam T,M,N,TRANS  See glass::gemv_reduced.
+     * @tparam T,M,N,TRANSPOSE  See glass::gemv_reduced.
      * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
      * @param alpha,A,x,beta,y  See glass::gemv_reduced.
      */
-    template <typename T, uint32_t M, uint32_t N, bool TRANS = false, bool TRAILING_SYNC = true>
+    template <typename T, uint32_t M, uint32_t N, bool TRANSPOSE = false, bool TRAILING_SYNC = true>
     __device__ void gemv_reduced(T alpha, const T* A, const T* x, T beta, T* y)
     {
         uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31u;
-        detail::gemv_reduced_impl<T, M, N, TRANS, true>(lane, 32u, alpha, A, x, beta, y);
+        detail::gemv_reduced_impl<T, M, N, TRANSPOSE, true>(lane, 32u, alpha, A, x, beta, y);
         if constexpr (TRAILING_SYNC) __syncwarp();
     }
 
     /**
      * @brief Single-warp contraction-parallel GEMV, implicit `beta = 0`: `y = alpha * op(A) * x`.
      *
-     * @tparam T,M,N,TRANS,TRAILING_SYNC  See the beta overload.
+     * @tparam T,M,N,TRANSPOSE,TRAILING_SYNC  See the beta overload.
      * @param alpha,A,x,y  See the beta overload.
      */
-    template <typename T, uint32_t M, uint32_t N, bool TRANS = false, bool TRAILING_SYNC = true>
+    template <typename T, uint32_t M, uint32_t N, bool TRANSPOSE = false, bool TRAILING_SYNC = true>
     __device__ void gemv_reduced(T alpha, const T* A, const T* x, T* y)
     {
         uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31u;
-        detail::gemv_reduced_impl<T, M, N, TRANS, false>(lane, 32u, alpha, A, x, static_cast<T>(0), y);
+        detail::gemv_reduced_impl<T, M, N, TRANSPOSE, false>(lane, 32u, alpha, A, x, static_cast<T>(0), y);
         if constexpr (TRAILING_SYNC) __syncwarp();
     }
 }

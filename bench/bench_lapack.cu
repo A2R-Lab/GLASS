@@ -219,7 +219,7 @@ static void bench_size_ct(int iters) {
            N, elapsed_us(t0, t1) / iters);
 
     // glass::nvidia chol
-    constexpr size_t nv_chol_smem = glass::nvidia::cholDecomp_InPlace_smem_size<float, N, THREADS>();
+    constexpr size_t nv_chol_smem = glass::nvidia::cholDecomp_InPlace_scratch_bytes<float, N, THREADS>();
     clock_gettime(CLOCK_MONOTONIC, &t0);
     k_nv_chol<N><<<1, THREADS, nv_chol_smem>>>(dA_master, dA, dSink, iters);
     cudaDeviceSynchronize();
@@ -228,7 +228,7 @@ static void bench_size_ct(int iters) {
            N, elapsed_us(t0, t1) / iters);
 
     // glass::nvidia chol+trsm
-    constexpr size_t nv_trsm_smem = glass::nvidia::trsm_smem_size<float, N, 1, THREADS>();
+    constexpr size_t nv_trsm_smem = glass::nvidia::trsm_scratch_bytes<float, N, 1, THREADS>();
     constexpr size_t nv_chol_trsm_smem = nv_chol_smem > nv_trsm_smem ? nv_chol_smem : nv_trsm_smem;
     clock_gettime(CLOCK_MONOTONIC, &t0);
     k_nv_chol_trsm<N><<<1, THREADS, nv_chol_trsm_smem>>>(dA_master, db_master, dA, db, dSink, iters);
@@ -238,7 +238,7 @@ static void bench_size_ct(int iters) {
            N, elapsed_us(t0, t1) / iters);
 
     // glass::nvidia posv (fused)
-    constexpr size_t nv_posv_smem = glass::nvidia::posv_smem_size<float, N, 1, THREADS>();
+    constexpr size_t nv_posv_smem = glass::nvidia::posv_scratch_bytes<float, N, 1, THREADS>();
     clock_gettime(CLOCK_MONOTONIC, &t0);
     k_nv_posv<N><<<1, THREADS, nv_posv_smem>>>(dA_master, db_master, dA, db, dSink, iters);
     cudaDeviceSynchronize();

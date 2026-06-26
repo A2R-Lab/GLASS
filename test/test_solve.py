@@ -42,10 +42,10 @@ def _posv(binary, th, N, NRHS, reg, rho, A, B):
             os.unlink(f)
 
 
-def _ricc(binary, th, NX, NU, reg, rho, P, A, B, R):
+def _ricc(binary, th, NX, NU, reg, rho, P, A, B, R, op="riccati"):
     t = [_w(P), _w(A), _w(B), _w(R)]
     try:
-        r = subprocess.run([str(binary), "riccati", str(th), str(NX), str(NU),
+        r = subprocess.run([str(binary), op, str(th), str(NX), str(NU),
                             str(int(reg)), str(rho)] + t, capture_output=True, text=True)
         if r.returncode != 0:
             raise RuntimeError(r.stderr)
@@ -102,3 +102,25 @@ def test_riccati_thread_invariance(bins, NX, NU):
     outs = [_ricc(bins["solve"], t, NX, NU, False, 0.0, P, A, B, R)[1] for t in THREADS_SWEEP]
     for t, r in zip(THREADS_SWEEP[1:], outs[1:]):
         assert np.array_equal(outs[0], r), f"thread-count non-invariance at {t}"
+
+
+# ─── warp riccati_gain (one 32-lane warp; parity with the block form) ─────────
+
+@pytest.mark.parametrize("NX,NU", RIC)
+@pytest.mark.parametrize("reg", [False, True])
+def test_riccati_gain_warp(bins, NX, NU, reg):
+    """warp::riccati_gain matches the analytic K = (R+BᵀPB)⁻¹(BᵀPA) and the block
+    form, at one warp (composes warp congruence_sym + bilinear + flagged posv)."""
+    P = _spd(NX)
+    A = RNG.random((NX, NX)).astype(np.float32)
+    B = RNG.random((NX, NU)).astype(np.float32)
+    R = _spd(NU)
+    rho = 0.5 if reg else 0.0
+    fail, K = _ricc(bins["solve"], 32, NX, NU, reg, rho, P, A, B, R, op="riccati_warp")
+    S = R + B.T @ P @ B + rho * np.eye(NU)
+    expK = np.linalg.solve(S, B.T @ P @ A)
+    assert fail == 0
+    assert np.allclose(K, expK, rtol=RTOL, atol=ATOL), f"warp err {np.abs(K-expK).max()}"
+    # parity with the block form
+    _, Kb = _ricc(bins["solve"], 128, NX, NU, reg, rho, P, A, B, R, op="riccati")
+    assert np.allclose(K, Kb, rtol=1e-3, atol=1e-4), "warp riccati != block riccati"

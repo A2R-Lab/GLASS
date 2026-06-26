@@ -68,10 +68,10 @@ __global__ void k_scal_warp(int n, int W, float alpha, float* x) {
 
 // ─── L3 trsv (flagged) + posv kernels (compile-time N; __restrict__ params) ──
 #define DEFINE_TRI_KERNEL(Nc)                                                              \
-    template <bool LOWER, bool UNIT, bool TRANS>                                           \
+    template <bool LOWER, bool UNIT, bool TRANSPOSE>                                           \
     __global__ void k_trsv_warp_##Nc(int W, float* __restrict__ A, float* __restrict__ b){\
         int w = threadIdx.y; if (w >= W) return;                                          \
-        glass::warp::trsv<float, Nc, LOWER, UNIT, TRANS>(A + w*Nc*Nc, b + w*Nc);          \
+        glass::warp::trsv<float, Nc, LOWER, UNIT, TRANSPOSE>(A + w*Nc*Nc, b + w*Nc);          \
     }                                                                                       \
     __global__ void k_posv_warp_##Nc(int W, float* __restrict__ A, float* __restrict__ b){\
         int w = threadIdx.y; if (w >= W) return;                                          \

@@ -1,5 +1,15 @@
 #pragma once
+#include "../barrier.cuh"
 #include <cstdint>
+
+// shared body: AXPY in place `y = alpha*x + y`
+template <typename Bar, typename T, bool TRAILING_SYNC = true>
+__device__ void axpy_impl(Bar bar, uint32_t n, T alpha, T *x, T *y)
+{
+    uint32_t rank = bar.rank(), size = bar.size();
+    for (uint32_t i = rank; i < n; i += size) y[i] = alpha*x[i] + y[i];
+    if constexpr (TRAILING_SYNC) bar.sync();
+}
 
 /**
  * @brief Scaled vector sum: `y = alpha * x + y` (AXPY).
@@ -13,12 +23,19 @@
  * @param x      Input vector of length `n`.
  * @param y      In/out vector of length `n` (overwritten with the result).
  */
-template <typename T>
+template <typename T, bool TRAILING_SYNC = true>
 __device__ void axpy(uint32_t n, T alpha, T *x, T *y)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    for (uint32_t i = rank; i < n; i += size) y[i] = alpha*x[i] + y[i];
+    axpy_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, n, alpha, x, y);
+}
+
+// shared body: out-of-place AXPY `z = alpha*x + y`
+template <typename Bar, typename T, bool TRAILING_SYNC = true>
+__device__ void axpy_impl(Bar bar, uint32_t n, T alpha, T *x, T *y, T *z)
+{
+    uint32_t rank = bar.rank(), size = bar.size();
+    for (uint32_t i = rank; i < n; i += size) z[i] = alpha*x[i] + y[i];
+    if constexpr (TRAILING_SYNC) bar.sync();
 }
 
 /**
@@ -34,12 +51,19 @@ __device__ void axpy(uint32_t n, T alpha, T *x, T *y)
  * @param y      Input vector of length `n`.
  * @param z      Output vector of length `n` (overwritten with the result).
  */
-template <typename T>
+template <typename T, bool TRAILING_SYNC = true>
 __device__ void axpy(uint32_t n, T alpha, T *x, T *y, T *z)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    for (uint32_t i = rank; i < n; i += size) z[i] = alpha*x[i] + y[i];
+    axpy_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, n, alpha, x, y, z);
+}
+
+// shared body: AXPBY `z = alpha*x + beta*y`
+template <typename Bar, typename T, bool TRAILING_SYNC = true>
+__device__ void axpby_impl(Bar bar, uint32_t n, T alpha, T *x, T beta, T *y, T *z)
+{
+    uint32_t rank = bar.rank(), size = bar.size();
+    for (uint32_t i = rank; i < n; i += size) z[i] = alpha*x[i] + beta*y[i];
+    if constexpr (TRAILING_SYNC) bar.sync();
 }
 
 /**
@@ -56,12 +80,10 @@ __device__ void axpy(uint32_t n, T alpha, T *x, T *y, T *z)
  * @param y      Input vector of length `n`.
  * @param z      Output vector of length `n` (overwritten with the result).
  */
-template <typename T>
+template <typename T, bool TRAILING_SYNC = true>
 __device__ void axpby(uint32_t n, T alpha, T *x, T beta, T *y, T *z)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    for (uint32_t i = rank; i < n; i += size) z[i] = alpha*x[i] + beta*y[i];
+    axpby_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, n, alpha, x, beta, y, z);
 }
 
 // compile-time size overloads
@@ -76,12 +98,10 @@ __device__ void axpby(uint32_t n, T alpha, T *x, T beta, T *y, T *z)
  * @param x      Input vector of length `N`.
  * @param y      In/out vector of length `N` (overwritten with the result).
  */
-template <typename T, uint32_t N>
+template <typename T, uint32_t N, bool TRAILING_SYNC = true>
 __device__ void axpy(T alpha, T *x, T *y)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    for (uint32_t i = rank; i < N; i += size) y[i] = alpha*x[i] + y[i];
+    axpy_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, N, alpha, x, y);
 }
 
 /**
@@ -96,12 +116,10 @@ __device__ void axpy(T alpha, T *x, T *y)
  * @param y      Input vector of length `N`.
  * @param z      Output vector of length `N` (overwritten with the result).
  */
-template <typename T, uint32_t N>
+template <typename T, uint32_t N, bool TRAILING_SYNC = true>
 __device__ void axpy(T alpha, T *x, T *y, T *z)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    for (uint32_t i = rank; i < N; i += size) z[i] = alpha*x[i] + y[i];
+    axpy_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, N, alpha, x, y, z);
 }
 
 /**
@@ -117,12 +135,10 @@ __device__ void axpy(T alpha, T *x, T *y, T *z)
  * @param y      Input vector of length `N`.
  * @param z      Output vector of length `N` (overwritten with the result).
  */
-template <typename T, uint32_t N>
+template <typename T, uint32_t N, bool TRAILING_SYNC = true>
 __device__ void axpby(T alpha, T *x, T beta, T *y, T *z)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    for (uint32_t i = rank; i < N; i += size) z[i] = alpha*x[i] + beta*y[i];
+    axpby_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, N, alpha, x, beta, y, z);
 }
 
 namespace warp {

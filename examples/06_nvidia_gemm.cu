@@ -19,7 +19,7 @@
 //     it selects the cuBLASDx-tuned config and the pre-instantiated GEMM table.
 //   * 16x16x16 is a pre-instantiated cuBLASDx shape (see glass-nvidia.cuh); the
 //     default form launches with EXACTLY gemm_threads<>() threads and
-//     gemm_smem_size<>() bytes of shared memory — a mismatch deadlocks.
+//     gemm_scratch_bytes<>() bytes of shared memory — a mismatch deadlocks.
 
 #include "glass-nvidia.cuh"
 #include <cstdio>
@@ -28,7 +28,7 @@
 constexpr int M = 16, N = 16, K = 16;
 
 // Host-queryable, constexpr: the thread count + shared bytes cuBLASDx wants.
-constexpr auto SMEM    = glass::nvidia::gemm_smem_size<float, M, N, K>();
+constexpr auto SMEM    = glass::nvidia::gemm_scratch_bytes<float, M, N, K>();
 constexpr auto THREADS = glass::nvidia::gemm_threads<float, M, N, K>();
 
 __global__ void nvidia_gemm(float *A, float *B, float *C) {

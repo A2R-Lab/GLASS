@@ -1,4 +1,5 @@
 #pragma once
+#include "../barrier.cuh"
 #include <cstdint>
 
 /**
@@ -13,17 +14,23 @@
  * @param a  Input matrix of `N*M` elements (column-major).
  * @param b  Output matrix of `M*N` elements (column-major).
  */
-// out-of-place: NxM column-major a → b
-template <typename T>
-__device__ void transpose(uint32_t N, uint32_t M, T *a, T *b)
+// shared body: out-of-place transpose NxM column-major a → b
+template <typename Bar, typename T, bool TRAILING_SYNC = true>
+__device__ void transpose_impl(Bar bar, uint32_t N, uint32_t M, T *a, T *b)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = bar.rank(), size = bar.size();
     for (uint32_t i = rank; i < N*M; i += size) {
         uint32_t col = i / N, row = i % N;
         b[col + M*row] = a[row + N*col];
     }
-    __syncthreads();
+    if constexpr (TRAILING_SYNC) bar.sync();
+}
+
+// out-of-place: NxM column-major a → b
+template <typename T, bool TRAILING_SYNC = true>
+__device__ void transpose(uint32_t N, uint32_t M, T *a, T *b)
+{
+    transpose_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, N, M, a, b);
 }
 
 /**
@@ -36,12 +43,11 @@ __device__ void transpose(uint32_t N, uint32_t M, T *a, T *b)
  * @param N  Matrix dimension (number of rows/columns).
  * @param a  In/out matrix of `N*N` elements (column-major).
  */
-// in-place: NxN column-major
-template <typename T>
-__device__ void transpose(uint32_t N, T *a)
+// shared body: in-place transpose NxN column-major
+template <typename Bar, typename T, bool TRAILING_SYNC = true>
+__device__ void transpose_impl(Bar bar, uint32_t N, T *a)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = bar.rank(), size = bar.size();
     for (uint32_t idx = rank; idx < N*N; idx += size) {
         uint32_t i = idx % N, j = idx / N;
         if (i < j) {
@@ -49,7 +55,14 @@ __device__ void transpose(uint32_t N, T *a)
             T tmp = a[idx]; a[idx] = a[swap]; a[swap] = tmp;
         }
     }
-    __syncthreads();
+    if constexpr (TRAILING_SYNC) bar.sync();
+}
+
+// in-place: NxN column-major
+template <typename T, bool TRAILING_SYNC = true>
+__device__ void transpose(uint32_t N, T *a)
+{
+    transpose_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, N, a);
 }
 
 /**
@@ -65,16 +78,10 @@ __device__ void transpose(uint32_t N, T *a)
  * @param b  Output matrix of `M*N` elements (column-major).
  */
 // compile-time out-of-place
-template <typename T, uint32_t N, uint32_t M>
+template <typename T, uint32_t N, uint32_t M, bool TRAILING_SYNC = true>
 __device__ void transpose(T *a, T *b)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    for (uint32_t i = rank; i < N*M; i += size) {
-        uint32_t col = i / N, row = i % N;
-        b[col + M*row] = a[row + N*col];
-    }
-    __syncthreads();
+    transpose_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, N, M, a, b);
 }
 
 /**
@@ -88,17 +95,8 @@ __device__ void transpose(T *a, T *b)
  * @param a  In/out matrix of `N*N` elements (column-major).
  */
 // compile-time in-place NxN
-template <typename T, uint32_t N>
+template <typename T, uint32_t N, bool TRAILING_SYNC = true>
 __device__ void transpose(T *a)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    for (uint32_t idx = rank; idx < N*N; idx += size) {
-        uint32_t i = idx % N, j = idx / N;
-        if (i < j) {
-            uint32_t sw = i*N + j;
-            T tmp = a[idx]; a[idx] = a[sw]; a[sw] = tmp;
-        }
-    }
-    __syncthreads();
+    transpose_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, N, a);
 }

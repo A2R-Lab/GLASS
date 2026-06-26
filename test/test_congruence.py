@@ -109,3 +109,36 @@ def test_bilinear_thread_invariance(bins, N, P, Qd):
     outs = [_bil(bins["congruence"], "block", t, N, P, Qd, True, X, M, Y, R0.copy()) for t in THREADS_SWEEP]
     for t, r in zip(THREADS_SWEEP[1:], outs[1:]):
         assert np.array_equal(outs[0], r), f"thread-count non-invariance at {t}"
+
+
+# ─── congruence_accum: C = alpha G M Gᵀ + beta C  (G is P×Q; GATO B·R⁻¹·Bᵀ) ───
+CACC = [(5, 3), (14, 7), (7, 7), (8, 4), (6, 5), (3, 3)]
+
+
+def _cacc(binary, surf, th, P, Q, acc, G, M, C):
+    return _run(binary, ["cacc", surf, str(th), str(P), str(Q), str(int(acc)), str(ALPHA), str(BETA)],
+                [G, M, C], P, P)
+
+
+@pytest.mark.parametrize("P,Q", CACC)
+@pytest.mark.parametrize("acc", [False, True])
+def test_congruence_accum(bins, P, Q, acc):
+    G = RNG.random((P, Q)).astype(np.float32)
+    M = _sym(Q)
+    C0 = _sym(P)
+    expected = (ALPHA * (G @ M @ G.T) + (BETA * C0 if acc else 0)).astype(np.float32)
+    block = _cacc(bins["congruence"], "block", 128, P, Q, acc, G, M, C0.copy())
+    assert np.allclose(block, expected, rtol=RTOL, atol=ATOL), f"\n{block}\nvs\n{expected}"
+    assert np.allclose(block, block.T, rtol=1e-4, atol=1e-5), "C not symmetric"
+    r = _cacc(bins["congruence"], "warp", 32, P, Q, acc, G, M, C0.copy())
+    assert np.allclose(r, block, rtol=RTOL, atol=ATOL), "warp disagrees with block"
+
+
+@pytest.mark.parametrize("P,Q", [(14, 7), (8, 4), (5, 3)])
+def test_congruence_accum_thread_invariance(bins, P, Q):
+    G = RNG.random((P, Q)).astype(np.float32)
+    M = _sym(Q)
+    C0 = _sym(P)
+    outs = [_cacc(bins["congruence"], "block", t, P, Q, True, G, M, C0.copy()) for t in THREADS_SWEEP]
+    for t, r in zip(THREADS_SWEEP[1:], outs[1:]):
+        assert np.array_equal(outs[0], r), f"thread-count non-invariance at {t}"

@@ -39,7 +39,7 @@ When you add an operation, decide what kind of variation it is:
 - **A different algorithm or decomposition → its own function name (a suffix).**
   The contraction-parallel gemm is :cpp:func:`glass::gemm_reduced`, not a
   ``glass::reduced::`` namespace — matching the existing ``gemm_tiled`` /
-  ``gemm_dispatch`` / ``gemm_ex`` precedent. Same scope, different name.
+  ``gemm_dispatch`` precedent. Same scope, different name.
 - **Optional, additive behavior → a compile-time** ``bool`` **flag that compiles
   out.** ``cholDecomp_InPlace<T, N, CHECK>``, ``ldlt<T, N, CHECK>``,
   ``posv<T, N, NRHS, REGULARIZE, CHECK>`` all default the flag to ``false`` and

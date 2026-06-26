@@ -17,14 +17,14 @@
 
 namespace detail {
     // C = alpha * A op(A) (+ beta*C), A is ROWS×COLS column-major.
-    // TRANS=false (A·Aᵀ): C is ROWS×ROWS, contract c over COLS, A[i + c*ROWS].
-    // TRANS=true  (Aᵀ·A): C is COLS×COLS, contract c over ROWS, A[c + i*ROWS].
+    // TRANSPOSE=false (A·Aᵀ): C is ROWS×ROWS, contract c over COLS, A[i + c*ROWS].
+    // TRANSPOSE=true  (Aᵀ·A): C is COLS×COLS, contract c over ROWS, A[c + i*ROWS].
     // Lower triangle computed and mirrored (output is full symmetric).
-    template <typename T, uint32_t ROWS, uint32_t COLS, bool TRANS, bool HAS_BETA>
+    template <typename T, uint32_t ROWS, uint32_t COLS, bool TRANSPOSE, bool HAS_BETA>
     __device__ void syrk_reduced_impl(uint32_t rank, uint32_t size, T alpha, const T* A, T beta, T* C)
     {
-        constexpr uint32_t OUT  = TRANS ? COLS : ROWS;
-        constexpr uint32_t CDIM = TRANS ? ROWS : COLS;
+        constexpr uint32_t OUT  = TRANSPOSE ? COLS : ROWS;
+        constexpr uint32_t CDIM = TRANSPOSE ? ROWS : COLS;
         constexpr uint32_t maxel = OUT * OUT;
 
         if (size < 32u) {
@@ -36,8 +36,8 @@ namespace detail {
                 for (uint32_t vlane = 0; vlane < 32u; ++vlane) {
                     T acc = static_cast<T>(0);
                     for (uint32_t c = vlane; c < CDIM; c += 32u) {
-                        const T ai = TRANS ? A[c + i*ROWS] : A[i + c*ROWS];
-                        const T aj = TRANS ? A[c + j*ROWS] : A[j + c*ROWS];
+                        const T ai = TRANSPOSE ? A[c + i*ROWS] : A[i + c*ROWS];
+                        const T aj = TRANSPOSE ? A[c + j*ROWS] : A[j + c*ROWS];
                         acc += ai * aj;
                     }
                     p[vlane] = acc;
@@ -60,8 +60,8 @@ namespace detail {
                 if (i < j) continue;
                 T partial = static_cast<T>(0);
                 for (uint32_t c = lane; c < CDIM; c += 32u) {
-                    const T ai = TRANS ? A[c + i*ROWS] : A[i + c*ROWS];
-                    const T aj = TRANS ? A[c + j*ROWS] : A[j + c*ROWS];
+                    const T ai = TRANSPOSE ? A[c + i*ROWS] : A[i + c*ROWS];
+                    const T aj = TRANSPOSE ? A[c + j*ROWS] : A[j + c*ROWS];
                     partial += ai * aj;
                 }
                 const T res = warp::reduce<T>(partial);
@@ -88,19 +88,19 @@ namespace detail {
  *
  * @tparam T  Scalar type.
  * @tparam ROWS,COLS  A is ROWS x COLS (column-major).
- * @tparam TRANS  If true, `C = AᵀA` (COLS x COLS); else `C = AAᵀ` (ROWS x ROWS).
+ * @tparam TRANSPOSE  If true, `C = AᵀA` (COLS x COLS); else `C = AAᵀ` (ROWS x ROWS).
  * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
  * @param alpha  Scalar on the product.
  * @param A      Input matrix (ROWS x COLS, column-major).
  * @param beta   Scalar on the existing C (read; caller must initialize it).
- * @param C      In/out symmetric result (full storage; OUT x OUT, OUT = TRANS?COLS:ROWS).
+ * @param C      In/out symmetric result (full storage; OUT x OUT, OUT = TRANSPOSE?COLS:ROWS).
  */
-template <typename T, uint32_t ROWS, uint32_t COLS, bool TRANS = false, bool TRAILING_SYNC = true>
+template <typename T, uint32_t ROWS, uint32_t COLS, bool TRANSPOSE = false, bool TRAILING_SYNC = true>
 __device__ void syrk_reduced(T alpha, const T* A, T beta, T* C)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    detail::syrk_reduced_impl<T, ROWS, COLS, TRANS, true>(rank, size, alpha, A, beta, C);
+    detail::syrk_reduced_impl<T, ROWS, COLS, TRANSPOSE, true>(rank, size, alpha, A, beta, C);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -109,16 +109,16 @@ __device__ void syrk_reduced(T alpha, const T* A, T beta, T* C)
  *
  * Overwrites C (not read). Otherwise identical to the beta overload.
  *
- * @tparam T,ROWS,COLS,TRANS,TRAILING_SYNC  See the beta overload.
+ * @tparam T,ROWS,COLS,TRANSPOSE,TRAILING_SYNC  See the beta overload.
  * @param alpha,A  See the beta overload.
  * @param C  Output (overwritten; full symmetric).
  */
-template <typename T, uint32_t ROWS, uint32_t COLS, bool TRANS = false, bool TRAILING_SYNC = true>
+template <typename T, uint32_t ROWS, uint32_t COLS, bool TRANSPOSE = false, bool TRAILING_SYNC = true>
 __device__ void syrk_reduced(T alpha, const T* A, T* C)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    detail::syrk_reduced_impl<T, ROWS, COLS, TRANS, false>(rank, size, alpha, A, static_cast<T>(0), C);
+    detail::syrk_reduced_impl<T, ROWS, COLS, TRANSPOSE, false>(rank, size, alpha, A, static_cast<T>(0), C);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -128,29 +128,29 @@ namespace warp {
      *
      * Warp-per-problem analogue of `glass::syrk_reduced`; one full 32-lane warp.
      *
-     * @tparam T,ROWS,COLS,TRANS  See glass::syrk_reduced.
+     * @tparam T,ROWS,COLS,TRANSPOSE  See glass::syrk_reduced.
      * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
      * @param alpha,A,beta,C  See glass::syrk_reduced.
      */
-    template <typename T, uint32_t ROWS, uint32_t COLS, bool TRANS = false, bool TRAILING_SYNC = true>
+    template <typename T, uint32_t ROWS, uint32_t COLS, bool TRANSPOSE = false, bool TRAILING_SYNC = true>
     __device__ void syrk_reduced(T alpha, const T* A, T beta, T* C)
     {
         uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31u;
-        detail::syrk_reduced_impl<T, ROWS, COLS, TRANS, true>(lane, 32u, alpha, A, beta, C);
+        detail::syrk_reduced_impl<T, ROWS, COLS, TRANSPOSE, true>(lane, 32u, alpha, A, beta, C);
         if constexpr (TRAILING_SYNC) __syncwarp();
     }
 
     /**
      * @brief Single-warp contraction-parallel SYRK, implicit `beta = 0`: `C = alpha * A·op(A)`.
      *
-     * @tparam T,ROWS,COLS,TRANS,TRAILING_SYNC  See the beta overload.
+     * @tparam T,ROWS,COLS,TRANSPOSE,TRAILING_SYNC  See the beta overload.
      * @param alpha,A,C  See the beta overload.
      */
-    template <typename T, uint32_t ROWS, uint32_t COLS, bool TRANS = false, bool TRAILING_SYNC = true>
+    template <typename T, uint32_t ROWS, uint32_t COLS, bool TRANSPOSE = false, bool TRAILING_SYNC = true>
     __device__ void syrk_reduced(T alpha, const T* A, T* C)
     {
         uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31u;
-        detail::syrk_reduced_impl<T, ROWS, COLS, TRANS, false>(lane, 32u, alpha, A, static_cast<T>(0), C);
+        detail::syrk_reduced_impl<T, ROWS, COLS, TRANSPOSE, false>(lane, 32u, alpha, A, static_cast<T>(0), C);
         if constexpr (TRAILING_SYNC) __syncwarp();
     }
 }

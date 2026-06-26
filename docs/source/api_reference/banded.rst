@@ -14,3 +14,12 @@ See :doc:`../user_guide/concepts/block_tridiagonal` for the layout in detail, an
 :doc:`pcg` for the conjugate-gradient solver built on top of this matvec.
 
 .. doxygenfile:: src/base/banded/bdmv.cuh
+
+Block accessors (``store_block`` / ``load_block``)
+--------------------------------------------------
+
+Strided read/write of a single ``BlockSize × BlockSize`` block into / out of a
+``[L | D | R]`` strip (with an optional scale), used to assemble and unpack the
+block-tridiagonal strips. Block- and warp-scoped forms.
+
+.. doxygenfile:: src/base/banded/block_access.cuh

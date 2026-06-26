@@ -4,6 +4,11 @@
 // Versions:
 //   cg     — glass::cgrps:: (cooperative groups)
 //   simple — glass::        (threadIdx, default)
+//
+// GEMM uses the standard BLAS convention: C is M×N, contraction K;
+// op(A) is M×K (TRANSPOSE_A ⇒ A is K×M), op(B) is K×N (TRANSPOSE_B ⇒ B is N×K),
+// ROW_MAJOR_C selects row-major output. The gemm_rt / gemm_ct ops below take the
+// three layout flags as 0/1 ints so the Python side can sweep the full matrix.
 
 #include <cstdio>
 #include <cstdlib>
@@ -25,51 +30,110 @@ static int* read_device_ivec(const char* path, int n) {
     return d;
 }
 
-// ─── indexed_batched_gemm kernel (DIM=4) ─────────────────────────────────────
+// ─── gemm_batched_indexed kernel (DIM=4) ─────────────────────────────────────
 __global__ void k_indexed_bgemm_4(uint32_t pairs, int* a_idx, int* b_idx, int* c_idx,
                                    float* A, float* B, float* C) {
-    glass::indexed_batched_gemm<float, 4>(pairs, a_idx, b_idx, c_idx, A, B, C);
+    glass::gemm_batched_indexed<float, 4>(pairs, a_idx, b_idx, c_idx, A, B, C);
 }
 
-// ─── indexed_batched_gemm: TRANSPOSE_A / TRANSPOSE_B / ATOMIC_C variants ──────
-// TRANSPOSE_A: C_p = A_pᵀ · B_p (distinct c_idx, plain overwrite).
+// ─── gemm_batched_indexed: TRANSPOSE_A / TRANSPOSE_B / ATOMIC_C variants ──────
 __global__ void k_indexed_bgemm_4_ta(uint32_t pairs, int* a_idx, int* b_idx, int* c_idx,
                                       float* A, float* B, float* C) {
-    glass::indexed_batched_gemm<float, 4, /*TA*/true, /*TB*/false, /*ATOMIC*/false>(
+    glass::gemm_batched_indexed<float, 4, /*TA*/true, /*TB*/false, /*ATOMIC*/false>(
         pairs, a_idx, b_idx, c_idx, A, B, C);
 }
-// TRANSPOSE_B: C_p = A_p · B_pᵀ.
 __global__ void k_indexed_bgemm_4_tb(uint32_t pairs, int* a_idx, int* b_idx, int* c_idx,
                                       float* A, float* B, float* C) {
-    glass::indexed_batched_gemm<float, 4, /*TA*/false, /*TB*/true, /*ATOMIC*/false>(
+    glass::gemm_batched_indexed<float, 4, /*TA*/false, /*TB*/true, /*ATOMIC*/false>(
         pairs, a_idx, b_idx, c_idx, A, B, C);
 }
-// ATOMIC_C: pairs may share c_idx; products are scatter-summed into pre-zeroed C.
 __global__ void k_indexed_bgemm_4_atomic(uint32_t pairs, int* a_idx, int* b_idx, int* c_idx,
                                          float* A, float* B, float* C) {
-    glass::indexed_batched_gemm<float, 4, /*TA*/false, /*TB*/false, /*ATOMIC*/true>(
+    glass::gemm_batched_indexed<float, 4, /*TA*/false, /*TB*/false, /*ATOMIC*/true>(
         pairs, a_idx, b_idx, c_idx, A, B, C);
 }
-// TRANSPOSE_A + ATOMIC_C (the backward-pass case Xᵀ·M·X → shared parent): each
-// child computes A_pᵀ·B_p and atomically accumulates into a SHARED parent C slot.
 __global__ void k_indexed_bgemm_4_ta_atomic(uint32_t pairs, int* a_idx, int* b_idx, int* c_idx,
                                             float* A, float* B, float* C) {
-    glass::indexed_batched_gemm<float, 4, /*TA*/true, /*TB*/false, /*ATOMIC*/true>(
+    glass::gemm_batched_indexed<float, 4, /*TA*/true, /*TB*/false, /*ATOMIC*/true>(
         pairs, a_idx, b_idx, c_idx, A, B, C);
 }
 
-// ─── gemm kernels ─────────────────────────────────────────────────────────────
-__global__ void k_gemm_cg(int m, int n, int k, float alpha, float* A, float* B, float beta, float* C) {
-    glass::cgrps::gemm<float, false>(m, n, k, alpha, A, B, beta, C);
+// ─── GEMM kernels (standard convention) ──────────────────────────────────────
+// `nb` (no-beta): when 1, call the overload that overwrites C and never reads it
+// (so a NaN-poisoned C must survive); when 0, the beta overload.
+template <bool TA, bool TB, bool RMC>
+__global__ void k_gemm_rt(int m, int n, int k, float alpha, float* A, float* B, float beta, float* C, int nb) {
+    if (nb) glass::gemm<float, TA, TB, RMC>(m, n, k, alpha, A, B, C);
+    else    glass::gemm<float, TA, TB, RMC>(m, n, k, alpha, A, B, beta, C);
 }
-__global__ void k_gemm_simple(int m, int n, int k, float alpha, float* A, float* B, float beta, float* C) {
-    glass::gemm<float, false>(m, n, k, alpha, A, B, beta, C);
+template <bool TA, bool TB, bool RMC>
+__global__ void k_gemm_rt_cg(int m, int n, int k, float alpha, float* A, float* B, float beta, float* C, int nb) {
+    if (nb) glass::cgrps::gemm<float, TA, TB, RMC>(m, n, k, alpha, A, B, C);
+    else    glass::cgrps::gemm<float, TA, TB, RMC>(m, n, k, alpha, A, B, beta, C);
 }
-__global__ void k_gemm_t_cg(int m, int n, int k, float alpha, float* A, float* B, float beta, float* C) {
-    glass::cgrps::gemm<float, true>(m, n, k, alpha, A, B, beta, C);
+// Compile-time-size (magic-multiply path).
+template <int M, int N, int K, bool TA, bool TB, bool RMC>
+__global__ void k_gemm_ct(float alpha, float* A, float* B, float beta, float* C, int nb) {
+    if (nb) glass::gemm<float, M, N, K, TA, TB, RMC>(alpha, A, B, C);
+    else    glass::gemm<float, M, N, K, TA, TB, RMC>(alpha, A, B, beta, C);
 }
-__global__ void k_gemm_t_simple(int m, int n, int k, float alpha, float* A, float* B, float beta, float* C) {
-    glass::gemm<float, true>(m, n, k, alpha, A, B, beta, C);
+// Single-warp compile-time (run <<<1,32>>>).
+template <int M, int N, int K, bool TA, bool TB, bool RMC>
+__global__ void k_gemm_warp(float alpha, float* A, float* B, float beta, float* C, int nb) {
+    if (nb) glass::warp::gemm<float, M, N, K, TA, TB, RMC>(alpha, A, B, C);
+    else    glass::warp::gemm<float, M, N, K, TA, TB, RMC>(alpha, A, B, beta, C);
+}
+
+// Runtime flag dispatch (8 combos) for a launcher LAUNCH(TA,TB,RMC).
+#define GEMM_FLAG_DISPATCH(ta, tb, rmc, LAUNCH)         \
+    do {                                                \
+        int _f = ((ta) << 2) | ((tb) << 1) | (rmc);     \
+        switch (_f) {                                   \
+            case 0: LAUNCH(false,false,false); break;   \
+            case 1: LAUNCH(false,false,true ); break;   \
+            case 2: LAUNCH(false,true ,false); break;   \
+            case 3: LAUNCH(false,true ,true ); break;   \
+            case 4: LAUNCH(true ,false,false); break;   \
+            case 5: LAUNCH(true ,false,true ); break;   \
+            case 6: LAUNCH(true ,true ,false); break;   \
+            case 7: LAUNCH(true ,true ,true ); break;   \
+        }                                               \
+    } while (0)
+
+// Compile-time shape table for gemm_ct / gemm_warp, selected by shape_id
+// (deliberately includes non-square + all-distinct dims, plus M=1/N=1 edges).
+static void ct_shape_dims(int id, int* M, int* N, int* K) {
+    switch (id) {
+        case 0: *M=1; *N=1; *K=1; break;
+        case 1: *M=2; *N=3; *K=4; break;
+        case 2: *M=4; *N=2; *K=3; break;
+        case 3: *M=5; *N=7; *K=3; break;
+        case 4: *M=8; *N=1; *K=5; break;
+        case 5: *M=9; *N=4; *K=7; break;
+        case 6: *M=7; *N=5; *K=6; break;
+        default: *M=16; *N=16; *K=16; break;
+    }
+}
+
+// Compile-time-size launcher: 8-way flag switch for a fixed (M,N,K).
+template <int M, int N, int K>
+static void launch_gemm_ct(bool warp, int th, int ta, int tb, int rmc, int nb,
+                           float alpha, float* dA, float* dB, float beta, float* dC) {
+    int f = (ta << 2) | (tb << 1) | rmc;
+    #define _CT_DOIT(TA,TB,RMC)                                                          \
+        do { if (warp) k_gemm_warp<M,N,K,TA,TB,RMC><<<1,32>>>(alpha,dA,dB,beta,dC,nb);   \
+             else      k_gemm_ct  <M,N,K,TA,TB,RMC><<<1,th>>>(alpha,dA,dB,beta,dC,nb); } while (0)
+    switch (f) {
+        case 0: _CT_DOIT(false,false,false); break;
+        case 1: _CT_DOIT(false,false,true ); break;
+        case 2: _CT_DOIT(false,true ,false); break;
+        case 3: _CT_DOIT(false,true ,true ); break;
+        case 4: _CT_DOIT(true ,false,false); break;
+        case 5: _CT_DOIT(true ,false,true ); break;
+        case 6: _CT_DOIT(true ,true ,false); break;
+        case 7: _CT_DOIT(true ,true ,true ); break;
+    }
+    #undef _CT_DOIT
 }
 
 // ─── inv kernels ──────────────────────────────────────────────────────────────
@@ -105,41 +169,29 @@ __global__ void k_trsm_simple(int n, float* L, float* b) {
     glass::trsm(n, L, b);
 }
 
-// ─── warp:: kernels (launch <<<1,32>>>) ──────────────────────────────────────
-// Single-warp 4×4×4 GEMM (the mat4-style transform-multiply replacement).
-__global__ void k_gemm_warp_4x4x4(float alpha, float* A, float* B, float beta, float* C) {
-    glass::warp::gemm<float, 4, 4, 4>(alpha, A, B, beta, C);
-}
-// Single-warp SPD solve A x = b (N=7): factor A=LLᵀ, then forward + transpose solves.
-// Exercises warp::cholDecomp_InPlace + warp::trsm + warp::trsm_transpose together
-// (the HJCD normal-equations pattern). b is overwritten with the solution.
+// ─── warp SPD solve (N=7) ─────────────────────────────────────────────────────
 __global__ void k_posv_warp_7(float* A, float* b) {
     glass::warp::cholDecomp_InPlace<float, 7>(A);
     glass::warp::trsm<float, 7>(A, b);
     glass::warp::trsm_transpose<float, 7>(A, b);
 }
 
-// ─── gemm row-major kernels ───────────────────────────────────────────────────
-__global__ void k_gemm_rowmajor(int m, int n, int k, float alpha, float* A, float* B, float beta, float* C) {
-    glass::gemm<float, false, true>(m, n, k, alpha, A, B, beta, C);
+// ─── gemm_strided kernels (standard convention: A M×K lead A_RS, B K×N lead B_RS) ──
+__global__ void k_rsgemm_6x6x6_6_6(float alpha, float* A, float* B, float beta, float* C) {
+    glass::gemm_strided<float, 6, 6, 6, 6, 6>(alpha, A, B, beta, C);
 }
-__global__ void k_gemm_ex_mixed(int m, int n, int k, float alpha, float* A, float* B, float beta, float* C) {
-    glass::gemm_ex<float, false, true, false, true>(m, n, k, alpha, A, B, beta, C);
+__global__ void k_rsgemm_6x6x6_8_8(float alpha, float* A, float* B, float beta, float* C) {
+    glass::gemm_strided<float, 6, 6, 6, 8, 8>(alpha, A, B, beta, C);
 }
-
-// ─── row_strided_gemm kernels (compile-time M, N, K, A_RS, B_RS) ─────────────
-// A[i][j] = A[i + j*A_RS] (col-major), B[j][l] = B[j + l*B_RS] (col-major), C standard.
-__global__ void k_gemm_strided_6x6x6_6_6(float alpha, float* A, float* B, float beta, float* C) {
-    glass::row_strided_gemm<float, 6, 6, 6, 6, 6>(A, B, C, alpha, beta);
+__global__ void k_rsgemm_4x4x4_4_4(float alpha, float* A, float* B, float beta, float* C) {
+    glass::gemm_strided<float, 4, 4, 4, 4, 4>(alpha, A, B, beta, C);
 }
-__global__ void k_gemm_strided_6x6x6_8_8(float alpha, float* A, float* B, float beta, float* C) {
-    glass::row_strided_gemm<float, 6, 6, 6, 8, 8>(A, B, C, alpha, beta);
+__global__ void k_rsgemm_4x4x4_6_6(float alpha, float* A, float* B, float beta, float* C) {
+    glass::gemm_strided<float, 4, 4, 4, 6, 6>(alpha, A, B, beta, C);
 }
-__global__ void k_gemm_strided_4x4x4_4_4(float alpha, float* A, float* B, float beta, float* C) {
-    glass::row_strided_gemm<float, 4, 4, 4, 4, 4>(A, B, C, alpha, beta);
-}
-__global__ void k_gemm_strided_4x4x4_6_6(float alpha, float* A, float* B, float beta, float* C) {
-    glass::row_strided_gemm<float, 4, 4, 4, 6, 6>(A, B, C, alpha, beta);
+// Non-square strided: C 5×7, contract 3; A 5×3 lead 8, B 3×7 lead 6.
+__global__ void k_rsgemm_5x7x3_8_6(float alpha, float* A, float* B, float beta, float* C) {
+    glass::gemm_strided<float, 5, 7, 3, 8, 6>(alpha, A, B, beta, C);
 }
 
 // ─── packed GEMM CT kernels (4×4×{16,32,48,64}) ──────────────────────────────
@@ -153,7 +205,7 @@ DEFINE_PACKED_GEMM_KERNEL(4, 4, 32)
 DEFINE_PACKED_GEMM_KERNEL(4, 4, 48)
 DEFINE_PACKED_GEMM_KERNEL(4, 4, 64)
 
-// ─── gemm_tiled kernels ───────────────────────────────────────────────────────
+// ─── gemm_tiled kernel (no transpose; A m×k, B k×n, C m×n) ───────────────────
 __global__ void k_gemm_tiled(int m, int n, int k, float alpha, float* A, float* B, float beta, float* C) {
     extern __shared__ float smem[];
     float* s_A = smem;
@@ -172,46 +224,61 @@ int main(int argc, char** argv) {
     const char* ver = argv[2];
     bool cg = (strcmp(ver, "cg") == 0);
 
-    if (strcmp(op, "gemm") == 0) {
-        int m = atoi(argv[3]);
-        int n = atoi(argv[4]);
-        int k = atoi(argv[5]);
-        float alpha = atof(argv[6]);
-        float beta  = atof(argv[7]);
-        float* dA = read_device_vec(argv[8], m * n);
-        float* dB = read_device_vec(argv[9], n * k);
-        float* dC = read_device_vec(argv[10], m * k);
-        if (cg) k_gemm_cg<<<1, THREADS>>>(m, n, k, alpha, dA, dB, beta, dC);
-        else    k_gemm_simple<<<1, THREADS>>>(m, n, k, alpha, dA, dB, beta, dC);
-        cudaDeviceSynchronize();
-        print_device_vec(dC, m * k);
-
-    } else if (strcmp(op, "gemm_t") == 0) {
-        int m = atoi(argv[3]);
-        int n = atoi(argv[4]);
-        int k = n;
-        float alpha = atof(argv[6]);
-        float beta  = atof(argv[7]);
-        float* dA = read_device_vec(argv[8], m * n);
-        float* dB = read_device_vec(argv[9], n * n);
-        float* dC = read_device_vec(argv[10], m * n);
-        if (cg) k_gemm_t_cg<<<1, THREADS>>>(m, n, k, alpha, dA, dB, beta, dC);
-        else    k_gemm_t_simple<<<1, THREADS>>>(m, n, k, alpha, dA, dB, beta, dC);
+    if (strcmp(op, "gemm_rt") == 0) {
+        // gemm_rt <cg|simple> <threads> <m> <n> <k> <ta> <tb> <rmc> <nb> <alpha> <beta> <A> <B> <C>
+        int th = atoi(argv[3]);
+        int m = atoi(argv[4]), n = atoi(argv[5]), k = atoi(argv[6]);
+        int ta = atoi(argv[7]), tb = atoi(argv[8]), rmc = atoi(argv[9]), nb = atoi(argv[10]);
+        float alpha = atof(argv[11]), beta = atof(argv[12]);
+        float* dA = read_device_vec(argv[13], m * k);   // op(A) is m×k (MK either layout)
+        float* dB = read_device_vec(argv[14], k * n);   // op(B) is k×n (KN either layout)
+        float* dC = read_device_vec(argv[15], m * n);
+        if (cg) {
+            #define L_RT_CG(TA,TB,RMC) k_gemm_rt_cg<TA,TB,RMC><<<1,th>>>(m,n,k,alpha,dA,dB,beta,dC,nb)
+            GEMM_FLAG_DISPATCH(ta, tb, rmc, L_RT_CG);
+        } else {
+            #define L_RT(TA,TB,RMC) k_gemm_rt<TA,TB,RMC><<<1,th>>>(m,n,k,alpha,dA,dB,beta,dC,nb)
+            GEMM_FLAG_DISPATCH(ta, tb, rmc, L_RT);
+        }
         cudaDeviceSynchronize();
         print_device_vec(dC, m * n);
 
+    } else if (strcmp(op, "gemm_ct") == 0 || strcmp(op, "gemm_warp") == 0) {
+        // gemm_ct|gemm_warp <unused> <threads> <shape_id> <ta> <tb> <rmc> <nb> <alpha> <beta> <A> <B> <C>
+        bool warp = (strcmp(op, "gemm_warp") == 0);
+        int th  = warp ? 32 : atoi(argv[3]);
+        int id  = atoi(argv[4]);
+        int ta  = atoi(argv[5]), tb = atoi(argv[6]), rmc = atoi(argv[7]), nb = atoi(argv[8]);
+        float alpha = atof(argv[9]), beta = atof(argv[10]);
+        int M, N, K; ct_shape_dims(id, &M, &N, &K);
+        float* dA = read_device_vec(argv[11], M * K);
+        float* dB = read_device_vec(argv[12], K * N);
+        float* dC = read_device_vec(argv[13], M * N);
+        switch (id) {
+            case 0: launch_gemm_ct< 1, 1, 1>(warp,th,ta,tb,rmc,nb,alpha,dA,dB,beta,dC); break;
+            case 1: launch_gemm_ct< 2, 3, 4>(warp,th,ta,tb,rmc,nb,alpha,dA,dB,beta,dC); break;
+            case 2: launch_gemm_ct< 4, 2, 3>(warp,th,ta,tb,rmc,nb,alpha,dA,dB,beta,dC); break;
+            case 3: launch_gemm_ct< 5, 7, 3>(warp,th,ta,tb,rmc,nb,alpha,dA,dB,beta,dC); break;
+            case 4: launch_gemm_ct< 8, 1, 5>(warp,th,ta,tb,rmc,nb,alpha,dA,dB,beta,dC); break;
+            case 5: launch_gemm_ct< 9, 4, 7>(warp,th,ta,tb,rmc,nb,alpha,dA,dB,beta,dC); break;
+            case 6: launch_gemm_ct< 7, 5, 6>(warp,th,ta,tb,rmc,nb,alpha,dA,dB,beta,dC); break;
+            default:launch_gemm_ct<16,16,16>(warp,th,ta,tb,rmc,nb,alpha,dA,dB,beta,dC); break;
+        }
+        cudaDeviceSynchronize();
+        print_device_vec(dC, M * N);
+
     } else if (strcmp(op, "inv") == 0) {
-        int n = atoi(argv[3]);
-        float* dA = read_device_vec(argv[4], 2 * n * n);
+        int threads = atoi(argv[3]);
+        int n = atoi(argv[4]);
+        float* dA = read_device_vec(argv[5], 2 * n * n);
         float* scratch; cudaMalloc(&scratch, (2 * n + 1) * sizeof(float));
-        if (cg) k_inv_cg<<<1, THREADS>>>(n, dA, scratch);
-        else    k_inv_simple<<<1, THREADS>>>(n, dA, scratch);
+        if (cg) k_inv_cg<<<1, threads>>>(n, dA, scratch);
+        else    k_inv_simple<<<1, threads>>>(n, dA, scratch);
         cudaDeviceSynchronize();
         print_device_vec(dA + n * n, n * n);
         cudaFree(scratch);
 
-    } else if (strcmp(op, "inv_pivot") == 0) {  // robust partial-pivoting invert
-        // Usage: inv_pivot simple <threads> <n> <file>
+    } else if (strcmp(op, "inv_pivot") == 0) {
         int threads = atoi(argv[3]);
         int n = atoi(argv[4]);
         float* dA = read_device_vec(argv[5], 2 * n * n);
@@ -221,7 +288,7 @@ int main(int argc, char** argv) {
         print_device_vec(dA + n * n, n * n);
         cudaFree(scratch);
 
-    } else if (strcmp(op, "inv2") == 0) {  // fused 2-matrix invert
+    } else if (strcmp(op, "inv2") == 0) {
         int dimA = atoi(argv[3]); int dimB = atoi(argv[4]); int maxd = atoi(argv[5]);
         float* dA = read_device_vec(argv[6], 2 * dimA * dimA);
         float* dB = read_device_vec(argv[7], 2 * dimB * dimB);
@@ -232,7 +299,7 @@ int main(int argc, char** argv) {
         print_device_vec(dB + dimB * dimB, dimB * dimB);
         cudaFree(scratch);
 
-    } else if (strcmp(op, "inv3") == 0) {  // fused 3-matrix invert (GATO Schur: Q_k, Q_kp1, R_k)
+    } else if (strcmp(op, "inv3") == 0) {
         int dimA = atoi(argv[3]); int dimB = atoi(argv[4]); int dimC = atoi(argv[5]); int maxd = atoi(argv[6]);
         float* dA = read_device_vec(argv[7], 2 * dimA * dimA);
         float* dB = read_device_vec(argv[8], 2 * dimB * dimB);
@@ -262,21 +329,8 @@ int main(int argc, char** argv) {
         cudaDeviceSynchronize();
         print_device_vec(db, n);
 
-    } else if (strcmp(op, "gemm_warp") == 0) {
-        int m = atoi(argv[3]);   // fixed 4×4×4 warp kernel
-        int n = atoi(argv[4]);
-        int k = atoi(argv[5]);
-        float alpha = atof(argv[6]);
-        float beta  = atof(argv[7]);
-        float* dA = read_device_vec(argv[8], m * n);
-        float* dB = read_device_vec(argv[9], n * k);
-        float* dC = read_device_vec(argv[10], m * k);
-        k_gemm_warp_4x4x4<<<1, 32>>>(alpha, dA, dB, beta, dC);
-        cudaDeviceSynchronize();
-        print_device_vec(dC, m * k);
-
     } else if (strcmp(op, "posv_warp") == 0) {
-        int n = atoi(argv[3]);   // fixed N=7 warp SPD solve
+        int n = atoi(argv[3]);
         float* dA = read_device_vec(argv[4], n * n);
         float* db = read_device_vec(argv[5], n);
         k_posv_warp_7<<<1, 32>>>(dA, db);
@@ -284,127 +338,58 @@ int main(int argc, char** argv) {
         print_device_vec(db, n);
 
     } else if (strcmp(op, "gemm_tiled") == 0) {
+        // gemm_tiled <cg|simple> <m> <n> <k> <alpha> <beta> <A> <B> <C>
         int m = atoi(argv[3]);
         int n = atoi(argv[4]);
         int k = atoi(argv[5]);
         float alpha = atof(argv[6]);
         float beta  = atof(argv[7]);
-        float* dA = read_device_vec(argv[8], m * n);
-        float* dB = read_device_vec(argv[9], n * k);
-        float* dC = read_device_vec(argv[10], m * k);
-        int smem_bytes = (m * 8 + 8 * k) * sizeof(float);
+        float* dA = read_device_vec(argv[8], m * k);    // A is m×k
+        float* dB = read_device_vec(argv[9], k * n);    // B is k×n
+        float* dC = read_device_vec(argv[10], m * n);
+        int smem_bytes = (m * 8 + 8 * n) * sizeof(float);
         k_gemm_tiled<<<1, THREADS, smem_bytes>>>(m, n, k, alpha, dA, dB, beta, dC);
         cudaDeviceSynchronize();
-        print_device_vec(dC, m * k);
+        print_device_vec(dC, m * n);
 
-    } else if (strcmp(op, "gemm_rowmajor") == 0) {
-        int m = atoi(argv[3]);
-        int n = atoi(argv[4]);
-        int k = atoi(argv[5]);
-        float alpha = atof(argv[6]);
-        float beta  = atof(argv[7]);
-        float* dA = read_device_vec(argv[8], m * n);
-        float* dB = read_device_vec(argv[9], n * k);
-        float* dC = read_device_vec(argv[10], m * k);
-        k_gemm_rowmajor<<<1, THREADS>>>(m, n, k, alpha, dA, dB, beta, dC);
+    } else if (strncmp(op, "rsgemm_", 7) == 0) {
+        // rsgemm_<MxNxK_ARSxBRS> <unused> <threads> <alpha> <beta> <A> <B> <C>
+        int th = atoi(argv[3]);
+        float alpha = atof(argv[4]);
+        float beta  = atof(argv[5]);
+        int M, N, K, ARS, BRS;
+        if      (strcmp(op, "rsgemm_6x6x6_6_6") == 0) { M=6;N=6;K=6;ARS=6;BRS=6; }
+        else if (strcmp(op, "rsgemm_6x6x6_8_8") == 0) { M=6;N=6;K=6;ARS=8;BRS=8; }
+        else if (strcmp(op, "rsgemm_4x4x4_4_4") == 0) { M=4;N=4;K=4;ARS=4;BRS=4; }
+        else if (strcmp(op, "rsgemm_4x4x4_6_6") == 0) { M=4;N=4;K=4;ARS=6;BRS=6; }
+        else if (strcmp(op, "rsgemm_5x7x3_8_6") == 0) { M=5;N=7;K=3;ARS=8;BRS=6; }
+        else { fprintf(stderr, "bad rsgemm op %s\n", op); return 1; }
+        float* dA = read_device_vec(argv[6], ARS * K);   // A is M×K, lead ARS
+        float* dB = read_device_vec(argv[7], BRS * N);   // B is K×N, lead BRS
+        float* dC = read_device_vec(argv[8], M * N);
+        if      (strcmp(op, "rsgemm_6x6x6_6_6") == 0) k_rsgemm_6x6x6_6_6<<<1,th>>>(alpha,dA,dB,beta,dC);
+        else if (strcmp(op, "rsgemm_6x6x6_8_8") == 0) k_rsgemm_6x6x6_8_8<<<1,th>>>(alpha,dA,dB,beta,dC);
+        else if (strcmp(op, "rsgemm_4x4x4_4_4") == 0) k_rsgemm_4x4x4_4_4<<<1,th>>>(alpha,dA,dB,beta,dC);
+        else if (strcmp(op, "rsgemm_4x4x4_6_6") == 0) k_rsgemm_4x4x4_6_6<<<1,th>>>(alpha,dA,dB,beta,dC);
+        else                                          k_rsgemm_5x7x3_8_6<<<1,th>>>(alpha,dA,dB,beta,dC);
         cudaDeviceSynchronize();
-        print_device_vec(dC, m * k);
+        print_device_vec(dC, M * N);
 
-    } else if (strcmp(op, "gemm_ex") == 0) {
-        int m = atoi(argv[3]);
-        int n = atoi(argv[4]);
-        int k = atoi(argv[5]);
-        float alpha = atof(argv[6]);
-        float beta  = atof(argv[7]);
-        float* dA = read_device_vec(argv[8], m * n);
-        float* dB = read_device_vec(argv[9], n * k);
-        float* dC = read_device_vec(argv[10], m * k);
-        k_gemm_ex_mixed<<<1, THREADS>>>(m, n, k, alpha, dA, dB, beta, dC);
-        cudaDeviceSynchronize();
-        print_device_vec(dC, m * k);
-
-    } else if (strcmp(op, "gemm_strided_6x6x6_6_6") == 0) {
+    } else if (strncmp(op, "packed_gemm_4x4x", 16) == 0) {
+        int K = atoi(op + 16);   // 16/32/48/64
         float alpha = atof(argv[3]);
         float beta  = atof(argv[4]);
-        float* dA = read_device_vec(argv[5], 6 * 6);
-        float* dB = read_device_vec(argv[6], 6 * 6);
-        float* dC = read_device_vec(argv[7], 6 * 6);
-        k_gemm_strided_6x6x6_6_6<<<1, THREADS>>>(alpha, dA, dB, beta, dC);
-        cudaDeviceSynchronize();
-        print_device_vec(dC, 6 * 6);
-
-    } else if (strcmp(op, "gemm_strided_6x6x6_8_8") == 0) {
-        float alpha = atof(argv[3]);
-        float beta  = atof(argv[4]);
-        float* dA = read_device_vec(argv[5], 6 * 8);   // LDA_A=8
-        float* dB = read_device_vec(argv[6], 6 * 8);   // LDA_B=8 (N*B_RS where N=6, B_RS=8)
-        float* dC = read_device_vec(argv[7], 6 * 6);
-        k_gemm_strided_6x6x6_8_8<<<1, THREADS>>>(alpha, dA, dB, beta, dC);
-        cudaDeviceSynchronize();
-        print_device_vec(dC, 6 * 6);
-
-    } else if (strcmp(op, "gemm_strided_4x4x4_4_4") == 0) {
-        float alpha = atof(argv[3]);
-        float beta  = atof(argv[4]);
-        float* dA = read_device_vec(argv[5], 4 * 4);
-        float* dB = read_device_vec(argv[6], 4 * 4);
+        float* dA = read_device_vec(argv[5], 4 * K);   // A is 4×K
+        float* dB = read_device_vec(argv[6], K * 4);   // B is K×4
         float* dC = read_device_vec(argv[7], 4 * 4);
-        k_gemm_strided_4x4x4_4_4<<<1, THREADS>>>(alpha, dA, dB, beta, dC);
+        if      (K == 16) k_packed_gemm_4x4x16<<<1, THREADS>>>(alpha, dA, dB, beta, dC);
+        else if (K == 32) k_packed_gemm_4x4x32<<<1, THREADS>>>(alpha, dA, dB, beta, dC);
+        else if (K == 48) k_packed_gemm_4x4x48<<<1, THREADS>>>(alpha, dA, dB, beta, dC);
+        else              k_packed_gemm_4x4x64<<<1, THREADS>>>(alpha, dA, dB, beta, dC);
         cudaDeviceSynchronize();
         print_device_vec(dC, 4 * 4);
-
-    } else if (strcmp(op, "gemm_strided_4x4x4_6_6") == 0) {
-        float alpha = atof(argv[3]);
-        float beta  = atof(argv[4]);
-        float* dA = read_device_vec(argv[5], 4 * 6);   // LDA_A=6
-        float* dB = read_device_vec(argv[6], 4 * 6);   // LDA_B=6
-        float* dC = read_device_vec(argv[7], 4 * 4);
-        k_gemm_strided_4x4x4_6_6<<<1, THREADS>>>(alpha, dA, dB, beta, dC);
-        cudaDeviceSynchronize();
-        print_device_vec(dC, 4 * 4);
-
-    } else if (strcmp(op, "packed_gemm_4x4x16") == 0) {
-        float alpha = atof(argv[3]);
-        float beta  = atof(argv[4]);
-        float* dA = read_device_vec(argv[5], 4 * 4);
-        float* dB = read_device_vec(argv[6], 4 * 16);
-        float* dC = read_device_vec(argv[7], 4 * 16);
-        k_packed_gemm_4x4x16<<<1, THREADS>>>(alpha, dA, dB, beta, dC);
-        cudaDeviceSynchronize();
-        print_device_vec(dC, 4 * 16);
-
-    } else if (strcmp(op, "packed_gemm_4x4x32") == 0) {
-        float alpha = atof(argv[3]);
-        float beta  = atof(argv[4]);
-        float* dA = read_device_vec(argv[5], 4 * 4);
-        float* dB = read_device_vec(argv[6], 4 * 32);
-        float* dC = read_device_vec(argv[7], 4 * 32);
-        k_packed_gemm_4x4x32<<<1, THREADS>>>(alpha, dA, dB, beta, dC);
-        cudaDeviceSynchronize();
-        print_device_vec(dC, 4 * 32);
-
-    } else if (strcmp(op, "packed_gemm_4x4x48") == 0) {
-        float alpha = atof(argv[3]);
-        float beta  = atof(argv[4]);
-        float* dA = read_device_vec(argv[5], 4 * 4);
-        float* dB = read_device_vec(argv[6], 4 * 48);
-        float* dC = read_device_vec(argv[7], 4 * 48);
-        k_packed_gemm_4x4x48<<<1, THREADS>>>(alpha, dA, dB, beta, dC);
-        cudaDeviceSynchronize();
-        print_device_vec(dC, 4 * 48);
-
-    } else if (strcmp(op, "packed_gemm_4x4x64") == 0) {
-        float alpha = atof(argv[3]);
-        float beta  = atof(argv[4]);
-        float* dA = read_device_vec(argv[5], 4 * 4);
-        float* dB = read_device_vec(argv[6], 4 * 64);
-        float* dC = read_device_vec(argv[7], 4 * 64);
-        k_packed_gemm_4x4x64<<<1, THREADS>>>(alpha, dA, dB, beta, dC);
-        cudaDeviceSynchronize();
-        print_device_vec(dC, 4 * 64);
 
     } else if (strcmp(op, "indexed_bgemm_4") == 0) {
-        // argv: m n k pairs A_mats B_mats C_mats  a_idx b_idx c_idx A B C
         uint32_t pairs = (uint32_t)atoi(argv[6]);
         int A_mats = atoi(argv[7]);
         int B_mats = atoi(argv[8]);
@@ -424,9 +409,6 @@ int main(int argc, char** argv) {
                strcmp(op, "indexed_bgemm_4_tb") == 0 ||
                strcmp(op, "indexed_bgemm_4_atomic") == 0 ||
                strcmp(op, "indexed_bgemm_4_ta_atomic") == 0) {
-        // argv: m n k pairs A_mats B_mats C_mats  a_idx b_idx c_idx A B C
-        // The atomic variants expect C to be PRE-ZEROED here (alloc_device_vec
-        // zero-inits) so the scatter-add reference matches.
         uint32_t pairs = (uint32_t)atoi(argv[6]);
         int A_mats = atoi(argv[7]);
         int B_mats = atoi(argv[8]);

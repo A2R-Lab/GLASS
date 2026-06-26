@@ -278,7 +278,7 @@ __global__ void k_nv_gemm_blockdim(float* A, float* B, float* C, volatile float*
 
 #define RUN_NVIDIA_GEMM(M, N, K, dA, dB, dC, sink, iters, t0, t1)                            \
     {                                                                                         \
-        constexpr auto smem_def = glass::nvidia::gemm_smem_size<float, M, N, K>();           \
+        constexpr auto smem_def = glass::nvidia::gemm_scratch_bytes<float, M, N, K>();           \
         constexpr auto thr_def  = glass::nvidia::gemm_threads<float, M, N, K>();             \
         cudaMemset(dC, 0, (size_t)M*K*sizeof(float));                                         \
         clock_gettime(CLOCK_MONOTONIC, &(t0));                                                 \
@@ -287,7 +287,7 @@ __global__ void k_nv_gemm_blockdim(float* A, float* B, float* C, volatile float*
         clock_gettime(CLOCK_MONOTONIC, &(t1));                                                 \
         printf("glass::nvidia gemm (default) m=%2d n=%2d k=%2d  %.3f us/op\n",               \
                M, N, K, elapsed_us(t0, t1) / iters);                                          \
-        constexpr auto smem_bd = glass::nvidia::gemm_smem_size<float, M, N, K, THREADS>();   \
+        constexpr auto smem_bd = glass::nvidia::gemm_scratch_bytes<float, M, N, K, THREADS>();   \
         cudaMemset(dC, 0, (size_t)M*K*sizeof(float));                                         \
         clock_gettime(CLOCK_MONOTONIC, &(t0));                                                 \
         k_nv_gemm_blockdim<M, N, K, THREADS><<<1, THREADS, smem_bd>>>(dA, dB, dC, sink, iters); \

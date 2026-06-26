@@ -21,14 +21,14 @@
 // ============================================================================
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include "../base/L1/clip.cuh"
 #include "../base/L1/copy.cuh"
 #include "../base/L1/dot.cuh"
 #include "../base/L1/infnorm.cuh"
 #include "../base/L1/elementwise_logic.cuh"
 #include "../base/L3/gemm.cuh"
-#include <cstddef>
-#include <cstdint>
 
 namespace glass {
 namespace internal {
@@ -56,9 +56,9 @@ struct QPResult {
 // — low_memory::dot writes the full length-n buffer and reduces into [0], so the
 // accumulators must be length n, not single scalars.
 template <typename T>
-__host__ __device__ constexpr std::size_t box_qp_scratch_size(std::uint32_t n)
+__host__ __device__ constexpr std::size_t box_qp_scratch_bytes(std::uint32_t n)
 {
-    return static_cast<std::size_t>(5u) * n;
+    return static_cast<std::size_t>(5u) * n * sizeof(T);
 }
 
 // f(x) = 0.5 xᵀP x + qᵀx. Uses Px and tmp (each length n) as scratch. Returns
@@ -67,7 +67,7 @@ template <typename T>
 __device__ T qp_objective(std::uint32_t n, T *P, T *x, T *q, T *Px, T *tmp)
 {
     // Px = P @ x  (n×n · n×1). P symmetric ⇒ xᵀP x == xᵀ(P x).
-    gemm<T>(n, n, 1, (T)1, P, x, Px);
+    gemm<T>(n, 1, n, (T)1, P, x, Px);
     __syncthreads();
     low_memory::dot<T>(n, Px, x, tmp);     // tmp[0] = xᵀP x (uses tmp[0..n-1])
     T xPx = tmp[0];
@@ -77,7 +77,7 @@ __device__ T qp_objective(std::uint32_t n, T *P, T *x, T *q, T *Px, T *tmp)
 }
 
 // Solve the box QP. x: in = initial guess, out = solution (in-place, projected
-// onto [l,u]). scratch must hold >= box_qp_scratch_size<T>(n) elements.
+// onto [l,u]). scratch must hold >= box_qp_scratch_bytes<T>(n) elements.
 template <typename T>
 __device__ QPResult<T> box_qp(std::uint32_t n, T *P, T *q, T *l, T *u, T *x,
                               T *scratch, const QPParams<T> &params = QPParams<T>())
@@ -99,7 +99,7 @@ __device__ QPResult<T> box_qp(std::uint32_t n, T *P, T *q, T *l, T *u, T *x,
         out.iters = it + 1;
 
         // grad = P x + q
-        gemm<T>(n, n, 1, (T)1, P, x, grad);
+        gemm<T>(n, 1, n, (T)1, P, x, grad);
         __syncthreads();
         elementwise_add<T>(n, grad, q, grad);   // grad = grad + q
         __syncthreads();

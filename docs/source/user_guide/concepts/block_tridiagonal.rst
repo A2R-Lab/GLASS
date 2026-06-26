@@ -74,7 +74,7 @@ is tested on the preconditioned residual ``rho = rᵀz``:
 Sizing and launch:
 
 * Dynamic shared memory =
-  ``glass::pcg_smem_size<T, state_size, knot_points>(threads)`` elements (five
+  ``glass::pcg_scratch_bytes<T, state_size, knot_points>(threads)`` elements (five
   padded work vectors + the warp-dot scratch); five scalars live in static
   ``__shared__``.
 * The block thread count **must be a multiple of 32** — the inner dot product
@@ -85,7 +85,7 @@ Sizing and launch:
 .. code-block:: cpp
 
    constexpr int SS = 6, KP = 32;
-   size_t smem = glass::pcg_smem_size<float, SS, KP>(threads) * sizeof(float);
+   size_t smem = glass::pcg_scratch_bytes<float, SS, KP>(threads) * sizeof(float);
    pcg_kernel<<<num_problems, threads, smem>>>(d_x, d_S, d_Pinv, d_b, ...);
    // inside the kernel:
    extern __shared__ float s_mem[];

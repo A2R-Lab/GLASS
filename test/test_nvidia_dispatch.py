@@ -4,8 +4,8 @@ Companion to test_l3_nvidia.py (which tests the SIMT batched APIs from
 l3_simt.cuh). This module targets the round-2 additions:
 
   * Gap A — glass::nvidia::gemv<>     auto-dispatches SIMT vs cuBLASDx
-  * Gap B — row_strided_gemv<>        auto-dispatches; SIMT uses stride directly
-  * Gap C — row_strided_gemm<>        auto-dispatches; SIMT skips compact-pack
+  * Gap B — gemv_strided<>        auto-dispatches; SIMT uses stride directly
+  * Gap C — gemm_strided<>        auto-dispatches; SIMT skips compact-pack
   * Gap D — gemm<...,LB=row_major,...> maps onto SIMT TRANSPOSE_B=true
 
 The test binary requires cuBLASDx for the gemm_cublas op (compiles via DEFINE),

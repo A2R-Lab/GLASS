@@ -45,7 +45,7 @@ __device__ __forceinline__ void combine(T &key, uint32_t &idx, T ckey, uint32_t 
  *
  * @par Scratch sizing
  * This variant uses no shared scratch (a serial pass on thread 0). For the
- * warp-shuffle `high_speed::` variant size scratch via `iamax_hs_temp_size`.
+ * warp-shuffle `high_speed::` variant size scratch via `iamax_hs_scratch_bytes`.
  *
  * The routine ends on a trailing `__syncthreads()`, so `out[0]` is block-visible
  * on return.
@@ -54,15 +54,15 @@ __device__ __forceinline__ void combine(T &key, uint32_t &idx, T ckey, uint32_t 
  * @param n    Number of elements.
  * @param x    Read-only input vector of length `n` (not modified).
  * @param out  Output: `out[0]` receives the argmax index.
- * @param s_temp  Shared scratch of `iamax_temp_size` elements (key + index lanes).
+ * @param s_scratch  Shared scratch of `iamax_scratch_bytes` elements (key + index lanes).
  */
-template <typename T>
-__device__ void iamax(uint32_t n, const T *x, uint32_t *out, T *s_temp) {
+template <typename T, bool TRAILING_SYNC = true>
+__device__ void iamax(uint32_t n, const T *x, uint32_t *out, T *s_scratch) {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    // s_temp layout: [0..size) abs-keys, then index lanes packed after.
-    T *s_key = s_temp;
-    uint32_t *s_idx = reinterpret_cast<uint32_t *>(s_temp + size);
+    // s_scratch layout: [0..size) abs-keys, then index lanes packed after.
+    T *s_key = s_scratch;
+    uint32_t *s_idx = reinterpret_cast<uint32_t *>(s_scratch + size);
 
     // Per-thread local argmax over the strided range (deterministic tie-break).
     T best_key = static_cast<T>(0);
@@ -85,7 +85,7 @@ __device__ void iamax(uint32_t n, const T *x, uint32_t *out, T *s_temp) {
         // All-zero (or fully inactive) vector → no element beat the (0,MAX) seed.
         out[0] = (idx == UINT32_MAX) ? 0u : idx;
     }
-    __syncthreads();
+    if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
 /**
@@ -100,11 +100,11 @@ __device__ void iamax(uint32_t n, const T *x, uint32_t *out, T *s_temp) {
  * @tparam N  Number of elements (compile-time constant).
  * @param x    Read-only input vector of length `N` (not modified).
  * @param out  Output: `out[0]` receives the argmax index.
- * @param s_temp  Shared scratch of `iamax_temp_size` elements.
+ * @param s_scratch  Shared scratch of `iamax_scratch_bytes` elements.
  */
-template <typename T, uint32_t N>
-__device__ void iamax(const T *x, uint32_t *out, T *s_temp) {
-    iamax<T>(N, x, out, s_temp);
+template <typename T, uint32_t N, bool TRAILING_SYNC = true>
+__device__ void iamax(const T *x, uint32_t *out, T *s_scratch) {
+    iamax<T, TRAILING_SYNC>(N, x, out, s_scratch);
 }
 
 /**
@@ -119,14 +119,14 @@ __device__ void iamax(const T *x, uint32_t *out, T *s_temp) {
  * @param x        Read-only input vector of length `n` (not modified).
  * @param out      Output: `out[0]` receives the argmax index.
  * @param out_val  Output: `out_val[0]` receives `max|x|`.
- * @param s_temp   Shared scratch of `iamax_temp_size` elements.
+ * @param s_scratch   Shared scratch of `iamax_scratch_bytes` elements.
  */
-template <typename T>
-__device__ void iamax(uint32_t n, const T *x, uint32_t *out, T *out_val, T *s_temp) {
+template <typename T, bool TRAILING_SYNC = true>
+__device__ void iamax(uint32_t n, const T *x, uint32_t *out, T *out_val, T *s_scratch) {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    T *s_key = s_temp;
-    uint32_t *s_idx = reinterpret_cast<uint32_t *>(s_temp + size);
+    T *s_key = s_scratch;
+    uint32_t *s_idx = reinterpret_cast<uint32_t *>(s_scratch + size);
 
     T best_key = static_cast<T>(0);
     uint32_t best_idx = UINT32_MAX;
@@ -147,7 +147,7 @@ __device__ void iamax(uint32_t n, const T *x, uint32_t *out, T *out_val, T *s_te
         out[0] = (idx == UINT32_MAX) ? 0u : idx;
         out_val[0] = key;
     }
-    __syncthreads();
+    if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
 /**
@@ -161,46 +161,45 @@ __device__ void iamax(uint32_t n, const T *x, uint32_t *out, T *out_val, T *s_te
  * @param x        Read-only input vector of length `N` (not modified).
  * @param out      Output: `out[0]` receives the argmax index.
  * @param out_val  Output: `out_val[0]` receives `max|x|`.
- * @param s_temp   Shared scratch of `iamax_temp_size` elements.
+ * @param s_scratch   Shared scratch of `iamax_scratch_bytes` elements.
  */
-template <typename T, uint32_t N>
-__device__ void iamax(const T *x, uint32_t *out, T *out_val, T *s_temp) {
-    iamax<T>(N, x, out, out_val, s_temp);
+template <typename T, uint32_t N, bool TRAILING_SYNC = true>
+__device__ void iamax(const T *x, uint32_t *out, T *out_val, T *s_scratch) {
+    iamax<T, TRAILING_SYNC>(N, x, out, out_val, s_scratch);
 }
 
 /**
- * @brief Shared-scratch element count for the default/`low_memory` `iamax`.
+ * @brief Shared-scratch size in bytes for the default/`low_memory` `iamax`.
  *
  * The default variant stores one abs-key (`T`) and one index (`uint32_t`) per
- * thread. Allocate `iamax_temp_size<T>(block_threads)` elements of `T` for
- * `s_temp` (the index lanes are packed into the same buffer after the keys).
+ * thread. Allocate `iamax_scratch_bytes<T>(block_threads)` bytes of `T` for
+ * `s_scratch` (the index lanes are packed into the same buffer after the keys).
  *
  * @tparam T  Scalar type.
  * @param block_threads  Number of threads in the launching block.
- * @return Element count (of `T`) to allocate for `s_temp`.
+ * @return Bytes to allocate for `s_scratch`.
  */
 template <typename T>
-constexpr uint32_t iamax_temp_size(uint32_t block_threads) {
-    // size keys (T) + size indices (uint32_t), expressed in units of T.
-    return block_threads + (block_threads * sizeof(uint32_t) + sizeof(T) - 1) / sizeof(T);
+__host__ __device__ constexpr std::size_t iamax_scratch_bytes(uint32_t block_threads) {
+    return (static_cast<std::size_t>(block_threads + (block_threads * sizeof(uint32_t) + sizeof(T) - 1) / sizeof(T))) * sizeof(T);
 }
 
 /**
- * @brief Shared-scratch element count for `high_speed::iamax`.
+ * @brief Shared-scratch size in bytes for `high_speed::iamax`.
  *
  * The warp-shuffle variant reduces within each warp in registers and combines
  * across warps through scratch, needing one (key,index) slot per warp:
- * `ceil(block_threads/32)` of each. Allocate `iamax_hs_temp_size<T>(block_threads)`
- * elements of `T` for its `s_temp`.
+ * `ceil(block_threads/32)` of each. Allocate `iamax_hs_scratch_bytes<T>(block_threads)`
+ * elements of `T` for its `s_scratch`.
  *
  * @tparam T  Scalar type.
  * @param block_threads  Number of threads in the launching block.
- * @return Element count (of `T`) to allocate for the `high_speed::iamax` scratch.
+ * @return Bytes to allocate for the `high_speed::iamax` scratch.
  */
 template <typename T>
-constexpr uint32_t iamax_hs_temp_size(uint32_t block_threads) {
-    return ((block_threads + 31) / 32)
-         + (((block_threads + 31) / 32) * sizeof(uint32_t) + sizeof(T) - 1) / sizeof(T);
+__host__ __device__ constexpr std::size_t iamax_hs_scratch_bytes(uint32_t block_threads) {
+    return (static_cast<std::size_t>(((block_threads + 31) / 32)
+         + (((block_threads + 31) / 32) * sizeof(uint32_t) + sizeof(T) - 1) / sizeof(T))) * sizeof(T);
 }
 
 namespace low_memory {
@@ -218,7 +217,7 @@ namespace low_memory {
      * @param x    Read-only input vector of length `n` (not modified).
      * @param out  Output: `out[0]` receives the argmax index.
      */
-    template <typename T>
+    template <typename T, bool TRAILING_SYNC = true>
     __device__ void iamax(uint32_t n, const T *x, uint32_t *out) {
         if (threadIdx.x == 0 && threadIdx.y == 0 && threadIdx.z == 0) {
             T key = static_cast<T>(0);
@@ -228,7 +227,7 @@ namespace low_memory {
             }
             out[0] = (idx == UINT32_MAX) ? 0u : idx;
         }
-        __syncthreads();
+        if constexpr (TRAILING_SYNC) __syncthreads();
     }
 
     /**
@@ -242,9 +241,9 @@ namespace low_memory {
      * @param x    Read-only input vector of length `N` (not modified).
      * @param out  Output: `out[0]` receives the argmax index.
      */
-    template <typename T, uint32_t N>
+    template <typename T, uint32_t N, bool TRAILING_SYNC = true>
     __device__ void iamax(const T *x, uint32_t *out) {
-        iamax<T>(N, x, out);
+        iamax<T, TRAILING_SYNC>(N, x, out);
     }
 
     /**
@@ -259,7 +258,7 @@ namespace low_memory {
      * @param out      Output: `out[0]` receives the argmax index.
      * @param out_val  Output: `out_val[0]` receives `max|x|`.
      */
-    template <typename T>
+    template <typename T, bool TRAILING_SYNC = true>
     __device__ void iamax(uint32_t n, const T *x, uint32_t *out, T *out_val) {
         if (threadIdx.x == 0 && threadIdx.y == 0 && threadIdx.z == 0) {
             T key = static_cast<T>(0);
@@ -270,7 +269,7 @@ namespace low_memory {
             out[0] = (idx == UINT32_MAX) ? 0u : idx;
             out_val[0] = key;
         }
-        __syncthreads();
+        if constexpr (TRAILING_SYNC) __syncthreads();
     }
 
     /**
@@ -284,9 +283,9 @@ namespace low_memory {
      * @param out      Output: `out[0]` receives the argmax index.
      * @param out_val  Output: `out_val[0]` receives `max|x|`.
      */
-    template <typename T, uint32_t N>
+    template <typename T, uint32_t N, bool TRAILING_SYNC = true>
     __device__ void iamax(const T *x, uint32_t *out, T *out_val) {
-        iamax<T>(N, x, out, out_val);
+        iamax<T, TRAILING_SYNC>(N, x, out, out_val);
     }
 }
 
@@ -296,7 +295,7 @@ namespace high_speed {
      *
      * Each thread forms a strided per-thread argmax in registers, the warp folds
      * it with `__shfl_down_sync` (carrying the (key,index) pair), and the per-warp
-     * winners are combined through `s_temp`. Non-destructive. NumPy equivalent:
+     * winners are combined through `s_scratch`. Non-destructive. NumPy equivalent:
      * `int(np.argmax(np.abs(x)))`.
      *
      * @par Tie-break / NaN
@@ -305,22 +304,22 @@ namespace high_speed {
      * exclude NaN in tests). All-zero vector → index `0`.
      *
      * @par Scratch
-     * `s_temp` must hold `iamax_hs_temp_size<T>(blockDim)` elements (one (key,index)
+     * `s_scratch` must hold `iamax_hs_scratch_bytes<T>(blockDim)` elements (one (key,index)
      * slot per warp). Ends on a trailing `__syncthreads()`.
      *
      * @tparam T  Scalar type (e.g. `float`, `double`).
      * @param n       Number of elements.
      * @param x       Read-only input vector of length `n` (not modified).
      * @param out     Output: `out[0]` receives the argmax index.
-     * @param s_temp  Shared scratch sized by `iamax_hs_temp_size<T>(blockDim)`.
+     * @param s_scratch  Shared scratch sized by `iamax_hs_scratch_bytes<T>(blockDim)`.
      */
-    template <typename T>
-    __device__ void iamax(uint32_t n, const T *x, uint32_t *out, T *s_temp) {
+    template <typename T, bool TRAILING_SYNC = true>
+    __device__ void iamax(uint32_t n, const T *x, uint32_t *out, T *s_scratch) {
         uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
         uint32_t size = blockDim.x * blockDim.y * blockDim.z;
         uint32_t nw = (size + 31) / 32;
-        T *s_key = s_temp;
-        uint32_t *s_idx = reinterpret_cast<uint32_t *>(s_temp + nw);
+        T *s_key = s_scratch;
+        uint32_t *s_idx = reinterpret_cast<uint32_t *>(s_scratch + nw);
 
         // Per-thread strided argmax.
         T key = static_cast<T>(0);
@@ -349,24 +348,24 @@ namespace high_speed {
             }
             if (rank == 0) out[0] = (idx == UINT32_MAX) ? 0u : idx;
         }
-        __syncthreads();
+        if constexpr (TRAILING_SYNC) __syncthreads();
     }
 
     /**
      * @brief i_amax, warp-shuffle variant, compile-time size.
      *
      * Compile-time-`N` overload of the warp-shuffle i_amax. NumPy equivalent:
-     * `int(np.argmax(np.abs(x)))`. Scratch via `iamax_hs_temp_size<T>(blockDim)`.
+     * `int(np.argmax(np.abs(x)))`. Scratch via `iamax_hs_scratch_bytes<T>(blockDim)`.
      *
      * @tparam T  Scalar type (e.g. `float`, `double`).
      * @tparam N  Number of elements (compile-time constant).
      * @param x       Read-only input vector of length `N` (not modified).
      * @param out     Output: `out[0]` receives the argmax index.
-     * @param s_temp  Shared scratch sized by `iamax_hs_temp_size<T>(blockDim)`.
+     * @param s_scratch  Shared scratch sized by `iamax_hs_scratch_bytes<T>(blockDim)`.
      */
-    template <typename T, uint32_t N>
-    __device__ void iamax(const T *x, uint32_t *out, T *s_temp) {
-        iamax<T>(N, x, out, s_temp);
+    template <typename T, uint32_t N, bool TRAILING_SYNC = true>
+    __device__ void iamax(const T *x, uint32_t *out, T *s_scratch) {
+        iamax<T, TRAILING_SYNC>(N, x, out, s_scratch);
     }
 
     /**
@@ -380,15 +379,15 @@ namespace high_speed {
      * @param x        Read-only input vector of length `n` (not modified).
      * @param out      Output: `out[0]` receives the argmax index.
      * @param out_val  Output: `out_val[0]` receives `max|x|`.
-     * @param s_temp   Shared scratch sized by `iamax_hs_temp_size<T>(blockDim)`.
+     * @param s_scratch   Shared scratch sized by `iamax_hs_scratch_bytes<T>(blockDim)`.
      */
-    template <typename T>
-    __device__ void iamax(uint32_t n, const T *x, uint32_t *out, T *out_val, T *s_temp) {
+    template <typename T, bool TRAILING_SYNC = true>
+    __device__ void iamax(uint32_t n, const T *x, uint32_t *out, T *out_val, T *s_scratch) {
         uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
         uint32_t size = blockDim.x * blockDim.y * blockDim.z;
         uint32_t nw = (size + 31) / 32;
-        T *s_key = s_temp;
-        uint32_t *s_idx = reinterpret_cast<uint32_t *>(s_temp + nw);
+        T *s_key = s_scratch;
+        uint32_t *s_idx = reinterpret_cast<uint32_t *>(s_scratch + nw);
 
         T key = static_cast<T>(0);
         uint32_t idx = UINT32_MAX;
@@ -414,7 +413,7 @@ namespace high_speed {
             }
             if (rank == 0) { out[0] = (idx == UINT32_MAX) ? 0u : idx; out_val[0] = key; }
         }
-        __syncthreads();
+        if constexpr (TRAILING_SYNC) __syncthreads();
     }
 
     /**
@@ -428,11 +427,11 @@ namespace high_speed {
      * @param x        Read-only input vector of length `N` (not modified).
      * @param out      Output: `out[0]` receives the argmax index.
      * @param out_val  Output: `out_val[0]` receives `max|x|`.
-     * @param s_temp   Shared scratch sized by `iamax_hs_temp_size<T>(blockDim)`.
+     * @param s_scratch   Shared scratch sized by `iamax_hs_scratch_bytes<T>(blockDim)`.
      */
-    template <typename T, uint32_t N>
-    __device__ void iamax(const T *x, uint32_t *out, T *out_val, T *s_temp) {
-        iamax<T>(N, x, out, out_val, s_temp);
+    template <typename T, uint32_t N, bool TRAILING_SYNC = true>
+    __device__ void iamax(const T *x, uint32_t *out, T *out_val, T *s_scratch) {
+        iamax<T, TRAILING_SYNC>(N, x, out, out_val, s_scratch);
     }
 }
 

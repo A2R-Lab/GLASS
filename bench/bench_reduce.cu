@@ -1,4 +1,4 @@
-// bench_reduce.cu — L1 benchmarks: glass:: reduce/dot/l2norm vs. CUB BlockReduce
+// bench_reduce.cu — L1 benchmarks: glass:: reduce/dot/nrm2 vs. CUB BlockReduce
 // Compilation: nvcc -std=c++17 -arch=sm_XX -I.. -I../src -O3 bench_reduce.cu -o bench_reduce
 // Usage: ./bench_reduce <n> [iters]
 
@@ -8,7 +8,7 @@
 #include <cmath>
 #include <cub/cub.cuh>
 #include "../glass.cuh"
-#include "../glass-nvidia.cuh"  // pulls in glass::nvidia::reduce/dot/l2norm (CUB-backed)
+#include "../glass-nvidia.cuh"  // pulls in glass::nvidia::reduce/dot/nrm2 (CUB-backed)
 
 static const int THREADS = 256;
 
@@ -42,11 +42,11 @@ __global__ void k_nv_dot(float* x, float* y, volatile float* sink, int iters) {
 }
 
 template<int N>
-__global__ void k_nv_l2norm(float* x, volatile float* sink, int iters) {
+__global__ void k_nv_nrm2(float* x, volatile float* sink, int iters) {
     extern __shared__ float scratch[];
     for (int rep = 0; rep < iters; rep++) {
         float out;
-        glass::nvidia::l2norm<float, N, THREADS>(x, &out, scratch);
+        glass::nvidia::nrm2<float, N, THREADS>(x, &out, scratch);
         __syncthreads();
         if (threadIdx.x == 0) sink[rep & 0xFF] = out;
         __syncthreads();
@@ -81,12 +81,12 @@ __global__ void k_glass_dot(float* x, float* y, int n, int iters) {
     if (threadIdx.x == 0) x[0] = smem[0];
 }
 
-__global__ void k_glass_l2norm(float* x, int n, int iters) {
+__global__ void k_glass_nrm2(float* x, int n, int iters) {
     extern __shared__ float smem[];
     for (int rep = 0; rep < iters; rep++) {
         for (int i = threadIdx.x; i < n; i += blockDim.x) smem[i] = x[i];
         __syncthreads();
-        glass::high_speed::l2norm(n, smem, smem + n);
+        glass::high_speed::nrm2(n, smem, smem + n);
         __syncthreads();
     }
     if (threadIdx.x == 0) x[0] = smem[0];
@@ -129,12 +129,12 @@ __global__ void k_cub_reduce(float* x, float* out, int n, int iters) {
             }                                                                                 \
             if (threadIdx.x == 0) x[0] = smem[0];                                            \
         }                                                                                     \
-        __global__ void k_l2norm(float* x, int iters) {                                      \
+        __global__ void k_nrm2(float* x, int iters) {                                      \
             extern __shared__ float smem[];                                                   \
             for (int rep = 0; rep < iters; rep++) {                                           \
                 for (int i = threadIdx.x; i < N; i += blockDim.x) smem[i] = x[i];           \
                 __syncthreads();                                                              \
-                glass::high_speed::l2norm<float, N>(smem, smem + N);                         \
+                glass::high_speed::nrm2<float, N>(smem, smem + N);                         \
                 __syncthreads();                                                              \
             }                                                                                 \
             if (threadIdx.x == 0) x[0] = smem[0];                                            \
@@ -205,12 +205,12 @@ int main(int argc, char** argv) {
     clock_gettime(CLOCK_MONOTONIC, &t1);
     printf("glass::high_speed::dot       n=%3d  %.3f us/op\n", n, elapsed_us(t0, t1) / iters);
 
-    // ─── glass::high_speed::l2norm ────────────────────────────────────
+    // ─── glass::high_speed::nrm2 ────────────────────────────────────
     clock_gettime(CLOCK_MONOTONIC, &t0);
-    k_glass_l2norm<<<1, THREADS, smem_bytes>>>(dx, n, iters);
+    k_glass_nrm2<<<1, THREADS, smem_bytes>>>(dx, n, iters);
     cudaDeviceSynchronize();
     clock_gettime(CLOCK_MONOTONIC, &t1);
-    printf("glass::high_speed::l2norm    n=%3d  %.3f us/op\n", n, elapsed_us(t0, t1) / iters);
+    printf("glass::high_speed::nrm2    n=%3d  %.3f us/op\n", n, elapsed_us(t0, t1) / iters);
 
     // ─── cub::BlockReduce ────────────────────────────────────────────────────
     clock_gettime(CLOCK_MONOTONIC, &t0);
@@ -235,10 +235,10 @@ int main(int argc, char** argv) {
             printf("glass::hs::dot<CT>           n=%3d  %.3f us/op\n",                  \
                    N, elapsed_us(t0, t1) / iters);                                        \
             clock_gettime(CLOCK_MONOTONIC, &t0);                                         \
-            glass_reduce_ct_##N::k_l2norm<<<1, THREADS, smem_bytes>>>(dx, iters);       \
+            glass_reduce_ct_##N::k_nrm2<<<1, THREADS, smem_bytes>>>(dx, iters);       \
             cudaDeviceSynchronize();                                                      \
             clock_gettime(CLOCK_MONOTONIC, &t1);                                         \
-            printf("glass::hs::l2norm<CT>        n=%3d  %.3f us/op\n",                  \
+            printf("glass::hs::nrm2<CT>        n=%3d  %.3f us/op\n",                  \
                    N, elapsed_us(t0, t1) / iters);                                        \
         }
     MAYBE_GLASS_REDUCE_CT(4)
@@ -254,7 +254,7 @@ int main(int argc, char** argv) {
     // ─── glass::nvidia (CUB-backed) — only for pre-instantiated sizes ────────
     float *dSink;
     cudaMalloc(&dSink, 256 * sizeof(float));
-    constexpr size_t nv_smem = glass::nvidia::reduce_smem_size<float, THREADS>();
+    constexpr size_t nv_smem = glass::nvidia::reduce_scratch_bytes<float, THREADS>();
     #define MAYBE_NV_REDUCE_CT(N)                                                            \
         if (n == N) {                                                                         \
             constexpr size_t nv_smem_total = nv_smem + 2 * N * sizeof(float);                \
@@ -271,10 +271,10 @@ int main(int argc, char** argv) {
             printf("glass::nvidia::dot<CT>       n=%3d  %.3f us/op\n",                       \
                    N, elapsed_us(t0, t1) / iters);                                            \
             clock_gettime(CLOCK_MONOTONIC, &t0);                                              \
-            k_nv_l2norm<N><<<1, THREADS, nv_smem>>>(dx, dSink, iters);                       \
+            k_nv_nrm2<N><<<1, THREADS, nv_smem>>>(dx, dSink, iters);                       \
             cudaDeviceSynchronize();                                                          \
             clock_gettime(CLOCK_MONOTONIC, &t1);                                              \
-            printf("glass::nvidia::l2norm<CT>    n=%3d  %.3f us/op\n",                       \
+            printf("glass::nvidia::nrm2<CT>    n=%3d  %.3f us/op\n",                       \
                    N, elapsed_us(t0, t1) / iters);                                            \
         }
     MAYBE_NV_REDUCE_CT(4)

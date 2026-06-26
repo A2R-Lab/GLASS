@@ -13,7 +13,7 @@
 // One block-stride loop over the flattened `pairs*DIM*DIM` output elements:
 // thread `rank` owns global element e, decoded as pair = e/(DIM*DIM),
 // el = e%(DIM*DIM), row = el%DIM, col = el/DIM.  This is the indexed/gather
-// analogue of row_strided_gemm — useful for assembling many independent 4x4
+// analogue of gemm_strided — useful for assembling many independent 4x4
 // (e.g. SE(3) / spatial-transform) products selected by index lists, computing
 // all `pairs` concurrently in a single block.
 //
@@ -61,7 +61,7 @@
  * matrices selected by index into flat base buffers (`a_idx[p]` is a MATRIX
  * index, so the matrix lives at offset `a_idx[p] * DIM * DIM`), computing all
  * pairs concurrently in a single block. This is the indexed/gather analogue of
- * `row_strided_gemm`, useful for assembling many independent small (e.g. 4x4
+ * `gemm_strided`, useful for assembling many independent small (e.g. 4x4
  * SE(3)) products from index lists. No alpha/beta — a pure overwrite
  * (`C = op(A) * op(B)`) unless `ATOMIC_C` is set.
  *
@@ -89,7 +89,7 @@
  */
 template <typename T, uint32_t DIM = 4, bool TRANSPOSE_A = false,
           bool TRANSPOSE_B = false, bool ATOMIC_C = false, typename IDX_T = int>
-__device__ void indexed_batched_gemm(
+__device__ void gemm_batched_indexed(
     uint32_t pairs, const IDX_T* a_idx, const IDX_T* b_idx, const IDX_T* c_idx,
     const T* A_base, const T* B_base, T* C_base)
 {

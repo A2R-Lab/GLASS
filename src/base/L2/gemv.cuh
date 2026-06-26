@@ -5,7 +5,7 @@
 template <typename T, bool TRANSPOSE, bool ROW_MAJOR_A>
 __device__ void gemv_impl(uint32_t rank, uint32_t size,
                            uint32_t m, uint32_t n,
-                           T alpha, T *A, T *x, T beta, T *y)
+                           T alpha, const T *A, const T *x, T beta, T *y)
 {
     if (TRANSPOSE) {
         for (uint32_t row = rank; row < n; row += size) {
@@ -31,7 +31,7 @@ __device__ void gemv_impl(uint32_t rank, uint32_t size,
 template <typename T, bool TRANSPOSE, bool ROW_MAJOR_A>
 __device__ void gemv_impl(uint32_t rank, uint32_t size,
                            uint32_t m, uint32_t n,
-                           T alpha, T *A, T *x, T *y)
+                           T alpha, const T *A, const T *x, T *y)
 {
     if (TRANSPOSE) {
         for (uint32_t row = rank; row < n; row += size) {
@@ -64,6 +64,13 @@ __device__ void gemv_impl(uint32_t rank, uint32_t size,
  * (`A` is column-major by default). NumPy equivalent: `y = alpha*A@x + beta*y`
  * (or `alpha*A.T@x + beta*y` when transposed).
  *
+ * Unlike `gemm` — where a row-major operand is just a transpose, so the only
+ * layout flag is `ROW_MAJOR_C` — GEMV keeps a per-matrix `ROW_MAJOR` flag:
+ * `TRANSPOSE` already selects the mathematical operation (`A·x` vs `Aᵀ·x`), so it
+ * cannot also stand in for the storage order. `TRANSPOSE` and `ROW_MAJOR` are
+ * therefore independent. (This flag fully subsumes the former `gemv_ex`, which
+ * was just `gemv` with the defaults removed and has been deleted.)
+ *
  * @tparam T          Scalar type (e.g. `float`, `double`).
  * @tparam TRANSPOSE  When true, multiply by `Aᵀ` instead of `A` (default false).
  * @tparam ROW_MAJOR  When true, `A` is stored row-major (default false = column-major).
@@ -75,12 +82,13 @@ __device__ void gemv_impl(uint32_t rank, uint32_t size,
  * @param beta   Scalar multiplier on the prior `y`.
  * @param y      In/out vector (length `m`, or `n` when transposed).
  */
-template <typename T, bool TRANSPOSE = false, bool ROW_MAJOR = false>
-__device__ void gemv(uint32_t m, uint32_t n, T alpha, T *A, T *x, T beta, T *y)
+template <typename T, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
+__device__ void gemv(uint32_t m, uint32_t n, T alpha, const T *A, const T *x, T beta, T *y)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
     gemv_impl<T, TRANSPOSE, ROW_MAJOR>(rank, size, m, n, alpha, A, x, beta, y);
+    if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
 /**
@@ -100,68 +108,19 @@ __device__ void gemv(uint32_t m, uint32_t n, T alpha, T *A, T *x, T beta, T *y)
  * @param x      Input vector (length `n`, or `m` when transposed).
  * @param y      Output vector (length `m`, or `n` when transposed).
  */
-template <typename T, bool TRANSPOSE = false, bool ROW_MAJOR = false>
-__device__ void gemv(uint32_t m, uint32_t n, T alpha, T *A, T *x, T *y)
+template <typename T, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
+__device__ void gemv(uint32_t m, uint32_t n, T alpha, const T *A, const T *x, T *y)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
     gemv_impl<T, TRANSPOSE, ROW_MAJOR>(rank, size, m, n, alpha, A, x, y);
-}
-
-/**
- * @brief Matrix-vector product with explicit layout control: `y = alpha * A * x + beta * y` (GEMV).
- *
- * Like `gemv` but exposes the per-matrix layout flag explicitly (no defaults),
- * for callers that want full control over `TRANSPOSE` and the storage order of
- * `A`. NumPy equivalent: `y = alpha*A@x + beta*y` (or `alpha*A.T@x + beta*y`).
- *
- * @tparam T           Scalar type (e.g. `float`, `double`).
- * @tparam TRANSPOSE   When true, multiply by `Aᵀ` instead of `A`.
- * @tparam ROW_MAJOR_A When true, `A` is stored row-major.
- * @param m      Number of rows of `A`.
- * @param n      Number of columns of `A`.
- * @param alpha  Scalar multiplier on the product.
- * @param A      Input matrix of `m*n` elements.
- * @param x      Input vector (length `n`, or `m` when transposed).
- * @param beta   Scalar multiplier on the prior `y`.
- * @param y      In/out vector (length `m`, or `n` when transposed).
- */
-template <typename T, bool TRANSPOSE, bool ROW_MAJOR_A>
-__device__ void gemv_ex(uint32_t m, uint32_t n, T alpha, T *A, T *x, T beta, T *y)
-{
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    gemv_impl<T, TRANSPOSE, ROW_MAJOR_A>(rank, size, m, n, alpha, A, x, beta, y);
-}
-
-/**
- * @brief Matrix-vector product with explicit layout control: `y = alpha * A * x` (GEMV), no-beta overload.
- *
- * Like the full `gemv_ex` but overwrites `y` (no `beta * y` term). NumPy
- * equivalent: `y = alpha*A@x` (or `alpha*A.T@x` when transposed).
- *
- * @tparam T           Scalar type (e.g. `float`, `double`).
- * @tparam TRANSPOSE   When true, multiply by `Aᵀ` instead of `A`.
- * @tparam ROW_MAJOR_A When true, `A` is stored row-major.
- * @param m      Number of rows of `A`.
- * @param n      Number of columns of `A`.
- * @param alpha  Scalar multiplier on the product.
- * @param A      Input matrix of `m*n` elements.
- * @param x      Input vector (length `n`, or `m` when transposed).
- * @param y      Output vector (length `m`, or `n` when transposed).
- */
-template <typename T, bool TRANSPOSE, bool ROW_MAJOR_A>
-__device__ void gemv_ex(uint32_t m, uint32_t n, T alpha, T *A, T *x, T *y)
-{
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    gemv_impl<T, TRANSPOSE, ROW_MAJOR_A>(rank, size, m, n, alpha, A, x, y);
+    if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
 // compile-time impl: M, N as template params so inner col-loop is fully unrolled
 template <typename T, uint32_t M, uint32_t N, bool TRANSPOSE, bool ROW_MAJOR_A>
 __device__ void gemv_impl_ct(uint32_t rank, uint32_t size,
-                              T alpha, T *A, T *x, T beta, T *y)
+                              T alpha, const T *A, const T *x, T beta, T *y)
 {
     if (TRANSPOSE) {
         for (uint32_t row = rank; row < N; row += size) {
@@ -186,7 +145,7 @@ __device__ void gemv_impl_ct(uint32_t rank, uint32_t size,
 
 template <typename T, uint32_t M, uint32_t N, bool TRANSPOSE, bool ROW_MAJOR_A>
 __device__ void gemv_impl_ct(uint32_t rank, uint32_t size,
-                              T alpha, T *A, T *x, T *y)
+                              T alpha, const T *A, const T *x, T *y)
 {
     if (TRANSPOSE) {
         for (uint32_t row = rank; row < N; row += size) {
@@ -229,12 +188,13 @@ __device__ void gemv_impl_ct(uint32_t rank, uint32_t size,
  * @param beta   Scalar multiplier on the prior `y`.
  * @param y      In/out vector (length `M`, or `N` when transposed).
  */
-template <typename T, uint32_t M, uint32_t N, bool TRANSPOSE = false, bool ROW_MAJOR = false>
-__device__ void gemv(T alpha, T *A, T *x, T beta, T *y)
+template <typename T, uint32_t M, uint32_t N, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
+__device__ void gemv(T alpha, const T *A, const T *x, T beta, T *y)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
     gemv_impl_ct<T, M, N, TRANSPOSE, ROW_MAJOR>(rank, size, alpha, A, x, beta, y);
+    if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
 /**
@@ -253,12 +213,13 @@ __device__ void gemv(T alpha, T *A, T *x, T beta, T *y)
  * @param x      Input vector (length `N`, or `M` when transposed).
  * @param y      Output vector (length `M`, or `N` when transposed).
  */
-template <typename T, uint32_t M, uint32_t N, bool TRANSPOSE = false, bool ROW_MAJOR = false>
-__device__ void gemv(T alpha, T *A, T *x, T *y)
+template <typename T, uint32_t M, uint32_t N, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
+__device__ void gemv(T alpha, const T *A, const T *x, T *y)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
     gemv_impl_ct<T, M, N, TRANSPOSE, ROW_MAJOR>(rank, size, alpha, A, x, y);
+    if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
 namespace warp {
@@ -293,7 +254,7 @@ namespace warp {
      * @param y      In/out vector (length `M`, or `N` when transposed).
      */
     template <typename T, uint32_t M, uint32_t N, bool TRANSPOSE = false, bool ROW_MAJOR = false>
-    __device__ void gemv(T alpha, T *A, T *x, T beta, T *y)
+    __device__ void gemv(T alpha, const T *A, const T *x, T beta, T *y)
     {
         uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
         gemv_impl_ct<T, M, N, TRANSPOSE, ROW_MAJOR>(lane, 32u, alpha, A, x, beta, y);
@@ -319,7 +280,7 @@ namespace warp {
      * @param y      Output vector (length `M`, or `N` when transposed; overwritten).
      */
     template <typename T, uint32_t M, uint32_t N, bool TRANSPOSE = false, bool ROW_MAJOR = false>
-    __device__ void gemv(T alpha, T *A, T *x, T *y)
+    __device__ void gemv(T alpha, const T *A, const T *x, T *y)
     {
         uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
         gemv_impl_ct<T, M, N, TRANSPOSE, ROW_MAJOR>(lane, 32u, alpha, A, x, y);

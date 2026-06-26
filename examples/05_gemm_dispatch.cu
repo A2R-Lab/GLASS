@@ -4,7 +4,7 @@
 //   nvcc -std=c++17 -arch=sm_75 -I.. 05_gemm_dispatch.cu -o dispatch && ./dispatch
 //
 // glass::gemm_dispatch auto-selects the shared-memory-tiled GEMM when scratch
-// pointers are supplied (and m*k <= blockDim), else the plain path. The host
+// pointers are supplied (and m*n <= blockDim), else the plain path. The host
 // helper glass_gemm_dispatch_smem() computes the bytes to launch with; it
 // returns 0 when tiling is not warranted (then pass nullptr scratch).
 
@@ -40,7 +40,7 @@ int main() {
     cudaMemcpy(dB, hB, sizeof(hB), cudaMemcpyHostToDevice);
 
     // Host: how many shared bytes does the dispatched path need?
-    size_t smem = glass_gemm_dispatch_smem<float>(m, k, threads);
+    size_t smem = glass_gemm_dispatch_smem<float>(m, n, threads);
     printf("dispatch smem = %zu bytes (%s)\n", smem,
            smem ? "tiled path" : "plain path");
 

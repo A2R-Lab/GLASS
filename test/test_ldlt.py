@@ -14,6 +14,8 @@ import tempfile
 import numpy as np
 import pytest
 
+from conftest import make_spd  # shared; pass rng=RNG for varied draws
+
 RNG = np.random.default_rng(7)
 
 ATOL = 1e-3
@@ -21,11 +23,6 @@ RTOL = 1e-3
 
 NS = [1, 2, 3, 4, 6, 8]
 THREADS = [1, 7, 33, 256]
-
-
-def make_spd(n):
-    A = RNG.random((n, n)).astype(np.float32)
-    return (A @ A.T + n * np.eye(n, dtype=np.float32)).astype(np.float32)
 
 
 def make_indefinite(n):
@@ -102,7 +99,7 @@ def ldlt_bin(bins):
 @pytest.mark.parametrize("n", NS)
 @pytest.mark.parametrize("threads", THREADS)
 def test_ldlt_factor(ldlt_bin, kind, n, threads):
-    A = make_spd(n) if kind == "spd" else make_indefinite(n)
+    A = make_spd(n, rng=RNG) if kind == "spd" else make_indefinite(n)
     out = _run(ldlt_bin, "ldlt", n, threads, [A])[0]
     L, D = _split_LD(out, n)
     recon = L @ np.diag(D) @ L.T
@@ -117,7 +114,7 @@ def test_ldlt_factor(ldlt_bin, kind, n, threads):
 @pytest.mark.parametrize("kind", ["spd", "indef"])
 @pytest.mark.parametrize("n", NS)
 def test_ldlt_factor_thread_invariant(ldlt_bin, kind, n):
-    A = make_spd(n) if kind == "spd" else make_indefinite(n)
+    A = make_spd(n, rng=RNG) if kind == "spd" else make_indefinite(n)
     ref = _run(ldlt_bin, "ldlt", n, THREADS[0], [A])[0]
     for t in THREADS[1:]:
         cur = _run(ldlt_bin, "ldlt", n, t, [A])[0]
@@ -131,7 +128,7 @@ def test_ldlt_factor_thread_invariant(ldlt_bin, kind, n):
 @pytest.mark.parametrize("n", NS)
 @pytest.mark.parametrize("threads", THREADS)
 def test_ldlt_solve(ldlt_bin, kind, n, threads):
-    A = make_spd(n) if kind == "spd" else make_indefinite(n)
+    A = make_spd(n, rng=RNG) if kind == "spd" else make_indefinite(n)
     b = RNG.random(n).astype(np.float32)
     x = _run(ldlt_bin, "ldlt_solve", n, threads, [A, b])[0]
     x_ref = np.linalg.solve(A.astype(np.float64), b.astype(np.float64))
@@ -197,7 +194,7 @@ def test_ldlt_pivot_solve(ldlt_bin, n, threads):
 @pytest.mark.parametrize("threads", THREADS)
 def test_ldlt_pivot_solve_general(ldlt_bin, kind, n, threads):
     """Pivoted solve also works on the ordinary SPD / indefinite matrices."""
-    A = make_spd(n) if kind == "spd" else make_indefinite(n)
+    A = make_spd(n, rng=RNG) if kind == "spd" else make_indefinite(n)
     b = RNG.random(n).astype(np.float32)
     x = _run(ldlt_bin, "ldlt_solve", n, threads, [A, b], pivot=1)[0]
     x_ref = np.linalg.solve(A.astype(np.float64), b.astype(np.float64))
@@ -271,3 +268,49 @@ def test_ldlt_zero_diag_block_needs_2x2(ldlt_bin):
     assert bad, (
         f"1×1-pivoted LDLᵀ unexpectedly handled a zero diagonal BLOCK: x={x} "
         "(would require 2×2 Bunch–Kaufman — if this passes, 2×2 may have landed)")
+
+
+# ─── warp forms (non-pivoted; one 32-lane warp) ───────────────────────────────
+
+WARP = 32
+WARP_NS = [3, 4, 5, 6, 7, 8]   # harness instantiates warp::ldlt for these N
+
+
+@pytest.mark.parametrize("kind", ["spd", "indef"])
+@pytest.mark.parametrize("n", WARP_NS)
+def test_ldlt_warp_factor(ldlt_bin, kind, n):
+    """warp::ldlt non-pivoted factor reconstructs A = L·diag(D)·Lᵀ and matches the
+    block factor (run at one warp)."""
+    A = make_spd(n, rng=RNG) if kind == "spd" else make_indefinite(n)
+    buf = _run(ldlt_bin, "ldlt_warp", n, WARP, [A])[0]
+    L, D = _split_LD(buf, n)
+    recon = (L @ np.diag(D) @ L.T)
+    assert np.allclose(recon, A, rtol=RTOL, atol=ATOL), f"{kind} n={n}: A != L D Lᵀ"
+    # cross-check vs the block factor (same algorithm, different scope)
+    block = _run(ldlt_bin, "ldlt", n, 64, [A])[0]
+    assert np.allclose(buf, block, rtol=1e-2, atol=1e-3), f"{kind} n={n}: warp != block factor"
+
+
+@pytest.mark.parametrize("kind", ["spd", "indef"])
+@pytest.mark.parametrize("n", WARP_NS)
+def test_ldlt_warp_solve(ldlt_bin, kind, n):
+    """warp::ldlt + warp::ldlt_solve recovers x = A⁻¹ b (one warp)."""
+    A = make_spd(n, rng=RNG) if kind == "spd" else make_indefinite(n)
+    b = RNG.standard_normal(n).astype(np.float32)
+    x = _run(ldlt_bin, "ldlt_solve_warp", n, WARP, [A, b])[0]
+    expected = np.linalg.solve(A.astype(np.float64), b.astype(np.float64))
+    assert np.allclose(x, expected, rtol=RTOL, atol=ATOL), f"{kind} n={n}: solve mismatch"
+    assert np.allclose(A.astype(np.float64) @ x.astype(np.float64), b, rtol=RTOL, atol=ATOL)
+
+
+@pytest.mark.parametrize("n", WARP_NS)
+def test_ldlt_warp_inertia(ldlt_bin, n):
+    """CHECK path: inertia {n_pos, n_neg, n_zero} matches the eigenvalue signs of A;
+    s_fail stays 0 for a nonsingular indefinite matrix."""
+    A = make_indefinite(n)
+    lines = _run(ldlt_bin, "ldlt_warp_check", n, WARP, [A])
+    s_fail, n_pos, n_neg, n_zero = [int(round(v)) for v in lines[1]]
+    ev = np.linalg.eigvalsh(A.astype(np.float64))
+    assert (n_pos, n_neg, n_zero) == (int((ev > 0).sum()), int((ev < 0).sum()), 0), \
+        f"n={n}: inertia {(n_pos, n_neg, n_zero)} != eig signs"
+    assert s_fail == 0, f"n={n}: nonsingular indefinite flagged s_fail=1"

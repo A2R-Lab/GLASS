@@ -5,7 +5,7 @@ file consumed via `GLASS_TUNING_TABLE_LOCAL`.
 
 Usage:
     python3 bench/autotune.py [--sm AUTO|<sm>]
-                              [--apis gemm,gemv,row_strided_gemv,row_strided_gemm,gemm_batched_1d]
+                              [--apis gemm,gemv,gemv_strided,gemm_strided,gemm_batched_1d]
                               [--iters 10000]
                               [--out PATH]
                               [--margin 0.05]
@@ -121,7 +121,7 @@ _GEMM_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
         cudaMalloc(&dSink, 256 * sizeof(float));
 
         struct timespec t0, t1;
-        constexpr size_t smem = glass::nvidia::gemm_smem_size<float, M, N, K, TC>();
+        constexpr size_t smem = glass::nvidia::gemm_scratch_bytes<float, M, N, K, TC>();
 
         k_simt<<<1, TC>>>(dA, dB, dC, dSink, 100); cudaDeviceSynchronize();
         k_cublasdx<<<1, TC, smem>>>(dA, dB, dC, dSink, 100); cudaDeviceSynchronize();
@@ -179,7 +179,7 @@ _GEMV_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
         cudaMalloc(&dSink, 256 * sizeof(float));
 
         struct timespec t0, t1;
-        constexpr size_t smem = glass::nvidia::gemv_smem_size<float, M, N, TC>();
+        constexpr size_t smem = glass::nvidia::gemv_scratch_bytes<float, M, N, TC>();
 
         k_simt<<<1, TC>>>(dA, dx, dy, dSink, 100); cudaDeviceSynchronize();
         k_cublasdx<<<1, TC, smem>>>(dA, dx, dy, dSink, 100); cudaDeviceSynchronize();
@@ -200,9 +200,9 @@ _GEMV_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
 """)
 
 
-# ───── row_strided_gemv ─────────────────────────────────────────────────────
+# ───── gemv_strided ─────────────────────────────────────────────────────
 # ROW_STRIDE is sized to be > N so the strided pack pass is exercised on the
-# cuBLASDx leg. SIMT path is glass::row_strided_gemv (base SIMT impl).
+# cuBLASDx leg. SIMT path is glass::gemv_strided (base SIMT impl).
 _ROW_STRIDED_GEMV_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
 
     static const int M = {M}, N = {N}, ROW_STRIDE = {ROW_STRIDE};
@@ -213,7 +213,7 @@ _ROW_STRIDED_GEMV_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
 
     __global__ void k_simt(float* A, float* x, float* y, volatile float* sink, int iters) {{
         for (int rep = 0; rep < iters; rep++) {{
-            glass::row_strided_gemv<float, M, N, ROW_STRIDE>(A, x, y, 1.f, 0.f);
+            glass::gemv_strided<float, M, N, ROW_STRIDE>(A, x, y, 1.f, 0.f);
             __syncthreads();
             if (threadIdx.x == 0) sink[rep & 0xFF] = y[0];
             __syncthreads();
@@ -223,7 +223,7 @@ _ROW_STRIDED_GEMV_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
     __global__ void k_cublasdx(float* A, float* x, float* y, volatile float* sink, int iters) {{
         extern __shared__ __align__(16) char smem[];
         for (int rep = 0; rep < iters; rep++) {{
-            glass::nvidia::row_strided_gemv<float, M, N, ROW_STRIDE, TC>(1.f, A, x, 0.f, y, smem);
+            glass::nvidia::gemv_strided<float, M, N, ROW_STRIDE, TC>(1.f, A, x, 0.f, y, smem);
             __syncthreads();
             if (threadIdx.x == 0) sink[rep & 0xFF] = y[0];
             __syncthreads();
@@ -240,7 +240,7 @@ _ROW_STRIDED_GEMV_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
 
         struct timespec t0, t1;
         constexpr size_t smem =
-            glass::nvidia::row_strided_gemv_smem_size<float, M, N, ROW_STRIDE, TC>();
+            glass::nvidia::gemv_strided_scratch_bytes<float, M, N, ROW_STRIDE, TC>();
 
         k_simt<<<1, TC>>>(dA, dx, dy, dSink, 100); cudaDeviceSynchronize();
         k_cublasdx<<<1, TC, smem>>>(dA, dx, dy, dSink, 100); cudaDeviceSynchronize();
@@ -261,9 +261,9 @@ _ROW_STRIDED_GEMV_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
 """)
 
 
-# ───── row_strided_gemm ─────────────────────────────────────────────────────
+# ───── gemm_strided ─────────────────────────────────────────────────────
 # A_RS sized > M; B_RS sized > N. The strided pack pass is exercised on both
-# legs (SIMT does it inside ::glass::row_strided_gemm; cuBLASDx does it inside
+# legs (SIMT does it inside ::glass::gemm_strided; cuBLASDx does it inside
 # the nvidia wrapper before the cuBLASDx execute).
 _ROW_STRIDED_GEMM_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
 
@@ -276,7 +276,7 @@ _ROW_STRIDED_GEMM_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
 
     __global__ void k_simt(float* A, float* B, float* C, volatile float* sink, int iters) {{
         for (int rep = 0; rep < iters; rep++) {{
-            glass::row_strided_gemm<float, M, N, K, A_RS, B_RS>(A, B, C, 1.f, 0.f);
+            glass::gemm_strided<float, M, N, K, A_RS, B_RS>(A, B, C, 1.f, 0.f);
             __syncthreads();
             if (threadIdx.x == 0) sink[rep & 0xFF] = C[0];
             __syncthreads();
@@ -286,7 +286,7 @@ _ROW_STRIDED_GEMM_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
     __global__ void k_cublasdx(float* A, float* B, float* C, volatile float* sink, int iters) {{
         extern __shared__ __align__(16) char smem[];
         for (int rep = 0; rep < iters; rep++) {{
-            glass::nvidia::row_strided_gemm<float, M, N, K, A_RS, B_RS, TC>(1.f, A, B, 0.f, C, smem);
+            glass::nvidia::gemm_strided<float, M, N, K, A_RS, B_RS, TC>(1.f, A, B, 0.f, C, smem);
             __syncthreads();
             if (threadIdx.x == 0) sink[rep & 0xFF] = C[0];
             __syncthreads();
@@ -303,7 +303,7 @@ _ROW_STRIDED_GEMM_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
 
         struct timespec t0, t1;
         constexpr size_t smem =
-            glass::nvidia::row_strided_gemm_smem_size<float, M, N, K, A_RS, B_RS, TC>();
+            glass::nvidia::gemm_strided_scratch_bytes<float, M, N, K, A_RS, B_RS, TC>();
 
         k_simt<<<1, TC>>>(dA, dB, dC, dSink, 100); cudaDeviceSynchronize();
         k_cublasdx<<<1, TC, smem>>>(dA, dB, dC, dSink, 100); cudaDeviceSynchronize();
@@ -388,7 +388,7 @@ _GEMM_BATCHED_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
 
         struct timespec t0, t1;
         constexpr size_t smem =
-            glass::nvidia::gemm_batched_smem_size<float, M, N, K, BATCH, TC>();
+            glass::nvidia::gemm_batched_scratch_bytes<float, M, N, K, BATCH, TC>();
 
         // SIMT batched_1d launches 1D with TC*BATCH threads, ptr-array args.
         k_simt<<<1, TC * BATCH>>>(dAs, dBs, dCs, dSink, 100); cudaDeviceSynchronize();
@@ -428,12 +428,12 @@ def _spec_gemv(m, n, sms):
     return f"cublasdx_wins_gemv<{m:>2},{n:>3},{sms:>5}>"
 
 
-def _spec_row_strided_gemv(m, n, rs, sms):
-    return f"cublasdx_wins_row_strided_gemv<{m:>2},{n:>3},{rs:>3},{sms:>5}>"
+def _spec_gemv_strided(m, n, rs, sms):
+    return f"cublasdx_wins_gemv_strided<{m:>2},{n:>3},{rs:>3},{sms:>5}>"
 
 
-def _spec_row_strided_gemm(m, n, k, a_rs, b_rs, sms):
-    return (f"cublasdx_wins_row_strided_gemm<"
+def _spec_gemm_strided(m, n, k, a_rs, b_rs, sms):
+    return (f"cublasdx_wins_gemm_strided<"
             f"{m:>2},{n:>3},{k:>3},{a_rs:>3},{b_rs:>3},{sms:>5}>")
 
 
@@ -456,20 +456,20 @@ API_CONFIGS = {
         "spec_fmt": _spec_gemv,
         "label_fmt": lambda s: f"{s[0]}x{s[1]}",
     },
-    "row_strided_gemv": {
+    "gemv_strided": {
         "shape_keys": ("M", "N", "ROW_STRIDE"),
         # Stride a few elements wider than N to exercise the pack pass.
         "default_shapes": [(m, m, m + 2) for m in (4, 6, 8, 12, 14, 16, 24, 32)],
         "microbench": _ROW_STRIDED_GEMV_MICROBENCH,
-        "spec_fmt": _spec_row_strided_gemv,
+        "spec_fmt": _spec_gemv_strided,
         "label_fmt": lambda s: f"{s[0]}x{s[1]} rs={s[2]}",
     },
-    "row_strided_gemm": {
+    "gemm_strided": {
         "shape_keys": ("M", "N", "K", "A_RS", "B_RS"),
         "default_shapes": [(m, m, m, m + 2, m + 2)
                            for m in (4, 6, 8, 12, 14, 16, 24, 32)],
         "microbench": _ROW_STRIDED_GEMM_MICROBENCH,
-        "spec_fmt": _spec_row_strided_gemm,
+        "spec_fmt": _spec_gemm_strided,
         "label_fmt": lambda s: f"{s[0]}x{s[1]}x{s[2]} A_rs={s[3]} B_rs={s[4]}",
     },
     "gemm_batched_1d": {

@@ -54,7 +54,7 @@
  * @param out        Destination for the scalar result (broadcast to all threads).
  * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per warp).
  */
-template <typename T, uint32_t N, uint32_t SX = 1, uint32_t SY = 1>
+template <typename T, uint32_t N, uint32_t SX = 1, uint32_t SY = 1, bool TRAILING_SYNC = true>
 __device__ void dot_strided_coalesced(const T* x, const T* y, T* out, T* s_scratch)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
@@ -77,5 +77,5 @@ __device__ void dot_strided_coalesced(const T* x, const T* y, T* out, T* s_scrat
         for (int off = 16; off > 0; off >>= 1) val += __shfl_down_sync(0xffffffff, val, off);
         if (rank == 0) *out = val;
     }
-    __syncthreads();
+    if constexpr (TRAILING_SYNC) __syncthreads();
 }

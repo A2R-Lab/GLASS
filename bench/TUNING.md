@@ -12,7 +12,7 @@ compile time. The decision lives in
 3. A static per-API heuristic for unmeasured shapes.
 
 Five per-API decision templates live in `_glass_tuning` (gemm, gemv,
-gemm_batched_1d, row_strided_gemm, row_strided_gemv). Each can be
+gemm_batched_1d, gemm_strided, gemv_strided). Each can be
 specialized independently for a given (shape, SM).
 
 ## Why bother?
@@ -35,8 +35,8 @@ specialize it and either keep it local or PR upstream.
 ```bash
 cd GLASS
 python3 bench/autotune.py
-# → measures all 5 round-2 primaries (gemm, gemv, row_strided_gemv,
-#   row_strided_gemm, gemm_batched_1d) across each one's default shape grid
+# → measures all 5 round-2 primaries (gemm, gemv, gemv_strided,
+#   gemm_strided, gemm_batched_1d) across each one's default shape grid
 # → writes bench/tuning/<hostname>.cuh with the per-host specializations
 ```
 
@@ -80,15 +80,15 @@ heuristics reflect the API's arithmetic intensity:
 | `cublasdx_wins<M, N, K, SM>`                                        | `max(M,N,K)>=16 AND min(M,N,K)>=4` |
 | `cublasdx_wins_gemv<M, N, SM>`                                      | `max(M,N) >= 32` |
 | `cublasdx_wins_batched<M, N, K, BATCH, SM>`                         | `BATCH>=8 AND max(M,N,K)>=8` |
-| `cublasdx_wins_row_strided_gemm<M, N, K, A_RS, B_RS, SM>`           | delegates to `cublasdx_wins<>` |
-| `cublasdx_wins_row_strided_gemv<M, N, ROW_STRIDE, SM>`              | delegates to `cublasdx_wins_gemv<>` |
+| `cublasdx_wins_gemm_strided<M, N, K, A_RS, B_RS, SM>`           | delegates to `cublasdx_wins<>` |
+| `cublasdx_wins_gemv_strided<M, N, ROW_STRIDE, SM>`              | delegates to `cublasdx_wins_gemv<>` |
 
 `bench/autotune.py` (round-2 rewrite) covers all five. To restrict to a
 subset:
 
 ```bash
 python3 bench/autotune.py --apis gemm,gemv
-python3 bench/autotune.py --apis row_strided_gemv --shapes "6,6,8;14,14,16"
+python3 bench/autotune.py --apis gemv_strided --shapes "6,6,8;14,14,16"
 ```
 
 The `--shapes` flag passes a `;`-separated tuple list; the arity has to

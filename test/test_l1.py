@@ -128,13 +128,13 @@ def test_reduce_partial_warp(bins, n):
     assert np.allclose(float(result[0]), expected, rtol=1e-3, atol=1e-4)
 
 
-# ─── l2norm ───────────────────────────────────────────────────────────────────
+# ─── nrm2 ───────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("n", SIZES)
 @pytest.mark.parametrize("version", CG_LM_HS)
-def test_l2norm(bins, n, version):
+def test_nrm2(bins, n, version):
     x = RNG.random(n).astype(np.float32)
-    result = run_op(bins["l1"], "l2norm", version, args=[n], inputs=[x])
+    result = run_op(bins["l1"], "nrm2", version, args=[n], inputs=[x])
     expected = float(np.linalg.norm(x.astype(np.float64)))
     assert np.allclose(float(result[0]), expected, rtol=1e-3, atol=1e-4)
 

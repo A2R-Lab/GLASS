@@ -120,8 +120,8 @@ constexpr bool gemm_batched_1d_block_threads_valid()
 //
 // These mirror should_use_cublasdx<> for the round-2 APIs:
 //   * gemv<>             (Gap A)  → cublasdx_wins_gemv
-//   * row_strided_gemv<> (Gap B)  → cublasdx_wins_row_strided_gemv
-//   * row_strided_gemm<> (Gap C)  → cublasdx_wins_row_strided_gemm
+//   * gemv_strided<> (Gap B)  → cublasdx_wins_gemv_strided
+//   * gemm_strided<> (Gap C)  → cublasdx_wins_gemm_strided
 //   * gemm_batched_1d    (NEW-1)  → cublasdx_wins_batched
 //
 // Each routes through a per-API primary template in tuning_table.cuh
@@ -149,7 +149,7 @@ constexpr bool should_use_cublasdx_gemv() {
 }
 
 /**
- * @brief Compile-time backend decision for `row_strided_gemv` (host-callable).
+ * @brief Compile-time backend decision for `gemv_strided` (host-callable).
  *
  * Sibling of should_use_cublasdx<> for the strided-GEMV API. Only T==float is
  * tuned; other types return false. constexpr.
@@ -163,13 +163,13 @@ constexpr bool should_use_cublasdx_gemv() {
  */
 template <typename T, uint32_t M, uint32_t N, uint32_t ROW_STRIDE,
           uint32_t SM_VAL = SMS>
-constexpr bool should_use_cublasdx_row_strided_gemv() {
+constexpr bool should_use_cublasdx_gemv_strided() {
     if constexpr (!std::is_same<T, float>::value) return false;
-    else return _glass_tuning::cublasdx_wins_row_strided_gemv<M, N, ROW_STRIDE, SM_VAL>();
+    else return _glass_tuning::cublasdx_wins_gemv_strided<M, N, ROW_STRIDE, SM_VAL>();
 }
 
 /**
- * @brief Compile-time backend decision for `row_strided_gemm` (host-callable).
+ * @brief Compile-time backend decision for `gemm_strided` (host-callable).
  *
  * Sibling of should_use_cublasdx<> for the strided-GEMM API. Only T==float is
  * tuned; other types return false. constexpr.
@@ -185,9 +185,9 @@ constexpr bool should_use_cublasdx_row_strided_gemv() {
  */
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t A_RS, uint32_t B_RS, uint32_t SM_VAL = SMS>
-constexpr bool should_use_cublasdx_row_strided_gemm() {
+constexpr bool should_use_cublasdx_gemm_strided() {
     if constexpr (!std::is_same<T, float>::value) return false;
-    else return _glass_tuning::cublasdx_wins_row_strided_gemm<M, N, K, A_RS, B_RS, SM_VAL>();
+    else return _glass_tuning::cublasdx_wins_gemm_strided<M, N, K, A_RS, B_RS, SM_VAL>();
 }
 
 /**
@@ -237,7 +237,7 @@ __host__ __device__ inline void print_dispatch_gemv() {
 }
 
 /**
- * @brief Print which backend `row_strided_gemm<...>` dispatches to (host/device).
+ * @brief Print which backend `gemm_strided<...>` dispatches to (host/device).
  *
  * Diagnostic sibling of print_dispatch<> for the strided-GEMM API.
  *
@@ -251,16 +251,16 @@ __host__ __device__ inline void print_dispatch_gemv() {
  */
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t A_RS = M, uint32_t B_RS = N, uint32_t SM_VAL = SMS>
-__host__ __device__ inline void print_dispatch_row_strided_gemm() {
-    printf("glass::nvidia::row_strided_gemm<T,%u,%u,%u,A_RS=%u,B_RS=%u,SM=%u>: %s\n",
+__host__ __device__ inline void print_dispatch_gemm_strided() {
+    printf("glass::nvidia::gemm_strided<T,%u,%u,%u,A_RS=%u,B_RS=%u,SM=%u>: %s\n",
            M, N, K, A_RS, B_RS, SM_VAL,
-           should_use_cublasdx_row_strided_gemm<T, M, N, K, A_RS, B_RS, SM_VAL>()
+           should_use_cublasdx_gemm_strided<T, M, N, K, A_RS, B_RS, SM_VAL>()
                ? "cuBLASDx (needs DEFINE_NVIDIA_GEMM*)"
                : "SIMT fallback");
 }
 
 /**
- * @brief Print which backend `row_strided_gemv<...>` dispatches to (host/device).
+ * @brief Print which backend `gemv_strided<...>` dispatches to (host/device).
  *
  * Diagnostic sibling of print_dispatch<> for the strided-GEMV API.
  *
@@ -272,10 +272,10 @@ __host__ __device__ inline void print_dispatch_row_strided_gemm() {
  */
 template <typename T, uint32_t M, uint32_t N, uint32_t ROW_STRIDE = M,
           uint32_t SM_VAL = SMS>
-__host__ __device__ inline void print_dispatch_row_strided_gemv() {
-    printf("glass::nvidia::row_strided_gemv<T,%u,%u,RS=%u,SM=%u>: %s\n",
+__host__ __device__ inline void print_dispatch_gemv_strided() {
+    printf("glass::nvidia::gemv_strided<T,%u,%u,RS=%u,SM=%u>: %s\n",
            M, N, ROW_STRIDE, SM_VAL,
-           should_use_cublasdx_row_strided_gemv<T, M, N, ROW_STRIDE, SM_VAL>()
+           should_use_cublasdx_gemv_strided<T, M, N, ROW_STRIDE, SM_VAL>()
                ? "cuBLASDx (needs DEFINE_NVIDIA_GEMV*)"
                : "SIMT fallback");
 }
