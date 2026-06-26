@@ -10,11 +10,22 @@ predicate. `bench/tune.py` remeasures all of them on your GPU and regenerates
 them under **one shared noise margin**, so nothing bakes sub-noise jitter:
 
 ```bash
-python bench/tune.py --sm auto              # all legs, ±5% margin
+python bench/tune.py --sm auto --prebuild   # compile everything into the cache (no GPU needed)
+python bench/tune.py --sm auto              # all legs, ±5% margin (reuses the prebuilt cache)
 python bench/tune.py --sm auto --quick      # ladder throughput point only (faster)
 python bench/tune.py --legs ladder,reduced  # pick legs; --margin 0.05 to retune the tie band
 python bench/tune.py --sm auto --dry-run    # regenerate + diff, write nothing
 ```
+
+**Prebuild so the sweep is fast.** Compilation — not timing — dominates the wall
+clock (the `shapes` leg alone compiles ~66 separate cuBLASDx microbenches).
+`--prebuild` compiles every binary the selected legs need into a persistent,
+hash-keyed cache (`bench/.tune_cache/sm<sms>/`, gitignored) and runs nothing.
+Run it **anytime — even while the GPU is busy**, since compilation is CPU-bound.
+The later timed sweep on a quiet GPU then finds every binary cached and is
+**execute-only**. The cache is keyed on the rendered source + a digest of the
+whole header library + the SM, so any library edit transparently rebuilds the
+affected binaries; a cuBLASDx-rejected shape is remembered so it isn't retried.
 
 The shared rule (`bench/tune_pick.py::pick`): a dependency-carrying impl
 (`nvidia`/`cublasdx`/`reduced`) wins **only if it beats the simplest impl by more

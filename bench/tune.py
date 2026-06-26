@@ -29,6 +29,7 @@ confirm a re-run only moves dispatch inside the tie band before committing.
 """
 import argparse
 import glob
+import hashlib
 import os
 import pathlib
 import re
@@ -37,14 +38,37 @@ import sys
 import time
 
 import tune_pick as tp
+from autotune import lib_digest  # shared library-content hash for cache keys
 
 BENCH_DIR = pathlib.Path(__file__).parent.resolve()
 GLASS_DIR = BENCH_DIR.parent
 DEFAULTS  = GLASS_DIR / "glass-defaults.cuh"
 STATIC    = GLASS_DIR / "docs" / "source" / "_static"
 REDUCED_MD = BENCH_DIR / "REDUCED_SWEEP_RESULTS.md"
+CACHE_ROOT = BENCH_DIR / ".tune_cache"
 
 ALL_LEGS = ("ladder", "shapes", "reduced", "figures")
+
+
+def cache_dir(sms):
+    d = CACHE_ROOT / f"sm{sms}"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def cached_build(label, cu_name, flags, sms):
+    """Compile `flags` (an nvcc argv WITHOUT -o; `cu_name` is its input) into the
+    persistent cache, hash-keyed on the source + library digest + flags. Returns
+    ``(bin_path, status)`` with status ∈ {cached, built, fail}. A cache hit skips
+    nvcc entirely — so a prebuilt sweep is execute-only."""
+    src = (BENCH_DIR / cu_name).read_bytes()
+    key = hashlib.sha256(src + lib_digest().encode()
+                         + " ".join(flags).encode()).hexdigest()[:12]
+    binp = cache_dir(sms) / f"{label}_{key}"
+    if binp.exists():
+        return binp, "cached"
+    res = run(flags + ["-o", str(binp)], cwd=BENCH_DIR)
+    return (binp, "built") if res.returncode == 0 else (None, "fail")
 
 
 # ─── environment ──────────────────────────────────────────────────────────────
@@ -86,19 +110,17 @@ def build_mega_sweep(sms, mdx):
     if mdx is None:
         sys.exit("ERROR: ladder leg needs MATHDX_ROOT (the nvidia contender). "
                  "Set it, or run with --legs reduced (no MathDx) / --from-ladder.")
-    binp = pathlib.Path("/tmp/glass_tune_mega")
-    arch = f"sm_{sms // 10}"
-    cmd = ["nvcc", "-std=c++17", f"-arch={arch}", "-O3", "--expt-relaxed-constexpr",
-           "-Xptxas", "-O1", "-I..", "-I../src",
-           f"-I{mdx/'include'}", f"-I{mdx/'external'/'cutlass'/'include'}",
-           "-DGLASS_BENCH_CUBLASDX", "-DGLASS_BENCH_CUSOLVERDX", f"-DSMS={sms}",
-           "-DCUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT", "-rdc=true", "-dlto",
-           f"-L{mdx/'lib'}", "-lcusolverdx", "-lcublas", "-lcusolver", "-lcudart",
-           "bench_mega_sweep.cu", "-o", str(binp)]
-    print("==> compiling bench_mega_sweep (3-way)")
-    res = run(cmd, cwd=BENCH_DIR)
-    if res.returncode != 0:
+    flags = ["nvcc", "-std=c++17", f"-arch=sm_{sms // 10}", "-O3",
+             "--expt-relaxed-constexpr", "-Xptxas", "-O1", "-I..", "-I../src",
+             f"-I{mdx/'include'}", f"-I{mdx/'external'/'cutlass'/'include'}",
+             "-DGLASS_BENCH_CUBLASDX", "-DGLASS_BENCH_CUSOLVERDX", f"-DSMS={sms}",
+             "-DCUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT", "-rdc=true", "-dlto",
+             f"-L{mdx/'lib'}", "-lcusolverdx", "-lcublas", "-lcusolver", "-lcudart",
+             "bench_mega_sweep.cu"]
+    binp, status = cached_build("mega_sweep", "bench_mega_sweep.cu", flags, sms)
+    if status == "fail":
         sys.exit("ERROR: bench_mega_sweep compile failed.")
+    print(f"  bench_mega_sweep: {status} ({binp.name})")
     return binp
 
 
@@ -197,12 +219,12 @@ def regen_ladder(sweep_text, margin, src_name):
 # ─── reduced leg: bench_reduced → validate suggested_use_reduced<> ────────────
 
 def build_reduced(sms):
-    binp = pathlib.Path("/tmp/glass_tune_reduced")
-    cmd = ["nvcc", "-std=c++17", f"-arch=sm_{sms//10}", "-O3", "-I..", "-I../src",
-           "bench_reduced.cu", "-o", str(binp)]
-    print("==> compiling bench_reduced")
-    if run(cmd, cwd=BENCH_DIR).returncode != 0:
+    flags = ["nvcc", "-std=c++17", f"-arch=sm_{sms//10}", "-O3", "-I..", "-I../src",
+             "bench_reduced.cu"]
+    binp, status = cached_build("reduced", "bench_reduced.cu", flags, sms)
+    if status == "fail":
         sys.exit("ERROR: bench_reduced compile failed.")
+    print(f"  bench_reduced: {status} ({binp.name})")
     return binp
 
 
@@ -307,6 +329,11 @@ def main():
                    help=f"comma list of legs to run. default all: {','.join(ALL_LEGS)}")
     p.add_argument("--quick", action="store_true",
                    help="ladder: throughput point only (NPROB=8192), fewer reps")
+    p.add_argument("--prebuild", action="store_true",
+                   help="compile every binary the selected legs need into the "
+                        "build cache and exit — no timing. Run this ANYTIME (even "
+                        "while the GPU is busy; compilation is CPU-bound), so the "
+                        "later sweep on a quiet GPU is execute-only and fast.")
     p.add_argument("--iters", type=int, default=200000, help="bench_reduced iters")
     p.add_argument("--dry-run", action="store_true",
                    help="regenerate + diff against in-tree tables, write nothing")
@@ -328,9 +355,34 @@ def main():
     print(f"=== GLASS unified autotune ===")
     print(f"  SM:      {('(offline)' if sms is None else 'sm_'+str(sms//10))}")
     print(f"  margin:  ±{args.margin*100:.0f}%   legs: {','.join(legs)}"
-          f"{'   [DRY RUN]' if args.dry_run else ''}")
+          f"{'   [PREBUILD]' if args.prebuild else '   [DRY RUN]' if args.dry_run else ''}")
     print(f"  MathDx:  {mdx or 'absent'}\n")
     changed = {}
+
+    # ── prebuild: compile everything the legs need, run nothing ──
+    if args.prebuild:
+        if sms is None:
+            sys.exit("ERROR: --prebuild needs a concrete SM (pass --sm 1200 or "
+                     "ensure nvidia-smi works); it compiles for a target arch.")
+        if "ladder" in legs:
+            print("── prebuild: ladder ──────────────────────────────────────")
+            build_mega_sweep(sms, mdx)
+        if "shapes" in legs:
+            print("── prebuild: shapes (cuBLASDx microbenches) ──────────────")
+            if mdx is None:
+                print("  [skip] shapes needs MATHDX_ROOT (cuBLASDx).")
+            else:
+                run([sys.executable, "autotune.py", "--sm", str(sms),
+                     "--build-only", "--build-dir", str(cache_dir(sms))], cwd=BENCH_DIR)
+        if "reduced" in legs:
+            print("── prebuild: reduced ─────────────────────────────────────")
+            build_reduced(sms)
+        if "figures" in legs:
+            print("── prebuild: figures ─────────────────────────────────────")
+            print("  [n/a] figures is pure Python (matplotlib) — nothing to compile.")
+        print(f"\n==> prebuild done. Cache: {cache_dir(sms)}")
+        print("    Run the timed sweep on a quiet GPU; cached binaries skip nvcc.")
+        return
 
     # ── ladder ──
     if "ladder" in legs:
@@ -359,7 +411,8 @@ def main():
             print("  [skip] shapes needs MATHDX_ROOT (cuBLASDx).")
         else:
             cmd = [sys.executable, "autotune.py", "--sm", str(sms),
-                   "--margin", str(args.margin), "--in-tree"]
+                   "--margin", str(args.margin), "--in-tree",
+                   "--build-dir", str(cache_dir(sms))]
             if args.dry_run:
                 cmd.append("--dry-run")
             run(cmd, cwd=BENCH_DIR)

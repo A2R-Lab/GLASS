@@ -134,7 +134,10 @@ and the `suggested_use_reduced<>` predicate. The shared tie rule lives in
 wins only if it beats the simplest no-dependency impl by more than the margin;
 ties stay on the launchable-everywhere path. **Run perf sweeps on a quiet GPU**
 (isolated timing); use `--dry-run` to diff a regeneration before committing it.
-Details: `bench/TUNING.md`.
+Compilation dominates the wall clock, so `bench/tune.py --prebuild` compiles
+every binary into a persistent hash-keyed cache (`bench/.tune_cache/`, gitignored)
+with no timing — run it anytime (even while the GPU is busy) so the later quiet-GPU
+sweep is execute-only. Details: `bench/TUNING.md`.
 
 ## Docs
 
