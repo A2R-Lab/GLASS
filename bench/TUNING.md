@@ -1,5 +1,32 @@
 # Tuning GLASS for your hardware
 
+## One command — `bench/tune.py`
+
+GLASS ships three measured defaults tables: the warp/block/nvidia **backend
+ladder** (`glass-defaults.cuh`, consumed by `glass::suggested_backend<>`), the
+per-(M,N,K) **cuBLASDx-vs-SIMT table** (`src/nvidia/tuning_table.cuh`, this
+document's main subject), and the serial-vs-reduced **`suggested_use_reduced<>`**
+predicate. `bench/tune.py` remeasures all of them on your GPU and regenerates
+them under **one shared noise margin**, so nothing bakes sub-noise jitter:
+
+```bash
+python bench/tune.py --sm auto              # all legs, ±5% margin
+python bench/tune.py --sm auto --quick      # ladder throughput point only (faster)
+python bench/tune.py --legs ladder,reduced  # pick legs; --margin 0.05 to retune the tie band
+python bench/tune.py --sm auto --dry-run    # regenerate + diff, write nothing
+```
+
+The shared rule (`bench/tune_pick.py::pick`): a dependency-carrying impl
+(`nvidia`/`cublasdx`/`reduced`) wins **only if it beats the simplest impl by more
+than the margin** — otherwise the no-dependency path (always launchable, no
+MathDx) stays. Every op is measured and recorded; a dispatch picker is
+regenerated only where ≥2 impls genuinely compete. **Run on a quiet GPU** — perf
+timing must be isolated from other CPU/GPU load. Use `--dry-run` first to confirm
+a re-run only moves dispatch inside the tie band before committing a regenerated
+table. The `shapes` leg below is the per-shape engine `tune.py` drives.
+
+## The cuBLASDx-vs-SIMT table
+
 GLASS's `glass::nvidia::*` wrappers — `gemm`, `gemv`, `row_strided_*`,
 `gemm_batched_1d` — auto-dispatch between a pure-SIMT path and cuBLASDx at
 compile time. The decision lives in

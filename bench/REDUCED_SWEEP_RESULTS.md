@@ -52,6 +52,16 @@ their own serial code before adopting them for speed.
 
 ## Reproduce
 
+The `reduced` leg of the unified autotuner remeasures this and refreshes the
+"Latest measured run" block above (flagging any config where measurement
+disagrees with the `suggested_use_reduced<>` predicate):
+
+```bash
+python bench/tune.py --legs reduced --sm auto   # on a quiet GPU
+```
+
+Or run the harness directly:
+
 ```bash
 cd bench && nvcc -std=c++17 -arch=sm_XX -O3 -I.. -I../src bench_reduced.cu -o bench_reduced
 ./bench_reduced 200000   # run on a quiet GPU

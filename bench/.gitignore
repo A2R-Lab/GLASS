@@ -6,3 +6,9 @@ results/*.json
 tuning/*.cuh
 tuning/*_results.md
 __pycache__/
+# Raw timing captures written by bench/tune.py / the harnesses (large, per-run).
+# The curated *_RESULTS.md summaries and regenerated tables ARE tracked.
+mega_sweep_*.txt
+reduced_sweep_*.txt
+warp_block_sweep_*.txt
+*.log

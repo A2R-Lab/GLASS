@@ -122,6 +122,20 @@ must be registered in that hash list or the cache won't rebuild** (see the
 debugging guide). Optional cuBLASDx/cuSOLVERDx tests skip gracefully when MathDx
 is absent. Force a clean rebuild with `rm -rf test/build`.
 
+## Benchmarking & tuning
+
+`bench/tune.py --sm auto [--margin 0.05] [--quick] [--dry-run]` is the **one**
+entry point that remeasures this GPU and regenerates every shipped defaults
+table under a single noise margin: the warp/block/nvidia ladder
+(`glass-defaults.cuh::ideal_sm120`), the per-(M,N,K) cuBLASDx-vs-SIMT table
+(`src/nvidia/tuning_table.cuh`, via the `bench/autotune.py` engine it drives),
+and the `suggested_use_reduced<>` predicate. The shared tie rule lives in
+**`bench/tune_pick.py::pick`** — a dependency impl (nvidia/cublasdx/reduced)
+wins only if it beats the simplest no-dependency impl by more than the margin;
+ties stay on the launchable-everywhere path. **Run perf sweeps on a quiet GPU**
+(isolated timing); use `--dry-run` to diff a regeneration before committing it.
+Details: `bench/TUNING.md`.
+
 ## Docs
 
 Sphinx + Doxygen + Breathe under `docs/` (`cd docs && make all`). The API

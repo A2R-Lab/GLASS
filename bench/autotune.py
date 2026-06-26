@@ -38,7 +38,15 @@ import tempfile
 import textwrap
 import time
 
+import tune_pick as tp  # the one shared tie rule (also used by bench/tune.py)
+
 BENCH_DIR  = pathlib.Path(__file__).parent.resolve()
+
+
+def _cublasdx_wins(simt, cdx, margin):
+    """Shared verdict: cuBLASDx is the dependency impl, so it must clear the
+    margin over SIMT. Single source of truth = tune_pick.pick."""
+    return tp.pick({"simt": simt, "cublasdx": cdx}, margin, {"cublasdx"}) == "cublasdx"
 GLASS_DIR  = BENCH_DIR.parent
 TUNING_DIR = BENCH_DIR / "tuning"
 
@@ -622,7 +630,7 @@ def emit_overrides(out_path: pathlib.Path,
                         f"< {MIN_TRUSTWORTHY_US:.2f}us) → SIMT default")
             else:
                 ratio = cdx / simt
-                if ratio < (1.0 - margin):
+                if _cublasdx_wins(simt, cdx, margin):
                     verdict = "true"
                     note = (f"cublasdx wins ({cdx:.3f}us vs simt {simt:.3f}us, "
                             f"{(1-ratio)*100:.1f}%)")
@@ -680,7 +688,7 @@ def emit_results_md(md_path: pathlib.Path,
                 lines.append(f"| {shape_cells} | {simt:.3f} | {cdx:.3f} | "
                              f"SIMT (sub-noise) | — |")
                 continue
-            if cdx < simt * (1.0 - margin):
+            if _cublasdx_wins(simt, cdx, margin):
                 lines.append(f"| {shape_cells} | {simt:.3f} | {cdx:.3f} | "
                              f"**cuBLASDx** | {simt/cdx:.2f}× |")
             elif simt < cdx * (1.0 - margin):
@@ -865,7 +873,7 @@ def main():
                 if simt is None or cdx is None:
                     print("[skipped]")
                 else:
-                    if cdx < simt * (1 - args.margin):
+                    if _cublasdx_wins(simt, cdx, args.margin):
                         winner = "cuBLASDx"
                     elif simt < cdx * (1 - args.margin):
                         winner = "SIMT"
@@ -944,7 +952,7 @@ def _update_in_tree(path: pathlib.Path,
                     f"< {MIN_TRUSTWORTHY_US:.2f}us) → SIMT default")
             else:
                 ratio = cdx / simt
-                if ratio < (1.0 - margin):
+                if _cublasdx_wins(simt, cdx, margin):
                     verdict, note = "true", (
                         f"cublasdx wins ({cdx:.3f}us vs simt {simt:.3f}us, "
                         f"{(1-ratio)*100:.1f}%)")
