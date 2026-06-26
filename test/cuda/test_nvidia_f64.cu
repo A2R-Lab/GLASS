@@ -59,18 +59,18 @@ template<int N> static void run(const char* op) {
     cudaMemcpy(db,hb,N*8,cudaMemcpyHostToDevice);
     int nout=N;
     if (!strcmp(op,"posv")) {
-        size_t sm=glass::nvidia::posv_smem_size<double,N,1,256>();
+        size_t sm=glass::nvidia::posv_scratch_bytes<double,N,1,256>();
         cudaFuncSetAttribute(k_posv<N>,cudaFuncAttributeMaxDynamicSharedMemorySize,(int)sm);
         k_posv<N><<<1,256,sm>>>(dA,db); cudaDeviceSynchronize();
         cudaMemcpy(hout,db,N*8,cudaMemcpyDeviceToHost); nout=N;
     } else if (!strcmp(op,"gemm")) {
-        size_t sm=glass::nvidia::gemm_smem_size<double,N,N,N>();
+        size_t sm=glass::nvidia::gemm_scratch_bytes<double,N,N,N>();
         int tb=(int)glass::nvidia::gemm_threads<double,N,N,N>();
         cudaFuncSetAttribute(k_gemm<N>,cudaFuncAttributeMaxDynamicSharedMemorySize,(int)sm);
         k_gemm<N><<<1,tb,sm>>>(dA,dB,dC); cudaDeviceSynchronize();
         cudaMemcpy(hout,dC,N*N*8,cudaMemcpyDeviceToHost); nout=N*N;
     } else { // gemv
-        size_t sm=glass::nvidia::gemv_smem_size<double,N,N>();
+        size_t sm=glass::nvidia::gemv_scratch_bytes<double,N,N>();
         int tb=(int)glass::nvidia::gemv_threads<double,N,N>();
         cudaFuncSetAttribute(k_gemv<N>,cudaFuncAttributeMaxDynamicSharedMemorySize,(int)sm);
         k_gemv<N><<<1,tb,sm>>>(dA,db,dC); cudaDeviceSynchronize();

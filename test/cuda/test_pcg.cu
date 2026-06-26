@@ -57,8 +57,7 @@ int main(int argc, char** argv) {
     size_t smem = 0;
 #define DISPATCH(SS_, KP_)                                                        \
     if (SS == SS_ && KP == KP_) {                                                 \
-        smem = (size_t)glass::pcg_smem_size<float, SS_, KP_>((uint32_t)threads) \
-               * sizeof(float);                                                   \
+        smem = (size_t)glass::pcg_scratch_bytes<float, SS_, KP_>((uint32_t)threads); \
         k_pcg_##SS_##_##KP_<<<1, threads, smem>>>(dx, dS, dPinv, db,              \
             max_iters, rel_tol, abs_tol, d_iters);                               \
     }

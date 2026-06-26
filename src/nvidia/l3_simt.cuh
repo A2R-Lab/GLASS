@@ -92,7 +92,7 @@ __device__ void gemm_batched_1d(T alpha, T* const* A, T* const* B,
         // Reuse the well-tested compile-time SIMT gemm core from glass::.
         // Inner loop is fully unrolled; no inter-batch synchronization needed
         // because batches use disjoint thread sets and disjoint output buffers.
-        ::glass::gemm_impl_ct<T, M, N, K, /*TRANSPOSE_B=*/false, RM_A, RM_B, RM_C>(
+        ::glass::gemm_impl_ct<T, M, N, K, RM_A, RM_B, RM_C>(
             tx, TC, alpha, A[b], B[b], beta, C[b]);
     }
     if constexpr (TRAILING_SYNC) {
@@ -113,7 +113,7 @@ template <typename T, uint32_t M, uint32_t N, uint32_t K,
           layout LB = layout::col_major,
           layout LC = layout::col_major,
           bool TRAILING_SYNC = true>
-constexpr std::size_t gemm_batched_1d_smem_size() { return 0; }
+constexpr std::size_t gemm_batched_1d_scratch_bytes() { return 0; }
 
 /**
  * @brief Total threads required across the 1D block for `gemm_batched_1d<...>`.
@@ -141,8 +141,8 @@ constexpr uint32_t gemm_batched_1d_threads() { return TC * BATCH; }
 //   B element address for batch b:  B + b * B_STRIDE
 //   C element address for batch b:  C + b * C_STRIDE
 //
-// Defaults for B_STRIDE / C_STRIDE assume tightly packed batches (B is N×K,
-// C is M×K). Override for non-contiguous storage.
+// Defaults for B_STRIDE / C_STRIDE assume tightly packed batches (B is K×N,
+// C is M×N). Override for non-contiguous storage.
 //
 // Only B and C are strided — A is always shared. Use gemm_batched_1d if a
 // per-batch A is needed.
@@ -181,7 +181,7 @@ constexpr uint32_t gemm_batched_1d_threads() { return TC * BATCH; }
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t BATCH, uint32_t TC,
           uint32_t B_STRIDE = N * K,
-          uint32_t C_STRIDE = M * K,
+          uint32_t C_STRIDE = M * N,
           layout LA = layout::col_major,
           layout LB = layout::col_major,
           layout LC = layout::col_major,
@@ -204,7 +204,7 @@ __device__ void gemm_strided_batched_1d(T alpha, const T* A_shared, T* B,
         uint32_t tx = rank - b * TC;
         // const_cast: gemm_impl_ct's signature takes T*, but it only reads A.
         // Safe because every batch element only reads — never writes — A_shared.
-        ::glass::gemm_impl_ct<T, M, N, K, /*TRANSPOSE_B=*/false, RM_A, RM_B, RM_C>(
+        ::glass::gemm_impl_ct<T, M, N, K, RM_A, RM_B, RM_C>(
             tx, TC, alpha, const_cast<T*>(A_shared),
                            B + b * B_STRIDE,
             beta,          C + b * C_STRIDE);
@@ -222,12 +222,12 @@ __device__ void gemm_strided_batched_1d(T alpha, const T* A_shared, T* B,
  */
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t BATCH, uint32_t TC,
-          uint32_t B_STRIDE = N * K, uint32_t C_STRIDE = M * K,
+          uint32_t B_STRIDE = N * K, uint32_t C_STRIDE = M * N,
           layout LA = layout::col_major,
           layout LB = layout::col_major,
           layout LC = layout::col_major,
           bool TRAILING_SYNC = true>
-constexpr std::size_t gemm_strided_batched_1d_smem_size() { return 0; }
+constexpr std::size_t gemm_strided_batched_1d_scratch_bytes() { return 0; }
 
 /**
  * @brief Total threads required across the 1D block for `gemm_strided_batched_1d<...>`.
@@ -237,7 +237,7 @@ constexpr std::size_t gemm_strided_batched_1d_smem_size() { return 0; }
  */
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t BATCH, uint32_t TC,
-          uint32_t B_STRIDE = N * K, uint32_t C_STRIDE = M * K,
+          uint32_t B_STRIDE = N * K, uint32_t C_STRIDE = M * N,
           layout LA = layout::col_major,
           layout LB = layout::col_major,
           layout LC = layout::col_major,

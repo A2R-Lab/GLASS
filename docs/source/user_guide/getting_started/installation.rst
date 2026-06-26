@@ -71,7 +71,7 @@ manual download from the NVIDIA Developer portal.
      - Used by
      - Header-only?
    * - CUB
-     - ``glass::nvidia::reduce`` / ``dot`` / ``l2norm``
+     - ``glass::nvidia::reduce`` / ``dot`` / ``nrm2``
      - Yes (bundled with CUDA)
    * - cuBLASDx
      - ``gemv``, ``gemm``, batched GEMM

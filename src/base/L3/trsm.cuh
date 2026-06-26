@@ -1,4 +1,5 @@
 #pragma once
+#include "../barrier.cuh"
 #include <cstdint>
 #include "chol_InPlace.cuh"  // warp::cholDecomp_InPlace, composed by warp::posv
 
@@ -14,20 +15,27 @@
  * @param L  Lower-triangular matrix (column-major).
  * @param b  In/out right-hand side; on return holds the solution x.
  */
+// Shared body: forward-substitution lower-triangular solve; barrier policy
+// supplies rank/size + the two per-column syncs, shared by glass:: and cgrps::.
+template <typename Bar, typename T>
+__device__ void trsm_impl(Bar bar, uint32_t n, T *L, T *b)
+{
+    uint32_t rank = bar.rank(), size = bar.size();
+    for (uint32_t col = 0; col < n; col++) {
+        if (rank == 0) b[col] /= L[col*n + col];
+        bar.sync();
+        T factor = b[col];
+        for (uint32_t row = rank + col + 1; row < n; row += size)
+            b[row] -= L[col*n + row] * factor;
+        bar.sync();
+    }
+}
+
 // Solve lower-triangular Lx=b in-place (column-major L, result overwrites b)
 template <typename T>
 __device__ void trsm(uint32_t n, T *L, T *b)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    for (uint32_t col = 0; col < n; col++) {
-        if (rank == 0) b[col] /= L[col*n + col];
-        __syncthreads();
-        T factor = b[col];
-        for (uint32_t row = rank + col + 1; row < n; row += size)
-            b[row] -= L[col*n + row] * factor;
-        __syncthreads();
-    }
+    trsm_impl<BlockBarrier, T>(BlockBarrier{}, n, L, b);
 }
 
 /**
@@ -187,7 +195,7 @@ namespace warp {
     }
 
     // ── unit-diagonal lower variants (the existing warp::trsm/trsm_transpose are
-    //    non-unit only); needed so trsv can offer the full {LOWER,UNIT,TRANS} matrix.
+    //    non-unit only); needed so trsv can offer the full {LOWER,UNIT,TRANSPOSE} matrix.
     /**
      * @brief Single-warp unit-lower solve `L x = b` (forward substitution), compile-time size.
      *
@@ -249,30 +257,30 @@ namespace warp {
      * @brief Single-warp triangular solve `op(A) x = b` (TRSV), flagged dispatch, compile-time size.
      *
      * Thin compile-time-flagged wrapper selecting the right single-warp triangular
-     * solve for any `{LOWER, UNIT, TRANS}` combination, dispatching to the lower
+     * solve for any `{LOWER, UNIT, TRANSPOSE}` combination, dispatching to the lower
      * `warp::trsm`/`warp::trsm_transpose` (and their unit-diagonal twins) or the
      * upper `warp::trsm_upper`/`warp::trsm_upper_transpose`. Solves in place
      * (`b` overwritten with `x`); `A` is column-major and only the named triangle is
      * read. One 32-lane warp, no shared scratch, no `__syncthreads`; this is its OWN
      * warp implementation and does not share an impl with the block trsv. SciPy:
-     * `x = scipy.linalg.solve_triangular(A, b, lower=LOWER, trans=TRANS, unit_diagonal=UNIT)`.
+     * `x = scipy.linalg.solve_triangular(A, b, lower=LOWER, trans=TRANSPOSE, unit_diagonal=UNIT)`.
      *
      * @tparam T      Scalar type.
      * @tparam N      Dimension (A is N x N, b has length N).
      * @tparam LOWER  When true, `A` is lower-triangular (default true); else upper.
      * @tparam UNIT   When true, `A` has an implicit unit diagonal (default false).
-     * @tparam TRANS  When true, solve `Aᵀ x = b` instead of `A x = b` (default false).
+     * @tparam TRANSPOSE  When true, solve `Aᵀ x = b` instead of `A x = b` (default false).
      * @param A  Triangular matrix (column-major); only the `LOWER`/upper triangle read.
      * @param b  In/out right-hand side; on return holds the solution x.
      */
-    template <typename T, uint32_t N, bool LOWER = true, bool UNIT = false, bool TRANS = false>
+    template <typename T, uint32_t N, bool LOWER = true, bool UNIT = false, bool TRANSPOSE = false>
     __device__ void trsv(T *A, T *b)
     {
         if (LOWER) {
-            if (!TRANS) { if (UNIT) trsm_unit<T, N>(A, b);           else trsm<T, N>(A, b); }
+            if (!TRANSPOSE) { if (UNIT) trsm_unit<T, N>(A, b);           else trsm<T, N>(A, b); }
             else        { if (UNIT) trsm_transpose_unit<T, N>(A, b); else trsm_transpose<T, N>(A, b); }
         } else {
-            if (!TRANS) trsm_upper<T, N, UNIT>(A, b);
+            if (!TRANSPOSE) trsm_upper<T, N, UNIT>(A, b);
             else        trsm_upper_transpose<T, N, UNIT>(A, b);
         }
     }
@@ -282,8 +290,8 @@ namespace warp {
      *
      * One 32-lane warp solves the symmetric-positive-definite system `A x = b` in
      * place: it factors `A = L Lᵀ` with `warp::cholDecomp_InPlace` (lower triangle
-     * overwrites `A`), then a forward solve `L y = b` (`trsv<…,LOWER,!TRANS>`) and a
-     * back solve `Lᵀ x = y` (`trsv<…,LOWER,TRANS>`). On return `b` holds `x` and the
+     * overwrites `A`), then a forward solve `L y = b` (`trsv<…,LOWER,!TRANSPOSE>`) and a
+     * back solve `Lᵀ x = y` (`trsv<…,LOWER,TRANSPOSE>`). On return `b` holds `x` and the
      * lower triangle of `A` holds `L`. This is the composed warp-per-problem solve —
      * the proof that the warp L1/L2/L3 glue closes the gap. No shared scratch, no
      * `__syncthreads`; every pivot broadcast from a register (§1g). `A` must be SPD
@@ -299,7 +307,65 @@ namespace warp {
     __device__ void posv(T *A, T *b)
     {
         cholDecomp_InPlace<T, N>(A);
-        trsv<T, N, /*LOWER=*/true, /*UNIT=*/false, /*TRANS=*/false>(A, b);  // forward: L y = b
-        trsv<T, N, /*LOWER=*/true, /*UNIT=*/false, /*TRANS=*/true>(A, b);   // back:   Lᵀ x = y
+        trsv<T, N, /*LOWER=*/true, /*UNIT=*/false, /*TRANSPOSE=*/false>(A, b);  // forward: L y = b
+        trsv<T, N, /*LOWER=*/true, /*UNIT=*/false, /*TRANSPOSE=*/true>(A, b);   // back:   Lᵀ x = y
+    }
+
+    /**
+     * @brief Add a diagonal regularization shift to A in place (single-warp helper).
+     *
+     * Lane-strided over the `n` diagonal entries; `REG_DIAG=false` adds `rho·I`
+     * (Marquardt), `REG_DIAG=true` adds `rho·diag(A)` (Levenberg). Trailing
+     * `__syncwarp()` so the shifted A is warp-visible before factoring. Internal.
+     */
+    template <typename T, bool REG_DIAG = false>
+    __device__ void _posv_regularize(uint32_t n, T *A, T rho)
+    {
+        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+        for (uint32_t i = lane; i < n; i += 32) {
+            if constexpr (REG_DIAG) A[i*n + i] += rho * A[i*n + i];   // rho*diag(A)
+            else                    A[i*n + i] += rho;                // rho*I
+        }
+        __syncwarp();
+    }
+
+    /**
+     * @brief Single-warp regularized/checked multi-RHS SPD solve `A X = B` (LAPACK posv).
+     *
+     * Warp-per-problem parity with the block multi-RHS `glass::posv`: one 32-lane
+     * warp optionally shifts `A`'s diagonal (`REGULARIZE`: `rho·I`, or `rho·diag(A)`
+     * when `REG_DIAG`), factors `A = L Lᵀ` via `warp::cholDecomp_InPlace<…,CHECK>`
+     * (reporting a non-PD pivot through `s_fail`), then forward/back-solves each of
+     * the `NRHS` columns of `B` (column-major, column `c` at `B + c*N`). On return
+     * `A` holds `L` and `B` holds `X`. No shared scratch, no `__syncthreads`.
+     *
+     * A flagged **single**-RHS solve is just NRHS=1 — the form HJCD's LM step wants:
+     * `warp::posv<T, DIM, 1, REGULARIZE=true, CHECK=true, REG_DIAG=true>(A, b, lambda, &s_fail)`
+     * folds the `A += lambda*diag(A)` damping and the non-PD net into one call. (The
+     * unflagged 2-arg `warp::posv<T,N>(A,b)` stays; flags cannot live on it without
+     * colliding with this overload at NRHS in {0,1}.)
+     *
+     * @tparam T     Scalar type (use `double` for ill-conditioned A).
+     * @tparam N     Dimension (A is N x N, each column of B has length N).
+     * @tparam NRHS  Number of right-hand sides (columns of B).
+     * @tparam REGULARIZE  If true, shift A before factoring (default false, compiles out).
+     * @tparam CHECK  If true, report a non-PD pivot via `s_fail` (default false, compiles out).
+     * @tparam REG_DIAG    With REGULARIZE: shift by `rho·diag(A)` instead of `rho·I` (default false).
+     * @param A  In/out SPD matrix (column-major); on return its lower triangle holds L.
+     * @param B  In/out right-hand sides (N x NRHS, column-major); on return holds X.
+     * @param rho    Diagonal shift applied when REGULARIZE (ignored otherwise).
+     * @param s_fail Optional non-PD flag when CHECK (set to 1 on a non-PD pivot, else 0).
+     */
+    template <typename T, uint32_t N, uint32_t NRHS,
+              bool REGULARIZE = false, bool CHECK = false, bool REG_DIAG = false>
+    __device__ void posv(T *A, T *B, T rho = T(0), int *s_fail = nullptr)
+    {
+        if constexpr (REGULARIZE) _posv_regularize<T, REG_DIAG>(N, A, rho);  // rho*I or rho*diag(A)
+        cholDecomp_InPlace<T, N, CHECK>(A, s_fail);
+        for (uint32_t c = 0; c < NRHS; c++) {
+            T *Bc = B + c * N;                                              // column c (column-major)
+            trsv<T, N, /*LOWER=*/true, /*UNIT=*/false, /*TRANSPOSE=*/false>(A, Bc);  // forward: L y = b
+            trsv<T, N, /*LOWER=*/true, /*UNIT=*/false, /*TRANSPOSE=*/true>(A, Bc);   // back:   Lᵀ x = y
+        }
     }
 }

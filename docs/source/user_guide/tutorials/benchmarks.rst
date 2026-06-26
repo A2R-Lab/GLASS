@@ -15,7 +15,7 @@ What's in ``bench/``
    * - File
      - Comparison
    * - ``bench_reduce.cu``
-     - ``glass::*::reduce/dot/l2norm`` (plain, low_memory, high_speed,
+     - ``glass::*::reduce/dot/nrm2`` (plain, low_memory, high_speed,
        compile-time) vs CUB ``BlockReduce`` vs ``glass::nvidia::reduce``
    * - ``bench_gemv.cu``
      - ``glass::gemv`` (runtime + compile-time) vs raw cuBLASDx vs

@@ -42,7 +42,7 @@ templates_path = ["_templates"]
 exclude_patterns = []
 
 # The header-only sub-namespaces (low_memory / high_speed / simple) are reopened
-# across several headers (reduce/norm/l2norm/asum/dot), so listing those files
+# across several headers (reduce/norm/nrm2/asum/dot), so listing those files
 # separately in the API reference makes Breathe re-emit the same namespace
 # anchor per file. Sphinx flags that as a duplicate explicit target — cosmetic,
 # not a content error — so we silence the docutils target-name category here.

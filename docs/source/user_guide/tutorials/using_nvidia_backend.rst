@@ -61,7 +61,7 @@ the **exact** thread count — a mismatch deadlocks.
 
    #include "glass-nvidia.cuh"
 
-   constexpr auto smem    = glass::nvidia::gemm_smem_size<float, 6, 6, 6>();
+   constexpr auto smem    = glass::nvidia::gemm_scratch_bytes<float, 6, 6, 6>();
    constexpr auto threads = glass::nvidia::gemm_threads<float, 6, 6, 6>();
 
    __global__ void k(float* A, float* B, float* C) {
@@ -90,7 +90,7 @@ idle inside the GEMM:
        glass::nvidia::gemm<float, 6, 6, 6, 352>(1.f, A, B, 0.f, C, smem_buf);
    }
 
-   constexpr auto smem = glass::nvidia::gemm_smem_size<float, 6, 6, 6, 352>();
+   constexpr auto smem = glass::nvidia::gemm_scratch_bytes<float, 6, 6, 6, 352>();
    k<<<1, 352, smem>>>(dA, dB, dC);
 
 Query the smallest valid ``TC`` for a ``(T, M, N, K, SM)`` tuple:
@@ -166,7 +166,7 @@ Linear solvers (cuSOLVERDx)
        glass::nvidia::posv<float, 7, 1, 256>(A, b, smem_buf);
    }
 
-   constexpr auto smem = glass::nvidia::posv_smem_size<float, 7, 1, 256>();
+   constexpr auto smem = glass::nvidia::posv_scratch_bytes<float, 7, 1, 256>();
    k<<<1, 256, smem>>>(dA, db);
 
 Available cuSOLVERDx wrappers: ``cholDecomp_InPlace``, ``trsm``, ``posv``, ``potrs``,

@@ -1,10 +1,13 @@
 Trailing Synchronization (``TRAILING_SYNC``)
 ============================================
 
-GLASS L3 functions (``gemm``, ``gemv``, ``row_strided_*``, ``gemm_batched_1d``,
-``gemm_strided_batched_1d``, ...) take a final boolean template parameter
-**``TRAILING_SYNC`` that defaults to ``true``**. It controls whether the
-function emits a ``__syncthreads()`` before returning.
+**Uniformity rule (project-wide design decision):** *every* public GLASS op takes
+a final boolean template parameter **``TRAILING_SYNC`` that defaults to ``true``**,
+on both the ``glass::`` and ``glass::cgrps::`` surfaces. It controls whether the
+function ends on a barrier (``__syncthreads()`` for the block surface,
+``cooperative_groups::sync`` for the cgrps surface) so the result is valid for ALL
+threads. One consistent mental model: a GLASS op acts like a standalone kernel
+unless you opt out.
 
 Default vs. opt-out
 -------------------
@@ -36,31 +39,26 @@ with a SIMT ``parallel_loop`` and want to collapse the two syncs into one.
 Where it applies
 ----------------
 
-The full surface as of 2026-05:
+As of the 2026-06-25 uniformity wave, ``TRAILING_SYNC`` is on **every** public op
+that has a *separable* trailing barrier — all of L1 (``reduce``/``dot``/elementwise/
+``axpy``/``copy``/``scal``/``swap``/``clip``/``set_const``/``ident``/``transpose``/
+``infnorm``/``asum``/``nrm2`` + the ``high_speed::``/``low_memory::`` reductions),
+L2 (``gemv``/``ger`` + ``gemv_strided``/``gemv_segmented``/``gemv_reduced``), and L3
+(``gemm`` + ``gemm_strided``/``gemm_batched_indexed``/``gemm_reduced``/``syrk``/
+``syr2k``/``syrk_reduced``/tensor/congruence) — plus the cuBLASDx-backed
+``glass::nvidia::`` paths.
 
-* **L1** (``l1.cuh``): ``reduce``, ``dot``, ``l2norm``. The *leading* sync that
-  protects CUB ``BlockReduce`` ``TempStorage`` from prior writes is **not**
-  gated — it is required for correctness. Only the *trailing* barrier (after the
-  thread-0 write of the reduction result) is.
-* **L2** (``l2.cuh``): ``gemv``, ``row_strided_gemv`` — primary templates and
-  every ``_GLASS_GEMV_NO_BD`` / ``_GLASS_GEMV_BD`` macro-emitted
-  specialization. The cuBLASDx-backed specializations emit **both**
-  ``TRAILING_SYNC=true`` and ``=false`` variants from a single
-  ``DEFINE_NVIDIA_GEMV*`` invocation.
-* **L3** (``l3.cuh``): ``gemm``, ``gemm_batched``, ``row_strided_gemm`` — same
-  dual-specialization pattern via ``_GLASS_GEMM_NO_BD`` / ``_GLASS_GEMM_BD`` /
-  ``_GLASS_GEMM_BATCHED_BD``.
-* **L3 SIMT** (``l3_simt.cuh``): ``gemm_batched_1d``,
-  ``gemm_strided_batched_1d``.
-* **LAPACK** (``lapack.cuh``): ``posv``, ``cholDecomp_InPlace``, ``gesv_no_pivot``,
-  ``gels``, ``trsm`` — primary templates and macro-emitted specializations.
+Interior barriers (between algorithm phases) are **required for correctness and are
+never gated** — only the final trailing barrier is.
 
-.. note::
+Documented exceptions (the flag is intentionally absent):
 
-   Interior ``__syncthreads()`` inside ``gemm`` / ``gemm_batched`` / LAPACK
-   factor-solve flows (between phases) is **required for correctness and is not
-   gated** on ``TRAILING_SYNC`` — only the final trailing barrier before return
-   is.
+* **Algorithm-terminated-by-a-barrier ops** — ``cholDecomp_InPlace`` /
+  ``invertMatrix`` / ``trsm`` / ``trsv`` / ``posv`` / ``ldlt``. Their final step is
+  *itself* a barrier inside the factorization loop, so there is no separable
+  trailing barrier to gate; they always end synced.
+* **``glass::warp::`` lockstep ops** — a single warp runs in lockstep, so a trailing
+  "sync" is a no-op (``__syncwarp`` at most); the flag would be vacuous.
 
 Testing
 -------

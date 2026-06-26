@@ -238,16 +238,16 @@ static double nv_op_time(Op op, T* A, T* B, T* C, T* x, T* y, int reps) {
 #if MEGA_NV_BLAS
     if constexpr (nv_blas_ok<T,N>()) {
         if (op == DOT) {
-            size_t smem = glass::nvidia::reduce_smem_size<T,NV_DOT_TB>();
+            size_t smem = glass::nvidia::reduce_scratch_bytes<T,NV_DOT_TB>();
             return nv_timed(kn_dot<T,N>, smem, [&]{ kn_dot<T,N><<<grid,NV_DOT_TB,smem>>>(x, y); }, reps);
         }
         if (op == GEMV) {
-            size_t smem = glass::nvidia::gemv_smem_size<T,N,N>();
+            size_t smem = glass::nvidia::gemv_scratch_bytes<T,N,N>();
             int tb = (int)glass::nvidia::gemv_threads<T,N,N>();
             return nv_timed(kn_gemv<T,N>, smem, [&]{ kn_gemv<T,N><<<grid,tb,smem>>>(A, x, y); }, reps);
         }
         if (op == GEMM) {
-            size_t smem = glass::nvidia::gemm_smem_size<T,N,N,N>();
+            size_t smem = glass::nvidia::gemm_scratch_bytes<T,N,N,N>();
             int tb = (int)glass::nvidia::gemm_threads<T,N,N,N>();
             return nv_timed(kn_gemm<T,N>, smem, [&]{ kn_gemm<T,N><<<grid,tb,smem>>>(A, B, C); }, reps);
         }
@@ -256,15 +256,15 @@ static double nv_op_time(Op op, T* A, T* B, T* C, T* x, T* y, int reps) {
 #if MEGA_NV_LAPACK
     if constexpr (nv_lapack_ok<T,N>()) {
         if (op == CHOL) {
-            size_t smem = glass::nvidia::cholDecomp_InPlace_smem_size<T,N,NV_LP_TB>();
+            size_t smem = glass::nvidia::cholDecomp_InPlace_scratch_bytes<T,N,NV_LP_TB>();
             return nv_timed(kn_chol<T,N>, smem, [&]{ kn_chol<T,N><<<grid,NV_LP_TB,smem>>>(A); }, reps);
         }
         if (op == TRSV) {
-            size_t smem = glass::nvidia::trsm_smem_size<T,N,1,NV_LP_TB>();
+            size_t smem = glass::nvidia::trsm_scratch_bytes<T,N,1,NV_LP_TB>();
             return nv_timed(kn_trsv<T,N>, smem, [&]{ kn_trsv<T,N><<<grid,NV_LP_TB,smem>>>(A, x); }, reps);
         }
         if (op == POSV) {
-            size_t smem = glass::nvidia::posv_smem_size<T,N,1,NV_LP_TB>();
+            size_t smem = glass::nvidia::posv_scratch_bytes<T,N,1,NV_LP_TB>();
             return nv_timed(kn_posv<T,N>, smem, [&]{ kn_posv<T,N><<<grid,NV_LP_TB,smem>>>(A, x); }, reps);
         }
     }

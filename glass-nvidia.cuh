@@ -5,7 +5,7 @@
  *
  * Include this (instead of, or in addition to, glass.cuh) to access the
  * vendor-accelerated single-block linear-algebra paths. It pulls in:
- *   - L1 (l1.cuh)         CUB-backed block reductions: reduce / dot / l2norm.
+ *   - L1 (l1.cuh)         CUB-backed block reductions: reduce / dot / nrm2.
  *   - query_simt.cuh      SIMT-only dispatch + diagnostic helpers
  *                         (should_use_cublasdx<>, print_dispatch<>, ...).
  *   - L3 SIMT (l3_simt.cuh)  1D-launch batched GEMMs (no cuBLASDx dependency).
@@ -67,7 +67,7 @@
 namespace glass {
 namespace nvidia {
 
-    // L1: CUB-backed reduce / dot / l2norm
+    // L1: CUB-backed reduce / dot / nrm2
     #include "./src/nvidia/l1.cuh"
 
     // SIMT-only query helpers: should_use_cublasdx<>, print_dispatch<>,
@@ -118,7 +118,7 @@ namespace nvidia {
     // ---------------------------------------------------------------------
     // required_smem_for_dispatch_*<> — explicit-intent aliases (round-2).
     //
-    // The *_smem_size<> functions already encode the dispatch decision
+    // The *_scratch_bytes<> functions already encode the dispatch decision
     // (return 0 for SIMT-routed shapes, cuBLASDx scratch size otherwise),
     // but these aliases make consumer code self-documenting:
     //
@@ -134,7 +134,7 @@ namespace nvidia {
     /**
      * @brief Shared-memory bytes the dispatched `gemm<...>` needs (host-callable).
      *
-     * Self-documenting alias for `gemm_smem_size<...>()`: returns 0 for shapes
+     * Self-documenting alias for `gemm_scratch_bytes<...>()`: returns 0 for shapes
      * the auto-dispatch routes to SIMT, or the cuBLASDx scratch size otherwise.
      *
      * @tparam T             Scalar type.
@@ -154,13 +154,13 @@ namespace nvidia {
               layout LC = layout::col_major,
               uint32_t SM_VAL = SMS>
     constexpr std::size_t required_smem_for_dispatch_gemm() {
-        return gemm_smem_size<T, M, N, K, BLOCK_THREADS, LA, LB, LC, SM_VAL>();
+        return gemm_scratch_bytes<T, M, N, K, BLOCK_THREADS, LA, LB, LC, SM_VAL>();
     }
 
     /**
      * @brief Shared-memory bytes the dispatched `gemv<...>` needs (host-callable).
      *
-     * Self-documenting alias for `gemv_smem_size<...>()`: 0 when SIMT-routed,
+     * Self-documenting alias for `gemv_scratch_bytes<...>()`: 0 when SIMT-routed,
      * cuBLASDx scratch size otherwise.
      *
      * @tparam T             Scalar type.
@@ -179,13 +179,13 @@ namespace nvidia {
               layout LC = layout::col_major,
               uint32_t SM_VAL = SMS>
     constexpr std::size_t required_smem_for_dispatch_gemv() {
-        return gemv_smem_size<T, M, N, BLOCK_THREADS, LA, LB, LC, SM_VAL>();
+        return gemv_scratch_bytes<T, M, N, BLOCK_THREADS, LA, LB, LC, SM_VAL>();
     }
 
     /**
-     * @brief Shared-memory bytes the dispatched `row_strided_gemm<...>` needs (host-callable).
+     * @brief Shared-memory bytes the dispatched `gemm_strided<...>` needs (host-callable).
      *
-     * Self-documenting alias for `row_strided_gemm_smem_size<...>()`: 0 when
+     * Self-documenting alias for `gemm_strided_scratch_bytes<...>()`: 0 when
      * SIMT-routed (strides used directly), packing + cuBLASDx scratch otherwise.
      *
      * @tparam T             Scalar type.
@@ -201,21 +201,21 @@ namespace nvidia {
      * @tparam SM_VAL        Target SM architecture.
      */
     template <typename T, uint32_t M, uint32_t N, uint32_t K,
-              uint32_t A_RS = M, uint32_t B_RS = N,
+              uint32_t A_RS = M, uint32_t B_RS = K,
               uint32_t BLOCK_THREADS = 0,
               layout LA = layout::col_major,
               layout LB = layout::col_major,
               layout LC = layout::col_major,
               uint32_t SM_VAL = SMS>
-    constexpr std::size_t required_smem_for_dispatch_row_strided_gemm() {
-        return row_strided_gemm_smem_size<T, M, N, K, A_RS, B_RS,
+    constexpr std::size_t required_smem_for_dispatch_gemm_strided() {
+        return gemm_strided_scratch_bytes<T, M, N, K, A_RS, B_RS,
                                           BLOCK_THREADS, LA, LB, LC, SM_VAL>();
     }
 
     /**
-     * @brief Shared-memory bytes the dispatched `row_strided_gemv<...>` needs (host-callable).
+     * @brief Shared-memory bytes the dispatched `gemv_strided<...>` needs (host-callable).
      *
-     * Self-documenting alias for `row_strided_gemv_smem_size<...>()`: 0 when
+     * Self-documenting alias for `gemv_strided_scratch_bytes<...>()`: 0 when
      * SIMT-routed, A-packing + cuBLASDx scratch otherwise.
      *
      * @tparam T             Scalar type.
@@ -234,8 +234,8 @@ namespace nvidia {
               layout LB = layout::col_major,
               layout LC = layout::col_major,
               uint32_t SM_VAL = SMS>
-    constexpr std::size_t required_smem_for_dispatch_row_strided_gemv() {
-        return row_strided_gemv_smem_size<T, M, N, ROW_STRIDE,
+    constexpr std::size_t required_smem_for_dispatch_gemv_strided() {
+        return gemv_strided_scratch_bytes<T, M, N, ROW_STRIDE,
                                           BLOCK_THREADS, LA, LB, LC, SM_VAL>();
     }
 #endif // GLASS_HAVE_CUBLASDX

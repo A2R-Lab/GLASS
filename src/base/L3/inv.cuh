@@ -1,4 +1,5 @@
 #pragma once
+#include "../barrier.cuh"
 #include <cstdint>
 
 /**
@@ -13,31 +14,38 @@
  * @param dimA    Matrix dimension (A is dimA x dimA).
  * @param A       In/out augmented `[A | I]` buffer (column-major, dimA x 2*dimA);
  *                on return its right half holds `A^-1`.
- * @param s_temp  Shared scratch of `(2*dimA + 1) * sizeof(T)` bytes.
+ * @param s_scratch  Shared scratch of `(2*dimA + 1) * sizeof(T)` bytes.
  */
 // Gauss-Jordan inversion of an augmented dimA×(2*dimA) matrix in-place.
 // Expected layout: column-major [A | I]; on return columns dimA..2*dimA-1 hold A^-1.
-// s_temp: (2*dimA+1)*sizeof(T) bytes.
-template <typename T>
-__device__ void invertMatrix(uint32_t dimA, T *A, T *s_temp)
+// s_scratch: (2*dimA+1)*sizeof(T) bytes.
+// Shared body: Gauss-Jordan inversion; barrier policy supplies rank/size + the
+// two per-pivot syncs, shared by the glass:: and cgrps:: surfaces.
+template <typename Bar, typename T>
+__device__ void invertMatrix_impl(Bar bar, uint32_t dimA, T *A, T *s_scratch)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = bar.rank(), size = bar.size();
     for (unsigned pivRC = 0; pivRC < dimA; pivRC++) {
         unsigned pivOff = pivRC * dimA;
         T pvInv = static_cast<T>(1) / A[pivRC + pivOff];
-        for (unsigned ind = rank; ind < 2*dimA+1; ind++) {
+        for (unsigned ind = rank; ind < 2*dimA+1; ind += size) {
             unsigned AInd = (ind < dimA) ? (ind + pivOff) : (pivRC + pivOff + (ind-dimA)*dimA);
-            s_temp[ind] = A[AInd];
+            s_scratch[ind] = A[AInd];
         }
-        __syncthreads();
+        bar.sync();
         for (unsigned ind = rank; ind < dimA*(dimA+1); ind += size) {
             unsigned row = ind % dimA, col = ind / dimA, coff = ind - row;
             if (row == pivRC) A[row + pivOff + coff] *= pvInv;
-            else A[row + pivOff + coff] -= s_temp[row]*pvInv*s_temp[dimA+col];
+            else A[row + pivOff + coff] -= s_scratch[row]*pvInv*s_scratch[dimA+col];
         }
-        __syncthreads();
+        bar.sync();
     }
+}
+
+template <typename T>
+__device__ void invertMatrix(uint32_t dimA, T *A, T *s_scratch)
+{
+    invertMatrix_impl<BlockBarrier, T>(BlockBarrier{}, dimA, A, s_scratch);
 }
 
 /**
@@ -50,16 +58,33 @@ __device__ void invertMatrix(uint32_t dimA, T *A, T *s_temp)
  * @tparam N  Matrix dimension (A is N x N).
  * @param A       In/out augmented `[A | I]` buffer (column-major, N x 2*N);
  *                on return its right half holds `A^-1`.
- * @param s_temp  Shared scratch of `(2*N + 1) * sizeof(T)` bytes.
+ * @param s_scratch  Shared scratch of `(2*N + 1) * sizeof(T)` bytes.
  */
 template <typename T, uint32_t N>
-__device__ void invertMatrix(T *A, T *s_temp)
+__device__ void invertMatrix(T *A, T *s_scratch)
 {
-    invertMatrix<T>(N, A, s_temp);
+    invertMatrix<T>(N, A, s_scratch);
 }
 
 /**
- * @brief Scratch element count (in units of `T`) for `invertMatrix_pivoted`.
+ * @brief Scratch size in bytes for `invertMatrix` (augmented `[A | I]`).
+ *
+ * The unpivoted Gauss-Jordan path saves the active pivot column + row window plus
+ * one slot: `2*dimA + 1` elements of `T`. Allocate
+ * `invertMatrix_scratch_bytes<T>(dimA)` for the `s_scratch` argument.
+ *
+ * @tparam T  Scalar type.
+ * @param dimA  Matrix dimension (A is dimA x dimA).
+ * @return Bytes to allocate for `invertMatrix`'s `s_scratch`.
+ */
+template <typename T>
+__host__ __device__ constexpr std::size_t invertMatrix_scratch_bytes(uint32_t dimA)
+{
+    return static_cast<std::size_t>(2 * dimA + 1) * sizeof(T);
+}
+
+/**
+ * @brief Scratch size in bytes for `invertMatrix_pivoted`.
  *
  * Row pivoting permutes the already-built inverse columns, so (unlike the
  * unpivoted path) the elimination cannot use the reduced active-column window —
@@ -71,12 +96,12 @@ __device__ void invertMatrix(T *A, T *s_temp)
  *
  * @tparam T  Scalar type.
  * @param dimA  Matrix dimension (A is dimA x dimA).
- * @return Element count (of `T`) to allocate for `invertMatrix_pivoted`'s `s_temp`.
+ * @return Bytes to allocate for `invertMatrix_pivoted`'s `s_scratch`.
  */
 template <typename T>
-constexpr uint32_t invertMatrix_pivoted_scratch_size(uint32_t dimA)
+__host__ __device__ constexpr std::size_t invertMatrix_pivoted_scratch_bytes(uint32_t dimA)
 {
-    return 3 * dimA + 1;
+    return static_cast<std::size_t>(3 * dimA + 1) * sizeof(T);
 }
 
 /**
@@ -100,7 +125,7 @@ constexpr uint32_t invertMatrix_pivoted_scratch_size(uint32_t dimA)
  *
  * @par Parallelism / barriers
  * Single-block, strided (`ind += size`), thread-count invariant. Per pivot step:
- *   1. save the pivot column + pivot row + augmented column into `s_temp`;
+ *   1. save the pivot column + pivot row + augmented column into `s_scratch`;
  *   2. block-wide argmax over the pivot-column tail `[k, dimA)` (deterministic
  *      lower-index tie-break, matching `glass::iamax`) chooses the pivot row `r`,
  *      broadcast to all threads through a shared slot + `__syncthreads()` (never
@@ -112,7 +137,7 @@ constexpr uint32_t invertMatrix_pivoted_scratch_size(uint32_t dimA)
  * are block-visible before they are consumed.
  *
  * @par Scratch
- * `s_temp` must hold `invertMatrix_pivoted_scratch_size<T>(dimA)` = `3*dimA + 1`
+ * `s_scratch` must hold `invertMatrix_pivoted_scratch_bytes<T>(dimA)` = `3*dimA + 1`
  * elements of `T`: `dimA` for the pivot column, `2*dimA` for the full pivot row,
  * and one trailing slot to broadcast the chosen pivot-row index.
  *
@@ -120,21 +145,21 @@ constexpr uint32_t invertMatrix_pivoted_scratch_size(uint32_t dimA)
  * @param dimA    Matrix dimension (A is dimA x dimA).
  * @param A       In/out augmented `[A | I]` buffer (column-major, dimA x 2*dimA);
  *                on return its right half holds `A^-1`.
- * @param s_temp  Shared scratch of `(3*dimA + 1) * sizeof(T)` bytes.
+ * @param s_scratch  Shared scratch of `(3*dimA + 1) * sizeof(T)` bytes.
  */
 template <typename T>
-__device__ void invertMatrix_pivoted(uint32_t dimA, T *A, T *s_temp)
+__device__ void invertMatrix_pivoted(uint32_t dimA, T *A, T *s_scratch)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
     const unsigned W = 2*dimA;          // augmented width
-    // s_temp layout (3*dimA + 1 slots):
+    // s_scratch layout (3*dimA + 1 slots):
     //   [0 .. dimA)       pivot column
     //   [dimA .. 3*dimA)  full pivot row (all 2*dimA augmented columns)
     //   [3*dimA]          broadcast slot for the chosen pivot-row index
-    T *s_pcol = s_temp;
-    T *s_prow = &s_temp[dimA];
-    T *s_piv  = &s_temp[3*dimA];
+    T *s_pcol = s_scratch;
+    T *s_prow = &s_scratch[dimA];
+    T *s_piv  = &s_scratch[3*dimA];
     for (unsigned pivRC = 0; pivRC < dimA; pivRC++) {
         unsigned pivOff = pivRC * dimA;
 
@@ -193,13 +218,13 @@ __device__ void invertMatrix_pivoted(uint32_t dimA, T *A, T *s_temp)
  * @tparam N  Matrix dimension (A is N x N).
  * @param A       In/out augmented `[A | I]` buffer (column-major, N x 2*N);
  *                on return its right half holds `A^-1`.
- * @param s_temp  Shared scratch of `(3*N + 1) * sizeof(T)` bytes
- *                (= `invertMatrix_pivoted_scratch_size<T>(N)`).
+ * @param s_scratch  Shared scratch of `(3*N + 1) * sizeof(T)` bytes
+ *                (= `invertMatrix_pivoted_scratch_bytes<T>(N)`).
  */
 template <typename T, uint32_t N>
-__device__ void invertMatrix_pivoted(T *A, T *s_temp)
+__device__ void invertMatrix_pivoted(T *A, T *s_scratch)
 {
-    invertMatrix_pivoted<T>(N, A, s_temp);
+    invertMatrix_pivoted<T>(N, A, s_scratch);
 }
 
 /**
@@ -216,7 +241,7 @@ __device__ void invertMatrix_pivoted(T *A, T *s_temp)
  * (Q_k, Q_kp1, R_k → K=3).
  *
  * Scratch layout: matrix `m` owns the contiguous span
- * `[Σ_{j<m}(2*dims[j]+1), Σ_{j<=m}(2*dims[j]+1))` of `s_temp` (each matrix needs
+ * `[Σ_{j<m}(2*dims[j]+1), Σ_{j<=m}(2*dims[j]+1))` of `s_scratch` (each matrix needs
  * `2*dims[m]+1` slots: `dims[m]` for its pivot column, `dims[m]+1` for its pivot
  * row plus the augmented column). The per-matrix base offset is the prefix sum
  * `Σ_{j<m}(2*dims[j]+1)`, recomputed locally per thread by scanning `dims[]`
@@ -230,10 +255,10 @@ __device__ void invertMatrix_pivoted(T *A, T *s_temp)
  * @param MAX_DIM  `max(dims[0..K-1])` — the shared pivot-loop length (precondition).
  * @param mats     Array of K in/out augmented `[V | I]` buffers (column-major,
  *                 `dims[m] x 2*dims[m]`); on return each right half holds its inverse.
- * @param s_temp   Shared scratch of `(Σ_m (2*dims[m]+1)) * sizeof(T)` bytes.
+ * @param s_scratch   Shared scratch of `(Σ_m (2*dims[m]+1)) * sizeof(T)` bytes.
  */
 template <typename T>
-__device__ void invertMatrix(uint32_t K, const uint32_t *dims, uint32_t MAX_DIM, T **mats, T *s_temp)
+__device__ void invertMatrix(uint32_t K, const uint32_t *dims, uint32_t MAX_DIM, T **mats, T *s_scratch)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
@@ -245,7 +270,7 @@ __device__ void invertMatrix(uint32_t K, const uint32_t *dims, uint32_t MAX_DIM,
             uint32_t dim = dims[m];
             if (pivRC < dim) {
                 T *M = mats[m];
-                T *s_mem = &s_temp[sOff];
+                T *s_mem = &s_scratch[sOff];
                 unsigned pivOff = pivRC * dim;
                 // pivot column (dim entries) + pivot row & augmented column (dim+1 entries)
                 for (unsigned ind = rank; ind < dim; ind += size)
@@ -262,7 +287,7 @@ __device__ void invertMatrix(uint32_t K, const uint32_t *dims, uint32_t MAX_DIM,
             uint32_t dim = dims[m];
             if (pivRC < dim) {
                 T *M = mats[m];
-                T *s_mem = &s_temp[sOff];
+                T *s_mem = &s_scratch[sOff];
                 unsigned pivOff = pivRC * dim;
                 for (unsigned ind = rank; ind < dim*(dim + 1); ind += size) {
                     unsigned row = ind % dim, col = ind / dim;
@@ -288,14 +313,14 @@ __device__ void invertMatrix(uint32_t K, const uint32_t *dims, uint32_t MAX_DIM,
  * @param dimA,dimB  Matrix dimensions.
  * @param MAX_DIM    `max(dimA, dimB)` — the shared pivot-loop length.
  * @param A,B        In/out augmented `[V | I]` buffers (column-major, dim x 2*dim).
- * @param s_temp     Shared scratch of `(2*dimA + 2*dimB + 2) * sizeof(T)` bytes.
+ * @param s_scratch     Shared scratch of `(2*dimA + 2*dimB + 2) * sizeof(T)` bytes.
  */
 template <typename T>
-__device__ void invertMatrix(uint32_t dimA, uint32_t dimB, uint32_t MAX_DIM, T *A, T *B, T *s_temp)
+__device__ void invertMatrix(uint32_t dimA, uint32_t dimB, uint32_t MAX_DIM, T *A, T *B, T *s_scratch)
 {
     uint32_t dims[2] = {dimA, dimB};
     T *mats[2] = {A, B};
-    invertMatrix<T>(2, dims, MAX_DIM, mats, s_temp);
+    invertMatrix<T>(2, dims, MAX_DIM, mats, s_scratch);
 }
 
 /**
@@ -310,14 +335,14 @@ __device__ void invertMatrix(uint32_t dimA, uint32_t dimB, uint32_t MAX_DIM, T *
  * @param dimA,dimB,dimC  Matrix dimensions.
  * @param MAX_DIM         `max(dimA, dimB, dimC)` — the shared pivot-loop length.
  * @param A,B,C           In/out augmented `[V | I]` buffers (column-major, dim x 2*dim).
- * @param s_temp          Shared scratch of `(2*dimA + 2*dimB + 2*dimC + 3) * sizeof(T)` bytes.
+ * @param s_scratch          Shared scratch of `(2*dimA + 2*dimB + 2*dimC + 3) * sizeof(T)` bytes.
  */
 template <typename T>
-__device__ void invertMatrix(uint32_t dimA, uint32_t dimB, uint32_t dimC, uint32_t MAX_DIM, T *A, T *B, T *C, T *s_temp)
+__device__ void invertMatrix(uint32_t dimA, uint32_t dimB, uint32_t dimC, uint32_t MAX_DIM, T *A, T *B, T *C, T *s_scratch)
 {
     uint32_t dims[3] = {dimA, dimB, dimC};
     T *mats[3] = {A, B, C};
-    invertMatrix<T>(3, dims, MAX_DIM, mats, s_temp);
+    invertMatrix<T>(3, dims, MAX_DIM, mats, s_scratch);
 }
 
 
@@ -335,13 +360,13 @@ __device__ void invertMatrix(uint32_t dimA, uint32_t dimB, uint32_t dimC, uint32
  * @param dimA    Matrix dimension (A is dimA x dimA).
  * @param A       In/out column-major dimA x dimA matrix; on return holds `A^{-1}`.
  * @param Ainv    Workspace column-major dimA x dimA; on return also holds `A^{-1}`.
- * @param s_temp  Shared scratch of `3 * dimA * sizeof(T)` bytes.
+ * @param s_scratch  Shared scratch of `3 * dimA * sizeof(T)` bytes.
  */
 // Block-cooperative Gauss-Jordan inversion of a dimA×dimA matrix.
 //   A:    in/out, column-major dimA×dimA.  On return: A := A^{-1}.
 //   Ainv: workspace, column-major dimA×dimA (overwritten).  On return: A^{-1}.
 //          (Some callers want A unchanged + a separate inverse — they get both.)
-//   s_temp: shared scratch of size (3*dimA)*sizeof(T).
+//   s_scratch: shared scratch of size (3*dimA)*sizeof(T).
 // Pivot loop is serial (pivot-to-pivot data dependency); within each pivot, the
 // dimA save and the dimA*dimA cell update are parallelized across the block.
 //
@@ -349,8 +374,25 @@ __device__ void invertMatrix(uint32_t dimA, uint32_t dimB, uint32_t dimC, uint32
 // [I | A^{-1}] reduction but without materializing the augmented layout. A and
 // Ainv are tracked in separate buffers so callers that need A^{-1} alongside
 // the original A get it without extra copies.
+
+/**
+ * @brief Scratch size in bytes for `invertMatrix_dense`.
+ *
+ * The dual-buffer dense path saves one `3*dimA`-element pivot working set. Allocate
+ * `invertMatrix_dense_scratch_bytes<T>(dimA)` for the `s_scratch` argument.
+ *
+ * @tparam T  Scalar type.
+ * @param dimA  Matrix dimension (A is dimA x dimA).
+ * @return Bytes to allocate for `invertMatrix_dense`'s `s_scratch`.
+ */
 template <typename T>
-__device__ void invertMatrix_dense(uint32_t dimA, T *A, T *Ainv, T *s_temp)
+__host__ __device__ constexpr std::size_t invertMatrix_dense_scratch_bytes(uint32_t dimA)
+{
+    return static_cast<std::size_t>(3 * dimA) * sizeof(T);
+}
+
+template <typename T>
+__device__ void invertMatrix_dense(uint32_t dimA, T *A, T *Ainv, T *s_scratch)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
@@ -365,23 +407,23 @@ __device__ void invertMatrix_dense(uint32_t dimA, T *A, T *Ainv, T *s_temp)
         // Block-cooperative save: pivot row of A, pivot row of Ainv, pivot column of A.
         // 3*dimA entries → block-strided thread distribution.
         for (uint32_t ind = rank; ind < dimA; ind += size) {
-            s_temp[ind]            = A[pivRC + dimA * ind];          // pivot row of A
-            s_temp[ind + dimA]     = Ainv[pivRC + dimA * ind];        // pivot row of Ainv
-            s_temp[ind + dimA * 2] = A[ind + pivColOffset];           // pivot column of A
+            s_scratch[ind]            = A[pivRC + dimA * ind];          // pivot row of A
+            s_scratch[ind + dimA]     = Ainv[pivRC + dimA * ind];        // pivot row of Ainv
+            s_scratch[ind + dimA * 2] = A[ind + pivColOffset];           // pivot column of A
         }
         __syncthreads();
-        T pvInv = static_cast<T>(1) / s_temp[pivRC];
+        T pvInv = static_cast<T>(1) / s_scratch[pivRC];
         // Block-cooperative Gauss-Jordan update across dimA*dimA cells.
         // Each thread owns a unique (row, col) so writes are race-free.
         for (uint32_t ind = rank; ind < dimA * dimA; ind += size) {
             uint32_t row = ind % dimA, col = ind / dimA;
             if (row == pivRC) {
-                A[row + dimA * col]    = s_temp[col] * pvInv;
-                Ainv[row + dimA * col] = s_temp[col + dimA] * pvInv;
+                A[row + dimA * col]    = s_scratch[col] * pvInv;
+                Ainv[row + dimA * col] = s_scratch[col + dimA] * pvInv;
             } else {
-                T multiplier = s_temp[row + dimA * 2] * pvInv;
-                A[row + dimA * col]    -= multiplier * s_temp[col];
-                Ainv[row + dimA * col] -= multiplier * s_temp[col + dimA];
+                T multiplier = s_scratch[row + dimA * 2] * pvInv;
+                A[row + dimA * col]    -= multiplier * s_scratch[col];
+                Ainv[row + dimA * col] -= multiplier * s_scratch[col + dimA];
             }
         }
         __syncthreads();
@@ -399,10 +441,10 @@ __device__ void invertMatrix_dense(uint32_t dimA, T *A, T *Ainv, T *s_temp)
  * @tparam N  Matrix dimension (A is N x N).
  * @param A       In/out column-major N x N matrix; on return holds `A^{-1}`.
  * @param Ainv    Workspace column-major N x N; on return also holds `A^{-1}`.
- * @param s_temp  Shared scratch of `3 * N * sizeof(T)` bytes.
+ * @param s_scratch  Shared scratch of `3 * N * sizeof(T)` bytes.
  */
 template <typename T, uint32_t N>
-__device__ void invertMatrix_dense(T *A, T *Ainv, T *s_temp)
+__device__ void invertMatrix_dense(T *A, T *Ainv, T *s_scratch)
 {
-    invertMatrix_dense<T>(N, A, Ainv, s_temp);
+    invertMatrix_dense<T>(N, A, Ainv, s_scratch);
 }

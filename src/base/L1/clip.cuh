@@ -1,5 +1,16 @@
 #pragma once
+#include "../barrier.cuh"
 #include <cstdint>
+
+// shared body: element-wise clamp `x = clamp(x, l, u)`
+template <typename Bar, typename T, bool TRAILING_SYNC = true>
+__device__ void clip_impl(Bar bar, uint32_t n, T *x, T *l, T *u)
+{
+    uint32_t rank = bar.rank(), size = bar.size();
+    for (uint32_t i = rank; i < n; i += size)
+        x[i] = max(l[i], min(x[i], u[i]));
+    if constexpr (TRAILING_SYNC) bar.sync();
+}
 
 /**
  * @brief Element-wise clamp in place: `x = clamp(x, l, u)`.
@@ -13,13 +24,10 @@
  * @param l  Per-element lower bounds, length `n`.
  * @param u  Per-element upper bounds, length `n`.
  */
-template <typename T>
+template <typename T, bool TRAILING_SYNC = true>
 __device__ void clip(uint32_t n, T *x, T *l, T *u)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    for (uint32_t i = rank; i < n; i += size)
-        x[i] = max(l[i], min(x[i], u[i]));
+    clip_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, n, x, l, u);
 }
 
 /**
@@ -33,11 +41,8 @@ __device__ void clip(uint32_t n, T *x, T *l, T *u)
  * @param l  Per-element lower bounds, length `N`.
  * @param u  Per-element upper bounds, length `N`.
  */
-template <typename T, uint32_t N>
+template <typename T, uint32_t N, bool TRAILING_SYNC = true>
 __device__ void clip(T *x, T *l, T *u)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    for (uint32_t i = rank; i < N; i += size)
-        x[i] = max(l[i], min(x[i], u[i]));
+    clip_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, N, x, l, u);
 }

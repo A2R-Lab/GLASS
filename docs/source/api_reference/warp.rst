@@ -29,7 +29,7 @@ rendered signatures appear on the :doc:`l1`, :doc:`l2`, and :doc:`l3` pages.
   homogeneous-transform multiplies).
 * ``glass::warp::cholDecomp_InPlace`` — small SPD Cholesky factor.
 * ``glass::warp::trsv`` — flagged triangular solve (``LOWER`` / ``UNIT`` /
-  ``TRANS``), subsuming the lower ``glass::warp::trsm`` /
+  ``TRANSPOSE``), subsuming the lower ``glass::warp::trsm`` /
   ``glass::warp::trsm_transpose``.
 * ``glass::warp::posv`` — the **composed warp-per-problem SPD solve**
   (Cholesky → forward/back ``trsv``), proving the L1/L2/L3 glue composes into a

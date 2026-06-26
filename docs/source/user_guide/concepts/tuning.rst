@@ -13,7 +13,7 @@ compile time (see :doc:`backend_dispatch`). The decision lives in
 3. A static per-API heuristic for unmeasured shapes.
 
 Five per-API decision templates live in ``_glass_tuning`` (gemm, gemv,
-gemm_batched_1d, row_strided_gemm, row_strided_gemv); each can be specialized
+gemm_batched_1d, gemm_strided, gemv_strided); each can be specialized
 independently for a given (shape, SM).
 
 Picking a backend: measured defaults
@@ -115,8 +115,8 @@ Quick start
 
    cd GLASS
    python3 bench/autotune.py
-   # → measures all 5 auto-dispatching primaries (gemm, gemv, row_strided_gemv,
-   #   row_strided_gemm, gemm_batched_1d) across each one's default shape grid
+   # → measures all 5 auto-dispatching primaries (gemm, gemv, gemv_strided,
+   #   gemm_strided, gemm_batched_1d) across each one's default shape grid
    # → writes bench/tuning/<hostname>.cuh with the per-host specializations
 
 The script:
@@ -137,7 +137,7 @@ Restricting the run:
 .. code-block:: bash
 
    python3 bench/autotune.py --apis gemm,gemv
-   python3 bench/autotune.py --apis row_strided_gemv --shapes "6,6,8;14,14,16"
+   python3 bench/autotune.py --apis gemv_strided --shapes "6,6,8;14,14,16"
    python3 bench/autotune.py --apis gemv --shapes '6,6;14,14;32,32' --iters 20000 --dry-run
 
 ``--shapes`` takes a ``;``-separated tuple list; the arity must match the chosen

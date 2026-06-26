@@ -12,6 +12,8 @@ import tempfile
 import numpy as np
 import pytest
 
+from conftest import make_spd  # shared; pass rng=RNG for varied draws
+
 RNG = np.random.default_rng(7)
 
 RTOL = 1e-2
@@ -30,11 +32,6 @@ CASES = [
     (3, [12, 12, 6]),
     (5, [8, 3, 8, 2, 5]),
 ]
-
-
-def make_spd(n):
-    A = RNG.random((n, n)).astype(np.float32)
-    return (A @ A.T + n * np.eye(n, dtype=np.float32)).astype(np.float32)
 
 
 def _aug(M, d):
@@ -78,7 +75,7 @@ def fused_bin(bins):
 @pytest.mark.parametrize("K,dims", CASES)
 @pytest.mark.parametrize("threads", THREAD_SWEEP)
 def test_fused_inv(fused_bin, K, dims, threads):
-    mats = [make_spd(d) for d in dims]
+    mats = [make_spd(d, rng=RNG) for d in dims]
     inputs = [_aug(M, d) for M, d in zip(mats, dims)]
     res = _run(fused_bin, "inv", threads, dims, inputs)
     assert len(res) == K
@@ -92,7 +89,7 @@ def test_fused_inv(fused_bin, K, dims, threads):
 @pytest.mark.parametrize("K,dims", CASES)
 @pytest.mark.parametrize("threads", THREAD_SWEEP)
 def test_fused_chol(fused_bin, K, dims, threads):
-    mats = [make_spd(d) for d in dims]
+    mats = [make_spd(d, rng=RNG) for d in dims]
     inputs = [np.asfortranarray(M).ravel(order="F") for M in mats]
     res = _run(fused_bin, "chol", threads, dims, inputs)
     assert len(res) == K

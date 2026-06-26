@@ -8,7 +8,7 @@ see :doc:`../user_guide/concepts/backend_dispatch`. The L2/L3/LAPACK paths
 require NVIDIA MathDx (``MATHDX_ROOT``) — see
 :doc:`../user_guide/getting_started/installation`.
 
-Each call has a companion **host-side** query helper (``*_smem_size``,
+Each call has a companion **host-side** query helper (``*_scratch_bytes``,
 ``*_threads``, ``*_block_threads_valid``) used to size the launch.
 
 L1 (CUB-backed reductions)

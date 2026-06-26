@@ -1,4 +1,5 @@
 #pragma once
+#include "../barrier.cuh"
 #include <cstdint>
 
 /**
@@ -12,11 +13,13 @@
  * @param n  Number of elements.
  * @param x  In/out vector of length `n`; the result lands in `x[0]`.
  */
-template <typename T>
-__device__ void infnorm(uint32_t n, T *x)
+// Shared body: max|x[i]| via halving reduce; result in x[0]. Barrier policy
+// supplies rank/size + internal/trailing sync, shared by glass:: and cgrps::.
+template <typename Bar, typename T, bool TRAILING_SYNC = true>
+__device__ void infnorm_impl(Bar bar, uint32_t n, T *x)
 {
-    uint32_t ind = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t stride = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t ind = bar.rank();
+    uint32_t stride = bar.size();
     uint32_t left = n;
     bool odd;
     while (left > 3) {
@@ -25,9 +28,16 @@ __device__ void infnorm(uint32_t n, T *x)
         for (uint32_t i = ind; i < left; i += stride)
             x[i] = max(abs(x[i]), abs(x[i + left]));
         if (ind == 0 && odd) x[0] = max(abs(x[0]), abs(x[2*left]));
-        __syncthreads();
+        bar.sync();
     }
     if (ind == 0) { for (uint32_t i = 1; i < left; i++) x[0] = max(abs(x[0]), abs(x[i])); }
+    if constexpr (TRAILING_SYNC) bar.sync();
+}
+
+template <typename T, bool TRAILING_SYNC = true>
+__device__ void infnorm(uint32_t n, T *x)
+{
+    infnorm_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, n, x);
 }
 
 /**
@@ -40,20 +50,8 @@ __device__ void infnorm(uint32_t n, T *x)
  * @tparam N  Number of elements (compile-time constant).
  * @param x  In/out vector of length `N`; the result lands in `x[0]`.
  */
-template <typename T, uint32_t N>
+template <typename T, uint32_t N, bool TRAILING_SYNC = true>
 __device__ void infnorm(T *x)
 {
-    uint32_t ind = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t stride = blockDim.x * blockDim.y * blockDim.z;
-    uint32_t left = N;
-    bool odd;
-    while (left > 3) {
-        odd = left % 2;
-        left = (left - odd) / 2;
-        for (uint32_t i = ind; i < left; i += stride)
-            x[i] = max(abs(x[i]), abs(x[i + left]));
-        if (ind == 0 && odd) x[0] = max(abs(x[0]), abs(x[2*left]));
-        __syncthreads();
-    }
-    if (ind == 0) { for (uint32_t i = 1; i < left; i++) x[0] = max(abs(x[0]), abs(x[i])); }
+    infnorm_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, N, x);
 }

@@ -84,10 +84,10 @@ __global__ void k_reduce_partial_hs(int n, float* x, float* out, float* scratch)
     out[0] = total;   // broadcast check: every thread holds the same `total`
 }
 
-__global__ void k_l2norm_cg(int n, float* x) { glass::cgrps::l2norm(n, x); }
-__global__ void k_l2norm_simple_lm(int n, float* x) { glass::low_memory::l2norm(n, x); }
-__global__ void k_l2norm_simple_hs(int n, float* x, float* scratch) {
-    glass::high_speed::l2norm(n, x, scratch);
+__global__ void k_nrm2_cg(int n, float* x) { glass::cgrps::nrm2(n, x); }
+__global__ void k_nrm2_simple_lm(int n, float* x) { glass::low_memory::nrm2(n, x); }
+__global__ void k_nrm2_simple_hs(int n, float* x, float* scratch) {
+    glass::high_speed::nrm2(n, x, scratch);
 }
 
 __global__ void k_infnorm_cg(int n, float* x) { glass::cgrps::infnorm(n, x); }
@@ -339,14 +339,14 @@ int main(int argc, char** argv) {
         cudaDeviceSynchronize();
         print_device_vec(dout, 1);
 
-    } else if (strcmp(op, "l2norm") == 0) {
+    } else if (strcmp(op, "nrm2") == 0) {
         float* dx = read_device_vec(argv[4], n);
         if (is_cg(ver)) {
-            k_l2norm_cg<<<1, THREADS>>>(n, dx);
+            k_nrm2_cg<<<1, THREADS>>>(n, dx);
         } else if (is_lm(ver)) {
-            k_l2norm_simple_lm<<<1, THREADS>>>(n, dx);
+            k_nrm2_simple_lm<<<1, THREADS>>>(n, dx);
         } else {
-            k_l2norm_simple_hs<<<1, THREADS>>>(n, dx, d_scratch);
+            k_nrm2_simple_hs<<<1, THREADS>>>(n, dx, d_scratch);
         }
         cudaDeviceSynchronize();
         print_device_vec(dx, 1);

@@ -100,7 +100,7 @@ static void bench_batch(int iters) {
     struct timespec t0, t1;
 
     // Naive loop (one block, sequential per batch).
-    constexpr size_t naive_smem = glass::nvidia::gemm_smem_size<float, M, N, K, THREADS>();
+    constexpr size_t naive_smem = glass::nvidia::gemm_scratch_bytes<float, M, N, K, THREADS>();
     clock_gettime(CLOCK_MONOTONIC, &t0);
     k_naive_loop<BATCH><<<1, THREADS, naive_smem>>>(dA_ptrs, dB_ptrs, dC_ptrs, dSink, iters);
     cudaDeviceSynchronize();
@@ -110,7 +110,7 @@ static void bench_batch(int iters) {
            elapsed_us(t0, t1) / iters / BATCH);
 
     // Batched (one block, dim3(TC, BATCH)).
-    constexpr size_t batch_smem = glass::nvidia::gemm_batched_smem_size<float, M, N, K, BATCH, THREADS>();
+    constexpr size_t batch_smem = glass::nvidia::gemm_batched_scratch_bytes<float, M, N, K, BATCH, THREADS>();
     dim3 batch_block(THREADS, BATCH);
     clock_gettime(CLOCK_MONOTONIC, &t0);
     k_batched<BATCH><<<1, batch_block, batch_smem>>>(dA_ptrs, dB_ptrs, dC_ptrs, dSink, iters);

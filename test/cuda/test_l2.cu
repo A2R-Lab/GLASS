@@ -43,45 +43,42 @@ __global__ void k_gemv_t_simple(int m, int n, float alpha, float* A, float* x, f
 __global__ void k_gemv_rowmajor(int m, int n, float alpha, float* A, float* x, float beta, float* y) {
     glass::gemv<float, false, true>(m, n, alpha, A, x, beta, y);
 }
-__global__ void k_gemv_ex_rowA(int m, int n, float alpha, float* A, float* x, float beta, float* y) {
-    glass::gemv_ex<float, false, true>(m, n, alpha, A, x, beta, y);
-}
 
-// ─── row_strided_gemv kernels (compile-time M, N, ROW_STRIDE) ────────────────
+// ─── gemv_strided kernels (compile-time M, N, ROW_STRIDE) ────────────────
 // A has M*ROW_STRIDE elements; A[i][j] = A[i + j*ROW_STRIDE] (col-major, LDA=ROW_STRIDE)
 __global__ void k_gemv_strided_6x6_6(float alpha, float* A, float* x, float beta, float* y) {
-    glass::row_strided_gemv<float, 6, 6, 6>(A, x, y, alpha, beta);
+    glass::gemv_strided<float, 6, 6, 6>(alpha, A, x, beta, y);
 }
 __global__ void k_gemv_strided_6x6_8(float alpha, float* A, float* x, float beta, float* y) {
-    glass::row_strided_gemv<float, 6, 6, 8>(A, x, y, alpha, beta);
+    glass::gemv_strided<float, 6, 6, 8>(alpha, A, x, beta, y);
 }
 __global__ void k_gemv_strided_4x4_4(float alpha, float* A, float* x, float beta, float* y) {
-    glass::row_strided_gemv<float, 4, 4, 4>(A, x, y, alpha, beta);
+    glass::gemv_strided<float, 4, 4, 4>(alpha, A, x, beta, y);
 }
 __global__ void k_gemv_strided_4x4_6(float alpha, float* A, float* x, float beta, float* y) {
-    glass::row_strided_gemv<float, 4, 4, 6>(A, x, y, alpha, beta);
+    glass::gemv_strided<float, 4, 4, 6>(alpha, A, x, beta, y);
 }
 
-// ─── segmented_row_strided_gemv kernels ──────────────────────────────────────
+// ─── gemv_segmented kernels ──────────────────────────────────────
 // Descriptor arrays arrive as float32 .bin; cast to int on host then upload.
 __global__ void k_seg_gemv_6x6_nofuse(uint32_t segs, int* a_off, int* x_off, int* y_off,
                                       float* A, float* x, float* y, float alpha, float beta) {
-    glass::segmented_row_strided_gemv<float, 6, 6, 6, false>(
+    glass::gemv_segmented<float, 6, 6, 6, false>(
         segs, a_off, x_off, y_off, A, x, y, alpha, beta);
 }
 __global__ void k_seg_gemv_6x6_fuse(uint32_t segs, int* a_off, int* x_off, int* y_off,
                                      float* A, float* x, float* y, float alpha, float beta,
                                      int* s_off, float* S, float* scalar) {
-    glass::segmented_row_strided_gemv<float, 6, 6, 6, true>(
+    glass::gemv_segmented<float, 6, 6, 6, true>(
         segs, a_off, x_off, y_off, A, x, y, alpha, beta, s_off, S, scalar);
 }
 
-// ─── segmented_row_strided_gemv: TRANSPOSE / ATOMIC_Y variants ───────────────
+// ─── gemv_segmented: TRANSPOSE / ATOMIC_Y variants ───────────────
 // TRANSPOSE: per segment y_seg(N) = alpha * Aᵀ_seg(N×M) * x_seg(M) + beta*y_seg.
 // A_seg is M×N col-major LDA=ROW_STRIDE; here M=6,N=4,ROW_STRIDE=6.
 __global__ void k_seg_gemv_transpose(uint32_t segs, int* a_off, int* x_off, int* y_off,
                                      float* A, float* x, float* y, float alpha, float beta) {
-    glass::segmented_row_strided_gemv<float, 6, 4, 6,
+    glass::gemv_segmented<float, 6, 4, 6,
         /*FUSE*/false, /*TRANSPOSE*/true, /*ATOMIC_Y*/false>(
         segs, a_off, x_off, y_off, A, x, y, alpha, beta);
 }
@@ -89,7 +86,7 @@ __global__ void k_seg_gemv_transpose(uint32_t segs, int* a_off, int* x_off, int*
 // Overlapping y ranges are summed atomically; caller pre-zeros/pre-scales y.
 __global__ void k_seg_gemv_atomic(uint32_t segs, int* a_off, int* x_off, int* y_off,
                                   float* A, float* x, float* y, float alpha) {
-    glass::segmented_row_strided_gemv<float, 6, 6, 6,
+    glass::gemv_segmented<float, 6, 6, 6,
         /*FUSE*/false, /*TRANSPOSE*/false, /*ATOMIC_Y*/true>(
         segs, a_off, x_off, y_off, A, x, y, alpha);
 }
@@ -97,7 +94,7 @@ __global__ void k_seg_gemv_atomic(uint32_t segs, int* a_off, int* x_off, int* y_
 // atomically accumulate into shared parent y ranges. M=6,N=6,ROW_STRIDE=6.
 __global__ void k_seg_gemv_transpose_atomic(uint32_t segs, int* a_off, int* x_off, int* y_off,
                                             float* A, float* x, float* y, float alpha) {
-    glass::segmented_row_strided_gemv<float, 6, 6, 6,
+    glass::gemv_segmented<float, 6, 6, 6,
         /*FUSE*/false, /*TRANSPOSE*/true, /*ATOMIC_Y*/true>(
         segs, a_off, x_off, y_off, A, x, y, alpha);
 }
@@ -163,16 +160,6 @@ int main(int argc, char** argv) {
         float* dx = read_device_vec(argv[8], n);
         float* dy = read_device_vec(argv[9], m);
         k_gemv_rowmajor<<<1, THREADS>>>(m, n, alpha, dA, dx, beta, dy);
-        cudaDeviceSynchronize();
-        print_device_vec(dy, m);
-
-    } else if (strcmp(op, "gemv_ex") == 0) {
-        float alpha = atof(argv[5]);
-        float beta  = atof(argv[6]);
-        float* dA = read_device_vec(argv[7], m * n);
-        float* dx = read_device_vec(argv[8], n);
-        float* dy = read_device_vec(argv[9], m);
-        k_gemv_ex_rowA<<<1, THREADS>>>(m, n, alpha, dA, dx, beta, dy);
         cudaDeviceSynchronize();
         print_device_vec(dy, m);
 

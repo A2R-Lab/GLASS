@@ -88,17 +88,17 @@ namespace detail {
  * @tparam T  Scalar type.
  * @tparam N  Rows of X / dimension of M.
  * @tparam Kdim  Columns of X (= columns of the scratch).
- * @return Bytes for the `s_temp` buffer (these are small single-block sizes).
+ * @return Bytes for the `s_scratch` buffer (these are small single-block sizes).
  */
 template <typename T, uint32_t N, uint32_t Kdim>
-__host__ __device__ constexpr uint32_t congruence_smem_size() {
-    return static_cast<uint32_t>(N) * Kdim * sizeof(T);
+__host__ __device__ constexpr std::size_t congruence_scratch_bytes() {
+    return static_cast<std::size_t>(N) * Kdim * sizeof(T);
 }
 
 /**
  * @brief Symmetric congruence: `Q = alpha * Xᵀ·M·X + beta * Q` (Q symmetric).
  *
- * Forms `MX = M·X` into `s_temp`, then contracts `Q = Xᵀ·MX` over the shared
+ * Forms `MX = M·X` into `s_scratch`, then contracts `Q = Xᵀ·MX` over the shared
  * `N` dimension, computing only the lower triangle and mirroring it (the result
  * is symmetric when `M` is). Replaces two gemms + a temp + a transpose with one
  * fused call. Column-major; single block; thread-count invariant.
@@ -113,18 +113,18 @@ __host__ __device__ constexpr uint32_t congruence_smem_size() {
  * @param M       Input N x N matrix (column-major; symmetric for a symmetric Q).
  * @param beta    Scalar on the existing Q (read only when ACCUMULATE).
  * @param Q       In/out Kdim x Kdim result (column-major).
- * @param s_temp  Shared scratch of `congruence_smem_size<T,N,Kdim>()` bytes (holds M·X).
+ * @param s_scratch  Shared scratch of `congruence_scratch_bytes<T,N,Kdim>()` bytes (holds M·X).
  */
 template <typename T, uint32_t N, uint32_t Kdim,
           bool ACCUMULATE = false, bool TRAILING_SYNC = true>
-__device__ void congruence_sym(T alpha, const T* X, const T* M, T beta, T* Q, T* s_temp)
+__device__ void congruence_sym(T alpha, const T* X, const T* M, T beta, T* Q, T* s_scratch)
 {
     // step 1: MX = M * X  (N x N times N x Kdim -> N x Kdim), overwrite scratch.
-    gemm<T, N, N, Kdim>(static_cast<T>(1), const_cast<T*>(M), const_cast<T*>(X), s_temp);
+    gemm<T, N, Kdim, N>(static_cast<T>(1), const_cast<T*>(M), const_cast<T*>(X), s_scratch);
     __syncthreads();                         // MX visible before the Xᵀ·MX contraction
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    detail::xtY_impl<T, N, Kdim, Kdim, true, ACCUMULATE>(rank, size, alpha, X, s_temp, beta, Q);
+    detail::xtY_impl<T, N, Kdim, Kdim, true, ACCUMULATE>(rank, size, alpha, X, s_scratch, beta, Q);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -133,7 +133,7 @@ __device__ void congruence_sym(T alpha, const T* X, const T* M, T beta, T* Q, T*
  *
  * Like `congruence_sym` but with a distinct right operand `Y`, so the result is
  * not symmetric and the full `P x Qd` matrix is computed. Forms `MY = M·Y` into
- * `s_temp`, then contracts `R = Xᵀ·MY`. Column-major; single block; invariant.
+ * `s_scratch`, then contracts `R = Xᵀ·MY`. Column-major; single block; invariant.
  *
  * @tparam T  Scalar type.
  * @tparam N  Dimension of M (N x N) and rows of X and Y.
@@ -147,18 +147,69 @@ __device__ void congruence_sym(T alpha, const T* X, const T* M, T beta, T* Q, T*
  * @param Y       Input N x Qd matrix (column-major).
  * @param beta    Scalar on the existing R (read only when ACCUMULATE).
  * @param R       In/out P x Qd result (column-major).
- * @param s_temp  Shared scratch of `congruence_smem_size<T,N,Qd>()` bytes (holds M·Y).
+ * @param s_scratch  Shared scratch of `congruence_scratch_bytes<T,N,Qd>()` bytes (holds M·Y).
  */
 template <typename T, uint32_t N, uint32_t P, uint32_t Qd,
           bool ACCUMULATE = false, bool TRAILING_SYNC = true>
-__device__ void bilinear(T alpha, const T* X, const T* M, const T* Y, T beta, T* R, T* s_temp)
+__device__ void bilinear(T alpha, const T* X, const T* M, const T* Y, T beta, T* R, T* s_scratch)
 {
-    gemm<T, N, N, Qd>(static_cast<T>(1), const_cast<T*>(M), const_cast<T*>(Y), s_temp);
+    gemm<T, N, Qd, N>(static_cast<T>(1), const_cast<T*>(M), const_cast<T*>(Y), s_scratch);
     __syncthreads();
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    detail::xtY_impl<T, N, P, Qd, false, ACCUMULATE>(rank, size, alpha, X, s_temp, beta, R);
+    detail::xtY_impl<T, N, P, Qd, false, ACCUMULATE>(rank, size, alpha, X, s_scratch, beta, R);
     if constexpr (TRAILING_SYNC) __syncthreads();
+}
+
+/**
+ * @brief Shared-memory element count for `congruence_accum` `s_scratch`.
+ *
+ * Holds the `Q×P` transpose `Gᵀ` plus the `congruence_sym` scratch (`M·Gᵀ`, also
+ * `Q×P`). Total `2*P*Q` elements of `T`.
+ */
+template <typename T, uint32_t P, uint32_t Q>
+__host__ __device__ constexpr uint32_t congruence_accum_smem_count() {
+    return 2u * P * Q;
+}
+
+/**
+ * @brief Accumulating congruence with a rectangular left factor: `C = alpha*G*M*Gᵀ + beta*C`.
+ *
+ * The "other orientation" of `congruence_sym`: here the rectangular factor `G` is
+ * `P×Q` (the natural storage in e.g. GATO's Schur assembly, where `G = B` and
+ * `M = R⁻¹`, giving `B·R⁻¹·Bᵀ`), `M` is `Q×Q` symmetric, and the symmetric result
+ * `C` is `P×P`. Mathematically `G·M·Gᵀ = XᵀMX` with `X = Gᵀ`, so this transposes
+ * `G` into scratch and defers to `congruence_sym<Q,P>` — inheriting its exact
+ * triangle+mirror symmetry and its honest FMA-order note. `ACCUMULATE` adds into
+ * `C` (the `+=` GATO wants); default overwrites. Single block, column-major,
+ * thread-count invariant. NumPy: `C = alpha*(G @ M @ G.T) + beta*C`.
+ *
+ * @tparam T  Scalar type.
+ * @tparam P  Rows of `G` — `C` is `P×P`.
+ * @tparam Q  Columns of `G` and dimension of `M` (`Q×Q`).
+ * @tparam ACCUMULATE  Add into `C` (true) vs overwrite (false, default).
+ * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+ * @param alpha   Scalar on the product.
+ * @param G       Input `P×Q` matrix (column-major).
+ * @param M       Input `Q×Q` matrix (column-major, symmetric).
+ * @param beta    Scalar on the existing `C` (read only when ACCUMULATE).
+ * @param C       In/out `P×P` symmetric result (column-major).
+ * @param s_scratch  Shared scratch of `congruence_accum_smem_count<T,P,Q>()` elements.
+ */
+template <typename T, uint32_t P, uint32_t Q,
+          bool ACCUMULATE = false, bool TRAILING_SYNC = true>
+__device__ void congruence_accum(T alpha, const T* G, const T* M, T beta, T* C, T* s_scratch)
+{
+    T* Gt  = s_scratch;            // Q×P transpose of G (column-major)
+    T* scr = s_scratch + Q * P;    // congruence_sym scratch (M·Gᵀ), Q×P
+    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    for (uint32_t k = rank; k < P * Q; k += size) {
+        uint32_t p = k % P, q = k / P;       // G col-major P×Q: G[q*P + p] = G(p,q)
+        Gt[p * Q + q] = G[q * P + p];        // Gt col-major Q×P: Gt(q,p) = G(p,q)
+    }
+    __syncthreads();                          // Gᵀ visible before the congruence
+    congruence_sym<T, Q, P, ACCUMULATE, TRAILING_SYNC>(alpha, Gt, M, beta, C, scr);
 }
 
 // ─── single-warp congruence / bilinear ───────────────────────────────────────
@@ -171,16 +222,16 @@ namespace warp {
      *
      * @tparam T,N,Kdim,ACCUMULATE  See glass::congruence_sym.
      * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
-     * @param alpha,X,M,beta,Q,s_temp  See glass::congruence_sym.
+     * @param alpha,X,M,beta,Q,s_scratch  See glass::congruence_sym.
      */
     template <typename T, uint32_t N, uint32_t Kdim,
               bool ACCUMULATE = false, bool TRAILING_SYNC = true>
-    __device__ void congruence_sym(T alpha, const T* X, const T* M, T beta, T* Q, T* s_temp)
+    __device__ void congruence_sym(T alpha, const T* X, const T* M, T beta, T* Q, T* s_scratch)
     {
-        warp::gemm<T, N, N, Kdim>(static_cast<T>(1), const_cast<T*>(M), const_cast<T*>(X), s_temp);
+        warp::gemm<T, N, Kdim, N>(static_cast<T>(1), const_cast<T*>(M), const_cast<T*>(X), s_scratch);
         __syncwarp();
         uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31u;
-        detail::xtY_impl<T, N, Kdim, Kdim, true, ACCUMULATE>(lane, 32u, alpha, X, s_temp, beta, Q);
+        detail::xtY_impl<T, N, Kdim, Kdim, true, ACCUMULATE>(lane, 32u, alpha, X, s_scratch, beta, Q);
         if constexpr (TRAILING_SYNC) __syncwarp();
     }
 
@@ -191,16 +242,42 @@ namespace warp {
      *
      * @tparam T,N,P,Qd,ACCUMULATE  See glass::bilinear.
      * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
-     * @param alpha,X,M,Y,beta,R,s_temp  See glass::bilinear.
+     * @param alpha,X,M,Y,beta,R,s_scratch  See glass::bilinear.
      */
     template <typename T, uint32_t N, uint32_t P, uint32_t Qd,
               bool ACCUMULATE = false, bool TRAILING_SYNC = true>
-    __device__ void bilinear(T alpha, const T* X, const T* M, const T* Y, T beta, T* R, T* s_temp)
+    __device__ void bilinear(T alpha, const T* X, const T* M, const T* Y, T beta, T* R, T* s_scratch)
     {
-        warp::gemm<T, N, N, Qd>(static_cast<T>(1), const_cast<T*>(M), const_cast<T*>(Y), s_temp);
+        warp::gemm<T, N, Qd, N>(static_cast<T>(1), const_cast<T*>(M), const_cast<T*>(Y), s_scratch);
         __syncwarp();
         uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31u;
-        detail::xtY_impl<T, N, P, Qd, false, ACCUMULATE>(lane, 32u, alpha, X, s_temp, beta, R);
+        detail::xtY_impl<T, N, P, Qd, false, ACCUMULATE>(lane, 32u, alpha, X, s_scratch, beta, R);
         if constexpr (TRAILING_SYNC) __syncwarp();
+    }
+
+    /**
+     * @brief Single-warp accumulating congruence `C = alpha*G*M*Gᵀ + beta*C` (G is P×Q).
+     *
+     * Warp-per-problem analogue of `glass::congruence_accum`: one 32-lane warp
+     * transposes `G` into scratch and defers to `warp::congruence_sym<Q,P>`.
+     * See the block version for semantics.
+     *
+     * @tparam T,P,Q,ACCUMULATE  See glass::congruence_accum.
+     * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
+     * @param alpha,G,M,beta,C,s_scratch  See glass::congruence_accum.
+     */
+    template <typename T, uint32_t P, uint32_t Q,
+              bool ACCUMULATE = false, bool TRAILING_SYNC = true>
+    __device__ void congruence_accum(T alpha, const T* G, const T* M, T beta, T* C, T* s_scratch)
+    {
+        T* Gt  = s_scratch;
+        T* scr = s_scratch + Q * P;
+        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31u;
+        for (uint32_t k = lane; k < P * Q; k += 32u) {
+            uint32_t p = k % P, q = k / P;
+            Gt[p * Q + q] = G[q * P + p];
+        }
+        __syncwarp();
+        warp::congruence_sym<T, Q, P, ACCUMULATE, TRAILING_SYNC>(alpha, Gt, M, beta, C, scr);
     }
 }

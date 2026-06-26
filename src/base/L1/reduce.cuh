@@ -1,4 +1,5 @@
 #pragma once
+#include "../barrier.cuh"
 #include <cstdint>
 
 /**
@@ -12,21 +13,31 @@
  * @param n  Number of elements.
  * @param x  In/out vector of length `n`; the sum lands in `x[0]`.
  */
-// default threadIdx-based halving reduce; result in x[0]
-template <typename T>
-__device__ void reduce(uint32_t n, T *x)
+// Shared body: default halving (tree) reduce; result in x[0]. The barrier policy
+// supplies rank/size + the internal AND trailing sync, so the plain glass:: and
+// the cgrps:: surfaces share this one body. TRAILING_SYNC (default true) makes
+// x[0] valid for ALL threads; pass false when the caller owns the next barrier.
+template <typename Bar, typename T, bool TRAILING_SYNC = true>
+__device__ void reduce_impl(Bar bar, uint32_t n, T *x)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = bar.rank(), size = bar.size();
     uint32_t left = n;
     while (left > 3) {
         bool odd = left % 2;
         left = (left - odd) / 2;
         for (uint32_t i = rank; i < left; i += size) x[i] += x[i + left];
         if (rank == 0 && odd) x[0] += x[2*left];
-        __syncthreads();
+        bar.sync();
     }
     if (rank == 0) { for (uint32_t i = 1; i < left; i++) x[0] += x[i]; }
+    if constexpr (TRAILING_SYNC) bar.sync();
+}
+
+// default threadIdx-based halving reduce; result in x[0]
+template <typename T, bool TRAILING_SYNC = true>
+__device__ void reduce(uint32_t n, T *x)
+{
+    reduce_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, n, x);
 }
 
 /**
@@ -38,20 +49,10 @@ __device__ void reduce(uint32_t n, T *x)
  * @tparam N  Number of elements (compile-time constant).
  * @param x  In/out vector of length `N`; the sum lands in `x[0]`.
  */
-template <typename T, uint32_t N>
+template <typename T, uint32_t N, bool TRAILING_SYNC = true>
 __device__ void reduce(T *x)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    uint32_t left = N;
-    while (left > 3) {
-        bool odd = left % 2;
-        left = (left - odd) / 2;
-        for (uint32_t i = rank; i < left; i += size) x[i] += x[i + left];
-        if (rank == 0 && odd) x[0] += x[2*left];
-        __syncthreads();
-    }
-    if (rank == 0) { for (uint32_t i = 1; i < left; i++) x[0] += x[i]; }
+    reduce_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, N, x);
 }
 
 namespace low_memory {
@@ -65,12 +66,12 @@ namespace low_memory {
      * @param n  Number of elements.
      * @param x  In/out vector of length `n`; the sum lands in `x[0]`.
      */
-    template <typename T>
+    template <typename T, bool TRAILING_SYNC = true>
     __device__ void reduce(uint32_t n, T *x)
     {
         if (threadIdx.x == 0 && threadIdx.y == 0 && threadIdx.z == 0)
             for (uint32_t i = 1; i < n; i++) x[0] += x[i];
-        __syncthreads();
+        if constexpr (TRAILING_SYNC) __syncthreads();
     }
 
     /**
@@ -83,16 +84,30 @@ namespace low_memory {
      * @tparam N  Number of elements (compile-time constant).
      * @param x  In/out vector of length `N`; the sum lands in `x[0]`.
      */
-    template <typename T, uint32_t N>
+    template <typename T, uint32_t N, bool TRAILING_SYNC = true>
     __device__ void reduce(T *x)
     {
         if (threadIdx.x == 0 && threadIdx.y == 0 && threadIdx.z == 0)
             for (uint32_t i = 1; i < N; i++) x[0] += x[i];
-        __syncthreads();
+        if constexpr (TRAILING_SYNC) __syncthreads();
     }
 }
 
 namespace high_speed {
+    /**
+     * @brief Shared-scratch size in bytes for the `high_speed::reduce` ops.
+     *
+     * The warp-shuffle reduce combines across warps through one scratch slot per
+     * warp: `ceil(block_threads / 32)` elements of `T`. Allocate
+     * `high_speed::reduce_scratch_bytes<T>(block_threads)` for the `s_scratch` argument.
+     *
+     * @tparam T  Scalar type.
+     * @param block_threads  Number of threads in the launching block.
+     * @return Bytes to allocate for `s_scratch`.
+     */
+    template <typename T>
+    __host__ __device__ constexpr std::size_t reduce_scratch_bytes(uint32_t block_threads) { return static_cast<std::size_t>((block_threads + 31) / 32) * sizeof(T); }
+
     /**
      * @brief Sum reduction: `x[0] = Σ x[i]` (in-place), warp-shuffle variant.
      *
@@ -106,7 +121,7 @@ namespace high_speed {
      * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per warp).
      */
     // warp-shuffle + inter-warp reduce; s_scratch: ceil(blockDim/32)*sizeof(T); result in x[0]
-    template <typename T>
+    template <typename T, bool TRAILING_SYNC = true>
     __device__ void reduce(uint32_t n, T *x, T *s_scratch)
     {
         uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
@@ -123,7 +138,7 @@ namespace high_speed {
             for (int off = 16; off > 0; off >>= 1) val += __shfl_down_sync(0xffffffff, val, off);
             if (rank == 0) x[0] = val;
         }
-        __syncthreads();
+        if constexpr (TRAILING_SYNC) __syncthreads();
     }
 
     /**
@@ -137,7 +152,7 @@ namespace high_speed {
      * @param x          In/out vector of length `N`; the sum lands in `x[0]`.
      * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per warp).
      */
-    template <typename T, uint32_t N>
+    template <typename T, uint32_t N, bool TRAILING_SYNC = true>
     __device__ void reduce(T *x, T *s_scratch)
     {
         uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
@@ -154,7 +169,7 @@ namespace high_speed {
             for (int off = 16; off > 0; off >>= 1) val += __shfl_down_sync(0xffffffff, val, off);
             if (rank == 0) x[0] = val;
         }
-        __syncthreads();
+        if constexpr (TRAILING_SYNC) __syncthreads();
     }
 
     // ── register-partial → block-sum overload ────────────────────────────────
@@ -186,7 +201,7 @@ namespace high_speed {
      *                   on return `s_scratch[0]` holds the total.
      * @return The block-wide total `Σ partial`, identical on every thread.
      */
-    template <typename T>
+    template <typename T, bool TRAILING_SYNC = true>
     __device__ T reduce(T partial, T *s_scratch)
     {
         uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
@@ -204,7 +219,7 @@ namespace high_speed {
         }
         __syncthreads();
         T total = s_scratch[0];
-        __syncthreads();
+        if constexpr (TRAILING_SYNC) __syncthreads();
         return total;
     }
 }

@@ -1,5 +1,15 @@
 #pragma once
+#include "../barrier.cuh"
 #include <cstdint>
+
+// shared body: broadcast a constant `x[i] = alpha`
+template <typename Bar, typename T, bool TRAILING_SYNC = true>
+__device__ void set_const_impl(Bar bar, uint32_t n, T alpha, T *x)
+{
+    uint32_t rank = bar.rank(), size = bar.size();
+    for (uint32_t i = rank; i < n; i += size) x[i] = alpha;
+    if constexpr (TRAILING_SYNC) bar.sync();
+}
 
 /**
  * @brief Fill a vector with a constant: `x[i] = alpha`.
@@ -11,12 +21,10 @@
  * @param alpha  Value to broadcast into every element.
  * @param x      Output vector of length `n`.
  */
-template <typename T>
+template <typename T, bool TRAILING_SYNC = true>
 __device__ void set_const(uint32_t n, T alpha, T *x)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    for (uint32_t i = rank; i < n; i += size) x[i] = alpha;
+    set_const_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, n, alpha, x);
 }
 
 /**
@@ -29,10 +37,8 @@ __device__ void set_const(uint32_t n, T alpha, T *x)
  * @param alpha  Value to broadcast into every element.
  * @param x      Output vector of length `N`.
  */
-template <typename T, uint32_t N>
+template <typename T, uint32_t N, bool TRAILING_SYNC = true>
 __device__ void set_const(T alpha, T *x)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    for (uint32_t i = rank; i < N; i += size) x[i] = alpha;
+    set_const_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, N, alpha, x);
 }

@@ -51,37 +51,35 @@ __host__ __device__ constexpr bool suggested_use_reduced() {
     return (n_out <= blockDim / 32u) && (K_contract >= 32u);
 }
 
-// Core: explicit (rank,size), compile-time dims + per-matrix layout flags,
-// HAS_BETA selects whether C is read (false ⇒ overwrite, never touches C).
-template <typename T, uint32_t M, uint32_t N, uint32_t K, bool TRANSPOSE_B,
-          bool ROW_MAJOR_A, bool ROW_MAJOR_B, bool ROW_MAJOR_C, bool HAS_BETA>
+// Core: explicit (rank,size), compile-time dims + standard-BLAS layout flags
+// (C is M×N, contraction K; op(A) M×K, op(B) K×N — see gemm.cuh). HAS_BETA
+// selects whether C is read (false ⇒ overwrite, never touches C).
+template <typename T, uint32_t M, uint32_t N, uint32_t K,
+          bool TRANSPOSE_A, bool TRANSPOSE_B, bool ROW_MAJOR_C, bool HAS_BETA>
 __device__ void gemm_reduced_impl_ct(uint32_t rank, uint32_t size,
                                       T alpha, T *A, T *B, T beta, T *C)
 {
-    constexpr uint32_t C_cols = TRANSPOSE_B ? N : K;
-    constexpr uint32_t maxel  = M * C_cols;
+    constexpr uint32_t maxel = M * N;
 
     if (size < 32u) {
         // Sub-warp fallback: each thread owns whole outputs (strided by size).
         // Reproduce the 32-lane tree in registers so the rounding matches the
         // full-warp path exactly — invariant across the 32-thread boundary.
         for (uint32_t el = rank; el < maxel; el += size) {
-            const uint32_t row = el % M, col = el / M;
+            const uint32_t m = el % M, n = el / M;
             T p[32];
             #pragma unroll
             for (uint32_t v = 0; v < 32u; ++v) {
                 T acc = static_cast<T>(0);
-                for (uint32_t ind = v; ind < N; ind += 32u) {
-                    T a = ROW_MAJOR_A ? A[row*N + ind] : A[ind*M + row];
-                    T b;
-                    if (TRANSPOSE_B) b = ROW_MAJOR_B ? B[col*N + ind] : B[ind*N + col];
-                    else             b = ROW_MAJOR_B ? B[ind*K + col] : B[col*N + ind];
+                for (uint32_t k = v; k < K; k += 32u) {
+                    T a = TRANSPOSE_A ? A[k + m*K] : A[m + k*M];
+                    T b = TRANSPOSE_B ? B[n + k*N] : B[k + n*K];
                     acc += a * b;
                 }
                 p[v] = acc;
             }
             T res = reduced_tree32<T>(p);
-            const uint32_t cidx = ROW_MAJOR_C ? (row*C_cols + col) : (col*M + row);
+            const uint32_t cidx = ROW_MAJOR_C ? (m*N + n) : (m + n*M);
             C[cidx] = HAS_BETA ? (alpha*res + beta*C[cidx]) : (alpha*res);
         }
         return;
@@ -94,18 +92,16 @@ __device__ void gemm_reduced_impl_ct(uint32_t rank, uint32_t size,
     const uint32_t lane    = rank & 31u;
     if (warp < n_warps) {
         for (uint32_t el = warp; el < maxel; el += n_warps) {
-            const uint32_t row = el % M, col = el / M;
+            const uint32_t m = el % M, n = el / M;
             T partial = static_cast<T>(0);
-            for (uint32_t ind = lane; ind < N; ind += 32u) {
-                T a = ROW_MAJOR_A ? A[row*N + ind] : A[ind*M + row];
-                T b;
-                if (TRANSPOSE_B) b = ROW_MAJOR_B ? B[col*N + ind] : B[ind*N + col];
-                else             b = ROW_MAJOR_B ? B[ind*K + col] : B[col*N + ind];
+            for (uint32_t k = lane; k < K; k += 32u) {
+                T a = TRANSPOSE_A ? A[k + m*K] : A[m + k*M];
+                T b = TRANSPOSE_B ? B[n + k*N] : B[k + n*K];
                 partial += a * b;
             }
             T res = warp::reduce<T>(partial);   // full mask: warp is full
             if (lane == 0) {
-                const uint32_t cidx = ROW_MAJOR_C ? (row*C_cols + col) : (col*M + row);
+                const uint32_t cidx = ROW_MAJOR_C ? (m*N + n) : (m + n*M);
                 C[cidx] = HAS_BETA ? (alpha*res + beta*C[cidx]) : (alpha*res);
             }
         }
@@ -127,9 +123,10 @@ __device__ void gemm_reduced_impl_ct(uint32_t rank, uint32_t size,
  * warp idles; below 32 threads a register path reproduces the same rounding).
  *
  * @tparam T  Scalar type.
- * @tparam M,N,K  Compile-time dimensions: A is M x N, B is N x K (or K x N when TRANSPOSE_B), C is M x (TRANSPOSE_B ? N : K).
- * @tparam TRANSPOSE_B  If true, computes `A @ B^T` (requires B square: N == K).
- * @tparam ROW_MAJOR  Storage order for A, B and C (false = column-major / Fortran).
+ * @tparam M,N,K  `C` is `M×N`, contraction `K`. op(A) is `M×K`, op(B) is `K×N` (see gemm.cuh).
+ * @tparam TRANSPOSE_A  If true, `A` is `K×M` and `op(A)=Aᵀ`.
+ * @tparam TRANSPOSE_B  If true, `B` is `N×K` and `op(B)=Bᵀ`.
+ * @tparam ROW_MAJOR_C  Output storage order (false = column-major / Fortran).
  * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true) so callers can read C safely.
  * @param alpha  Scalar multiplier on the product.
  * @param A,B    Input matrices.
@@ -137,12 +134,12 @@ __device__ void gemm_reduced_impl_ct(uint32_t rank, uint32_t size,
  * @param C      In/out result matrix.
  */
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
-          bool TRANSPOSE_B = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
+          bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
 __device__ void gemm_reduced(T alpha, T *A, T *B, T beta, T *C)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    gemm_reduced_impl_ct<T, M, N, K, TRANSPOSE_B, ROW_MAJOR, ROW_MAJOR, ROW_MAJOR, true>(
+    gemm_reduced_impl_ct<T, M, N, K, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C, true>(
         rank, size, alpha, A, B, beta, C);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
@@ -154,21 +151,22 @@ __device__ void gemm_reduced(T alpha, T *A, T *B, T beta, T *C)
  * Otherwise identical to the beta overload above.
  *
  * @tparam T  Scalar type.
- * @tparam M,N,K  Compile-time dimensions: A is M x N, B is N x K (or K x N when TRANSPOSE_B), C is M x (TRANSPOSE_B ? N : K).
- * @tparam TRANSPOSE_B  If true, computes `A @ B^T` (requires B square: N == K).
- * @tparam ROW_MAJOR  Storage order for A, B and C (false = column-major / Fortran).
+ * @tparam M,N,K  `C` is `M×N`, contraction `K`. op(A) is `M×K`, op(B) is `K×N` (see gemm.cuh).
+ * @tparam TRANSPOSE_A  If true, `A` is `K×M` and `op(A)=Aᵀ`.
+ * @tparam TRANSPOSE_B  If true, `B` is `N×K` and `op(B)=Bᵀ`.
+ * @tparam ROW_MAJOR_C  Output storage order (false = column-major / Fortran).
  * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
  * @param alpha  Scalar multiplier on the product.
  * @param A,B    Input matrices.
  * @param C      Output result matrix (overwritten).
  */
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
-          bool TRANSPOSE_B = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
+          bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
 __device__ void gemm_reduced(T alpha, T *A, T *B, T *C)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    gemm_reduced_impl_ct<T, M, N, K, TRANSPOSE_B, ROW_MAJOR, ROW_MAJOR, ROW_MAJOR, false>(
+    gemm_reduced_impl_ct<T, M, N, K, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C, false>(
         rank, size, alpha, A, B, static_cast<T>(0), C);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
@@ -184,9 +182,10 @@ namespace warp {
      * 32-lane warp. `C` must not alias `A`/`B`.
      *
      * @tparam T  Scalar type.
-     * @tparam M,N,K  Compile-time dimensions: A is M x N, B is N x K (or K x N when TRANSPOSE_B), C is M x (TRANSPOSE_B ? N : K).
-     * @tparam TRANSPOSE_B  If true, computes `A @ B^T` (requires B square: N == K).
-     * @tparam ROW_MAJOR  Storage order for A, B and C (false = column-major / Fortran).
+     * @tparam M,N,K  `C` is `M×N`, contraction `K`. op(A) is `M×K`, op(B) is `K×N` (see gemm.cuh).
+     * @tparam TRANSPOSE_A  If true, `A` is `K×M` and `op(A)=Aᵀ`.
+     * @tparam TRANSPOSE_B  If true, `B` is `N×K` and `op(B)=Bᵀ`.
+     * @tparam ROW_MAJOR_C  Output storage order (false = column-major / Fortran).
      * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true) so lanes can read C safely.
      * @param alpha  Scalar multiplier on the product.
      * @param A,B    Input matrices.
@@ -194,11 +193,11 @@ namespace warp {
      * @param C      In/out result matrix.
      */
     template <typename T, uint32_t M, uint32_t N, uint32_t K,
-              bool TRANSPOSE_B = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
+              bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
     __device__ void gemm_reduced(T alpha, T *A, T *B, T beta, T *C)
     {
         uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31u;
-        gemm_reduced_impl_ct<T, M, N, K, TRANSPOSE_B, ROW_MAJOR, ROW_MAJOR, ROW_MAJOR, true>(
+        gemm_reduced_impl_ct<T, M, N, K, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C, true>(
             lane, 32u, alpha, A, B, beta, C);
         if constexpr (TRAILING_SYNC) __syncwarp();
     }
@@ -210,20 +209,21 @@ namespace warp {
      * overload above; the caller must run a full 32-lane warp.
      *
      * @tparam T  Scalar type.
-     * @tparam M,N,K  Compile-time dimensions: A is M x N, B is N x K (or K x N when TRANSPOSE_B), C is M x (TRANSPOSE_B ? N : K).
-     * @tparam TRANSPOSE_B  If true, computes `A @ B^T` (requires B square: N == K).
-     * @tparam ROW_MAJOR  Storage order for A, B and C (false = column-major / Fortran).
+     * @tparam M,N,K  `C` is `M×N`, contraction `K`. op(A) is `M×K`, op(B) is `K×N` (see gemm.cuh).
+     * @tparam TRANSPOSE_A  If true, `A` is `K×M` and `op(A)=Aᵀ`.
+     * @tparam TRANSPOSE_B  If true, `B` is `N×K` and `op(B)=Bᵀ`.
+     * @tparam ROW_MAJOR_C  Output storage order (false = column-major / Fortran).
      * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
      * @param alpha  Scalar multiplier on the product.
      * @param A,B    Input matrices.
      * @param C      Output result matrix (overwritten).
      */
     template <typename T, uint32_t M, uint32_t N, uint32_t K,
-              bool TRANSPOSE_B = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
+              bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
     __device__ void gemm_reduced(T alpha, T *A, T *B, T *C)
     {
         uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31u;
-        gemm_reduced_impl_ct<T, M, N, K, TRANSPOSE_B, ROW_MAJOR, ROW_MAJOR, ROW_MAJOR, false>(
+        gemm_reduced_impl_ct<T, M, N, K, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C, false>(
             lane, 32u, alpha, A, B, static_cast<T>(0), C);
         if constexpr (TRAILING_SYNC) __syncwarp();
     }

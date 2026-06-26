@@ -18,7 +18,7 @@
 //
 // Example (basic):
 //   DEFINE_NVIDIA_GEMM(6, 6, 6)
-//   constexpr auto smem    = glass::nvidia::gemm_smem_size<float, 6, 6, 6>();
+//   constexpr auto smem    = glass::nvidia::gemm_scratch_bytes<float, 6, 6, 6>();
 //   constexpr auto threads = glass::nvidia::gemm_threads<float, 6, 6, 6>();
 //   kernel<<<1, threads, smem>>>(...);
 //   glass::nvidia::gemm<float, 6, 6, 6>(1.f, A, B, 0.f, C, smem_ptr);
@@ -118,24 +118,15 @@ template <typename T, uint32_t M, uint32_t N, uint32_t K,
 __device__ void gemm(T alpha, T* A, T* B, T beta, T* C, char* smem)
 {
     if constexpr (!should_use_cublasdx<T, M, N, K, SM_VAL>()) {
-        // Map layout flags onto SIMT (TRANSPOSE_B, ROW_MAJOR). SIMT supports:
-        //   (col, col, col) → (false, false)   standard col-major
-        //   (col, row, col) → (true,  false)   col-major A·Bᵀ      (Gap D, round-2)
-        //   (row, row, row) → (false, true )   standard row-major
-        //   (row, col, row) → (true,  true )   row-major A·Bᵀ
-        // Other combinations are mixed layouts SIMT can't express directly;
-        // those require DEFINE_NVIDIA_GEMM_LAYOUT* to force cuBLASDx routing.
-        constexpr bool LA_ROW = (LA == layout::row_major);
-        constexpr bool LB_ROW = (LB == layout::row_major);
-        constexpr bool LC_ROW = (LC == layout::row_major);
-        static_assert(LA_ROW == LC_ROW,
-            "glass::nvidia::gemm SIMT fallback requires LA == LC (A and C "
-            "share the row/col-major convention). Use "
-            "DEFINE_NVIDIA_GEMM_LAYOUT to specialize cuBLASDx for mixed "
-            "layouts, or call ::glass::gemm_ex directly.");
-        constexpr bool ROW_MAJOR   = LA_ROW;
-        constexpr bool TRANSPOSE_B = (LB_ROW != LA_ROW);
-        ::glass::gemm<T, M, N, K, TRANSPOSE_B, ROW_MAJOR>(
+        // Map per-operand layouts directly onto the standard-BLAS SIMT gemm.
+        // A row-major operand is a transposed column-major operand, so:
+        //   LA=row_major ⇒ TRANSPOSE_A,  LB=row_major ⇒ TRANSPOSE_B,
+        //   LC=row_major ⇒ ROW_MAJOR_C.  All four operand layouts are now
+        //   independently expressible — no mixed-layout restriction.
+        constexpr bool TRANSPOSE_A = (LA == layout::row_major);
+        constexpr bool TRANSPOSE_B = (LB == layout::row_major);
+        constexpr bool ROW_MAJOR_C = (LC == layout::row_major);
+        ::glass::gemm<T, M, N, K, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C>(
             alpha, A, B, beta, C);
     } else {
         static_assert(sizeof(T) == 0,
@@ -169,7 +160,7 @@ template <typename T, uint32_t M, uint32_t N, uint32_t K,
           layout LB = layout::col_major,
           layout LC = layout::col_major,
           uint32_t SM_VAL = SMS>
-constexpr std::size_t gemm_smem_size() { return 0; }
+constexpr std::size_t gemm_scratch_bytes() { return 0; }
 
 /**
  * @brief Thread count cuBLASDx wants for `gemm<...>` (host-callable).
@@ -275,7 +266,7 @@ constexpr uint32_t gemm_threads() { return 256; }
             ::template run<false>(alpha, A, B, beta, C, smem);                                  \
     }                                                                                           \
     template <>                                                                                 \
-    constexpr std::size_t gemm_smem_size<CT, M, N, K, 0,                                     \
+    constexpr std::size_t gemm_scratch_bytes<CT, M, N, K, 0,                                     \
                                           static_cast<layout>(LA),                              \
                                           static_cast<layout>(LB),                              \
                                           static_cast<layout>(LC), ARCH>()                      \
@@ -363,7 +354,7 @@ constexpr uint32_t gemm_threads() { return 256; }
             ::template run<false>(alpha, A, B, beta, C, smem);                                  \
     }                                                                                           \
     template <>                                                                                 \
-    constexpr std::size_t gemm_smem_size<CT, M, N, K, TC,                                    \
+    constexpr std::size_t gemm_scratch_bytes<CT, M, N, K, TC,                                    \
                                           static_cast<layout>(LA),                              \
                                           static_cast<layout>(LB),                              \
                                           static_cast<layout>(LC), ARCH>()                     \
@@ -451,7 +442,7 @@ constexpr uint32_t gemm_threads() { return 256; }
     DEFINE_NVIDIA_GEMM_BLOCKDIM_LAYOUT_SM(M, N, K, TC, 0, 1, 0, SM)
 
 // ---------------------------------------------------------------------------
-// row_strided_gemm: packs strided A and B into compact shared scratch, then
+// gemm_strided: packs strided A and B into compact shared scratch, then
 // delegates to the standard nvidia::gemm<...>. Forwards all template parameters
 // (BLOCK_THREADS, layouts, SM) to the inner call so any DEFINE_NVIDIA_GEMM*
 // variant works underneath.
@@ -492,34 +483,35 @@ constexpr uint32_t gemm_threads() { return 256; }
  * @param  smem          Shared scratch (cuBLASDx route only; unused for SIMT).
  */
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
-          uint32_t A_RS = M, uint32_t B_RS = N,
+          uint32_t A_RS = M, uint32_t B_RS = K,
           uint32_t BLOCK_THREADS = 0,
           layout LA = layout::col_major,
           layout LB = layout::col_major,
           layout LC = layout::col_major,
           uint32_t SM_VAL = SMS,
           bool TRAILING_SYNC = true>
-__device__ void row_strided_gemm(T alpha, T* A, T* B, T beta, T* C, char* smem)
+__device__ void gemm_strided(T alpha, T* A, T* B, T beta, T* C, char* smem)
 {
     // Round-2 Gap C: auto-dispatch. On the SIMT route we use the strides
-    // directly (no packing), saving the M*N + N*K scratch and two pack
+    // directly (no packing), saving the M*K + K*N scratch and two pack
     // passes. On the cuBLASDx route we pack into compact scratch and
     // delegate to gemm<> (which will hit the cuBLASDx specialization).
+    // Standard convention: A is M×K (lead A_RS), B is K×N (lead B_RS), C is M×N.
     if constexpr (!should_use_cublasdx<T, M, N, K, SM_VAL>()) {
-        ::glass::row_strided_gemm<T, M, N, K, A_RS, B_RS>(A, B, C, alpha, beta);
+        ::glass::gemm_strided<T, M, N, K, A_RS, B_RS>(alpha, A, B, beta, C);
     } else {
         uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
         uint32_t size = blockDim.x * blockDim.y * blockDim.z;
         T* A_compact = reinterpret_cast<T*>(smem);
-        T* B_compact = reinterpret_cast<T*>(smem + M * N * sizeof(T));
-        char* cublas_smem = smem + (M * N + N * K) * sizeof(T);
-        for (uint32_t i = rank; i < M * N; i += size) {
+        T* B_compact = reinterpret_cast<T*>(smem + M * K * sizeof(T));
+        char* cublas_smem = smem + (M * K + K * N) * sizeof(T);
+        for (uint32_t i = rank; i < M * K; i += size) {   // A is M×K
             uint32_t r = i % M, c = i / M;
             A_compact[r + c*M] = A[r + c*A_RS];
         }
-        for (uint32_t i = rank; i < N * K; i += size) {
-            uint32_t r = i % N, c = i / N;
-            B_compact[r + c*N] = B[r + c*B_RS];
+        for (uint32_t i = rank; i < K * N; i += size) {   // B is K×N
+            uint32_t r = i % K, c = i / K;
+            B_compact[r + c*K] = B[r + c*B_RS];
         }
         __syncthreads();
         gemm<T, M, N, K, BLOCK_THREADS, LA, LB, LC, SM_VAL, TRAILING_SYNC>(
@@ -530,7 +522,7 @@ __device__ void row_strided_gemm(T alpha, T* A, T* B, T beta, T* C, char* smem)
 // Returns the cuBLASDx scratch + packing scratch the cuBLASDx route needs,
 // or 0 when the auto-dispatch would route to SIMT (which skips packing).
 /**
- * @brief Shared-memory bytes needed by `row_strided_gemm<...>` (host-callable).
+ * @brief Shared-memory bytes needed by `gemm_strided<...>` (host-callable).
  *
  * Returns 0 when the auto-dispatch routes to SIMT (no packing), or the A+B
  * packing scratch plus the inner cuBLASDx gemm scratch otherwise. constexpr.
@@ -548,19 +540,19 @@ __device__ void row_strided_gemm(T alpha, T* A, T* B, T beta, T* C, char* smem)
  * @tparam SM_VAL        Target SM architecture.
  */
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
-          uint32_t A_RS = M, uint32_t B_RS = N,
+          uint32_t A_RS = M, uint32_t B_RS = K,
           uint32_t BLOCK_THREADS = 0,
           layout LA = layout::col_major,
           layout LB = layout::col_major,
           layout LC = layout::col_major,
           uint32_t SM_VAL = SMS>
-constexpr std::size_t row_strided_gemm_smem_size()
+constexpr std::size_t gemm_strided_scratch_bytes()
 {
     if constexpr (!should_use_cublasdx<T, M, N, K, SM_VAL>())
         return 0;
     else
-        return (M * N + N * K) * sizeof(T)
-             + gemm_smem_size<T, M, N, K, BLOCK_THREADS, LA, LB, LC, SM_VAL>();
+        return (M * K + K * N) * sizeof(T)
+             + gemm_scratch_bytes<T, M, N, K, BLOCK_THREADS, LA, LB, LC, SM_VAL>();
 }
 
 // ---------------------------------------------------------------------------
@@ -574,8 +566,8 @@ constexpr std::size_t row_strided_gemm_smem_size()
 // an arbitrary global address. For contiguous batches, populate the array as
 //   { base + 0*M*N, base + 1*M*N, ..., base + (BATCH-1)*M*N }.
 //
-// Required launch:  kernel<<<grid, dim3(TC, BATCH), gemm_batched_smem_size>>>
-// Required smem:    glass::nvidia::gemm_batched_smem_size<T, M, N, K, BATCH, TC>()
+// Required launch:  kernel<<<grid, dim3(TC, BATCH), gemm_batched_scratch_bytes>>>
+// Required smem:    glass::nvidia::gemm_batched_scratch_bytes<T, M, N, K, BATCH, TC>()
 // ---------------------------------------------------------------------------
 
 /**
@@ -645,7 +637,7 @@ template <typename T, uint32_t M, uint32_t N, uint32_t K, uint32_t BATCH,
           layout LB = layout::col_major,
           layout LC = layout::col_major,
           uint32_t SM_VAL = SMS>
-constexpr std::size_t gemm_batched_smem_size() { return 0; }
+constexpr std::size_t gemm_batched_scratch_bytes() { return 0; }
 
 /**
  * @brief Total thread count for `gemm_batched<...>` (host-callable).
@@ -750,7 +742,7 @@ constexpr uint32_t gemm_batched_threads() { return 256; }
             ::template run<false>(alpha, A, B, beta, C, smem);                                  \
     }                                                                                           \
     template <>                                                                                 \
-    constexpr std::size_t gemm_batched_smem_size<float, M, N, K, BATCH, TC,                    \
+    constexpr std::size_t gemm_batched_scratch_bytes<float, M, N, K, BATCH, TC,                    \
                                                   static_cast<layout>(LA),                      \
                                                   static_cast<layout>(LB),                      \
                                                   static_cast<layout>(LC), ARCH>()             \

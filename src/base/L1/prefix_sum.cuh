@@ -13,7 +13,7 @@
  * @param s_output  Output scan buffer of length `n` (in shared memory).
  * @param n         Number of elements (must not exceed `blockDim.x`).
  */
-template <typename T>
+template <typename T, bool TRAILING_SYNC = true>
 __device__ void prefix_sum_exclusive(T *s_input, T *s_output, int n)
 {
     int tid = threadIdx.x;
@@ -26,6 +26,7 @@ __device__ void prefix_sum_exclusive(T *s_input, T *s_output, int n)
         __syncthreads();
         if (tid < n && tid >= d) s_output[tid] = tmp;
     }
+    if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
 /**
@@ -39,7 +40,7 @@ __device__ void prefix_sum_exclusive(T *s_input, T *s_output, int n)
  * @param s_output  Output scan buffer of length `n` (in shared memory).
  * @param n         Number of elements (must not exceed `blockDim.x`).
  */
-template <typename T>
+template <typename T, bool TRAILING_SYNC = true>
 __device__ void prefix_sum_inclusive(T *s_input, T *s_output, int n)
 {
     int tid = threadIdx.x;
@@ -52,4 +53,5 @@ __device__ void prefix_sum_inclusive(T *s_input, T *s_output, int n)
         __syncthreads();
         if (tid < n && tid >= d) s_output[tid] = tmp;
     }
+    if constexpr (TRAILING_SYNC) __syncthreads();
 }

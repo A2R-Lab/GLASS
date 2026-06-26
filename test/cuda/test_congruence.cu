@@ -46,6 +46,25 @@ static void launch_cong(int surf, int th, bool acc, float al, const float* dX, c
     }
 }
 
+template <int SURF, uint32_t P, uint32_t Q, bool ACC>
+__global__ void k_cacc(float alpha, const float* G, const float* M, float beta, float* C) {
+    extern __shared__ float st[];
+    if (SURF == SURF_WARP) glass::warp::congruence_accum<float, P, Q, ACC>(alpha, G, M, beta, C, st);
+    else                   glass::congruence_accum<float, P, Q, ACC>(alpha, G, M, beta, C, st);
+}
+
+template <uint32_t P, uint32_t Q>
+static void launch_cacc(int surf, int th, bool acc, float al, const float* dG, const float* dM, float be, float* dC) {
+    int sm = glass::congruence_accum_smem_count<float,P,Q>() * sizeof(float);
+    if (acc) {
+        if (surf==SURF_WARP) k_cacc<SURF_WARP,P,Q,true><<<1,th,sm>>>(al,dG,dM,be,dC);
+        else                 k_cacc<SURF_BLOCK,P,Q,true><<<1,th,sm>>>(al,dG,dM,be,dC);
+    } else {
+        if (surf==SURF_WARP) k_cacc<SURF_WARP,P,Q,false><<<1,th,sm>>>(al,dG,dM,be,dC);
+        else                 k_cacc<SURF_BLOCK,P,Q,false><<<1,th,sm>>>(al,dG,dM,be,dC);
+    }
+}
+
 template <uint32_t N, uint32_t P, uint32_t Qd>
 static void launch_bil(int surf, int th, bool acc, float al, const float* dX, const float* dM, const float* dY, float be, float* dR) {
     int sm = N * Qd * sizeof(float);
@@ -62,6 +81,8 @@ static void launch_bil(int surf, int th, bool acc, float al, const float* dX, co
 
 #define CONG_SHAPES(_) _(14,21) _(8,8) _(5,3) _(7,14) _(33,5) _(64,3) _(14,14) _(3,4)
 #define BIL_SHAPES(_)  _(14,7,21) _(8,5,3) _(5,5,5) _(33,4,6) _(7,14,7)
+// congruence_accum: G is P×Q, M is Q×Q, C is P×P (GATO B·R⁻¹·Bᵀ shapes).
+#define CACC_SHAPES(_) _(5,3) _(14,7) _(7,7) _(8,4) _(6,5) _(3,3)
 
 int main(int argc, char** argv) {
     if (argc < 2) { fprintf(stderr, "need op\n"); return 1; }
@@ -98,6 +119,20 @@ int main(int argc, char** argv) {
         cudaError_t e=cudaDeviceSynchronize();
         if(e!=cudaSuccess){fprintf(stderr,"err %s\n",cudaGetErrorString(e));return 1;}
         print_device_vec(dR, P*Qd);
+    } else if (strcmp(op,"cacc")==0) {
+        uint32_t P=atoi(argv[4]), Q=atoi(argv[5]); bool acc=atoi(argv[6])!=0;
+        float al=atof(argv[7]), be=atof(argv[8]);
+        float* dG=read_device_vec(argv[9], P*Q);
+        float* dM=read_device_vec(argv[10], Q*Q);
+        float* dC=read_device_vec(argv[11], P*P);
+        bool ok=false;
+        #define DA(PP,QQ) if(!ok&&P==PP&&Q==QQ){launch_cacc<PP,QQ>(surf,th,acc,al,dG,dM,be,dC);ok=true;}
+        CACC_SHAPES(DA)
+        #undef DA
+        if(!ok){fprintf(stderr,"bad cacc shape\n");return 1;}
+        cudaError_t e=cudaDeviceSynchronize();
+        if(e!=cudaSuccess){fprintf(stderr,"err %s\n",cudaGetErrorString(e));return 1;}
+        print_device_vec(dC, P*P);
     } else { fprintf(stderr,"bad op\n"); return 1; }
     return 0;
 }

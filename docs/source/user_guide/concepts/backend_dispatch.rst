@@ -60,9 +60,9 @@ that reflects its arithmetic intensity:
      - ``max(M,N) >= 32``
    * - ``cublasdx_wins_batched<M, N, K, BATCH, SM>``
      - ``BATCH >= 8 AND max(M,N,K) >= 8``
-   * - ``cublasdx_wins_row_strided_gemm<...>``
+   * - ``cublasdx_wins_gemm_strided<...>``
      - delegates to ``cublasdx_wins<>``
-   * - ``cublasdx_wins_row_strided_gemv<...>``
+   * - ``cublasdx_wins_gemv_strided<...>``
      - delegates to ``cublasdx_wins_gemv<>``
 
 Restricted to ``float``: the heuristic returns SIMT for non-float types.

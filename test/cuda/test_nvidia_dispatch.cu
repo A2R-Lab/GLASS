@@ -3,8 +3,8 @@
 // Companion to test_l3_nvidia.cu (which exercises the SIMT-only batched APIs).
 // This file targets the round-2 additions:
 //   * Gap A — glass::nvidia::gemv<>     auto-dispatches SIMT vs cuBLASDx
-//   * Gap B — row_strided_gemv<>        auto-dispatches; uses stride directly on SIMT
-//   * Gap C — row_strided_gemm<>        auto-dispatches; skips compact-pack on SIMT
+//   * Gap B — gemv_strided<>        auto-dispatches; uses stride directly on SIMT
+//   * Gap C — gemm_strided<>        auto-dispatches; skips compact-pack on SIMT
 //   * Gap D — gemm<T,...,col,row,col>   maps onto SIMT TRANSPOSE_B=true
 //   * print_dispatch<>                  query helper from query_simt.cuh
 //
@@ -58,7 +58,7 @@ __global__ void k_gemm_6x6x6_transb(float* A, float* B, float* C) {
 }
 
 __global__ void k_gemm_6x6x6_transb_simt(float* A, float* B, float* C) {
-    ::glass::gemm<float, 6, 6, 6, /*TRANSPOSE_B=*/true>(1.f, A, B, 0.f, C);
+    ::glass::gemm<float, 6, 6, 6, /*TA=*/false, /*TRANSPOSE_B=*/true>(1.f, A, B, 0.f, C);
 }
 
 __global__ void k_gemv_5x5(float* A, float* x, float* y) {
@@ -69,12 +69,12 @@ __global__ void k_gemv_5x5(float* A, float* x, float* y) {
 
 __global__ void k_strided_gemv_5x5_rs8(float* A, float* x, float* y) {
     // Gap B: SIMT uses stride directly, no smem packing.
-    glass::nvidia::row_strided_gemv<float, 5, 5, 8>(1.f, A, x, 0.f, y, nullptr);
+    glass::nvidia::gemv_strided<float, 5, 5, 8>(1.f, A, x, 0.f, y, nullptr);
 }
 
 __global__ void k_strided_gemm_6x6x6_rs8(float* A, float* B, float* C) {
     // Gap C: SIMT uses A_RS=8, B_RS=8 directly.
-    glass::nvidia::row_strided_gemm<float, 6, 6, 6, 8, 8>(1.f, A, B, 0.f, C, nullptr);
+    glass::nvidia::gemm_strided<float, 6, 6, 6, 8, 8>(1.f, A, B, 0.f, C, nullptr);
 }
 
 // ─── ops ────────────────────────────────────────────────────────────────────
@@ -108,7 +108,7 @@ static int op_gemm_cublas() {
     for (int i = 0; i < M*N; i++) A[i] = 0.01f * (i+1);
     for (int i = 0; i < N*K; i++) B[i] = 0.02f * (i+1);
     float *dA,*dB,*dC,*dCref;
-    constexpr size_t smemsz = glass::nvidia::gemm_smem_size<float, 16, 16, 16>();
+    constexpr size_t smemsz = glass::nvidia::gemm_scratch_bytes<float, 16, 16, 16>();
     constexpr uint32_t tc = glass::nvidia::gemm_threads<float, 16, 16, 16>();
     CUDA_CHECK(cudaMalloc(&dA, M*N*4)); CUDA_CHECK(cudaMalloc(&dB, N*K*4));
     CUDA_CHECK(cudaMalloc(&dC, M*K*4)); CUDA_CHECK(cudaMalloc(&dCref, M*K*4));

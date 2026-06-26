@@ -12,10 +12,14 @@ axpy / axpby
 
 .. doxygenfile:: src/base/L1/axpy.cuh
 
+.. doxygenfile:: src/base/L1/axpy_strided.cuh
+
 copy
 ----
 
 .. doxygenfile:: src/base/L1/copy.cuh
+
+.. doxygenfile:: src/base/L1/copy_strided.cuh
 
 scal
 ----
@@ -51,7 +55,9 @@ Norms
 
 .. doxygenfile:: src/base/L1/norm.cuh
 
-.. doxygenfile:: src/base/L1/l2norm.cuh
+.. doxygenfile:: src/base/L1/nrm2.cuh
+
+.. doxygenfile:: src/base/L1/nrm1_diff.cuh
 
 .. doxygenfile:: src/base/L1/infnorm.cuh
 

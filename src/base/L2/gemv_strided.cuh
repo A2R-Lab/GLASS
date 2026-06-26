@@ -22,14 +22,14 @@
  * @tparam M           Number of rows of `A` (compile-time constant).
  * @tparam N           Number of columns of `A` (compile-time constant).
  * @tparam ROW_STRIDE  Column-major leading dimension of `A` (default `M`).
+ * @param alpha  Scalar multiplier on the product.
  * @param A      Input matrix, addressed at `A[row + col*ROW_STRIDE]`.
  * @param x      Input vector of length `N`.
- * @param y      In/out vector of length `M`.
- * @param alpha  Scalar multiplier on the product.
  * @param beta   Scalar multiplier on the prior `y`.
+ * @param y      In/out vector of length `M`.
  */
 template <typename T, uint32_t M, uint32_t N, uint32_t ROW_STRIDE = M>
-__device__ void row_strided_gemv(const T* A, const T* x, T* y, T alpha, T beta)
+__device__ void gemv_strided(T alpha, const T* A, const T* x, T beta, T* y)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
@@ -51,13 +51,13 @@ __device__ void row_strided_gemv(const T* A, const T* x, T* y, T alpha, T beta)
  * @tparam M           Number of rows of `A` (compile-time constant).
  * @tparam N           Number of columns of `A` (compile-time constant).
  * @tparam ROW_STRIDE  Column-major leading dimension of `A` (default `M`).
+ * @param alpha  Scalar multiplier on the product.
  * @param A      Input matrix, addressed at `A[row + col*ROW_STRIDE]`.
  * @param x      Input vector of length `N`.
  * @param y      Output vector of length `M`.
- * @param alpha  Scalar multiplier on the product.
  */
 template <typename T, uint32_t M, uint32_t N, uint32_t ROW_STRIDE = M>
-__device__ void row_strided_gemv(const T* A, const T* x, T* y, T alpha)
+__device__ void gemv_strided(T alpha, const T* A, const T* x, T* y)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;

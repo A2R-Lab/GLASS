@@ -74,12 +74,12 @@ constexpr bool cublasdx_wins_batched() {
 // strided cases skew differently.
 template <uint32_t M, uint32_t N, uint32_t K,
           uint32_t A_RS, uint32_t B_RS, uint32_t SM_VAL>
-constexpr bool cublasdx_wins_row_strided_gemm() {
+constexpr bool cublasdx_wins_gemm_strided() {
     return cublasdx_wins<M, N, K, SM_VAL>();
 }
 
 template <uint32_t M, uint32_t N, uint32_t ROW_STRIDE, uint32_t SM_VAL>
-constexpr bool cublasdx_wins_row_strided_gemv() {
+constexpr bool cublasdx_wins_gemv_strided() {
     return cublasdx_wins_gemv<M, N, SM_VAL>();
 }
 

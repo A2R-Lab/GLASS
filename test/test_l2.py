@@ -65,21 +65,6 @@ def test_gemv_rowmajor(bins, m, n):
     assert np.allclose(result, expected, rtol=RTOL, atol=ATOL)
 
 
-@pytest.mark.parametrize("m,n", [(8, 6), (12, 4), (16, 12)])
-def test_gemv_ex(bins, m, n):
-    """gemv_ex per-matrix flag (ROW_MAJOR_A=true) — same result as gemv_rowmajor."""
-    alpha, beta = 2.0, 0.5
-    A = RNG.random((m, n)).astype(np.float32)
-    x = RNG.random(n).astype(np.float32)
-    y = RNG.random(m).astype(np.float32)
-    y0 = y.copy()
-    result = run_op(bins["l2"], "gemv_ex", "simple",
-                    args=[m, n, alpha, beta],
-                    inputs=[A.ravel(), x, y])
-    expected = (alpha * A @ x + beta * y0).astype(np.float32)
-    assert np.allclose(result, expected, rtol=RTOL, atol=ATOL)
-
-
 # ─── gemv_strided ─────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("alpha,beta", [(1.5, 0.3), (1.0, 0.0)])
@@ -104,7 +89,7 @@ def test_gemv_strided(bins, op, m, n, rs, alpha, beta):
     assert np.allclose(result, expected, rtol=RTOL, atol=ATOL)
 
 
-# ─── segmented_row_strided_gemv ──────────────────────────────────────────────
+# ─── gemv_segmented ──────────────────────────────────────────────
 # `segments` independent 6x6 col-major (LDA=6) GEMVs computed concurrently.
 # Descriptor arrays give per-segment base element offsets into packed buffers.
 # numpy does each GEMV independently as the reference.
@@ -144,7 +129,7 @@ def _build_segmented(segments, m, n, rs, rng, with_S=False):
 
 @pytest.mark.parametrize("segments", [1, 3, 5])
 @pytest.mark.parametrize("alpha,beta", [(1.5, 0.3), (1.0, 0.0)])
-def test_segmented_row_strided_gemv_nofuse(bins, segments, alpha, beta):
+def test_gemv_segmented_nofuse(bins, segments, alpha, beta):
     m, n, rs = 6, 6, 6
     d = _build_segmented(segments, m, n, rs, RNG)
     y0 = d["y"].copy()
@@ -162,7 +147,7 @@ def test_segmented_row_strided_gemv_nofuse(bins, segments, alpha, beta):
 
 @pytest.mark.parametrize("segments", [1, 3, 5])
 @pytest.mark.parametrize("alpha,beta", [(1.5, 0.3), (1.0, 0.0)])
-def test_segmented_row_strided_gemv_fuse(bins, segments, alpha, beta):
+def test_gemv_segmented_fuse(bins, segments, alpha, beta):
     m, n, rs = 6, 6, 6
     d = _build_segmented(segments, m, n, rs, RNG, with_S=True)
     scalar = (RNG.random(segments) - 0.5).astype(np.float32)
@@ -181,14 +166,14 @@ def test_segmented_row_strided_gemv_fuse(bins, segments, alpha, beta):
     assert np.allclose(result, expected, rtol=RTOL, atol=ATOL)
 
 
-# ─── segmented_row_strided_gemv: TRANSPOSE ───────────────────────────────────
+# ─── gemv_segmented: TRANSPOSE ───────────────────────────────────
 # Per segment y_seg(N) = alpha * Aᵀ_seg(N×M) * x_seg(M) + beta*y_seg(N).
 # A_seg is M×N col-major LDA=rs; the kernel binds M=6,N=4,ROW_STRIDE=6.
 # Segments keep DISJOINT y ranges (non-atomic), checked vs a per-segment Aᵀ·x.
 
 @pytest.mark.parametrize("segments", [1, 3, 5])
 @pytest.mark.parametrize("alpha,beta", [(1.5, 0.3), (1.0, 0.0)])
-def test_segmented_row_strided_gemv_transpose(bins, segments, alpha, beta):
+def test_gemv_segmented_transpose(bins, segments, alpha, beta):
     m, n, rs = 6, 4, 6
     A_list, x_list, y_list = [], [], []
     a_off, x_off, y_off = [], [], []
@@ -219,13 +204,13 @@ def test_segmented_row_strided_gemv_transpose(bins, segments, alpha, beta):
     assert np.allclose(result, expected, rtol=RTOL, atol=ATOL)
 
 
-# ─── segmented_row_strided_gemv: ATOMIC_Y (overlapping y) ─────────────────────
+# ─── gemv_segmented: ATOMIC_Y (overlapping y) ─────────────────────
 # Per segment y_seg(M) += alpha * A_seg(M×N) * x_seg(N). Multiple segments share
 # the SAME y range (a parent), so the atomic path must SCATTER-ADD them. Caller
 # pre-zeros y; reference is a numpy scatter-add. M=6,N=6,rs=6.
 
 @pytest.mark.parametrize("alpha", [1.0, 1.5])
-def test_segmented_row_strided_gemv_atomic(bins, alpha):
+def test_gemv_segmented_atomic(bins, alpha):
     m, n, rs = 6, 6, 6
     # 3 parents, several child segments each accumulating into a shared parent.
     parent_of = [0, 1, 1, 2, 2, 2]   # seg -> parent index (overlap by design)
@@ -260,13 +245,13 @@ def test_segmented_row_strided_gemv_atomic(bins, alpha):
     assert np.allclose(result, expected, rtol=RTOL, atol=ATOL)
 
 
-# ─── segmented_row_strided_gemv: TRANSPOSE + ATOMIC_Y (backward pass) ─────────
+# ─── gemv_segmented: TRANSPOSE + ATOMIC_Y (backward pass) ─────────
 # The leaf→root case: each child segment computes Aᵀ_seg·x_seg (the Xᵀ·f map)
 # and atomically accumulates it into a SHARED parent y range. M=6,N=6,rs=6 so
 # y_seg also has length 6 (square X). Reference is a transposed scatter-add.
 
 @pytest.mark.parametrize("alpha", [1.0, 1.5])
-def test_segmented_row_strided_gemv_transpose_atomic(bins, alpha):
+def test_gemv_segmented_transpose_atomic(bins, alpha):
     m, n, rs = 6, 6, 6
     parent_of = [0, 1, 1, 2, 2, 2]
     n_parents = 3

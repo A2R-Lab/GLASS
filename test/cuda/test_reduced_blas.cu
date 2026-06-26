@@ -2,8 +2,8 @@
 // (block / warp / cgrps) and print the float32 result.
 //
 // Usage:
-//   gemv <surface> <THREADS> <M> <N> <TRANS> <alpha> <beta> <A> <x> <y>  -> y (TRANS?N:M)
-//   syrk <surface> <THREADS> <ROWS> <COLS> <TRANS> <alpha> <beta> <A> <C> -> C (OUT*OUT)
+//   gemv <surface> <THREADS> <M> <N> <TRANSPOSE> <alpha> <beta> <A> <x> <y>  -> y (TRANSPOSE?N:M)
+//   syrk <surface> <THREADS> <ROWS> <COLS> <TRANSPOSE> <alpha> <beta> <A> <C> -> C (OUT*OUT)
 
 #include <cstdio>
 #include <cstdlib>

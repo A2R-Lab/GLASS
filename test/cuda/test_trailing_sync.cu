@@ -242,7 +242,7 @@ static int op_l3_cublasdx_gemm()
     CUDA_CHECK(cudaMemcpy(dA, hA.data(), M*N*sizeof(float), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(dB, hB.data(), N*K*sizeof(float), cudaMemcpyHostToDevice));
 
-    auto smem_bytes = glass::nvidia::gemm_smem_size<float, M, N, K>();
+    auto smem_bytes = glass::nvidia::gemm_scratch_bytes<float, M, N, K>();
     auto threads    = glass::nvidia::gemm_threads<float, M, N, K>();
 
     k_l3_cublasdx_gemm<true ><<<1, threads, smem_bytes>>>(dA, dB, dC_t); CUDA_CHECK(cudaDeviceSynchronize());

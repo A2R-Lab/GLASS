@@ -16,7 +16,7 @@ namespace low_memory {
      * @param a    Input vector of length `N`.
      * @param out  Length-`N` scratch/output buffer; the result lands in `out[0]`.
      */
-    template <typename T>
+    template <typename T, bool TRAILING_SYNC = true>
     __device__ void vector_norm(uint32_t N, T *a, T *out)
     {
         uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
@@ -27,7 +27,7 @@ namespace low_memory {
             for (uint32_t i = 1; i < N; i++) out[0] += out[i];
             out[0] = sqrtf(out[0]);
         }
-        __syncthreads();
+        if constexpr (TRAILING_SYNC) __syncthreads();
     }
 }
 
@@ -45,7 +45,7 @@ namespace high_speed {
      * @param out        Output buffer; the result lands in `out[0]`.
      * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per warp).
      */
-    template <typename T>
+    template <typename T, bool TRAILING_SYNC = true>
     __device__ void vector_norm(uint32_t N, T *a, T *out, T *s_scratch)
     {
         uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
@@ -62,7 +62,7 @@ namespace high_speed {
             for (int off = 16; off > 0; off >>= 1) val += __shfl_down_sync(0xffffffff, val, off);
             if (rank == 0) out[0] = sqrtf(val);
         }
-        __syncthreads();
+        if constexpr (TRAILING_SYNC) __syncthreads();
     }
 
     /**
@@ -77,7 +77,7 @@ namespace high_speed {
      * @param out        Output buffer; the result lands in `out[0]`.
      * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per warp).
      */
-    template <typename T, uint32_t N>
+    template <typename T, uint32_t N, bool TRAILING_SYNC = true>
     __device__ void vector_norm(T *a, T *out, T *s_scratch)
     {
         uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
@@ -94,6 +94,6 @@ namespace high_speed {
             for (int off = 16; off > 0; off >>= 1) val += __shfl_down_sync(0xffffffff, val, off);
             if (rank == 0) out[0] = sqrtf(val);
         }
-        __syncthreads();
+        if constexpr (TRAILING_SYNC) __syncthreads();
     }
 }

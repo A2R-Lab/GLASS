@@ -16,5 +16,6 @@ single 1D thread block, and the block-tridiagonal layout used by the
    namespaces
    trailing_sync
    tuning
+   batching
    batched_1d
    block_tridiagonal

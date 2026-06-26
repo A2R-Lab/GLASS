@@ -1,5 +1,15 @@
 #pragma once
+#include "../barrier.cuh"
 #include <cstdint>
+
+// shared body: in-place scale `x = alpha*x`
+template <typename Bar, typename T, bool TRAILING_SYNC = true>
+__device__ void scal_impl(Bar bar, uint32_t n, T alpha, T *x)
+{
+    uint32_t rank = bar.rank(), size = bar.size();
+    for (uint32_t i = rank; i < n; i += size) x[i] = alpha*x[i];
+    if constexpr (TRAILING_SYNC) bar.sync();
+}
 
 /**
  * @brief Scale a vector in place: `x = alpha * x` (SCAL).
@@ -11,12 +21,19 @@
  * @param alpha  Scalar multiplier.
  * @param x      In/out vector of length `n` (overwritten with the result).
  */
-template <typename T>
+template <typename T, bool TRAILING_SYNC = true>
 __device__ void scal(uint32_t n, T alpha, T *x)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    for (uint32_t i = rank; i < n; i += size) x[i] = alpha*x[i];
+    scal_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, n, alpha, x);
+}
+
+// shared body: out-of-place scale `y = alpha*x`
+template <typename Bar, typename T, bool TRAILING_SYNC = true>
+__device__ void scal_impl(Bar bar, uint32_t n, T alpha, T *x, T *y)
+{
+    uint32_t rank = bar.rank(), size = bar.size();
+    for (uint32_t i = rank; i < n; i += size) y[i] = alpha*x[i];
+    if constexpr (TRAILING_SYNC) bar.sync();
 }
 
 /**
@@ -30,12 +47,10 @@ __device__ void scal(uint32_t n, T alpha, T *x)
  * @param x      Input vector of length `n`.
  * @param y      Output vector of length `n` (overwritten with the result).
  */
-template <typename T>
+template <typename T, bool TRAILING_SYNC = true>
 __device__ void scal(uint32_t n, T alpha, T *x, T *y)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    for (uint32_t i = rank; i < n; i += size) y[i] = alpha*x[i];
+    scal_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, n, alpha, x, y);
 }
 
 /**
@@ -48,12 +63,10 @@ __device__ void scal(uint32_t n, T alpha, T *x, T *y)
  * @param alpha  Scalar multiplier.
  * @param x      In/out vector of length `N` (overwritten with the result).
  */
-template <typename T, uint32_t N>
+template <typename T, uint32_t N, bool TRAILING_SYNC = true>
 __device__ void scal(T alpha, T *x)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    for (uint32_t i = rank; i < N; i += size) x[i] = alpha*x[i];
+    scal_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, N, alpha, x);
 }
 
 /**
@@ -67,12 +80,10 @@ __device__ void scal(T alpha, T *x)
  * @param x      Input vector of length `N`.
  * @param y      Output vector of length `N` (overwritten with the result).
  */
-template <typename T, uint32_t N>
+template <typename T, uint32_t N, bool TRAILING_SYNC = true>
 __device__ void scal(T alpha, T *x, T *y)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    for (uint32_t i = rank; i < N; i += size) y[i] = alpha*x[i];
+    scal_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, N, alpha, x, y);
 }
 
 namespace warp {

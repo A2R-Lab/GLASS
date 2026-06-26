@@ -19,7 +19,7 @@
  * Convergence is tested on the preconditioned residual `rho = rᵀ z`:
  * `|rho| < abs_tol + rel_tol * |rho_init|`.
  *
- * Shared scratch: pass `s_mem` of `pcg_smem_size<T,state_size,knot_points>(threads)`
+ * Shared scratch: pass `s_mem` of `pcg_scratch_bytes<T,state_size,knot_points>(threads)`
  * elements (5 padded vectors + the warp-dot scratch). Five scalars live in
  * static `__shared__`. Requires `blockDim.x` be a multiple of 32 (the warp dot).
  */
@@ -35,12 +35,12 @@
  * @tparam state_size   Block dimension.
  * @tparam knot_points  Number of block-rows.
  * @param threads  Launch thread count (`blockDim.x`).
- * @return Number of `T` elements of dynamic shared memory required.
+ * @return Bytes of dynamic shared memory required.
  */
 template <typename T, uint32_t state_size, uint32_t knot_points>
-__host__ __device__ inline constexpr uint32_t pcg_smem_size(uint32_t threads)
+__host__ __device__ inline constexpr std::size_t pcg_scratch_bytes(uint32_t threads)
 {
-    return 5u * ((knot_points + 2u) * state_size) + ((threads + 31u) / 32u);
+    return (static_cast<std::size_t>(5u * ((knot_points + 2u) * state_size)) + ((threads + 31u) / 32u)) * sizeof(T);
 }
 
 /**
@@ -54,7 +54,7 @@ __host__ __device__ inline constexpr uint32_t pcg_smem_size(uint32_t threads)
  * @param S          Block-tridiagonal SPD system, `[L|D|R]` row-major strips.
  * @param Pinv       Block-tridiagonal preconditioner, `[L|D|R]` row-major strips.
  * @param b          Padded right-hand side.
- * @param s_mem      Shared scratch of `pcg_smem_size<T,...>(blockDim.x)` elements.
+ * @param s_mem      Shared scratch of `pcg_scratch_bytes<T,...>(blockDim.x)` elements.
  * @param max_iters  Maximum CG iterations.
  * @param rel_tol    Relative tolerance on the preconditioned residual.
  * @param abs_tol    Absolute tolerance on the preconditioned residual.

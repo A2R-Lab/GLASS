@@ -32,6 +32,13 @@ __global__ void k_riccati(const float* P, const float* A, const float* B, const 
     glass::riccati_gain<float, NX, NU, REG>(P, A, B, R, K, st, rho, fail);
 }
 
+template <uint32_t NX, uint32_t NU, bool REG>
+__global__ void k_riccati_warp(const float* P, const float* A, const float* B, const float* R,
+                               float* K, float rho, int* fail) {
+    extern __shared__ float st[];
+    glass::warp::riccati_gain<float, NX, NU, REG>(P, A, B, R, K, st, rho, fail);
+}
+
 #define POSV_SHAPES(_) _(7,7) _(8,5) _(14,7) _(5,1) _(3,3) _(7,14)
 #define RIC_SHAPES(_)  _(14,7) _(8,4) _(6,3) _(10,5) _(4,2)
 
@@ -58,7 +65,8 @@ int main(int argc, char** argv) {
         int fail; cudaMemcpy(&fail,dFail,sizeof(int),cudaMemcpyDeviceToHost);
         printf("%d\n", fail);
         print_device_vec(dB, N*NRHS);
-    } else if (strcmp(op, "riccati") == 0) {
+    } else if (strcmp(op, "riccati") == 0 || strcmp(op, "riccati_warp") == 0) {
+        bool warp = (strcmp(op, "riccati_warp") == 0);
         uint32_t NX = atoi(argv[3]), NU = atoi(argv[4]); bool reg = atoi(argv[5]) != 0;
         float rho = atof(argv[6]);
         float* dP = read_device_vec(argv[7], NX*NX);
@@ -70,8 +78,10 @@ int main(int argc, char** argv) {
         bool ok = false;
         #define DR(XX,UU) if(!ok && NX==XX && NU==UU){ \
             int sm = glass::riccati_smem_count<XX,UU>()*sizeof(float); \
-            if(reg) k_riccati<XX,UU,true><<<1,th,sm>>>(dP,dA,dB,dR,dK,rho,dFail); \
-            else    k_riccati<XX,UU,false><<<1,th,sm>>>(dP,dA,dB,dR,dK,rho,dFail); ok=true; }
+            if(warp){ if(reg) k_riccati_warp<XX,UU,true><<<1,32,sm>>>(dP,dA,dB,dR,dK,rho,dFail); \
+                      else    k_riccati_warp<XX,UU,false><<<1,32,sm>>>(dP,dA,dB,dR,dK,rho,dFail); } \
+            else    { if(reg) k_riccati<XX,UU,true><<<1,th,sm>>>(dP,dA,dB,dR,dK,rho,dFail); \
+                      else    k_riccati<XX,UU,false><<<1,th,sm>>>(dP,dA,dB,dR,dK,rho,dFail); } ok=true; }
         RIC_SHAPES(DR)
         #undef DR
         if(!ok){fprintf(stderr,"bad riccati shape\n");return 1;}

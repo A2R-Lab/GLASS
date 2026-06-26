@@ -1,7 +1,7 @@
 """SYRK / SYR2K GLASS function tests — compare GPU results to a NumPy oracle.
 
 The CUDA runner (test_syrk.cu) has its own CLI:
-    <op> <THREADS> <n> <k> <FILL> <TRANS> <ROW_MAJOR> <alpha> <beta> <A.bin> [<B.bin>] <C.bin>
+    <op> <THREADS> <n> <k> <FILL> <TRANSPOSE> <ROW_MAJOR> <alpha> <beta> <A.bin> [<B.bin>] <C.bin>
 so we invoke it directly rather than via conftest.run_op (whose fixed
 `op version args... files...` shape doesn't match).
 """
@@ -40,7 +40,7 @@ def _run(binary, op, threads, n, k, fill, trans, row_major,
     tmp = []
     try:
         arrays = [_ravel(A, row_major)]
-        if op == "syr2k":
+        if op.startswith("syr2k"):
             arrays.append(_ravel(B, row_major))
         arrays.append(_ravel(C, row_major))
         for arr in arrays:
@@ -75,7 +75,7 @@ def _oracle_syr2k(alpha, A, B, beta, C0, trans):
 
 
 def _shapes(n, k, trans):
-    """Shape of A (and B) given n,k and TRANS. TRANS=false → n x k; true → k x n."""
+    """Shape of A (and B) given n,k and TRANSPOSE. TRANSPOSE=false → n x k; true → k x n."""
     return (k, n) if trans else (n, k)
 
 
@@ -172,3 +172,34 @@ def test_syrk_thread_invariance(bins, op, n, k, trans):
         outs.append(r)
     for r in outs[1:]:
         assert np.array_equal(outs[0], r), "thread-count non-invariance"
+
+
+# ─── warp forms (compile-time N,K; one 32-lane warp) ──────────────────────────
+# warp::syrk/syr2k reuse the SAME validated syrk_impl_ct/syr2k_impl_ct as the block
+# form (just (lane,32) striping), so the warp output must equal the block output
+# bit-for-bit AND satisfy the oracle. Harness instantiates these (n,k) shapes only.
+WARP_PAIRS = [(4, 6), (6, 4), (7, 6)]
+WARP = 32
+
+
+@pytest.mark.parametrize("op", ["syrk_warp", "syr2k_warp"])
+@pytest.mark.parametrize("n,k", WARP_PAIRS)
+@pytest.mark.parametrize("fill", FILLS, ids=lambda f: FILL_IDS[f])
+@pytest.mark.parametrize("trans", TRANSES)
+@pytest.mark.parametrize("row_major", [False, True])
+def test_syrk_warp(bins, op, n, k, fill, trans, row_major):
+    block_op = op.replace("_warp", "")
+    alpha, beta = 1.5, 0.3
+    sh = _shapes(n, k, trans)
+    A = RNG.random(sh).astype(np.float32)
+    B = RNG.random(sh).astype(np.float32) if block_op == "syr2k" else None
+    C = RNG.random((n, n)).astype(np.float32)
+    C0 = C.copy()
+    warp = _run(bins["syrk"], op, WARP, n, k, fill, trans, row_major, alpha, beta, A, B, C)
+    block = _run(bins["syrk"], block_op, 64, n, k, fill, trans, row_major, alpha, beta, A, B, C)
+    # warp == block bit-for-bit (same impl, restricted to one warp)
+    assert np.array_equal(warp, block), f"{op} n={n} k={k} fill={fill}: warp != block"
+    # and matches the oracle per FILL semantics
+    expected = (_oracle_syrk(alpha, A, beta, C0, trans) if block_op == "syrk"
+                else _oracle_syr2k(alpha, A, B, beta, C0, trans))
+    _check(warp, expected, n, fill, C0)

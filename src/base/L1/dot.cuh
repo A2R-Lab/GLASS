@@ -1,4 +1,5 @@
 #pragma once
+#include "../barrier.cuh"
 #include <cstdint>
 #include "reduce.cuh"
 
@@ -14,15 +15,22 @@
  * @param x  Input vector of length `n`.
  * @param y  In/out vector of length `n`; the dot product lands in `y[0]`.
  */
+// Shared body: y = x·y (result in y[0]); element-wise multiply then halving
+// reduce on y. The trailing barrier rides on reduce_impl's TRAILING_SYNC.
+template <typename Bar, typename T, bool TRAILING_SYNC = true>
+__device__ void dot_impl(Bar bar, uint32_t n, T *x, T *y)
+{
+    uint32_t rank = bar.rank(), size = bar.size();
+    for (uint32_t i = rank; i < n; i += size) y[i] *= x[i];
+    bar.sync();
+    reduce_impl<Bar, T, TRAILING_SYNC>(bar, n, y);
+}
+
 // in-place: y = x·y (result in y[0]); uses halving reduce on y
-template <typename T>
+template <typename T, bool TRAILING_SYNC = true>
 __device__ void dot(uint32_t n, T *x, T *y)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    for (uint32_t i = rank; i < n; i += size) y[i] *= x[i];
-    __syncthreads();
-    reduce<T>(n, y);
+    dot_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, n, x, y);
 }
 
 /**
@@ -36,14 +44,10 @@ __device__ void dot(uint32_t n, T *x, T *y)
  * @param x  Input vector of length `N`.
  * @param y  In/out vector of length `N`; the dot product lands in `y[0]`.
  */
-template <typename T, uint32_t N>
+template <typename T, uint32_t N, bool TRAILING_SYNC = true>
 __device__ void dot(T *x, T *y)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    for (uint32_t i = rank; i < N; i += size) y[i] *= x[i];
-    __syncthreads();
-    reduce<T, N>(y);
+    dot_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, N, x, y);
 }
 
 namespace low_memory {
@@ -61,7 +65,7 @@ namespace low_memory {
      * @param out  Length-`n` scratch/output buffer; the result lands in `out[0]`.
      */
     // out: length-n scratch; result in out[0]
-    template <typename T>
+    template <typename T, bool TRAILING_SYNC = true>
     __device__ void dot(uint32_t n, T *x, T *y, T *out)
     {
         uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
@@ -69,7 +73,7 @@ namespace low_memory {
         for (uint32_t i = rank; i < n; i += size) out[i] = x[i]*y[i];
         __syncthreads();
         if (rank == 0) { for (uint32_t i = 1; i < n; i++) out[0] += out[i]; }
-        __syncthreads();
+        if constexpr (TRAILING_SYNC) __syncthreads();
     }
 }
 
@@ -134,6 +138,20 @@ namespace warp {
 
 namespace high_speed {
     /**
+     * @brief Shared-scratch size in bytes for the `high_speed::dot` ops.
+     *
+     * The warp-shuffle dot combines across warps through one scratch slot per warp:
+     * `ceil(block_threads / 32)` elements of `T`. Allocate
+     * `high_speed::dot_scratch_bytes<T>(block_threads)` for the `s_scratch` argument.
+     *
+     * @tparam T  Scalar type.
+     * @param block_threads  Number of threads in the launching block.
+     * @return Bytes to allocate for `s_scratch`.
+     */
+    template <typename T>
+    __host__ __device__ constexpr std::size_t dot_scratch_bytes(uint32_t block_threads) { return static_cast<std::size_t>((block_threads + 31) / 32) * sizeof(T); }
+
+    /**
      * @brief Inner product: `out[0] = x · y` (DOT), warp-shuffle variant.
      *
      * Accumulates the element-wise products with a warp-shuffle reduction plus
@@ -148,7 +166,7 @@ namespace high_speed {
      * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per warp).
      */
     // s_scratch: ceil(blockDim/32)*sizeof(T); result in out[0]
-    template <typename T>
+    template <typename T, bool TRAILING_SYNC = true>
     __device__ void dot(uint32_t n, T *x, T *y, T *out, T *s_scratch)
     {
         uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
@@ -165,7 +183,7 @@ namespace high_speed {
             for (int off = 16; off > 0; off >>= 1) val += __shfl_down_sync(0xffffffff, val, off);
             if (rank == 0) out[0] = val;
         }
-        __syncthreads();
+        if constexpr (TRAILING_SYNC) __syncthreads();
     }
 
     /**
@@ -181,7 +199,7 @@ namespace high_speed {
      * @param out        Output buffer; the result lands in `out[0]`.
      * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per warp).
      */
-    template <typename T, uint32_t N>
+    template <typename T, uint32_t N, bool TRAILING_SYNC = true>
     __device__ void dot(T *x, T *y, T *out, T *s_scratch)
     {
         uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
@@ -198,6 +216,6 @@ namespace high_speed {
             for (int off = 16; off > 0; off >>= 1) val += __shfl_down_sync(0xffffffff, val, off);
             if (rank == 0) out[0] = val;
         }
-        __syncthreads();
+        if constexpr (TRAILING_SYNC) __syncthreads();
     }
 }

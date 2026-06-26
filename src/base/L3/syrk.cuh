@@ -19,16 +19,16 @@ __device__ __forceinline__ bool syrk_in_canonical(FillMode fill, uint32_t row, u
 
 // ─── syrk core impl: explicit rank/size + layout flags ───────────────────────
 // C = alpha * op(A) * op(A)^T + beta * C, C is n x n symmetric.
-//   TRANS == false: op(A) = A   (A is n x k) → C = alpha*A*A^T + beta*C
-//   TRANS == true : op(A) = A^T (A is k x n) → C = alpha*A^T*A + beta*C
+//   TRANSPOSE == false: op(A) = A   (A is n x k) → C = alpha*A*A^T + beta*C
+//   TRANSPOSE == true : op(A) = A^T (A is k x n) → C = alpha*A^T*A + beta*C
 // Flat-element parallelism over the n*n grid exactly like gemm_impl: each thread
 // owns disjoint output cells, so NO interior barrier is needed (guide §1a
 // counter-note). The k-loop runs only in the canonical triangle (the symmetry
 // win); off-triangle cells are filled by the mirror write of their transpose.
-template <typename T, FillMode FILL, bool TRANS, bool ROW_MAJOR>
+template <typename T, FillMode FILL, bool TRANSPOSE, bool ROW_MAJOR>
 __device__ void syrk_impl(uint32_t rank, uint32_t size,
                           uint32_t n, uint32_t k,
-                          T alpha, T *A, T beta, T *C)
+                          T alpha, const T *A, T beta, T *C)
 {
     const uint32_t maxel = n * n;
     for (uint32_t el = rank; el < maxel; el += size) {
@@ -36,10 +36,10 @@ __device__ void syrk_impl(uint32_t rank, uint32_t size,
         if (!syrk_in_canonical(FILL, row, col)) continue;  // mirror handles it
         T res = static_cast<T>(0);
         for (uint32_t i = 0; i < k; i++) {
-            // TRANS=false: A is n x k → A[row,i], A[col,i].
-            // TRANS=true : A is k x n → A[i,row], A[i,col].
+            // TRANSPOSE=false: A is n x k → A[row,i], A[col,i].
+            // TRANSPOSE=true : A is k x n → A[i,row], A[i,col].
             T ar, ac;
-            if (TRANS) {
+            if (TRANSPOSE) {
                 ar = ROW_MAJOR ? A[i*n + row] : A[row*k + i];
                 ac = ROW_MAJOR ? A[i*n + col] : A[col*k + i];
             } else {
@@ -58,10 +58,10 @@ __device__ void syrk_impl(uint32_t rank, uint32_t size,
 }
 
 // beta = 0 form: never reads C.
-template <typename T, FillMode FILL, bool TRANS, bool ROW_MAJOR>
+template <typename T, FillMode FILL, bool TRANSPOSE, bool ROW_MAJOR>
 __device__ void syrk_impl(uint32_t rank, uint32_t size,
                           uint32_t n, uint32_t k,
-                          T alpha, T *A, T *C)
+                          T alpha, const T *A, T *C)
 {
     const uint32_t maxel = n * n;
     for (uint32_t el = rank; el < maxel; el += size) {
@@ -70,7 +70,7 @@ __device__ void syrk_impl(uint32_t rank, uint32_t size,
         T res = static_cast<T>(0);
         for (uint32_t i = 0; i < k; i++) {
             T ar, ac;
-            if (TRANS) {
+            if (TRANSPOSE) {
                 ar = ROW_MAJOR ? A[i*n + row] : A[row*k + i];
                 ac = ROW_MAJOR ? A[i*n + col] : A[col*k + i];
             } else {
@@ -90,9 +90,9 @@ __device__ void syrk_impl(uint32_t rank, uint32_t size,
 
 // compile-time impl: N, K as template params so el%N / el/N use magic-number
 // multiply instead of MUFU.RCP (mirrors gemm_impl_ct).
-template <typename T, uint32_t N, uint32_t K, FillMode FILL, bool TRANS, bool ROW_MAJOR>
+template <typename T, uint32_t N, uint32_t K, FillMode FILL, bool TRANSPOSE, bool ROW_MAJOR>
 __device__ void syrk_impl_ct(uint32_t rank, uint32_t size,
-                             T alpha, T *A, T beta, T *C)
+                             T alpha, const T *A, T beta, T *C)
 {
     constexpr uint32_t maxel = N * N;
     for (uint32_t el = rank; el < maxel; el += size) {
@@ -101,7 +101,7 @@ __device__ void syrk_impl_ct(uint32_t rank, uint32_t size,
         T res = static_cast<T>(0);
         for (uint32_t i = 0; i < K; i++) {
             T ar, ac;
-            if (TRANS) {
+            if (TRANSPOSE) {
                 ar = ROW_MAJOR ? A[i*N + row] : A[row*K + i];
                 ac = ROW_MAJOR ? A[i*N + col] : A[col*K + i];
             } else {
@@ -119,9 +119,9 @@ __device__ void syrk_impl_ct(uint32_t rank, uint32_t size,
     }
 }
 
-template <typename T, uint32_t N, uint32_t K, FillMode FILL, bool TRANS, bool ROW_MAJOR>
+template <typename T, uint32_t N, uint32_t K, FillMode FILL, bool TRANSPOSE, bool ROW_MAJOR>
 __device__ void syrk_impl_ct(uint32_t rank, uint32_t size,
-                             T alpha, T *A, T *C)
+                             T alpha, const T *A, T *C)
 {
     constexpr uint32_t maxel = N * N;
     for (uint32_t el = rank; el < maxel; el += size) {
@@ -130,7 +130,7 @@ __device__ void syrk_impl_ct(uint32_t rank, uint32_t size,
         T res = static_cast<T>(0);
         for (uint32_t i = 0; i < K; i++) {
             T ar, ac;
-            if (TRANS) {
+            if (TRANSPOSE) {
                 ar = ROW_MAJOR ? A[i*N + row] : A[row*K + i];
                 ac = ROW_MAJOR ? A[i*N + col] : A[col*K + i];
             } else {
@@ -151,12 +151,12 @@ __device__ void syrk_impl_ct(uint32_t rank, uint32_t size,
 // ─── syr2k core impl: explicit rank/size + layout flags ──────────────────────
 // C = alpha*(op(A)*op(B)^T + op(B)*op(A)^T) + beta*C, C n x n symmetric.
 // Symmetric by construction: cell (row,col) is the symmetric dot
-//   Σ_i ( a(row,i)*b(col,i) + b(row,i)*a(col,i) )  [TRANS=false reading semantics]
+//   Σ_i ( a(row,i)*b(col,i) + b(row,i)*a(col,i) )  [TRANSPOSE=false reading semantics]
 // which equals cell (col,row), so the same mirror-write trick applies.
-template <typename T, FillMode FILL, bool TRANS, bool ROW_MAJOR>
+template <typename T, FillMode FILL, bool TRANSPOSE, bool ROW_MAJOR>
 __device__ void syr2k_impl(uint32_t rank, uint32_t size,
                            uint32_t n, uint32_t k,
-                           T alpha, T *A, T *B, T beta, T *C)
+                           T alpha, const T *A, const T *B, T beta, T *C)
 {
     const uint32_t maxel = n * n;
     for (uint32_t el = rank; el < maxel; el += size) {
@@ -165,7 +165,7 @@ __device__ void syr2k_impl(uint32_t rank, uint32_t size,
         T res = static_cast<T>(0);
         for (uint32_t i = 0; i < k; i++) {
             T ar, ac, br, bc;
-            if (TRANS) {
+            if (TRANSPOSE) {
                 ar = ROW_MAJOR ? A[i*n + row] : A[row*k + i];
                 ac = ROW_MAJOR ? A[i*n + col] : A[col*k + i];
                 br = ROW_MAJOR ? B[i*n + row] : B[row*k + i];
@@ -187,10 +187,10 @@ __device__ void syr2k_impl(uint32_t rank, uint32_t size,
     }
 }
 
-template <typename T, FillMode FILL, bool TRANS, bool ROW_MAJOR>
+template <typename T, FillMode FILL, bool TRANSPOSE, bool ROW_MAJOR>
 __device__ void syr2k_impl(uint32_t rank, uint32_t size,
                            uint32_t n, uint32_t k,
-                           T alpha, T *A, T *B, T *C)
+                           T alpha, const T *A, const T *B, T *C)
 {
     const uint32_t maxel = n * n;
     for (uint32_t el = rank; el < maxel; el += size) {
@@ -199,7 +199,7 @@ __device__ void syr2k_impl(uint32_t rank, uint32_t size,
         T res = static_cast<T>(0);
         for (uint32_t i = 0; i < k; i++) {
             T ar, ac, br, bc;
-            if (TRANS) {
+            if (TRANSPOSE) {
                 ar = ROW_MAJOR ? A[i*n + row] : A[row*k + i];
                 ac = ROW_MAJOR ? A[i*n + col] : A[col*k + i];
                 br = ROW_MAJOR ? B[i*n + row] : B[row*k + i];
@@ -221,9 +221,9 @@ __device__ void syr2k_impl(uint32_t rank, uint32_t size,
     }
 }
 
-template <typename T, uint32_t N, uint32_t K, FillMode FILL, bool TRANS, bool ROW_MAJOR>
+template <typename T, uint32_t N, uint32_t K, FillMode FILL, bool TRANSPOSE, bool ROW_MAJOR>
 __device__ void syr2k_impl_ct(uint32_t rank, uint32_t size,
-                              T alpha, T *A, T *B, T beta, T *C)
+                              T alpha, const T *A, const T *B, T beta, T *C)
 {
     constexpr uint32_t maxel = N * N;
     for (uint32_t el = rank; el < maxel; el += size) {
@@ -232,7 +232,7 @@ __device__ void syr2k_impl_ct(uint32_t rank, uint32_t size,
         T res = static_cast<T>(0);
         for (uint32_t i = 0; i < K; i++) {
             T ar, ac, br, bc;
-            if (TRANS) {
+            if (TRANSPOSE) {
                 ar = ROW_MAJOR ? A[i*N + row] : A[row*K + i];
                 ac = ROW_MAJOR ? A[i*N + col] : A[col*K + i];
                 br = ROW_MAJOR ? B[i*N + row] : B[row*K + i];
@@ -254,9 +254,9 @@ __device__ void syr2k_impl_ct(uint32_t rank, uint32_t size,
     }
 }
 
-template <typename T, uint32_t N, uint32_t K, FillMode FILL, bool TRANS, bool ROW_MAJOR>
+template <typename T, uint32_t N, uint32_t K, FillMode FILL, bool TRANSPOSE, bool ROW_MAJOR>
 __device__ void syr2k_impl_ct(uint32_t rank, uint32_t size,
-                              T alpha, T *A, T *B, T *C)
+                              T alpha, const T *A, const T *B, T *C)
 {
     constexpr uint32_t maxel = N * N;
     for (uint32_t el = rank; el < maxel; el += size) {
@@ -265,7 +265,7 @@ __device__ void syr2k_impl_ct(uint32_t rank, uint32_t size,
         T res = static_cast<T>(0);
         for (uint32_t i = 0; i < K; i++) {
             T ar, ac, br, bc;
-            if (TRANS) {
+            if (TRANSPOSE) {
                 ar = ROW_MAJOR ? A[i*N + row] : A[row*K + i];
                 ac = ROW_MAJOR ? A[i*N + col] : A[col*K + i];
                 br = ROW_MAJOR ? B[i*N + row] : B[row*K + i];
@@ -302,24 +302,25 @@ __device__ void syr2k_impl_ct(uint32_t rank, uint32_t size,
  *
  * @tparam T  Scalar type.
  * @tparam FILL  Which triangle of C to write (Lower / Upper / Full).
- * @tparam TRANS  If false, op(A)=A (A is n x k); if true, op(A)=A^T (A is k x n).
+ * @tparam TRANSPOSE  If false, op(A)=A (A is n x k); if true, op(A)=A^T (A is k x n).
  * @tparam ROW_MAJOR  Storage order for A and C (false = column-major / Fortran).
  * @param n  Dimension of the symmetric result C (n x n).
  * @param k  Contraction length.
  * @param alpha  Scalar multiplier on the product.
- * @param A  Input matrix (n x k if TRANS=false, else k x n).
+ * @param A  Input matrix (n x k if TRANSPOSE=false, else k x n).
  * @param beta  Scalar multiplier on the existing C (C is read; caller must initialize it).
  * @param C  In/out n x n symmetric result matrix.
  *
- * NumPy equivalent: TRANS=false → `alpha * A @ A.T + beta * C`;
- * TRANS=true → `alpha * A.T @ A + beta * C`.
+ * NumPy equivalent: TRANSPOSE=false → `alpha * A @ A.T + beta * C`;
+ * TRANSPOSE=true → `alpha * A.T @ A + beta * C`.
  */
-template <typename T, FillMode FILL = FillMode::Full, bool TRANS = false, bool ROW_MAJOR = false>
-__device__ void syrk(uint32_t n, uint32_t k, T alpha, T *A, T beta, T *C)
+template <typename T, FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
+__device__ void syrk(uint32_t n, uint32_t k, T alpha, const T *A, T beta, T *C)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    syrk_impl<T, FILL, TRANS, ROW_MAJOR>(rank, size, n, k, alpha, A, beta, C);
+    syrk_impl<T, FILL, TRANSPOSE, ROW_MAJOR>(rank, size, n, k, alpha, A, beta, C);
+    if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
 /**
@@ -333,22 +334,23 @@ __device__ void syrk(uint32_t n, uint32_t k, T alpha, T *A, T beta, T *C)
  *
  * @tparam T  Scalar type.
  * @tparam FILL  Which triangle of C to write (Lower / Upper / Full).
- * @tparam TRANS  If false, op(A)=A (A is n x k); if true, op(A)=A^T (A is k x n).
+ * @tparam TRANSPOSE  If false, op(A)=A (A is n x k); if true, op(A)=A^T (A is k x n).
  * @tparam ROW_MAJOR  Storage order for A and C (false = column-major / Fortran).
  * @param n  Dimension of the symmetric result C (n x n).
  * @param k  Contraction length.
  * @param alpha  Scalar multiplier on the product.
- * @param A  Input matrix (n x k if TRANS=false, else k x n).
+ * @param A  Input matrix (n x k if TRANSPOSE=false, else k x n).
  * @param C  Output n x n symmetric result matrix (overwritten, not read).
  *
- * NumPy equivalent: TRANS=false → `alpha * A @ A.T`; TRANS=true → `alpha * A.T @ A`.
+ * NumPy equivalent: TRANSPOSE=false → `alpha * A @ A.T`; TRANSPOSE=true → `alpha * A.T @ A`.
  */
-template <typename T, FillMode FILL = FillMode::Full, bool TRANS = false, bool ROW_MAJOR = false>
-__device__ void syrk(uint32_t n, uint32_t k, T alpha, T *A, T *C)
+template <typename T, FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
+__device__ void syrk(uint32_t n, uint32_t k, T alpha, const T *A, T *C)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    syrk_impl<T, FILL, TRANS, ROW_MAJOR>(rank, size, n, k, alpha, A, C);
+    syrk_impl<T, FILL, TRANSPOSE, ROW_MAJOR>(rank, size, n, k, alpha, A, C);
+    if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
 // ─── syrk compile-time size variants ─────────────────────────────────────────
@@ -366,23 +368,24 @@ __device__ void syrk(uint32_t n, uint32_t k, T alpha, T *A, T *C)
  * @tparam N  Compile-time dimension of the symmetric result C (N x N).
  * @tparam K  Compile-time contraction length.
  * @tparam FILL  Which triangle of C to write (Lower / Upper / Full).
- * @tparam TRANS  If false, op(A)=A (A is N x K); if true, op(A)=A^T (A is K x N).
+ * @tparam TRANSPOSE  If false, op(A)=A (A is N x K); if true, op(A)=A^T (A is K x N).
  * @tparam ROW_MAJOR  Storage order for A and C (false = column-major / Fortran).
  * @param alpha  Scalar multiplier on the product.
- * @param A  Input matrix (N x K if TRANS=false, else K x N).
+ * @param A  Input matrix (N x K if TRANSPOSE=false, else K x N).
  * @param beta  Scalar multiplier on the existing C (C is read; caller must initialize it).
  * @param C  In/out N x N symmetric result matrix.
  *
- * NumPy equivalent: TRANS=false → `alpha * A @ A.T + beta * C`;
- * TRANS=true → `alpha * A.T @ A + beta * C`.
+ * NumPy equivalent: TRANSPOSE=false → `alpha * A @ A.T + beta * C`;
+ * TRANSPOSE=true → `alpha * A.T @ A + beta * C`.
  */
 template <typename T, uint32_t N, uint32_t K,
-          FillMode FILL = FillMode::Full, bool TRANS = false, bool ROW_MAJOR = false>
-__device__ void syrk(T alpha, T *A, T beta, T *C)
+          FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
+__device__ void syrk(T alpha, const T *A, T beta, T *C)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    syrk_impl_ct<T, N, K, FILL, TRANS, ROW_MAJOR>(rank, size, alpha, A, beta, C);
+    syrk_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(rank, size, alpha, A, beta, C);
+    if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
 /**
@@ -396,21 +399,22 @@ __device__ void syrk(T alpha, T *A, T beta, T *C)
  * @tparam N  Compile-time dimension of the symmetric result C (N x N).
  * @tparam K  Compile-time contraction length.
  * @tparam FILL  Which triangle of C to write (Lower / Upper / Full).
- * @tparam TRANS  If false, op(A)=A (A is N x K); if true, op(A)=A^T (A is K x N).
+ * @tparam TRANSPOSE  If false, op(A)=A (A is N x K); if true, op(A)=A^T (A is K x N).
  * @tparam ROW_MAJOR  Storage order for A and C (false = column-major / Fortran).
  * @param alpha  Scalar multiplier on the product.
- * @param A  Input matrix (N x K if TRANS=false, else K x N).
+ * @param A  Input matrix (N x K if TRANSPOSE=false, else K x N).
  * @param C  Output N x N symmetric result matrix (overwritten, not read).
  *
- * NumPy equivalent: TRANS=false → `alpha * A @ A.T`; TRANS=true → `alpha * A.T @ A`.
+ * NumPy equivalent: TRANSPOSE=false → `alpha * A @ A.T`; TRANSPOSE=true → `alpha * A.T @ A`.
  */
 template <typename T, uint32_t N, uint32_t K,
-          FillMode FILL = FillMode::Full, bool TRANS = false, bool ROW_MAJOR = false>
-__device__ void syrk(T alpha, T *A, T *C)
+          FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
+__device__ void syrk(T alpha, const T *A, T *C)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    syrk_impl_ct<T, N, K, FILL, TRANS, ROW_MAJOR>(rank, size, alpha, A, C);
+    syrk_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(rank, size, alpha, A, C);
+    if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
 // ─── syr2k runtime variants ──────────────────────────────────────────────────
@@ -425,24 +429,25 @@ __device__ void syrk(T alpha, T *A, T *C)
  *
  * @tparam T  Scalar type.
  * @tparam FILL  Which triangle of C to write (Lower / Upper / Full).
- * @tparam TRANS  If false, op = identity (A,B are n x k); if true, op = transpose (A,B are k x n).
+ * @tparam TRANSPOSE  If false, op = identity (A,B are n x k); if true, op = transpose (A,B are k x n).
  * @tparam ROW_MAJOR  Storage order for A, B and C (false = column-major / Fortran).
  * @param n  Dimension of the symmetric result C (n x n).
  * @param k  Contraction length.
  * @param alpha  Scalar multiplier on the symmetrized product.
- * @param A,B  Input matrices (n x k if TRANS=false, else k x n).
+ * @param A,B  Input matrices (n x k if TRANSPOSE=false, else k x n).
  * @param beta  Scalar multiplier on the existing C (C is read; caller must initialize it).
  * @param C  In/out n x n symmetric result matrix.
  *
- * NumPy equivalent: TRANS=false → `alpha*(A@B.T + B@A.T) + beta*C`;
- * TRANS=true → `alpha*(A.T@B + B.T@A) + beta*C`.
+ * NumPy equivalent: TRANSPOSE=false → `alpha*(A@B.T + B@A.T) + beta*C`;
+ * TRANSPOSE=true → `alpha*(A.T@B + B.T@A) + beta*C`.
  */
-template <typename T, FillMode FILL = FillMode::Full, bool TRANS = false, bool ROW_MAJOR = false>
-__device__ void syr2k(uint32_t n, uint32_t k, T alpha, T *A, T *B, T beta, T *C)
+template <typename T, FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
+__device__ void syr2k(uint32_t n, uint32_t k, T alpha, const T *A, const T *B, T beta, T *C)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    syr2k_impl<T, FILL, TRANS, ROW_MAJOR>(rank, size, n, k, alpha, A, B, beta, C);
+    syr2k_impl<T, FILL, TRANSPOSE, ROW_MAJOR>(rank, size, n, k, alpha, A, B, beta, C);
+    if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
 /**
@@ -454,23 +459,24 @@ __device__ void syr2k(uint32_t n, uint32_t k, T alpha, T *A, T *B, T beta, T *C)
  *
  * @tparam T  Scalar type.
  * @tparam FILL  Which triangle of C to write (Lower / Upper / Full).
- * @tparam TRANS  If false, op = identity (A,B are n x k); if true, op = transpose (A,B are k x n).
+ * @tparam TRANSPOSE  If false, op = identity (A,B are n x k); if true, op = transpose (A,B are k x n).
  * @tparam ROW_MAJOR  Storage order for A, B and C (false = column-major / Fortran).
  * @param n  Dimension of the symmetric result C (n x n).
  * @param k  Contraction length.
  * @param alpha  Scalar multiplier on the symmetrized product.
- * @param A,B  Input matrices (n x k if TRANS=false, else k x n).
+ * @param A,B  Input matrices (n x k if TRANSPOSE=false, else k x n).
  * @param C  Output n x n symmetric result matrix (overwritten, not read).
  *
- * NumPy equivalent: TRANS=false → `alpha*(A@B.T + B@A.T)`;
- * TRANS=true → `alpha*(A.T@B + B.T@A)`.
+ * NumPy equivalent: TRANSPOSE=false → `alpha*(A@B.T + B@A.T)`;
+ * TRANSPOSE=true → `alpha*(A.T@B + B.T@A)`.
  */
-template <typename T, FillMode FILL = FillMode::Full, bool TRANS = false, bool ROW_MAJOR = false>
-__device__ void syr2k(uint32_t n, uint32_t k, T alpha, T *A, T *B, T *C)
+template <typename T, FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
+__device__ void syr2k(uint32_t n, uint32_t k, T alpha, const T *A, const T *B, T *C)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    syr2k_impl<T, FILL, TRANS, ROW_MAJOR>(rank, size, n, k, alpha, A, B, C);
+    syr2k_impl<T, FILL, TRANSPOSE, ROW_MAJOR>(rank, size, n, k, alpha, A, B, C);
+    if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
 // ─── syr2k compile-time size variants ────────────────────────────────────────
@@ -487,23 +493,24 @@ __device__ void syr2k(uint32_t n, uint32_t k, T alpha, T *A, T *B, T *C)
  * @tparam N  Compile-time dimension of the symmetric result C (N x N).
  * @tparam K  Compile-time contraction length.
  * @tparam FILL  Which triangle of C to write (Lower / Upper / Full).
- * @tparam TRANS  If false, op = identity (A,B are N x K); if true, op = transpose (A,B are K x N).
+ * @tparam TRANSPOSE  If false, op = identity (A,B are N x K); if true, op = transpose (A,B are K x N).
  * @tparam ROW_MAJOR  Storage order for A, B and C (false = column-major / Fortran).
  * @param alpha  Scalar multiplier on the symmetrized product.
- * @param A,B  Input matrices (N x K if TRANS=false, else K x N).
+ * @param A,B  Input matrices (N x K if TRANSPOSE=false, else K x N).
  * @param beta  Scalar multiplier on the existing C (C is read; caller must initialize it).
  * @param C  In/out N x N symmetric result matrix.
  *
- * NumPy equivalent: TRANS=false → `alpha*(A@B.T + B@A.T) + beta*C`;
- * TRANS=true → `alpha*(A.T@B + B.T@A) + beta*C`.
+ * NumPy equivalent: TRANSPOSE=false → `alpha*(A@B.T + B@A.T) + beta*C`;
+ * TRANSPOSE=true → `alpha*(A.T@B + B.T@A) + beta*C`.
  */
 template <typename T, uint32_t N, uint32_t K,
-          FillMode FILL = FillMode::Full, bool TRANS = false, bool ROW_MAJOR = false>
-__device__ void syr2k(T alpha, T *A, T *B, T beta, T *C)
+          FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
+__device__ void syr2k(T alpha, const T *A, const T *B, T beta, T *C)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    syr2k_impl_ct<T, N, K, FILL, TRANS, ROW_MAJOR>(rank, size, alpha, A, B, beta, C);
+    syr2k_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(rank, size, alpha, A, B, beta, C);
+    if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
 /**
@@ -517,20 +524,80 @@ __device__ void syr2k(T alpha, T *A, T *B, T beta, T *C)
  * @tparam N  Compile-time dimension of the symmetric result C (N x N).
  * @tparam K  Compile-time contraction length.
  * @tparam FILL  Which triangle of C to write (Lower / Upper / Full).
- * @tparam TRANS  If false, op = identity (A,B are N x K); if true, op = transpose (A,B are K x N).
+ * @tparam TRANSPOSE  If false, op = identity (A,B are N x K); if true, op = transpose (A,B are K x N).
  * @tparam ROW_MAJOR  Storage order for A, B and C (false = column-major / Fortran).
  * @param alpha  Scalar multiplier on the symmetrized product.
- * @param A,B  Input matrices (N x K if TRANS=false, else K x N).
+ * @param A,B  Input matrices (N x K if TRANSPOSE=false, else K x N).
  * @param C  Output N x N symmetric result matrix (overwritten, not read).
  *
- * NumPy equivalent: TRANS=false → `alpha*(A@B.T + B@A.T)`;
- * TRANS=true → `alpha*(A.T@B + B.T@A)`.
+ * NumPy equivalent: TRANSPOSE=false → `alpha*(A@B.T + B@A.T)`;
+ * TRANSPOSE=true → `alpha*(A.T@B + B.T@A)`.
  */
 template <typename T, uint32_t N, uint32_t K,
-          FillMode FILL = FillMode::Full, bool TRANS = false, bool ROW_MAJOR = false>
-__device__ void syr2k(T alpha, T *A, T *B, T *C)
+          FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
+__device__ void syr2k(T alpha, const T *A, const T *B, T *C)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    syr2k_impl_ct<T, N, K, FILL, TRANS, ROW_MAJOR>(rank, size, alpha, A, B, C);
+    syr2k_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(rank, size, alpha, A, B, C);
+    if constexpr (TRAILING_SYNC) __syncthreads();
+}
+
+namespace warp {
+    // Single-warp SYRK / SYR2K: one 32-lane warp owns the symmetric output via the
+    // SAME validated `syrk_impl_ct` / `syr2k_impl_ct` flat-element kernels, just
+    // dispatched with (lane, 32) instead of (rank, blockDim). Each output element is
+    // written once (no cross-lane reduction — the K contraction is a per-lane serial
+    // loop), so this is bit-identical to the block form restricted to one warp. For
+    // warp-per-problem normal-equation builds (e.g. HJCD's JᵀJ). Full 32 lanes
+    // required; independent warps may run distinct problems. No `__syncwarp` needed
+    // (no inter-lane dependency); compile-time size only, mirroring `warp::gemm`.
+
+    /**
+     * @brief Single-warp SYRK `C = alpha*op(A)*op(A)ᵀ + beta*C` (compile-time size).
+     * @see ::syrk  (block form; identical math, `(lane,32)` element striping)
+     */
+    template <typename T, uint32_t N, uint32_t K,
+              FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false>
+    __device__ void syrk(T alpha, const T *A, T beta, T *C)
+    {
+        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+        syrk_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(lane, 32, alpha, A, beta, C);
+    }
+
+    /**
+     * @brief Single-warp SYRK with implicit `beta = 0`: `C = alpha*op(A)*op(A)ᵀ` (overwrite).
+     * @see ::syrk
+     */
+    template <typename T, uint32_t N, uint32_t K,
+              FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false>
+    __device__ void syrk(T alpha, const T *A, T *C)
+    {
+        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+        syrk_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(lane, 32, alpha, A, C);
+    }
+
+    /**
+     * @brief Single-warp SYR2K `C = alpha*(op(A)op(B)ᵀ + op(B)op(A)ᵀ) + beta*C` (compile-time size).
+     * @see ::syr2k
+     */
+    template <typename T, uint32_t N, uint32_t K,
+              FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false>
+    __device__ void syr2k(T alpha, const T *A, const T *B, T beta, T *C)
+    {
+        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+        syr2k_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(lane, 32, alpha, A, B, beta, C);
+    }
+
+    /**
+     * @brief Single-warp SYR2K with implicit `beta = 0` (overwrite).
+     * @see ::syr2k
+     */
+    template <typename T, uint32_t N, uint32_t K,
+              FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false>
+    __device__ void syr2k(T alpha, const T *A, const T *B, T *C)
+    {
+        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+        syr2k_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(lane, 32, alpha, A, B, C);
+    }
 }
