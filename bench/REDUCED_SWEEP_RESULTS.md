@@ -50,6 +50,20 @@ express in one call, fewer launches / barriers), **not** beating a hand-tuned
 serial contraction. A consumer optimizing for latency should benchmark against
 their own serial code before adopting them for speed.
 
+<!-- BEGIN tune.py: latest measured run -->
+## Latest measured run (auto-refreshed by `bench/tune.py`)
+
+_Source: `reduced_sweep_20260626_2135.txt` · tie margin ±5% (reduced must clear it) · 0 of 48 configs pick reduced._
+
+Predicate `suggested_use_reduced<n_out,K_contract,blockDim>()` = `(n_out <= blockDim/32) && (K_contract >= 32)` (K_contract is the N column here).
+
+⚠️ **2 config(s) disagree** with the predicate — review before trusting the formula on this GPU:
+
+- 2×64×2 bd=128 (n_out=4): measured **None**, predicate **reduced**
+- 2×64×2 bd=256 (n_out=4): measured **None**, predicate **reduced**
+
+<!-- END tune.py -->
+
 ## Reproduce
 
 The `reduced` leg of the unified autotuner remeasures this and refreshes the
