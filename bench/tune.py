@@ -100,9 +100,10 @@ def run(cmd, **kw):
 
 _SIG = "constexpr backend ideal_sm120(op o, uint32_t N, bool f64) {"
 _SENTINEL = "// Coarse fallback for unmeasured SMs"
-# NPROB schedule mirrors run_mega_sweep.sh; --quick trims to the throughput point.
-_FULL_SCHED  = [("1", "3000"), ("64", "1500"), ("1024", "700"),
-                ("8192", "500"), ("32768", "200")]
+# NPROB schedule. 8192 is the throughput regime every regenerated table reads;
+#64 and 1024 are collected for inspection. NPROB=1 (single-problem latency) and
+# 32768 (slow tail, feeds no table) are intentionally dropped. --quick = 8192 only.
+_FULL_SCHED  = [("64", "1000"), ("1024", "500"), ("8192", "250")]
 _QUICK_SCHED = [("8192", "300")]
 
 
@@ -459,7 +460,10 @@ def main():
         elif args.dry_run:
             print(f"  [dry-run] would render figures from {pathlib.Path(sweep_for_fig).name}")
         else:
-            run([sys.executable, "export_sweep_figures.py", sweep_for_fig], cwd=BENCH_DIR)
+            r = run([sys.executable, "export_sweep_figures.py", sweep_for_fig], cwd=BENCH_DIR)
+            if r.returncode != 0:
+                print("  ⚠️ figures leg failed (needs matplotlib: `pip install matplotlib` "
+                      "into the env running tune.py). Tables above are unaffected.")
 
     if args.dry_run:
         moved = [k for k, v in changed.items() if v]
