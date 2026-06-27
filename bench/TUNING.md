@@ -1,5 +1,47 @@
 # Tuning GLASS for your hardware
 
+## One command — `bench/tune.py`
+
+GLASS ships three measured defaults tables: the warp/block/nvidia **backend
+ladder** (`glass-defaults.cuh`, consumed by `glass::suggested_backend<>`), the
+per-(M,N,K) **cuBLASDx-vs-SIMT table** (`src/nvidia/tuning_table.cuh`, this
+document's main subject), and the serial-vs-reduced **`suggested_use_reduced<>`**
+predicate. `bench/tune.py` remeasures all of them on your GPU and regenerates
+them under **one shared noise margin**, so nothing bakes sub-noise jitter:
+
+```bash
+python bench/tune.py --sm auto --prebuild --build-jobs 6   # compile everything in parallel (no GPU needed)
+python bench/tune.py --sm auto              # all legs, ±5% margin (reuses the prebuilt cache)
+python bench/tune.py --sm auto --quick      # ladder throughput point only (faster)
+python bench/tune.py --legs ladder,reduced  # pick legs; --margin 0.05 to retune the tie band
+python bench/tune.py --sm auto --dry-run    # regenerate + diff, write nothing
+```
+
+**Prebuild so the sweep is fast.** Compilation — not timing — dominates the wall
+clock (the `shapes` leg alone compiles ~66 separate cuBLASDx microbenches).
+`--prebuild` compiles every binary the selected legs need into a persistent,
+hash-keyed cache (`bench/.tune_cache/sm<sms>/`, gitignored) and runs nothing.
+Run it **anytime — even while the GPU is busy**, since compilation is CPU-bound.
+Building isn't timed, so fan it out with **`--build-jobs N`** (size to free_RAM/7
+— each cuBLASDx compile needs ~6-7GB; `--build-jobs 6` on a 64GB box cut a full
+re-sweep's compile wall from ~45min serial to ~10min). The later timed sweep on a
+quiet GPU then finds every binary cached and is **execute-only** — and always runs
+serially for clean measurement, regardless of `--build-jobs`. The cache is keyed
+on the rendered source + a digest of the whole header library + the SM, so any
+library edit transparently rebuilds the affected binaries; a cuBLASDx-rejected
+shape is remembered so it isn't retried.
+
+The shared rule (`bench/tune_pick.py::pick`): a dependency-carrying impl
+(`nvidia`/`cublasdx`/`reduced`) wins **only if it beats the simplest impl by more
+than the margin** — otherwise the no-dependency path (always launchable, no
+MathDx) stays. Every op is measured and recorded; a dispatch picker is
+regenerated only where ≥2 impls genuinely compete. **Run on a quiet GPU** — perf
+timing must be isolated from other CPU/GPU load. Use `--dry-run` first to confirm
+a re-run only moves dispatch inside the tie band before committing a regenerated
+table. The `shapes` leg below is the per-shape engine `tune.py` drives.
+
+## The cuBLASDx-vs-SIMT table
+
 GLASS's `glass::nvidia::*` wrappers — `gemm`, `gemv`, `row_strided_*`,
 `gemm_batched_1d` — auto-dispatch between a pure-SIMT path and cuBLASDx at
 compile time. The decision lives in

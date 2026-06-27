@@ -22,3 +22,6 @@ bench/warp_block_sweep_*.txt
 
 # Python venv for tests/docs
 .venv/
+
+# Generated companion to the in-tree tuning table (verdicts live in the .cuh comments)
+src/nvidia/tuning_table_results.md

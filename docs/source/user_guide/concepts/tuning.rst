@@ -1,6 +1,50 @@
 Tuning for Your Hardware
 ========================
 
+One command — ``bench/tune.py``
+-------------------------------
+
+GLASS ships three measured defaults tables: the warp/block/nvidia **backend
+ladder** (``glass-defaults.cuh``, consumed by ``glass::suggested_backend<>``),
+the per-(M,N,K) **cuBLASDx-vs-SIMT table** (``src/nvidia/tuning_table.cuh``, the
+main subject below), and the serial-vs-reduced **``suggested_use_reduced<>``**
+predicate. ``bench/tune.py`` remeasures all of them on your GPU and regenerates
+them under **one shared noise margin**, so nothing bakes sub-noise jitter and a
+pure-noise re-run reproduces the same tables:
+
+.. code-block:: bash
+
+   python bench/tune.py --sm auto --prebuild --build-jobs 6   # compile everything in parallel (no GPU)
+   python bench/tune.py --sm auto              # all legs, ±5% margin (reuses the prebuilt cache)
+   python bench/tune.py --sm auto --quick      # ladder throughput point only (faster)
+   python bench/tune.py --legs ladder,reduced  # pick legs; --margin to retune the tie band
+   python bench/tune.py --sm auto --dry-run    # regenerate + diff, write nothing
+
+**Prebuild so the sweep is fast.** Compilation — not timing — dominates the wall
+clock (the ``shapes`` leg alone compiles ~66 separate cuBLASDx microbenches).
+``--prebuild`` compiles every binary the selected legs need into a persistent,
+hash-keyed cache (``bench/.tune_cache/sm<sms>/``) and runs nothing — so you can
+run it **anytime, even while the GPU is busy** (compilation is CPU-bound). Because
+building isn't timed, fan it out with ``--build-jobs N`` (size to free_RAM/7 —
+each cuBLASDx compile needs ~6-7GB). The later timed sweep on a quiet GPU is then
+**execute-only**, and always runs serially for clean measurement. The cache is
+keyed on the rendered source + a digest of the whole header library + the SM, so a
+library edit transparently rebuilds only the affected binaries.
+
+The shared rule (``bench/tune_pick.py::pick``): a dependency-carrying impl
+(``nvidia`` / ``cublasdx`` / ``reduced``) wins **only if it beats the simplest
+impl by more than the margin** — otherwise the no-dependency path (always
+launchable, no MathDx) stays. Every op is measured and recorded; a dispatch
+picker is regenerated only where ≥2 impls genuinely compete. **Run on a quiet
+GPU** — perf timing must be isolated from other CPU/GPU load. Use ``--dry-run``
+first to confirm a re-run only moves dispatch inside the tie band before
+committing. The sections below describe the two tables ``tune.py`` drives — the
+cuBLASDx-vs-SIMT table (its ``shapes`` leg, also runnable standalone as
+``bench/autotune.py``) and the backend ladder (its ``ladder`` leg).
+
+The cuBLASDx-vs-SIMT table
+--------------------------
+
 GLASS's ``glass::nvidia::*`` wrappers — ``gemm``, ``gemv``, ``row_strided_*``,
 ``gemm_batched_1d`` — auto-dispatch between a pure-SIMT path and cuBLASDx at
 compile time (see :doc:`backend_dispatch`). The decision lives in
@@ -21,7 +65,7 @@ Picking a backend: measured defaults
 
 Before the nvidia dispatch table (below), the higher-level question is *warp vs
 block vs nvidia* for your op and size. The three-contender sweep
-(``bench/run_mega_sweep.sh`` → ``bench/MEGA_SWEEP_RESULTS.md``) measures all three on
+(``bench/tune.py --legs ladder`` → ``bench/MEGA_SWEEP_RESULTS.md``) measures all three on
 one ns/problem axis. Numbers below are **RTX 5090 / sm_120**; breakevens shift on other
 GPUs, so re-run the sweep on yours.
 
@@ -70,8 +114,8 @@ These defaults are also exposed as ``constexpr`` helpers in ``glass-defaults.cuh
 config without hand-copying the table. Include it after ``glass.cuh`` (and after
 ``glass-nvidia.cuh`` to make the ``nvidia`` tier eligible; otherwise it collapses to the
 warp/block runner-up). The pick is host-/codegen-side because warp/block/nvidia need
-different ``<<<grid, block>>>`` launches. Numbers are sm_120-seeded; ``bench/autotune.py``
-regenerates a per-host table.
+different ``<<<grid, block>>>`` launches. Numbers are sm_120-seeded; ``bench/tune.py``
+regenerates this ladder (and the tables below) for your GPU.
 
 Why bother?
 -----------

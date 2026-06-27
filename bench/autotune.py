@@ -28,17 +28,26 @@ Requires MATHDX_ROOT set (cuBLASDx headers needed for the cuBLASDx leg).
 """
 
 import argparse
+import concurrent.futures
+import hashlib
 import os
 import pathlib
 import platform
 import re
 import subprocess
 import sys
-import tempfile
 import textwrap
 import time
 
+import tune_pick as tp  # the one shared tie rule (also used by bench/tune.py)
+
 BENCH_DIR  = pathlib.Path(__file__).parent.resolve()
+
+
+def _cublasdx_wins(simt, cdx, margin):
+    """Shared verdict: cuBLASDx is the dependency impl, so it must clear the
+    margin over SIMT. Single source of truth = tune_pick.pick."""
+    return tp.pick({"simt": simt, "cublasdx": cdx}, margin, {"cublasdx"}) == "cublasdx"
 GLASS_DIR  = BENCH_DIR.parent
 TUNING_DIR = BENCH_DIR / "tuning"
 
@@ -80,6 +89,22 @@ _BENCH_PREAMBLE = textwrap.dedent("""
     static double elapsed_us(struct timespec a, struct timespec b) {{
         return (double)(b.tv_sec - a.tv_sec) * 1e6
              + (double)(b.tv_nsec - a.tv_nsec) * 1e-3;
+    }}
+
+    // A launched kernel that errors (shared-mem overflow, >1024 threads,
+    // cuBLASDx reject) must be reported as a FAILURE, not timed as a silent
+    // ~0us. After a launch, leg_failed() syncs, checks the error, and on
+    // failure prints a non-numeric marker line so bench/autotune.py records
+    // the leg as "measurement failed -> SIMT default" instead of believing a
+    // bogus 0.000us. Returns true on failure.
+    static bool leg_failed(const char* leg) {{
+        cudaError_t e = cudaDeviceSynchronize();
+        if (e == cudaSuccess) e = cudaGetLastError();
+        if (e != cudaSuccess) {{
+            printf("%s FAILED %s\\n", leg, cudaGetErrorString(e));
+            return true;
+        }}
+        return false;
     }}
 """).strip()
 
@@ -123,18 +148,25 @@ _GEMM_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
         struct timespec t0, t1;
         constexpr size_t smem = glass::nvidia::gemm_scratch_bytes<float, M, N, K, TC>();
 
-        k_simt<<<1, TC>>>(dA, dB, dC, dSink, 100); cudaDeviceSynchronize();
-        k_cublasdx<<<1, TC, smem>>>(dA, dB, dC, dSink, 100); cudaDeviceSynchronize();
+        k_simt<<<1, TC>>>(dA, dB, dC, dSink, 100);
+        bool simt_ok = !leg_failed("simt");
+        cudaFuncSetAttribute(k_cublasdx, cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
+        k_cublasdx<<<1, TC, smem>>>(dA, dB, dC, dSink, 100);
+        bool cdx_ok = !leg_failed("cublasdx");
 
-        clock_gettime(CLOCK_MONOTONIC, &t0);
-        k_simt<<<1, TC>>>(dA, dB, dC, dSink, iters); cudaDeviceSynchronize();
-        clock_gettime(CLOCK_MONOTONIC, &t1);
-        printf("simt %.6f\\n", elapsed_us(t0, t1) / iters);
+        if (simt_ok) {{
+            clock_gettime(CLOCK_MONOTONIC, &t0);
+            k_simt<<<1, TC>>>(dA, dB, dC, dSink, iters); cudaDeviceSynchronize();
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            printf("simt %.6f\\n", elapsed_us(t0, t1) / iters);
+        }}
 
-        clock_gettime(CLOCK_MONOTONIC, &t0);
-        k_cublasdx<<<1, TC, smem>>>(dA, dB, dC, dSink, iters); cudaDeviceSynchronize();
-        clock_gettime(CLOCK_MONOTONIC, &t1);
-        printf("cublasdx %.6f\\n", elapsed_us(t0, t1) / iters);
+        if (cdx_ok) {{
+            clock_gettime(CLOCK_MONOTONIC, &t0);
+            k_cublasdx<<<1, TC, smem>>>(dA, dB, dC, dSink, iters); cudaDeviceSynchronize();
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            printf("cublasdx %.6f\\n", elapsed_us(t0, t1) / iters);
+        }}
 
         cudaFree(dA); cudaFree(dB); cudaFree(dC); cudaFree(dSink);
         return 0;
@@ -181,18 +213,25 @@ _GEMV_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
         struct timespec t0, t1;
         constexpr size_t smem = glass::nvidia::gemv_scratch_bytes<float, M, N, TC>();
 
-        k_simt<<<1, TC>>>(dA, dx, dy, dSink, 100); cudaDeviceSynchronize();
-        k_cublasdx<<<1, TC, smem>>>(dA, dx, dy, dSink, 100); cudaDeviceSynchronize();
+        k_simt<<<1, TC>>>(dA, dx, dy, dSink, 100);
+        bool simt_ok = !leg_failed("simt");
+        cudaFuncSetAttribute(k_cublasdx, cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
+        k_cublasdx<<<1, TC, smem>>>(dA, dx, dy, dSink, 100);
+        bool cdx_ok = !leg_failed("cublasdx");
 
-        clock_gettime(CLOCK_MONOTONIC, &t0);
-        k_simt<<<1, TC>>>(dA, dx, dy, dSink, iters); cudaDeviceSynchronize();
-        clock_gettime(CLOCK_MONOTONIC, &t1);
-        printf("simt %.6f\\n", elapsed_us(t0, t1) / iters);
+        if (simt_ok) {{
+            clock_gettime(CLOCK_MONOTONIC, &t0);
+            k_simt<<<1, TC>>>(dA, dx, dy, dSink, iters); cudaDeviceSynchronize();
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            printf("simt %.6f\\n", elapsed_us(t0, t1) / iters);
+        }}
 
-        clock_gettime(CLOCK_MONOTONIC, &t0);
-        k_cublasdx<<<1, TC, smem>>>(dA, dx, dy, dSink, iters); cudaDeviceSynchronize();
-        clock_gettime(CLOCK_MONOTONIC, &t1);
-        printf("cublasdx %.6f\\n", elapsed_us(t0, t1) / iters);
+        if (cdx_ok) {{
+            clock_gettime(CLOCK_MONOTONIC, &t0);
+            k_cublasdx<<<1, TC, smem>>>(dA, dx, dy, dSink, iters); cudaDeviceSynchronize();
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            printf("cublasdx %.6f\\n", elapsed_us(t0, t1) / iters);
+        }}
 
         cudaFree(dA); cudaFree(dx); cudaFree(dy); cudaFree(dSink);
         return 0;
@@ -213,7 +252,7 @@ _ROW_STRIDED_GEMV_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
 
     __global__ void k_simt(float* A, float* x, float* y, volatile float* sink, int iters) {{
         for (int rep = 0; rep < iters; rep++) {{
-            glass::gemv_strided<float, M, N, ROW_STRIDE>(A, x, y, 1.f, 0.f);
+            glass::gemv_strided<float, M, N, ROW_STRIDE>(1.f, A, x, 0.f, y);
             __syncthreads();
             if (threadIdx.x == 0) sink[rep & 0xFF] = y[0];
             __syncthreads();
@@ -242,18 +281,25 @@ _ROW_STRIDED_GEMV_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
         constexpr size_t smem =
             glass::nvidia::gemv_strided_scratch_bytes<float, M, N, ROW_STRIDE, TC>();
 
-        k_simt<<<1, TC>>>(dA, dx, dy, dSink, 100); cudaDeviceSynchronize();
-        k_cublasdx<<<1, TC, smem>>>(dA, dx, dy, dSink, 100); cudaDeviceSynchronize();
+        k_simt<<<1, TC>>>(dA, dx, dy, dSink, 100);
+        bool simt_ok = !leg_failed("simt");
+        cudaFuncSetAttribute(k_cublasdx, cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
+        k_cublasdx<<<1, TC, smem>>>(dA, dx, dy, dSink, 100);
+        bool cdx_ok = !leg_failed("cublasdx");
 
-        clock_gettime(CLOCK_MONOTONIC, &t0);
-        k_simt<<<1, TC>>>(dA, dx, dy, dSink, iters); cudaDeviceSynchronize();
-        clock_gettime(CLOCK_MONOTONIC, &t1);
-        printf("simt %.6f\\n", elapsed_us(t0, t1) / iters);
+        if (simt_ok) {{
+            clock_gettime(CLOCK_MONOTONIC, &t0);
+            k_simt<<<1, TC>>>(dA, dx, dy, dSink, iters); cudaDeviceSynchronize();
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            printf("simt %.6f\\n", elapsed_us(t0, t1) / iters);
+        }}
 
-        clock_gettime(CLOCK_MONOTONIC, &t0);
-        k_cublasdx<<<1, TC, smem>>>(dA, dx, dy, dSink, iters); cudaDeviceSynchronize();
-        clock_gettime(CLOCK_MONOTONIC, &t1);
-        printf("cublasdx %.6f\\n", elapsed_us(t0, t1) / iters);
+        if (cdx_ok) {{
+            clock_gettime(CLOCK_MONOTONIC, &t0);
+            k_cublasdx<<<1, TC, smem>>>(dA, dx, dy, dSink, iters); cudaDeviceSynchronize();
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            printf("cublasdx %.6f\\n", elapsed_us(t0, t1) / iters);
+        }}
 
         cudaFree(dA); cudaFree(dx); cudaFree(dy); cudaFree(dSink);
         return 0;
@@ -276,7 +322,7 @@ _ROW_STRIDED_GEMM_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
 
     __global__ void k_simt(float* A, float* B, float* C, volatile float* sink, int iters) {{
         for (int rep = 0; rep < iters; rep++) {{
-            glass::gemm_strided<float, M, N, K, A_RS, B_RS>(A, B, C, 1.f, 0.f);
+            glass::gemm_strided<float, M, N, K, A_RS, B_RS>(1.f, A, B, 0.f, C);
             __syncthreads();
             if (threadIdx.x == 0) sink[rep & 0xFF] = C[0];
             __syncthreads();
@@ -305,18 +351,25 @@ _ROW_STRIDED_GEMM_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
         constexpr size_t smem =
             glass::nvidia::gemm_strided_scratch_bytes<float, M, N, K, A_RS, B_RS, TC>();
 
-        k_simt<<<1, TC>>>(dA, dB, dC, dSink, 100); cudaDeviceSynchronize();
-        k_cublasdx<<<1, TC, smem>>>(dA, dB, dC, dSink, 100); cudaDeviceSynchronize();
+        k_simt<<<1, TC>>>(dA, dB, dC, dSink, 100);
+        bool simt_ok = !leg_failed("simt");
+        cudaFuncSetAttribute(k_cublasdx, cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
+        k_cublasdx<<<1, TC, smem>>>(dA, dB, dC, dSink, 100);
+        bool cdx_ok = !leg_failed("cublasdx");
 
-        clock_gettime(CLOCK_MONOTONIC, &t0);
-        k_simt<<<1, TC>>>(dA, dB, dC, dSink, iters); cudaDeviceSynchronize();
-        clock_gettime(CLOCK_MONOTONIC, &t1);
-        printf("simt %.6f\\n", elapsed_us(t0, t1) / iters);
+        if (simt_ok) {{
+            clock_gettime(CLOCK_MONOTONIC, &t0);
+            k_simt<<<1, TC>>>(dA, dB, dC, dSink, iters); cudaDeviceSynchronize();
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            printf("simt %.6f\\n", elapsed_us(t0, t1) / iters);
+        }}
 
-        clock_gettime(CLOCK_MONOTONIC, &t0);
-        k_cublasdx<<<1, TC, smem>>>(dA, dB, dC, dSink, iters); cudaDeviceSynchronize();
-        clock_gettime(CLOCK_MONOTONIC, &t1);
-        printf("cublasdx %.6f\\n", elapsed_us(t0, t1) / iters);
+        if (cdx_ok) {{
+            clock_gettime(CLOCK_MONOTONIC, &t0);
+            k_cublasdx<<<1, TC, smem>>>(dA, dB, dC, dSink, iters); cudaDeviceSynchronize();
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            printf("cublasdx %.6f\\n", elapsed_us(t0, t1) / iters);
+        }}
 
         cudaFree(dA); cudaFree(dB); cudaFree(dC); cudaFree(dSink);
         return 0;
@@ -333,15 +386,20 @@ _GEMM_BATCHED_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
 
     static const int M = {M}, N = {N}, K = {K};
     static const int BATCH = {BATCH};
+    // Cap threads-per-matrix so the 2D launch dim3(BTC, BATCH) and the 1D
+    // launch BTC*BATCH stay within the 1024-thread/block limit. The default
+    // TC=64 with BATCH=32 would request 2048 threads, so the launch fails
+    // silently — recorded as a bogus 0.000us before this cap + leg_failed().
+    static const int BTC = (TC * BATCH > 1024) ? (1024 / BATCH) : TC;
 
     namespace glass {{ namespace nvidia {{
-        DEFINE_NVIDIA_GEMM_BLOCKDIM(M, N, K, TC)
-        DEFINE_NVIDIA_GEMM_BATCHED_BLOCKDIM(M, N, K, BATCH, TC)
+        DEFINE_NVIDIA_GEMM_BLOCKDIM(M, N, K, BTC)
+        DEFINE_NVIDIA_GEMM_BATCHED_BLOCKDIM(M, N, K, BATCH, BTC)
     }}}}
 
     __global__ void k_simt(float** As, float** Bs, float** Cs, volatile float* sink, int iters) {{
         for (int rep = 0; rep < iters; rep++) {{
-            glass::nvidia::gemm_batched_1d<float, M, N, K, BATCH, TC>(
+            glass::nvidia::gemm_batched_1d<float, M, N, K, BATCH, BTC>(
                 1.f, As, Bs, 0.f, Cs);
             __syncthreads();
             if (threadIdx.x == 0) sink[rep & 0xFF] = Cs[0][0];
@@ -353,7 +411,7 @@ _GEMM_BATCHED_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
                                 volatile float* sink, int iters) {{
         extern __shared__ __align__(16) char smem[];
         for (int rep = 0; rep < iters; rep++) {{
-            glass::nvidia::gemm_batched<float, M, N, K, BATCH, TC>(
+            glass::nvidia::gemm_batched<float, M, N, K, BATCH, BTC>(
                 1.f, As, Bs, 0.f, Cs, smem);
             __syncthreads();
             if (threadIdx.x == 0 && threadIdx.y == 0) sink[rep & 0xFF] = Cs[0][0];
@@ -388,25 +446,31 @@ _GEMM_BATCHED_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
 
         struct timespec t0, t1;
         constexpr size_t smem =
-            glass::nvidia::gemm_batched_scratch_bytes<float, M, N, K, BATCH, TC>();
+            glass::nvidia::gemm_batched_scratch_bytes<float, M, N, K, BATCH, BTC>();
 
-        // SIMT batched_1d launches 1D with TC*BATCH threads, ptr-array args.
-        k_simt<<<1, TC * BATCH>>>(dAs, dBs, dCs, dSink, 100); cudaDeviceSynchronize();
-        // cuBLASDx batched launches 2D dim3(TC, BATCH).
-        k_cublasdx<<<1, dim3(TC, BATCH), smem>>>(dAs, dBs, dCs, dSink, 100);
-        cudaDeviceSynchronize();
+        // SIMT batched_1d launches 1D with BTC*BATCH threads, ptr-array args.
+        k_simt<<<1, BTC * BATCH>>>(dAs, dBs, dCs, dSink, 100);
+        bool simt_ok = !leg_failed("simt");
+        // cuBLASDx batched launches 2D dim3(BTC, BATCH).
+        cudaFuncSetAttribute(k_cublasdx, cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
+        k_cublasdx<<<1, dim3(BTC, BATCH), smem>>>(dAs, dBs, dCs, dSink, 100);
+        bool cdx_ok = !leg_failed("cublasdx");
 
-        clock_gettime(CLOCK_MONOTONIC, &t0);
-        k_simt<<<1, TC * BATCH>>>(dAs, dBs, dCs, dSink, iters);
-        cudaDeviceSynchronize();
-        clock_gettime(CLOCK_MONOTONIC, &t1);
-        printf("simt %.6f\\n", elapsed_us(t0, t1) / iters);
+        if (simt_ok) {{
+            clock_gettime(CLOCK_MONOTONIC, &t0);
+            k_simt<<<1, BTC * BATCH>>>(dAs, dBs, dCs, dSink, iters);
+            cudaDeviceSynchronize();
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            printf("simt %.6f\\n", elapsed_us(t0, t1) / iters);
+        }}
 
-        clock_gettime(CLOCK_MONOTONIC, &t0);
-        k_cublasdx<<<1, dim3(TC, BATCH), smem>>>(dAs, dBs, dCs, dSink, iters);
-        cudaDeviceSynchronize();
-        clock_gettime(CLOCK_MONOTONIC, &t1);
-        printf("cublasdx %.6f\\n", elapsed_us(t0, t1) / iters);
+        if (cdx_ok) {{
+            clock_gettime(CLOCK_MONOTONIC, &t0);
+            k_cublasdx<<<1, dim3(BTC, BATCH), smem>>>(dAs, dBs, dCs, dSink, iters);
+            cudaDeviceSynchronize();
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            printf("cublasdx %.6f\\n", elapsed_us(t0, t1) / iters);
+        }}
 
         cudaFree(dA); cudaFree(dB); cudaFree(dC); cudaFree(dSink);
         cudaFree(dAs); cudaFree(dBs); cudaFree(dCs);
@@ -515,15 +579,44 @@ def detect_sm() -> int:
     return int(f"{major}{minor}0")
 
 
-def measure_shape(api, shape, sms, iters, mathdx_root, build_dir):
-    cfg = API_CONFIGS[api]
-    keys = cfg["shape_keys"]
-    placeholders = dict(zip(keys, shape))
-    label = "_".join(f"{k}{v}" for k, v in placeholders.items())
-    src_path = build_dir / f"_autotune_{api}_{label}.cu"
-    bin_path = build_dir / f"_autotune_{api}_{label}"
-    src_path.write_text(cfg["microbench"].format(**placeholders))
+_LIB_DIGEST = None
 
+
+def lib_digest():
+    """Content hash of the whole header-only library (glass*.cuh + src/**/*.cuh),
+    so any library edit busts every cached microbench binary. Computed once."""
+    global _LIB_DIGEST
+    if _LIB_DIGEST is None:
+        h = hashlib.sha256()
+        files = sorted(GLASS_DIR.glob("glass*.cuh")) + sorted((GLASS_DIR / "src").rglob("*.cuh"))
+        for f in files:
+            h.update(f.read_bytes())
+        _LIB_DIGEST = h.hexdigest()
+    return _LIB_DIGEST
+
+
+def build_shape(api, shape, sms, mathdx_root, build_dir):
+    """Compile one (api, shape) microbench into the persistent build cache.
+
+    Hash-keyed on the rendered source + the library digest + the SM, so a cached
+    binary is reused across runs and a stale one (lib/source/SM change) rebuilds.
+    A compile that cuBLASDx rejects (e.g. BlockDim too small) is remembered via a
+    ``.fail`` marker so prebuild doesn't keep retrying it. Returns
+    ``(bin_path_or_None, status)`` where status ∈ {cached, built, cached-fail, fail}.
+    """
+    cfg = API_CONFIGS[api]
+    placeholders = dict(zip(cfg["shape_keys"], shape))
+    label = "_".join(f"{k}{v}" for k, v in placeholders.items())
+    src = cfg["microbench"].format(**placeholders)
+    key = hashlib.sha256((src + lib_digest() + f"sm{sms}").encode()).hexdigest()[:12]
+    bin_path = build_dir / f"{api}_{label}_{key}"
+    fail_path = build_dir / f"{api}_{label}_{key}.fail"
+    if bin_path.exists():
+        return bin_path, "cached"
+    if fail_path.exists():
+        return None, "cached-fail"
+    src_path = build_dir / f"{api}_{label}.cu"
+    src_path.write_text(src)
     cmd = [
         "nvcc", "-std=c++17", f"-arch=sm_{sms // 10}", "-O3",
         f"-I{GLASS_DIR}", f"-I{GLASS_DIR / 'src'}",
@@ -535,14 +628,18 @@ def measure_shape(api, shape, sms, iters, mathdx_root, build_dir):
     ]
     res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode != 0:
-        # cuBLASDx may reject some shapes outright (e.g. BlockDim too small).
-        # Treat as "SIMT wins by default" — emit a `false` specialization so
-        # we don't keep retrying that shape on rebuilds.
+        fail_path.write_text((res.stderr or "")[:1000])
+        return None, "fail"
+    return bin_path, "built"
+
+
+def measure_shape(api, shape, sms, iters, mathdx_root, build_dir):
+    cfg = API_CONFIGS[api]
+    bin_path, status = build_shape(api, shape, sms, mathdx_root, build_dir)
+    if bin_path is None:
+        # cuBLASDx may reject some shapes outright → "SIMT wins by default".
         print(f"    [{api} {cfg['label_fmt'](shape)}] compile failed → SIMT default",
               file=sys.stderr)
-        if res.stderr:
-            print(f"    nvcc stderr (first 200 chars): {res.stderr[:200]}",
-                  file=sys.stderr)
         return None, None
 
     res = subprocess.run([str(bin_path), str(iters)],
@@ -622,7 +719,7 @@ def emit_overrides(out_path: pathlib.Path,
                         f"< {MIN_TRUSTWORTHY_US:.2f}us) → SIMT default")
             else:
                 ratio = cdx / simt
-                if ratio < (1.0 - margin):
+                if _cublasdx_wins(simt, cdx, margin):
                     verdict = "true"
                     note = (f"cublasdx wins ({cdx:.3f}us vs simt {simt:.3f}us, "
                             f"{(1-ratio)*100:.1f}%)")
@@ -680,7 +777,7 @@ def emit_results_md(md_path: pathlib.Path,
                 lines.append(f"| {shape_cells} | {simt:.3f} | {cdx:.3f} | "
                              f"SIMT (sub-noise) | — |")
                 continue
-            if cdx < simt * (1.0 - margin):
+            if _cublasdx_wins(simt, cdx, margin):
                 lines.append(f"| {shape_cells} | {simt:.3f} | {cdx:.3f} | "
                              f"**cuBLASDx** | {simt/cdx:.2f}× |")
             elif simt < cdx * (1.0 - margin):
@@ -793,6 +890,20 @@ def main():
                         "tie (default 0.05)")
     p.add_argument("--dry-run", action="store_true",
                    help="Measure but don't write any files")
+    p.add_argument("--build-only", action="store_true",
+                   help="Compile every microbench into the build cache and exit "
+                        "(no timing, no table written). Pre-warms the cache so the "
+                        "actual sweep on a quiet GPU is execute-only. Safe to run "
+                        "while the GPU is busy — compilation is CPU-bound.")
+    p.add_argument("--build-dir", default=None,
+                   help="Persistent build cache dir (default "
+                        "bench/.tune_cache/sm<sms>). Binaries are hash-keyed on the "
+                        "source + library digest + SM and reused across runs.")
+    p.add_argument("--build-jobs", type=int, default=1,
+                   help="Parallel nvcc compiles for --build-only (default 1). Each "
+                        "cuBLASDx compile needs ~6-7GB RAM, so size to free_RAM/7 "
+                        "(e.g. 6 on a 64GB box). Ignored outside --build-only; the "
+                        "timed sweep always runs serially for clean measurement.")
     p.add_argument("--emit-defaults", metavar="SWEEP_TXT", default=None,
                    help="Parse a bench_mega_sweep run (mega_sweep_*.txt) and emit a per-host "
                         "glass-defaults.cuh override header (warp/block/nvidia ladder), then exit.")
@@ -812,6 +923,55 @@ def main():
     if unknown:
         sys.exit(f"Unknown API(s): {unknown}. Choices: {list(API_CONFIGS.keys())}")
 
+    mathdx_root_env = os.environ.get("MATHDX_ROOT")
+    if not mathdx_root_env:
+        sys.exit("ERROR: MATHDX_ROOT not set — autotune needs cuBLASDx headers.")
+    mathdx_root = pathlib.Path(mathdx_root_env)
+
+    build_dir = (pathlib.Path(args.build_dir) if args.build_dir
+                 else BENCH_DIR / ".tune_cache" / f"sm{sms}")
+    build_dir.mkdir(parents=True, exist_ok=True)
+
+    def shapes_for(api):
+        if args.shapes:
+            try:
+                return parse_shapes_for_api(api, args.shapes)
+            except ValueError as e:
+                # --shapes arity mismatches this API (common with multiple APIs
+                # in --apis); skip rather than abort the whole run.
+                print(f"  [skip {api}] {e}", file=sys.stderr)
+                return None
+        return list(API_CONFIGS[api]["default_shapes"])
+
+    # ── build-only: compile every microbench into the cache, no timing ──
+    if args.build_only:
+        jobs = max(1, args.build_jobs)
+        print(f"Prebuild: sm_{sms // 10}   cache={build_dir}   parallel={jobs}")
+        print(f"APIs: {', '.join(requested_apis)}   MATHDX_ROOT={mathdx_root}\n")
+        # Building is not timed, so it parallelizes freely (each build_shape just
+        # waits on an nvcc subprocess). Distinct shapes write distinct .cu/.bin
+        # paths (hash-keyed), so the cache is parallel-safe. The later timed
+        # sweep stays serial — only compilation fans out here.
+        work = [(api, shape)
+                for api in requested_apis
+                for shape in (shapes_for(api) or [])]
+        tally = {"cached": 0, "built": 0, "fail": 0, "cached-fail": 0}
+
+        def _build(item):
+            api, shape = item
+            _, status = build_shape(api, shape, sms, mathdx_root, build_dir)
+            return api, shape, status
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as ex:
+            for api, shape, status in ex.map(_build, work):
+                tally[status] = tally.get(status, 0) + 1
+                print(f"  {api:16} {API_CONFIGS[api]['label_fmt'](shape):24} {status}",
+                      flush=True)
+        print(f"\nPrebuilt: {tally['built']} new, {tally['cached']} already cached, "
+              f"{tally['fail'] + tally['cached-fail']} cuBLASDx-rejected (SIMT default).")
+        print(f"Cache ready at {build_dir} — the timed sweep is now execute-only.")
+        return
+
     if args.in_tree:
         out = (GLASS_DIR / "src" / "nvidia" / "tuning_table.cuh").resolve()
     elif args.out is not None:
@@ -820,60 +980,49 @@ def main():
         out = (TUNING_DIR / f"{hostname}.cuh").resolve()
     md = out.parent / (out.stem + "_results.md")
 
-    mathdx_root_env = os.environ.get("MATHDX_ROOT")
-    if not mathdx_root_env:
-        sys.exit("ERROR: MATHDX_ROOT not set — autotune needs cuBLASDx headers.")
-    mathdx_root = pathlib.Path(mathdx_root_env)
-
     print(f"Autotune target: sm_{sms // 10} (sms={sms})  host={hostname}")
     print(f"APIs:            {', '.join(requested_apis)}")
     print(f"Iterations:      {args.iters}")
     print(f"Tie margin:      ±{args.margin*100:.0f}%")
     print(f"MATHDX_ROOT:     {mathdx_root}")
+    print(f"Build cache:     {build_dir}")
     print(f"Output:          {out}{' (dry run)' if args.dry_run else ''}")
     if args.in_tree:
         print("                 (--in-tree: writing to shipped tuning_table.cuh; "
               "consider per-host instead)")
 
     results_by_api: dict[str, list] = {}
-    with tempfile.TemporaryDirectory(prefix="glass_autotune_") as tmpdir:
-        build_dir = pathlib.Path(tmpdir)
-        for api in requested_apis:
-            cfg = API_CONFIGS[api]
-            if args.shapes:
-                try:
-                    shapes = parse_shapes_for_api(api, args.shapes)
-                except ValueError as e:
-                    # --shapes arity mismatches this API. With multiple APIs
-                    # in --apis this happens often (each API has different
-                    # arity); skip rather than abort the whole run.
-                    print(f"  [skip {api}] {e}", file=sys.stderr)
-                    print(f"  → run autotune separately for {api} with "
-                          f"matching shape arity {cfg['shape_keys']}.",
-                          file=sys.stderr)
-                    continue
+    for api in requested_apis:
+        cfg = API_CONFIGS[api]
+        shapes = shapes_for(api)
+        if shapes is None:
+            print(f"  → run autotune separately for {api} with matching shape "
+                  f"arity {cfg['shape_keys']}.", file=sys.stderr)
+            continue
+        print(f"\n── {api} ({len(shapes)} shapes) " + "─" * max(0, 60 - len(api)))
+        api_results = []
+        for shape in shapes:
+            label = cfg["label_fmt"](shape)
+            print(f"  measuring {label} ...", end=" ", flush=True)
+            simt, cdx = measure_shape(api, shape, sms, args.iters,
+                                      mathdx_root, build_dir)
+            if simt is None and cdx is None:
+                print("[skipped — both legs failed]")
+            elif simt is None or cdx is None:
+                got = (f"simt={simt:.3f}us" if simt is not None
+                       else f"cublasdx={cdx:.3f}us")
+                failed = "simt" if simt is None else "cublasdx"
+                print(f"{got}, {failed} leg failed → SIMT default")
             else:
-                shapes = list(cfg["default_shapes"])
-            print(f"\n── {api} ({len(shapes)} shapes) "
-                  + "─" * max(0, 60 - len(api)))
-            api_results = []
-            for shape in shapes:
-                label = cfg["label_fmt"](shape)
-                print(f"  measuring {label} ...", end=" ", flush=True)
-                simt, cdx = measure_shape(api, shape, sms, args.iters,
-                                          mathdx_root, build_dir)
-                if simt is None or cdx is None:
-                    print("[skipped]")
+                if _cublasdx_wins(simt, cdx, args.margin):
+                    winner = "cuBLASDx"
+                elif simt < cdx * (1 - args.margin):
+                    winner = "SIMT"
                 else:
-                    if cdx < simt * (1 - args.margin):
-                        winner = "cuBLASDx"
-                    elif simt < cdx * (1 - args.margin):
-                        winner = "SIMT"
-                    else:
-                        winner = "tie"
-                    print(f"simt={simt:.3f}us cublasdx={cdx:.3f}us → {winner}")
-                api_results.append((shape, simt, cdx))
-            results_by_api[api] = api_results
+                    winner = "tie"
+                print(f"simt={simt:.3f}us cublasdx={cdx:.3f}us → {winner}")
+            api_results.append((shape, simt, cdx))
+        results_by_api[api] = api_results
 
     if args.dry_run:
         print("\nDry run — not writing files.")
@@ -944,7 +1093,7 @@ def _update_in_tree(path: pathlib.Path,
                     f"< {MIN_TRUSTWORTHY_US:.2f}us) → SIMT default")
             else:
                 ratio = cdx / simt
-                if ratio < (1.0 - margin):
+                if _cublasdx_wins(simt, cdx, margin):
                     verdict, note = "true", (
                         f"cublasdx wins ({cdx:.3f}us vs simt {simt:.3f}us, "
                         f"{(1-ratio)*100:.1f}%)")

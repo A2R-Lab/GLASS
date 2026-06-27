@@ -122,7 +122,8 @@ Measured performance
 
 The measured warp / block / nvidia ladder on an RTX 5090 (sm_120) — each op's
 fastest interface across problem size, in ns/problem (the data behind
-``glass::suggested_backend<>``):
+``glass::suggested_backend<>``), shown here in the ``NPROB=8192`` throughput
+regime:
 
 .. image:: _static/mega_sweep_ladder_f32.png
    :alt: GLASS measured backend ladder, float32, RTX 5090 / sm_120
@@ -131,6 +132,11 @@ fastest interface across problem size, in ns/problem (the data behind
 .. image:: _static/mega_sweep_ladder_f64.png
    :alt: GLASS measured backend ladder, float64, RTX 5090 / sm_120
    :width: 100%
+
+See :doc:`user_guide/tutorials/sweep_results` for the same ladder across the
+``NPROB=64`` / ``1024`` / ``8192`` batch regimes (the winner shifts with batch
+size) and the per-``(op, N)`` winner table, and :doc:`user_guide/concepts/tuning`
+to regenerate it for your own GPU with ``bench/tune.py``.
 
 .. toctree::
    :hidden:
