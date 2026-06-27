@@ -89,6 +89,22 @@ _BENCH_PREAMBLE = textwrap.dedent("""
         return (double)(b.tv_sec - a.tv_sec) * 1e6
              + (double)(b.tv_nsec - a.tv_nsec) * 1e-3;
     }}
+
+    // A launched kernel that errors (shared-mem overflow, >1024 threads,
+    // cuBLASDx reject) must be reported as a FAILURE, not timed as a silent
+    // ~0us. After a launch, leg_failed() syncs, checks the error, and on
+    // failure prints a non-numeric marker line so bench/autotune.py records
+    // the leg as "measurement failed -> SIMT default" instead of believing a
+    // bogus 0.000us. Returns true on failure.
+    static bool leg_failed(const char* leg) {{
+        cudaError_t e = cudaDeviceSynchronize();
+        if (e == cudaSuccess) e = cudaGetLastError();
+        if (e != cudaSuccess) {{
+            printf("%s FAILED %s\\n", leg, cudaGetErrorString(e));
+            return true;
+        }}
+        return false;
+    }}
 """).strip()
 
 
@@ -131,18 +147,25 @@ _GEMM_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
         struct timespec t0, t1;
         constexpr size_t smem = glass::nvidia::gemm_scratch_bytes<float, M, N, K, TC>();
 
-        k_simt<<<1, TC>>>(dA, dB, dC, dSink, 100); cudaDeviceSynchronize();
-        k_cublasdx<<<1, TC, smem>>>(dA, dB, dC, dSink, 100); cudaDeviceSynchronize();
+        k_simt<<<1, TC>>>(dA, dB, dC, dSink, 100);
+        bool simt_ok = !leg_failed("simt");
+        cudaFuncSetAttribute(k_cublasdx, cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
+        k_cublasdx<<<1, TC, smem>>>(dA, dB, dC, dSink, 100);
+        bool cdx_ok = !leg_failed("cublasdx");
 
-        clock_gettime(CLOCK_MONOTONIC, &t0);
-        k_simt<<<1, TC>>>(dA, dB, dC, dSink, iters); cudaDeviceSynchronize();
-        clock_gettime(CLOCK_MONOTONIC, &t1);
-        printf("simt %.6f\\n", elapsed_us(t0, t1) / iters);
+        if (simt_ok) {{
+            clock_gettime(CLOCK_MONOTONIC, &t0);
+            k_simt<<<1, TC>>>(dA, dB, dC, dSink, iters); cudaDeviceSynchronize();
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            printf("simt %.6f\\n", elapsed_us(t0, t1) / iters);
+        }}
 
-        clock_gettime(CLOCK_MONOTONIC, &t0);
-        k_cublasdx<<<1, TC, smem>>>(dA, dB, dC, dSink, iters); cudaDeviceSynchronize();
-        clock_gettime(CLOCK_MONOTONIC, &t1);
-        printf("cublasdx %.6f\\n", elapsed_us(t0, t1) / iters);
+        if (cdx_ok) {{
+            clock_gettime(CLOCK_MONOTONIC, &t0);
+            k_cublasdx<<<1, TC, smem>>>(dA, dB, dC, dSink, iters); cudaDeviceSynchronize();
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            printf("cublasdx %.6f\\n", elapsed_us(t0, t1) / iters);
+        }}
 
         cudaFree(dA); cudaFree(dB); cudaFree(dC); cudaFree(dSink);
         return 0;
@@ -189,18 +212,25 @@ _GEMV_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
         struct timespec t0, t1;
         constexpr size_t smem = glass::nvidia::gemv_scratch_bytes<float, M, N, TC>();
 
-        k_simt<<<1, TC>>>(dA, dx, dy, dSink, 100); cudaDeviceSynchronize();
-        k_cublasdx<<<1, TC, smem>>>(dA, dx, dy, dSink, 100); cudaDeviceSynchronize();
+        k_simt<<<1, TC>>>(dA, dx, dy, dSink, 100);
+        bool simt_ok = !leg_failed("simt");
+        cudaFuncSetAttribute(k_cublasdx, cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
+        k_cublasdx<<<1, TC, smem>>>(dA, dx, dy, dSink, 100);
+        bool cdx_ok = !leg_failed("cublasdx");
 
-        clock_gettime(CLOCK_MONOTONIC, &t0);
-        k_simt<<<1, TC>>>(dA, dx, dy, dSink, iters); cudaDeviceSynchronize();
-        clock_gettime(CLOCK_MONOTONIC, &t1);
-        printf("simt %.6f\\n", elapsed_us(t0, t1) / iters);
+        if (simt_ok) {{
+            clock_gettime(CLOCK_MONOTONIC, &t0);
+            k_simt<<<1, TC>>>(dA, dx, dy, dSink, iters); cudaDeviceSynchronize();
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            printf("simt %.6f\\n", elapsed_us(t0, t1) / iters);
+        }}
 
-        clock_gettime(CLOCK_MONOTONIC, &t0);
-        k_cublasdx<<<1, TC, smem>>>(dA, dx, dy, dSink, iters); cudaDeviceSynchronize();
-        clock_gettime(CLOCK_MONOTONIC, &t1);
-        printf("cublasdx %.6f\\n", elapsed_us(t0, t1) / iters);
+        if (cdx_ok) {{
+            clock_gettime(CLOCK_MONOTONIC, &t0);
+            k_cublasdx<<<1, TC, smem>>>(dA, dx, dy, dSink, iters); cudaDeviceSynchronize();
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            printf("cublasdx %.6f\\n", elapsed_us(t0, t1) / iters);
+        }}
 
         cudaFree(dA); cudaFree(dx); cudaFree(dy); cudaFree(dSink);
         return 0;
@@ -250,18 +280,25 @@ _ROW_STRIDED_GEMV_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
         constexpr size_t smem =
             glass::nvidia::gemv_strided_scratch_bytes<float, M, N, ROW_STRIDE, TC>();
 
-        k_simt<<<1, TC>>>(dA, dx, dy, dSink, 100); cudaDeviceSynchronize();
-        k_cublasdx<<<1, TC, smem>>>(dA, dx, dy, dSink, 100); cudaDeviceSynchronize();
+        k_simt<<<1, TC>>>(dA, dx, dy, dSink, 100);
+        bool simt_ok = !leg_failed("simt");
+        cudaFuncSetAttribute(k_cublasdx, cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
+        k_cublasdx<<<1, TC, smem>>>(dA, dx, dy, dSink, 100);
+        bool cdx_ok = !leg_failed("cublasdx");
 
-        clock_gettime(CLOCK_MONOTONIC, &t0);
-        k_simt<<<1, TC>>>(dA, dx, dy, dSink, iters); cudaDeviceSynchronize();
-        clock_gettime(CLOCK_MONOTONIC, &t1);
-        printf("simt %.6f\\n", elapsed_us(t0, t1) / iters);
+        if (simt_ok) {{
+            clock_gettime(CLOCK_MONOTONIC, &t0);
+            k_simt<<<1, TC>>>(dA, dx, dy, dSink, iters); cudaDeviceSynchronize();
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            printf("simt %.6f\\n", elapsed_us(t0, t1) / iters);
+        }}
 
-        clock_gettime(CLOCK_MONOTONIC, &t0);
-        k_cublasdx<<<1, TC, smem>>>(dA, dx, dy, dSink, iters); cudaDeviceSynchronize();
-        clock_gettime(CLOCK_MONOTONIC, &t1);
-        printf("cublasdx %.6f\\n", elapsed_us(t0, t1) / iters);
+        if (cdx_ok) {{
+            clock_gettime(CLOCK_MONOTONIC, &t0);
+            k_cublasdx<<<1, TC, smem>>>(dA, dx, dy, dSink, iters); cudaDeviceSynchronize();
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            printf("cublasdx %.6f\\n", elapsed_us(t0, t1) / iters);
+        }}
 
         cudaFree(dA); cudaFree(dx); cudaFree(dy); cudaFree(dSink);
         return 0;
@@ -313,18 +350,25 @@ _ROW_STRIDED_GEMM_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
         constexpr size_t smem =
             glass::nvidia::gemm_strided_scratch_bytes<float, M, N, K, A_RS, B_RS, TC>();
 
-        k_simt<<<1, TC>>>(dA, dB, dC, dSink, 100); cudaDeviceSynchronize();
-        k_cublasdx<<<1, TC, smem>>>(dA, dB, dC, dSink, 100); cudaDeviceSynchronize();
+        k_simt<<<1, TC>>>(dA, dB, dC, dSink, 100);
+        bool simt_ok = !leg_failed("simt");
+        cudaFuncSetAttribute(k_cublasdx, cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
+        k_cublasdx<<<1, TC, smem>>>(dA, dB, dC, dSink, 100);
+        bool cdx_ok = !leg_failed("cublasdx");
 
-        clock_gettime(CLOCK_MONOTONIC, &t0);
-        k_simt<<<1, TC>>>(dA, dB, dC, dSink, iters); cudaDeviceSynchronize();
-        clock_gettime(CLOCK_MONOTONIC, &t1);
-        printf("simt %.6f\\n", elapsed_us(t0, t1) / iters);
+        if (simt_ok) {{
+            clock_gettime(CLOCK_MONOTONIC, &t0);
+            k_simt<<<1, TC>>>(dA, dB, dC, dSink, iters); cudaDeviceSynchronize();
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            printf("simt %.6f\\n", elapsed_us(t0, t1) / iters);
+        }}
 
-        clock_gettime(CLOCK_MONOTONIC, &t0);
-        k_cublasdx<<<1, TC, smem>>>(dA, dB, dC, dSink, iters); cudaDeviceSynchronize();
-        clock_gettime(CLOCK_MONOTONIC, &t1);
-        printf("cublasdx %.6f\\n", elapsed_us(t0, t1) / iters);
+        if (cdx_ok) {{
+            clock_gettime(CLOCK_MONOTONIC, &t0);
+            k_cublasdx<<<1, TC, smem>>>(dA, dB, dC, dSink, iters); cudaDeviceSynchronize();
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            printf("cublasdx %.6f\\n", elapsed_us(t0, t1) / iters);
+        }}
 
         cudaFree(dA); cudaFree(dB); cudaFree(dC); cudaFree(dSink);
         return 0;
@@ -341,15 +385,20 @@ _GEMM_BATCHED_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
 
     static const int M = {M}, N = {N}, K = {K};
     static const int BATCH = {BATCH};
+    // Cap threads-per-matrix so the 2D launch dim3(BTC, BATCH) and the 1D
+    // launch BTC*BATCH stay within the 1024-thread/block limit. The default
+    // TC=64 with BATCH=32 would request 2048 threads, so the launch fails
+    // silently — recorded as a bogus 0.000us before this cap + leg_failed().
+    static const int BTC = (TC * BATCH > 1024) ? (1024 / BATCH) : TC;
 
     namespace glass {{ namespace nvidia {{
-        DEFINE_NVIDIA_GEMM_BLOCKDIM(M, N, K, TC)
-        DEFINE_NVIDIA_GEMM_BATCHED_BLOCKDIM(M, N, K, BATCH, TC)
+        DEFINE_NVIDIA_GEMM_BLOCKDIM(M, N, K, BTC)
+        DEFINE_NVIDIA_GEMM_BATCHED_BLOCKDIM(M, N, K, BATCH, BTC)
     }}}}
 
     __global__ void k_simt(float** As, float** Bs, float** Cs, volatile float* sink, int iters) {{
         for (int rep = 0; rep < iters; rep++) {{
-            glass::nvidia::gemm_batched_1d<float, M, N, K, BATCH, TC>(
+            glass::nvidia::gemm_batched_1d<float, M, N, K, BATCH, BTC>(
                 1.f, As, Bs, 0.f, Cs);
             __syncthreads();
             if (threadIdx.x == 0) sink[rep & 0xFF] = Cs[0][0];
@@ -361,7 +410,7 @@ _GEMM_BATCHED_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
                                 volatile float* sink, int iters) {{
         extern __shared__ __align__(16) char smem[];
         for (int rep = 0; rep < iters; rep++) {{
-            glass::nvidia::gemm_batched<float, M, N, K, BATCH, TC>(
+            glass::nvidia::gemm_batched<float, M, N, K, BATCH, BTC>(
                 1.f, As, Bs, 0.f, Cs, smem);
             __syncthreads();
             if (threadIdx.x == 0 && threadIdx.y == 0) sink[rep & 0xFF] = Cs[0][0];
@@ -396,25 +445,31 @@ _GEMM_BATCHED_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
 
         struct timespec t0, t1;
         constexpr size_t smem =
-            glass::nvidia::gemm_batched_scratch_bytes<float, M, N, K, BATCH, TC>();
+            glass::nvidia::gemm_batched_scratch_bytes<float, M, N, K, BATCH, BTC>();
 
-        // SIMT batched_1d launches 1D with TC*BATCH threads, ptr-array args.
-        k_simt<<<1, TC * BATCH>>>(dAs, dBs, dCs, dSink, 100); cudaDeviceSynchronize();
-        // cuBLASDx batched launches 2D dim3(TC, BATCH).
-        k_cublasdx<<<1, dim3(TC, BATCH), smem>>>(dAs, dBs, dCs, dSink, 100);
-        cudaDeviceSynchronize();
+        // SIMT batched_1d launches 1D with BTC*BATCH threads, ptr-array args.
+        k_simt<<<1, BTC * BATCH>>>(dAs, dBs, dCs, dSink, 100);
+        bool simt_ok = !leg_failed("simt");
+        // cuBLASDx batched launches 2D dim3(BTC, BATCH).
+        cudaFuncSetAttribute(k_cublasdx, cudaFuncAttributeMaxDynamicSharedMemorySize, smem);
+        k_cublasdx<<<1, dim3(BTC, BATCH), smem>>>(dAs, dBs, dCs, dSink, 100);
+        bool cdx_ok = !leg_failed("cublasdx");
 
-        clock_gettime(CLOCK_MONOTONIC, &t0);
-        k_simt<<<1, TC * BATCH>>>(dAs, dBs, dCs, dSink, iters);
-        cudaDeviceSynchronize();
-        clock_gettime(CLOCK_MONOTONIC, &t1);
-        printf("simt %.6f\\n", elapsed_us(t0, t1) / iters);
+        if (simt_ok) {{
+            clock_gettime(CLOCK_MONOTONIC, &t0);
+            k_simt<<<1, BTC * BATCH>>>(dAs, dBs, dCs, dSink, iters);
+            cudaDeviceSynchronize();
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            printf("simt %.6f\\n", elapsed_us(t0, t1) / iters);
+        }}
 
-        clock_gettime(CLOCK_MONOTONIC, &t0);
-        k_cublasdx<<<1, dim3(TC, BATCH), smem>>>(dAs, dBs, dCs, dSink, iters);
-        cudaDeviceSynchronize();
-        clock_gettime(CLOCK_MONOTONIC, &t1);
-        printf("cublasdx %.6f\\n", elapsed_us(t0, t1) / iters);
+        if (cdx_ok) {{
+            clock_gettime(CLOCK_MONOTONIC, &t0);
+            k_cublasdx<<<1, dim3(BTC, BATCH), smem>>>(dAs, dBs, dCs, dSink, iters);
+            cudaDeviceSynchronize();
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            printf("cublasdx %.6f\\n", elapsed_us(t0, t1) / iters);
+        }}
 
         cudaFree(dA); cudaFree(dB); cudaFree(dC); cudaFree(dSink);
         cudaFree(dAs); cudaFree(dBs); cudaFree(dCs);
@@ -935,8 +990,13 @@ def main():
             print(f"  measuring {label} ...", end=" ", flush=True)
             simt, cdx = measure_shape(api, shape, sms, args.iters,
                                       mathdx_root, build_dir)
-            if simt is None or cdx is None:
-                print("[skipped]")
+            if simt is None and cdx is None:
+                print("[skipped — both legs failed]")
+            elif simt is None or cdx is None:
+                got = (f"simt={simt:.3f}us" if simt is not None
+                       else f"cublasdx={cdx:.3f}us")
+                failed = "simt" if simt is None else "cublasdx"
+                print(f"{got}, {failed} leg failed → SIMT default")
             else:
                 if _cublasdx_wins(simt, cdx, args.margin):
                     winner = "cuBLASDx"
