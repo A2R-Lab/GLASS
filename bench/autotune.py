@@ -28,6 +28,7 @@ Requires MATHDX_ROOT set (cuBLASDx headers needed for the cuBLASDx leg).
 """
 
 import argparse
+import concurrent.futures
 import hashlib
 import os
 import pathlib
@@ -898,6 +899,11 @@ def main():
                    help="Persistent build cache dir (default "
                         "bench/.tune_cache/sm<sms>). Binaries are hash-keyed on the "
                         "source + library digest + SM and reused across runs.")
+    p.add_argument("--build-jobs", type=int, default=1,
+                   help="Parallel nvcc compiles for --build-only (default 1). Each "
+                        "cuBLASDx compile needs ~6-7GB RAM, so size to free_RAM/7 "
+                        "(e.g. 6 on a 64GB box). Ignored outside --build-only; the "
+                        "timed sweep always runs serially for clean measurement.")
     p.add_argument("--emit-defaults", metavar="SWEEP_TXT", default=None,
                    help="Parse a bench_mega_sweep run (mega_sweep_*.txt) and emit a per-host "
                         "glass-defaults.cuh override header (warp/block/nvidia ladder), then exit.")
@@ -939,18 +945,28 @@ def main():
 
     # ── build-only: compile every microbench into the cache, no timing ──
     if args.build_only:
-        print(f"Prebuild: sm_{sms // 10}   cache={build_dir}")
+        jobs = max(1, args.build_jobs)
+        print(f"Prebuild: sm_{sms // 10}   cache={build_dir}   parallel={jobs}")
         print(f"APIs: {', '.join(requested_apis)}   MATHDX_ROOT={mathdx_root}\n")
+        # Building is not timed, so it parallelizes freely (each build_shape just
+        # waits on an nvcc subprocess). Distinct shapes write distinct .cu/.bin
+        # paths (hash-keyed), so the cache is parallel-safe. The later timed
+        # sweep stays serial — only compilation fans out here.
+        work = [(api, shape)
+                for api in requested_apis
+                for shape in (shapes_for(api) or [])]
         tally = {"cached": 0, "built": 0, "fail": 0, "cached-fail": 0}
-        for api in requested_apis:
-            shapes = shapes_for(api)
-            if shapes is None:
-                continue
-            print(f"── {api} ({len(shapes)} shapes) " + "─" * max(0, 56 - len(api)))
-            for shape in shapes:
-                _, status = build_shape(api, shape, sms, mathdx_root, build_dir)
+
+        def _build(item):
+            api, shape = item
+            _, status = build_shape(api, shape, sms, mathdx_root, build_dir)
+            return api, shape, status
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as ex:
+            for api, shape, status in ex.map(_build, work):
                 tally[status] = tally.get(status, 0) + 1
-                print(f"  {API_CONFIGS[api]['label_fmt'](shape):24} {status}")
+                print(f"  {api:16} {API_CONFIGS[api]['label_fmt'](shape):24} {status}",
+                      flush=True)
         print(f"\nPrebuilt: {tally['built']} new, {tally['cached']} already cached, "
               f"{tally['fail'] + tally['cached-fail']} cuBLASDx-rejected (SIMT default).")
         print(f"Cache ready at {build_dir} — the timed sweep is now execute-only.")

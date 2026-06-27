@@ -335,6 +335,10 @@ def main():
                         "build cache and exit — no timing. Run this ANYTIME (even "
                         "while the GPU is busy; compilation is CPU-bound), so the "
                         "later sweep on a quiet GPU is execute-only and fast.")
+    p.add_argument("--build-jobs", type=int, default=1,
+                   help="parallel nvcc compiles for --prebuild (default 1). Each "
+                        "cuBLASDx compile needs ~6-7GB RAM, so size to free_RAM/7 "
+                        "(e.g. 6 on a 64GB box). The timed legs always run serially.")
     p.add_argument("--iters", type=int, default=200000, help="bench_reduced iters")
     p.add_argument("--dry-run", action="store_true",
                    help="regenerate + diff against in-tree tables, write nothing")
@@ -374,7 +378,8 @@ def main():
                 print("  [skip] shapes needs MATHDX_ROOT (cuBLASDx).")
             else:
                 run([sys.executable, "autotune.py", "--sm", str(sms),
-                     "--build-only", "--build-dir", str(cache_dir(sms))], cwd=BENCH_DIR)
+                     "--build-only", "--build-jobs", str(args.build_jobs),
+                     "--build-dir", str(cache_dir(sms))], cwd=BENCH_DIR)
         if "reduced" in legs:
             print("── prebuild: reduced ─────────────────────────────────────")
             build_reduced(sms)

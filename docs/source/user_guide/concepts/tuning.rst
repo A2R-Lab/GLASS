@@ -14,7 +14,7 @@ pure-noise re-run reproduces the same tables:
 
 .. code-block:: bash
 
-   python bench/tune.py --sm auto --prebuild   # compile everything into the cache (no GPU needed)
+   python bench/tune.py --sm auto --prebuild --build-jobs 6   # compile everything in parallel (no GPU)
    python bench/tune.py --sm auto              # all legs, ±5% margin (reuses the prebuilt cache)
    python bench/tune.py --sm auto --quick      # ladder throughput point only (faster)
    python bench/tune.py --legs ladder,reduced  # pick legs; --margin to retune the tie band
@@ -24,10 +24,12 @@ pure-noise re-run reproduces the same tables:
 clock (the ``shapes`` leg alone compiles ~66 separate cuBLASDx microbenches).
 ``--prebuild`` compiles every binary the selected legs need into a persistent,
 hash-keyed cache (``bench/.tune_cache/sm<sms>/``) and runs nothing — so you can
-run it **anytime, even while the GPU is busy** (compilation is CPU-bound), and
-the later timed sweep on a quiet GPU is **execute-only**. The cache is keyed on
-the rendered source + a digest of the whole header library + the SM, so a library
-edit transparently rebuilds only the affected binaries.
+run it **anytime, even while the GPU is busy** (compilation is CPU-bound). Because
+building isn't timed, fan it out with ``--build-jobs N`` (size to free_RAM/7 —
+each cuBLASDx compile needs ~6-7GB). The later timed sweep on a quiet GPU is then
+**execute-only**, and always runs serially for clean measurement. The cache is
+keyed on the rendered source + a digest of the whole header library + the SM, so a
+library edit transparently rebuilds only the affected binaries.
 
 The shared rule (``bench/tune_pick.py::pick``): a dependency-carrying impl
 (``nvidia`` / ``cublasdx`` / ``reduced``) wins **only if it beats the simplest

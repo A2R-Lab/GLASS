@@ -137,7 +137,10 @@ ties stay on the launchable-everywhere path. **Run perf sweeps on a quiet GPU**
 Compilation dominates the wall clock, so `bench/tune.py --prebuild` compiles
 every binary into a persistent hash-keyed cache (`bench/.tune_cache/`, gitignored)
 with no timing — run it anytime (even while the GPU is busy) so the later quiet-GPU
-sweep is execute-only. Details: `bench/TUNING.md`.
+sweep is execute-only. Building isn't timed, so parallelize it with
+`--build-jobs N` (size to free_RAM/7 — each cuBLASDx compile needs ~6-7GB; e.g.
+`--build-jobs 6` on a 64GB box); the timed legs always run serially for clean
+measurement. Details: `bench/TUNING.md`.
 
 ## Docs
 
