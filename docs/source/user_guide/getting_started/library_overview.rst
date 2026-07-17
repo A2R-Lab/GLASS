@@ -39,10 +39,13 @@ problems run in parallel — one per block.
 Interfaces
 ----------
 
-GLASS exposes **three primary interfaces**. Two are **block-scoped** (one block
+GLASS exposes **four primary interfaces**. Two are **block-scoped** (one block
 per problem) — ``glass::`` (the default) and the vendor-backed ``glass::nvidia::``
-— and one is **warp-scoped**, ``glass::warp::`` (one warp per problem), for kernels
-that pack many small independent problems into a block:
+— one is **warp-scoped**, ``glass::warp::`` (one warp per problem), for kernels
+that pack many small independent problems into a block, and one is
+**thread-scoped**, ``glass::thread::`` (one problem per *thread*, 32 packed per
+warp), for the low-DOF corner where even a warp per problem leaves most lanes
+idle:
 
 .. list-table::
    :header-rows: 1
@@ -60,6 +63,10 @@ that pack many small independent problems into a block:
      - warp
      - Single-warp SIMT via ``__shfl_*_sync`` — selected L1/L2/L3 ops, no ``__syncthreads`` / shared
      - inline in the base L1/L2/L3 headers
+   * - ``glass::thread::`` (Thread)
+     - thread
+     - Sequential, thread-per-problem — compile-time sizes, register-resident up to ``N≤7``, branch-free ops only
+     - inline in the base L1/L2/L3 headers
    * - ``glass::nvidia::`` (Nvidia)
      - block
      - CUB (L1) + cuBLASDx (L2/L3, batched) + cuSOLVERDx (LAPACK) — compile-time sizes only
@@ -74,7 +81,13 @@ variant that mirrors most of the block surface: the L1 reduction/vector family
 plus ``gemv`` / ``gemm`` / ``syrk`` / ``syr2k``, the factor/solve chain
 (``potrf`` / ``trsv`` / ``trsm`` / ``posv`` / ``ldlt`` / ``ldlt_solve``), and the
 tensor/congruence/riccati families; the warps run independently for intra-block
-parallelism, and it requires a full 32-lane warp.
+parallelism, and it requires a full 32-lane warp. ``glass::thread::`` takes the
+packing one level further — one problem per *thread*, sequential (no barriers,
+no shuffles, no ``threadIdx`` read), compile-time sizes so the operands stay
+register-resident (measured ceiling ``N≤7``). It mirrors the branch-free surface
+only: pivoted/data-dependent ops and the ``_fast``/``_lowmem`` reduction twins
+are deliberately absent (one thread has no reduction strategy; a data-dependent
+branch diverges the warp when every lane owns a different problem).
 
 .. note::
 

@@ -27,14 +27,17 @@ primitives without leaving the block.
 
 ### Interfaces
 
-GLASS exposes **three primary interfaces** — pick the one that matches how your problem maps
+GLASS exposes **four primary interfaces** — pick the one that matches how your problem maps
 onto the GPU. Two are **block-scoped** (one block per problem), one is **warp-scoped** (one
-warp per problem, for packing many tiny problems into a block); all share the same operations:
+warp per problem), and one is **thread-scoped** (one problem per thread, 32 packed per warp);
+all share the same operations. The ladder runs most→least problem packing:
+thread → warp → block → nvidia:
 
 | Interface | Scope | What it is / when to choose it | Header |
 |-----------|-------|--------------------------------|--------|
 | `glass::` (**Block**) | block | Hand-rolled SIMT, `threadIdx` / `blockDim` — no deps. The default; one moderate-to-large problem per block | `glass.cuh` |
 | `glass::warp::` (**Warp**) | **warp** | Single-warp SIMT via `__shfl_*_sync` (*selected* L1/L2/L3 ops, no `__syncthreads`). Pack many small independent problems into one block | inline in the base headers (via `glass.cuh`) |
+| `glass::thread::` (**Thread**) | **thread** | Sequential, one problem per thread (compile-time sizes, register-resident up to `N≤7`; branch-free ops only). Pack 32 low-DOF problems into a warp where a warp-per-problem factor would leave most lanes idle | inline in the base headers (via `glass.cuh`) |
 | `glass::nvidia::` (**Nvidia**) | block | CUB + cuBLASDx + cuSOLVERDx, auto-dispatched against SIMT by size (compile-time sizes). When a vendor tensor-core kernel wins at your size | `glass-nvidia.cuh` |
 
 > **Note:** `glass::cgrps::` (header `glass-cgrps.cuh`) is a convenience cooperative-groups

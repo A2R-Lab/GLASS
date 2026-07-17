@@ -21,11 +21,12 @@ cooperate over data already resident in shared or global memory.
 Interfaces
 ----------
 
-GLASS exposes **three primary interfaces** — pick the one that matches how your
+GLASS exposes **four primary interfaces** — pick the one that matches how your
 problem maps onto the GPU. They cover the same operations under one calling
-convention, so you switch between them by changing the namespace prefix:
+convention, so you switch between them by changing the namespace prefix. The
+ladder runs most→least problem packing: **thread → warp → block → nvidia**.
 
-.. grid:: 3
+.. grid:: 2
    :gutter: 3
 
    .. grid-item-card:: Block — ``glass::``
@@ -44,6 +45,15 @@ convention, so you switch between them by changing the namespace prefix:
       One **warp** per problem (``__shfl_*_sync``, no ``__syncthreads``), so warps
       run independently. Choose this to pack **many small independent problems**
       into one block for intra-block parallelism. Requires a full 32-lane warp.
+
+   .. grid-item-card:: Thread — ``glass::thread::``
+      :link: api_reference/thread
+      :link-type: doc
+
+      One problem per **thread**, 32 packed per warp — the low-DOF corner
+      (compile-time sizes, register-resident up to ``N≤7``). Sequential: no
+      barriers, no shuffles. Choose this when a warp-per-problem factor at
+      ``N≲7`` would leave most lanes idle.
 
    .. grid-item-card:: Nvidia — ``glass::nvidia::``
       :link: user_guide/concepts/backend_dispatch
@@ -64,12 +74,15 @@ convention, so you switch between them by changing the namespace prefix:
 Performance
 -----------
 
-The three interfaces are numerically interchangeable, so GLASS can pick the
+The four interfaces are numerically interchangeable, so GLASS can pick the
 fastest one per ``(operation, size, dtype)`` from a measured ladder:
 ``glass::suggested_backend<op, N, T>()`` returns the winning interface and a
 launch config for codegen and host-side dispatch. The shipped defaults are tuned
 on an RTX 5090 (sm_120); you can regenerate the table for your own GPU with the
-GLASS autotune workflow. See :doc:`user_guide/concepts/tuning` for how the
+GLASS autotune workflow. (The shipped tables predate the ``thread`` interface —
+they return the measured warp/block/nvidia answer; a fresh ``bench/tune.py``
+sweep contends the thread tier too and emits it wherever the low-DOF packing
+actually wins.) See :doc:`user_guide/concepts/tuning` for how the
 benchmarks drive the defaults, and the :ref:`measured ladders <measured-performance>`
 at the bottom of this page.
 

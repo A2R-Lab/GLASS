@@ -16,9 +16,10 @@ A2R Lab GPU solvers.
 `test/` MUST end with a fresh signed receipt** — run `./test/run_gpu_proof.sh`
 (full GPU suite, ~40 min) and include the regenerated `test/gpu-proof.json` in
 the push, or the `verify-gpu-proof` gate goes red (the receipt fingerprints the
-source tree, so an un-attested source change can't verify). If you add or edit
-a shared header, also register it in `test/conftest.py`'s hash list or cached
-test binaries won't rebuild.
+source tree, so an un-attested source change can't verify). Library headers are
+hashed into the test-binary cache key by GLOB (`src/**/*.cuh` + the `glass*.cuh`
+roots) — new headers bust the cache automatically; only a NEW test/cuda driver
+needs registering in `test/conftest.py` (compile target + hash entry).
 
 **Before changing any primitive, read `docs/agent_debugging_guide.md`** — it is
 the runbook for the recurring single-block CUDA bug classes (missing
@@ -45,7 +46,7 @@ thread → warp → block → nvidia.
 |-----------|-------|------------|--------|
 | `glass::` (Block) | block | Hand-rolled pure-SIMT (`threadIdx`/`blockDim`). No deps. | `glass.cuh` |
 | `glass::warp::` (Warp) | warp | Single-warp SIMT (`__shfl_*_sync`) mirroring most of the block surface — L1 reductions/vector ops, gemv/gemm/syrk, the factor/solve chain, tensor/congruence/riccati. Inline in the base L1/L2/L3 headers. | via `glass.cuh` |
-| `glass::thread::` (Thread) | thread | One problem per thread, for LOW-DOF packing (N≲7: a warp-per-problem factor leaves ~26/32 lanes idle; this packs 32 problems in the warp instead). Sequential — no barriers, no shuffles, no `threadIdx` read. The `ThreadBarrier` (rank=0, size=1, no-op sync) collapses the SAME `*_impl` bodies, so each op is **bit-identical to its `glass::` twin on one thread** (`test/test_thread.py` asserts exactly that). Ladder ops only: `dot`/`gemv`/`gemm`/`potrf`/`trsv`/`posv`/`potrs`. Inline in the base headers. | via `glass.cuh` |
+| `glass::thread::` (Thread) | thread | One problem per thread, for LOW-DOF packing (N≲7: a warp-per-problem factor leaves ~26/32 lanes idle; this packs 32 problems in the warp instead). Sequential — no barriers, no shuffles, no `threadIdx` read. The `ThreadBarrier` (rank=0, size=1, no-op sync) collapses the SAME `*_impl` bodies, so each op runs the identical algorithm as its `glass::` twin on one thread (`test/test_thread.py` asserts agreement to a few ULP — bit-identity across the two instantiations is NOT guaranteed; the no-op sync frees nvcc to contract FMAs differently). Mirrors the branch-free warp surface: L1 `dot`/`reduce`/`nrm2`/`asum`/`nrm1_diff`/`axpy`(+`_strided`)/`scal`/`copy`(+`_strided`)/`rot`/`symmetrize`; L2 `gemv`/`trsv`; L3 `gemm`/`syrk`/`syr2k`/`trsm`/`potrf`/`posv`/`potrs`/`ldlt`(non-pivoted)/`ldlt_solve`/`inv`(non-pivoted) + the fused `tensor_vec_contract`/`vec_tensor_vec`/`congruence_sym`/`bilinear`/`congruence_accum`/`riccati_gain`. Inline in the base headers. | via `glass.cuh` |
 | `glass::nvidia::` (Nvidia) | block | CUB / cuBLASDx / cuSOLVERDx, auto-dispatched by size. Needs MathDx (`MATHDX_ROOT`). | `glass-nvidia.cuh` |
 
 **`glass::thread::` constraints (read before extending it):**
@@ -90,9 +91,14 @@ both `AAᵀ` and `AᵀA` via a `TRANSPOSE` flag, `FillMode` Lower/Upper/Full); `
 Bunch-Kaufman pivoting via `bool pivot`/`int32_t* piv`); `posv` / `potrs` (L3 SPD
 solve = chol + 2×`trsv`); and **K-way fused** `inv` / `potrf`
 (invert/factor K independent matrices interleaved over one block — `inv2`/`inv3`,
-the 2-/3-matrix `inv` wrappers, are now thin wrappers). The `warp::` surface mirrors most of the block L1
+the 2-/3-matrix `inv` wrappers, are now thin wrappers); and `eigh` /
+`psd_project` (fixed-sweep round-robin cyclic Jacobi + eigenvalue-clip
+reconstruction — the DETERMINISTIC sibling of `syev`/`eig_clamp`: no
+convergence check, unsorted spectrum, bit-identical across thread counts;
+built for GATO's batched stage-Hessian PSD projection; oracle =
+jacobi_study.py in the GATO so_sqp prototype). The `warp::` surface mirrors most of the block L1
 reduction/vector family plus `gemv`/`gemm`/`syrk`/`syr2k`, the factor/solve chain
-(`potrf`/`trsv`/`trsm`/`posv`/`ldlt`/`ldlt_solve`), and the tensor/congruence/riccati families.
+(`potrf`/`trsv`/`trsm`/`posv`/`potrs`/`ldlt`/`ldlt_solve`/`inv`), and the tensor/congruence/riccati families.
 
 Robust/perf variants (perf user vs robustness user): `inv_pivoted`
 (partial-pivoting Gauss-Jordan, robust on small/zero leading pivots), `ldlt(...,
