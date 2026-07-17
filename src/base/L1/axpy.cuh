@@ -141,6 +141,51 @@ __device__ void axpby(T alpha, T *x, T beta, T *y, T *z)
     axpby_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, N, alpha, x, beta, y, z);
 }
 
+namespace thread {
+    // Single-thread AXPY: one THREAD owns the whole update, reusing the shared
+    // `axpy_impl` body with ThreadBarrier{rank=0, size=1, no-op sync} — the same
+    // algorithm as the block op degenerated to one thread. Mirrors the warp::
+    // surface (in-place form only).
+
+    /**
+     * @brief Scaled vector sum on one thread: `y = alpha * x + y` (AXPY), single-thread.
+     *
+     * One thread walks the `n` elements serially. No shared scratch, no
+     * shuffles, no barriers, no `threadIdx` read; operands may be thread-local
+     * register arrays. NumPy equivalent: `y += alpha * x`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param n      Number of elements.
+     * @param alpha  Scalar multiplier.
+     * @param x      Input vector of length `n`.
+     * @param y      In/out vector of length `n` (overwritten with the result).
+     */
+    template <typename T>
+    __device__ void axpy(uint32_t n, T alpha, T *x, T *y)
+    {
+        axpy_impl<ThreadBarrier, T>(ThreadBarrier{}, n, alpha, x, y);
+    }
+
+    /**
+     * @brief Scaled vector sum on one thread: `y = alpha * x + y` (AXPY), single-thread, compile-time size.
+     *
+     * Compile-time-`N` overload; the trip count folds and the loop unrolls, so
+     * `x` and `y` may be thread-local register arrays. NumPy equivalent:
+     * `y += alpha * x`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @tparam N  Number of elements (compile-time constant).
+     * @param alpha  Scalar multiplier.
+     * @param x      Input vector of length `N`.
+     * @param y      In/out vector of length `N` (overwritten with the result).
+     */
+    template <typename T, uint32_t N>
+    __device__ void axpy(T alpha, T *x, T *y)
+    {
+        axpy_impl<ThreadBarrier, T>(ThreadBarrier{}, N, alpha, x, y);
+    }
+}
+
 namespace warp {
     // Single-warp AXPY: one 32-lane warp strides over the vector (lane i handles
     // elements i, i+32, …). Elementwise, no cross-lane communication, no shared

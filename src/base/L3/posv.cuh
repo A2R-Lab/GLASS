@@ -110,7 +110,9 @@ namespace thread {
      * Unlike the block `posv_impl` — which hardcodes `BlockBarrier` and reads
      * `threadIdx` for the trsv legs — this composes `thread::potrf` with two
      * `trsv_impl(0u, 1u, …)` calls directly, so no barrier or `threadIdx` read
-     * survives. The result is bit-identical to `glass::posv<T, N>` on one thread.
+     * survives. Same algorithm and operand order as `glass::posv<T, N>` on one
+     * thread, agreeing to within FMA-contraction jitter (a few ULP — see
+     * test/test_thread.py; bit-identity across instantiations is not guaranteed).
      *
 
      *

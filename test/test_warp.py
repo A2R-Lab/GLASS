@@ -208,3 +208,29 @@ def test_gemm(bins, n, W):
         Cw = result[w*n*n:(w+1)*n*n].reshape((n, n), order="F")
         assert np.allclose(Cw, alpha * As[w] @ Bs[w], rtol=RTOL, atol=ATOL), \
             f"warp {w} gemm mismatch (n={n}, W={W})"
+
+
+# ─── potrs (SPD solve from a precomputed Cholesky factor) ─────────────────────
+
+@pytest.mark.parametrize("n", SIZES)
+@pytest.mark.parametrize("W", WARP_COUNTS)
+def test_potrs(bins, n, W):
+    Ls, bs, oracles = [], [], []
+    for _ in range(W):
+        A = _spd(n)
+        L = np.linalg.cholesky(A.astype(np.float64)).astype(np.float32)
+        b = RNG.standard_normal(n).astype(np.float32)
+        Ls.append(L)
+        bs.append(b)
+        # Oracle against the SAME float32-rounded factor the device consumes:
+        # potrs solves L Lt x = b, which differs from A x = b at factor precision.
+        oracles.append(
+            scipy.linalg.cho_solve((L.astype(np.float64), True),
+                                   b.astype(np.float64)).astype(np.float32))
+    Lflat = np.concatenate([np.asfortranarray(L).ravel(order="F") for L in Ls])
+    bflat = np.concatenate(bs)
+    result = run_op(bins["warp"], "potrs", str(n), args=[W], inputs=[Lflat, bflat])
+    slices = _per_warp(result, W, n)
+    for w in range(W):
+        assert np.allclose(slices[w], oracles[w], rtol=RTOL, atol=ATOL), \
+            f"warp {w} potrs mismatch (n={n}, W={W})"

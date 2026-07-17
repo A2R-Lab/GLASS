@@ -122,12 +122,13 @@ static void launch_warp(Op op, int WPB, T* A, T* B, T* C, T* x, T* y) {
 //       pyroffi IK case (A = JᵀJ built on-chip); no memory traffic to attribute,
 //       so it trivially wins and would be a meaningless table entry.
 //
-// Gated to N<=64 (TESTING ONLY — was N<=16; raised to see the local-memory
-// cliff past the measured N<=7 register-residency ceiling directly, rather than
-// stopping short of it). Past 64 a per-thread T[N*N] gets absurd (N=128/f32
-// would be a 64KB-per-thread local array); 24/32/48/64 are swept anyway so the
-// falloff is visible rather than assumed.
-template<typename T,int N> static constexpr bool thread_ok() { return N <= 64; }
+// Gated to N<=16: past the measured N<=7 register-residency ceiling the tier's
+// premise is gone, but 8/12/16 are swept anyway so the local-memory cliff is
+// visible in the table rather than assumed. Past 16 a per-thread T[N*N] gets
+// absurd (N=64/f64 is a 32KB-per-thread local array) and the column would only
+// document ever-worse spill — tune_pick's parser treats the column as optional
+// for exactly this reason.
+template<typename T,int N> static constexpr bool thread_ok() { return N <= 16; }
 
 template<typename T,int N> __global__ void kt_dot (T* x, T* y, int np) { int p=blockIdx.x*blockDim.x+threadIdx.x; if(p>=np)return; T r=glass::thread::dot<T,N>(x+(size_t)p*N, y+(size_t)p*N); y[(size_t)p*N]=r; }
 template<typename T,int N> __global__ void kt_gemv(T* A, T* x, T* y, int np) {
@@ -172,7 +173,7 @@ template<typename T,int N> __global__ void kt_posv(T* A, T* b, int np) {
 
 template<typename T,int N>
 static void launch_thread(Op op, int TPB, T* A, T* B, T* C, T* x, T* y) {
-    if constexpr (thread_ok<T,N>()) {   // if constexpr: N>16 never instantiates the kernels
+    if constexpr (thread_ok<T,N>()) {   // if constexpr: gated-out N never instantiates the kernels
         dim3 grid((NPROB + TPB - 1) / TPB), blk(TPB);
         switch (op) {
             case DOT:  kt_dot <T,N><<<grid,blk>>>(x, y, NPROB); break;
@@ -379,21 +380,21 @@ static void bench_size(Op op, int reps) {
     printf("%-5s N=%-3d | BLOCK", op_name(op), N);
     for (int TB : {32, 64, 128, 256}) {
         double ns = time_ns_per_prob([&]{ launch_block<T,N>(op, TB, A, B, C, x, y); }, reps);
-        printf("  tb%d=%.2f", TB, ns);
+        printf("  tb%d=%.4f", TB, ns);
         if (ns < best_block) { best_block = ns; best_tb = TB; }
     }
     printf("  | WARP");
     for (int WPB : {1, 2, 4, 8, 16, 32}) {
         if (WPB > NPROB) break;
         double ns = time_ns_per_prob([&]{ launch_warp<T,N>(op, WPB, A, B, C, x, y); }, reps);
-        printf("  w%d=%.2f", WPB, ns);
+        printf("  w%d=%.4f", WPB, ns);
         if (ns < best_warp) { best_warp = ns; best_wpb = WPB; }
     }
     if constexpr (thread_ok<T,N>()) {
         printf("  | THREAD");
         for (int TPB : {32, 64, 128, 256}) {
             double ns = time_ns_per_prob([&]{ launch_thread<T,N>(op, TPB, A, B, C, x, y); }, reps);
-            printf("  t%d=%.2f", TPB, ns);
+            printf("  t%d=%.4f", TPB, ns);
             if (ns < best_thread) { best_thread = ns; best_tpb = TPB; }
         }
     }
@@ -402,7 +403,7 @@ static void bench_size(Op op, int reps) {
     // 4-way winner. thread/warp/block are all dependency-free pure SIMT, so they
     // compete on raw time; only nvidia (MathDx) must clear tune_pick's margin —
     // hence `base` is the best of the three SIMT tiers, as before, now including
-    // thread where it ran (N<=64).
+    // thread where it ran (N<=16).
     const bool has_thread = (best_thread < 1e29);
     double base = best_block; const char* base_winner = "BLOCK";
     if (best_warp < base)               { base = best_warp;   base_winner = "WARP"; }
@@ -417,9 +418,9 @@ static void bench_size(Op op, int reps) {
     if (nv > 0 && nv < base) { winner = "NVIDIA"; margin = base / nv; }
     else if (nv > 0)         { winner = base_winner; margin = nv / base; }   // margin = how much NV trails
     else                     { winner = base_winner; margin = (simt_second < 1e29) ? simt_second / base : 1.0; }
-    printf("  || block tb%d=%.2f  warp w%d=%.2f", best_tb, best_block, best_wpb, best_warp);
-    if (has_thread) printf("  thread t%d=%.2f", best_tpb, best_thread);
-    if (nv > 0)     printf("  nv=%.2f", nv);
+    printf("  || block tb%d=%.4f  warp w%d=%.4f", best_tb, best_block, best_wpb, best_warp);
+    if (has_thread) printf("  thread t%d=%.4f", best_tpb, best_thread);
+    if (nv > 0)     printf("  nv=%.4f", nv);
     printf("  -> %s (%.2fx)\n", winner, margin);
     cudaFree(A); cudaFree(B); cudaFree(C); cudaFree(x); cudaFree(y);
 }
@@ -441,7 +442,7 @@ int main(int argc, char** argv) {
     bool f64 = (strcmp(dt, "f64") == 0 || strcmp(dt, "fp64") == 0 || strcmp(dt, "double") == 0);
     { int v = 48*1024; cudaDeviceGetAttribute(&v, cudaDevAttrMaxSharedMemoryPerBlockOptin, 0); g_optin_smem = (size_t)v; }
     printf("# mega sweep | NPROB=%d reps=%d dtype=%s | ns/problem (lower=better) | optin_smem=%zuKB\n", NPROB, reps, f64 ? "f64" : "f32", g_optin_smem/1024);
-    printf("# contenders: BLOCK(SIMT, TB swept) | WARP(WPB swept) | THREAD(SIMT, TPB swept; N<=64 only) | NV(cuBLASDx/cuSOLVERDx, forced; f32<=128, f64<=64)\n");
+    printf("# contenders: BLOCK(SIMT, TB swept) | WARP(WPB swept) | THREAD(SIMT, TPB swept; N<=16 only) | NV(cuBLASDx/cuSOLVERDx, forced; f32<=128, f64<=64)\n");
     printf("# THREAD stages operands global->registers->global in the per-problem-contiguous layout (uncoalesced; the layout tax is IN the timing).\n");
     if (f64) run_all<double>(reps);
     else     run_all<float>(reps);

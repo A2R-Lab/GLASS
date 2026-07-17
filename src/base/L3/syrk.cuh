@@ -543,6 +543,112 @@ __device__ void syr2k(T alpha, const T *A, const T *B, T *C)
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
+// ─── single-thread SYRK / SYR2K ──────────────────────────────────────────────
+namespace thread {
+    // Single-thread SYRK / SYR2K: ONE thread owns the whole symmetric update via
+    // the SAME validated `syrk_impl_ct` / `syr2k_impl_ct` flat-element bodies,
+    // dispatched with (rank=0, size=1) — those bodies contain no barrier, no
+    // shuffle, and no `threadIdx` read, so the ops are safe in ragged-tail
+    // thread-per-problem launches. Compile-time size only, mirroring
+    // `warp::syrk`/`warp::syr2k` (beta and implicit-beta=0 overloads).
+
+    /**
+     * @brief Single-thread compile-time-size SYRK: `C = alpha * op(A) * op(A)^T + beta * C`.
+     *
+     * ONE thread computes the symmetric rank-k update serially (canonical
+     * triangle + mirror write for `Full`) — for thread-per-problem packing of
+     * low-DOF normal-equation builds (32 problems per warp). Reuses the same
+     * `syrk_impl_ct` body as the block/warp surfaces with `(rank=0, size=1)`;
+     * no barriers, no shuffles, no `threadIdx` read, so operands may be
+     * thread-local register arrays (a `T[N*N]` C stays register-resident up to
+     * the tier's measured N<=7 ceiling — see the thread-tier constraints in
+     * CLAUDE.md; larger N still computes correctly but spills to local memory).
+     * Same algorithm and operand order as the `glass::` twin, agreeing to a few
+     * ULP (bit-identity across the two instantiations is NOT guaranteed).
+     *
+     * @tparam T  Scalar type.
+     * @tparam N  Compile-time dimension of the symmetric result C (N x N).
+     * @tparam K  Compile-time contraction length.
+     * @tparam FILL  Which triangle of C to write (Lower / Upper / Full).
+     * @tparam TRANSPOSE  If false, op(A)=A (A is N x K); if true, op(A)=A^T (A is K x N).
+     * @tparam ROW_MAJOR  Storage order for A and C (false = column-major / Fortran).
+     * @param alpha  Scalar multiplier on the product.
+     * @param A  Input matrix (N x K if TRANSPOSE=false, else K x N).
+     * @param beta  Scalar multiplier on the existing C (read only when `beta != 0`).
+     * @param C  In/out N x N symmetric result matrix.
+     */
+    template <typename T, uint32_t N, uint32_t K,
+              FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false>
+    __device__ void syrk(T alpha, const T *A, T beta, T *C)
+    {
+        syrk_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(0u, 1u, alpha, A, beta, C);
+    }
+
+    /**
+     * @brief Single-thread SYRK with implicit `beta = 0`: `C = alpha * op(A) * op(A)^T` (overwrite).
+     *
+     * Overwrites C (the existing C is not read — safe on uninitialized
+     * scratch). Otherwise identical to the beta overload above.
+     *
+     * @tparam T,N,K,FILL,TRANSPOSE,ROW_MAJOR  See the beta overload.
+     * @param alpha  Scalar multiplier on the product.
+     * @param A  Input matrix (N x K if TRANSPOSE=false, else K x N).
+     * @param C  Output N x N symmetric result matrix (overwritten, not read).
+     */
+    template <typename T, uint32_t N, uint32_t K,
+              FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false>
+    __device__ void syrk(T alpha, const T *A, T *C)
+    {
+        syrk_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(0u, 1u, alpha, A, C);
+    }
+
+    /**
+     * @brief Single-thread compile-time-size SYR2K: `C = alpha*(op(A)*op(B)^T + op(B)*op(A)^T) + beta*C`.
+     *
+     * ONE thread computes the symmetric rank-2k update serially, reusing the
+     * shared `syr2k_impl_ct` body with `(rank=0, size=1)` — no barriers, no
+     * shuffles, no `threadIdx` read; operands may be thread-local register
+     * arrays (register-resident up to the tier's N<=7 ceiling, CLAUDE.md).
+     * Same algorithm and operand order as the `glass::` twin, agreeing to a
+     * few ULP (cross-tier bit-identity is NOT guaranteed).
+     *
+     * @tparam T  Scalar type.
+     * @tparam N  Compile-time dimension of the symmetric result C (N x N).
+     * @tparam K  Compile-time contraction length.
+     * @tparam FILL  Which triangle of C to write (Lower / Upper / Full).
+     * @tparam TRANSPOSE  If false, op = identity (A,B are N x K); if true, op = transpose (A,B are K x N).
+     * @tparam ROW_MAJOR  Storage order for A, B and C (false = column-major / Fortran).
+     * @param alpha  Scalar multiplier on the symmetrized product.
+     * @param A,B  Input matrices (N x K if TRANSPOSE=false, else K x N).
+     * @param beta  Scalar multiplier on the existing C (read only when `beta != 0`).
+     * @param C  In/out N x N symmetric result matrix.
+     */
+    template <typename T, uint32_t N, uint32_t K,
+              FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false>
+    __device__ void syr2k(T alpha, const T *A, const T *B, T beta, T *C)
+    {
+        syr2k_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(0u, 1u, alpha, A, B, beta, C);
+    }
+
+    /**
+     * @brief Single-thread SYR2K with implicit `beta = 0` (overwrite).
+     *
+     * Overwrites C (the existing C is not read — safe on uninitialized
+     * scratch). Otherwise identical to the beta overload above.
+     *
+     * @tparam T,N,K,FILL,TRANSPOSE,ROW_MAJOR  See the beta overload.
+     * @param alpha  Scalar multiplier on the symmetrized product.
+     * @param A,B  Input matrices (N x K if TRANSPOSE=false, else K x N).
+     * @param C  Output N x N symmetric result matrix (overwritten, not read).
+     */
+    template <typename T, uint32_t N, uint32_t K,
+              FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false>
+    __device__ void syr2k(T alpha, const T *A, const T *B, T *C)
+    {
+        syr2k_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(0u, 1u, alpha, A, B, C);
+    }
+}
+
 namespace warp {
     // Single-warp SYRK / SYR2K: one 32-lane warp owns the symmetric output via the
     // SAME validated `syrk_impl_ct` / `syr2k_impl_ct` flat-element kernels, just

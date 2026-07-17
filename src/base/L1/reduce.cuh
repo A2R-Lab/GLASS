@@ -270,6 +270,73 @@ __device__ T reduce_fast_min(T partial, T *s_scratch)
     return total;
 }
 
+namespace thread {
+    // Single-thread reductions: one THREAD owns the whole sum, accumulating
+    // serially. The tier deliberately ships no _fast/_lowmem twins — those name
+    // reduction STRATEGIES, and one thread has none (see CLAUDE.md). Serial
+    // accumulation differs in summation ORDER from the block halving tree, so
+    // thread::reduce and a 1-thread block reduce agree to float tolerance, not
+    // ULP (same deliberate asymmetry as thread::dot).
+
+    /**
+     * @brief Sum reduction on one thread: `x[0] = Σ x[i]`, single-thread.
+     *
+     * Serially accumulates the elements and writes the total to `x[0]`. Only
+     * `x[0]` is written — the tail is left untouched (unlike the block halving
+     * reduce, which uses `x` as scratch). No shared scratch, no shuffles, no
+     * barriers, no `threadIdx` read. NumPy equivalent: `np.sum(x)`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param n  Number of elements.
+     * @param x  In/out vector of length `n`; the sum lands in `x[0]`.
+     */
+    template <typename T>
+    __device__ void reduce(uint32_t n, T *x)
+    {
+        T val = static_cast<T>(0);
+        for (uint32_t i = 0; i < n; i++) val += x[i];
+        x[0] = val;
+    }
+
+    /**
+     * @brief Sum reduction on one thread: `x[0] = Σ x[i]`, single-thread, compile-time size.
+     *
+     * Compile-time-`N` overload; the trip count folds and the loop unrolls, so
+     * `x` may be a thread-local register array. Only `x[0]` is written. NumPy
+     * equivalent: `np.sum(x)`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @tparam N  Number of elements (compile-time constant).
+     * @param x  In/out vector of length `N`; the sum lands in `x[0]`.
+     */
+    template <typename T, uint32_t N>
+    __device__ void reduce(T *x)
+    {
+        T val = static_cast<T>(0);
+        for (uint32_t i = 0; i < N; i++) val += x[i];
+        x[0] = val;
+    }
+
+    /**
+     * @brief Sum of a per-thread register value on one thread: returns `partial`.
+     *
+     * The single-thread mirror of `warp::reduce(partial)`: with one problem per
+     * thread there is exactly ONE contribution, so the "reduction" is the
+     * identity. Exists so tier-generic call sites (templated on the interface)
+     * compile against every tier with the same shape. No barriers, no shuffles,
+     * no `threadIdx` read. NumPy equivalent: `np.sum([partial])`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param partial  This thread's (sole) contribution.
+     * @return `partial`, unchanged.
+     */
+    template <typename T>
+    __device__ T reduce(T partial)
+    {
+        return partial;
+    }
+}
+
 namespace warp {
     // Single-warp reductions: raw __shfl, no shared scratch, no inter-warp combine.
     // For warp-per-problem kernels (one 32-lane warp owns the reduction). The

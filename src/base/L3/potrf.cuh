@@ -193,8 +193,11 @@ namespace thread {
      * stay register-resident. `A` must be SPD. NumPy: `L = np.linalg.cholesky(A)`.
      *
      * Delegates to the same `potrf_impl` body the block/warp surfaces use, via
-     * `ThreadBarrier` (rank=0, size=1, no-op sync) — so it is bit-identical to
-     * `glass::potrf<T, N>` run on a single thread, by construction.
+     * `ThreadBarrier` (rank=0, size=1, no-op sync) — the same algorithm and
+     * operand order as `glass::potrf<T, N>` on a single thread. NOT guaranteed
+     * bit-identical across the two instantiations: the no-op sync removes the
+     * optimization fences, so FMA contraction may differ by a last ULP
+     * (test/test_thread.py pins the bound).
      *
      * COMPILE-TIME SIZE ONLY (no runtime-`n` overload): the tier's value is an
      * `A` that nvcc can keep in registers, which requires fully-unrolled,

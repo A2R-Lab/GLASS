@@ -16,7 +16,7 @@ __device__ void nrm2_impl(Bar bar, uint32_t n, T *x)
     for (uint32_t i = rank; i < n; i += size) x[i] *= x[i];
     bar.sync();
     reduce_impl<Bar, T, false>(bar, n, x);
-    if (rank == 0) x[0] = sqrtf(x[0]);
+    if (rank == 0) x[0] = sqrt(x[0]);
     if constexpr (TRAILING_SYNC) bar.sync();
 }
 
@@ -40,7 +40,7 @@ __device__ void nrm2_lowmem(uint32_t n, T *x)
     __syncthreads();
     if (rank == 0) {
         for (uint32_t i = 1; i < n; i++) x[0] += x[i];
-        x[0] = sqrtf(x[0]);
+        x[0] = sqrt(x[0]);
     }
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
@@ -71,7 +71,7 @@ __device__ void nrm2_fast(uint32_t n, T *x, T *s_scratch)
     if (rank < 32) {
         val = (rank < nw) ? s_scratch[rank] : static_cast<T>(0);
         for (int off = 16; off > 0; off >>= 1) val += __shfl_down_sync(0xffffffff, val, off);
-        if (rank == 0) x[0] = sqrtf(val);
+        if (rank == 0) x[0] = sqrt(val);
     }
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
@@ -102,10 +102,56 @@ __device__ void nrm2_fast(T *x, T *s_scratch)
     if (rank < 32) {
         val = (rank < nw) ? s_scratch[rank] : static_cast<T>(0);
         for (int off = 16; off > 0; off >>= 1) val += __shfl_down_sync(0xffffffff, val, off);
-        if (rank == 0) x[0] = sqrtf(val);
+        if (rank == 0) x[0] = sqrt(val);
     }
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
+namespace thread {
+    /**
+     * @brief Euclidean (L2) norm on one thread: returns `‖x‖₂`, single-thread.
+     *
+     * Serially accumulates the sum of squares and returns its square root,
+     * mirroring `warp::nrm2` (value-returning, non-destructive — unlike the
+     * destructive block `_fast`/`_lowmem` forms; one thread has no reduction
+     * strategy, so the tier ships no such twins). Uses type-generic `sqrt`
+     * (correct for `double`). Inputs untouched; no shared scratch, no shuffles,
+     * no barriers, no `threadIdx` read; operands may be thread-local register
+     * arrays. NumPy equivalent: `np.linalg.norm(x)`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param n  Number of elements.
+     * @param x  Input vector of length `n` (read-only).
+     * @return `‖x‖₂`.
+     */
+    template <typename T>
+    __device__ T nrm2(uint32_t n, const T *x)
+    {
+        T val = static_cast<T>(0);
+        for (uint32_t i = 0; i < n; i++) val += x[i]*x[i];
+        return sqrt(val);
+    }
+
+    /**
+     * @brief Euclidean (L2) norm on one thread, compile-time size: returns `‖x‖₂`.
+     *
+     * Compile-time-`N` overload; the trip count folds and the loop unrolls, so
+     * `x` may be a thread-local register array. Non-destructive; type-generic
+     * `sqrt`. NumPy equivalent: `np.linalg.norm(x)`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @tparam N  Number of elements (compile-time constant).
+     * @param x  Input vector of length `N` (read-only).
+     * @return `‖x‖₂`.
+     */
+    template <typename T, uint32_t N>
+    __device__ T nrm2(const T *x)
+    {
+        T val = static_cast<T>(0);
+        for (uint32_t i = 0; i < N; i++) val += x[i]*x[i];
+        return sqrt(val);
+    }
+}
+
 namespace warp {
     /**
      * @brief Euclidean (L2) norm within one warp: returns `‖x‖₂` on every lane.
@@ -115,8 +161,8 @@ namespace warp {
      * 32 lanes via `__shfl_sync` (from a register — immune to the `__restrict__`
      * stale-cache miscompile), and each lane takes the square root. Non-destructive
      * (`x` untouched), no shared scratch, no `__syncthreads`; uses type-generic
-     * `sqrt` (correct for `double`, unlike the block `sqrtf` forms). Full 32 lanes
-     * required. NumPy equivalent: `np.linalg.norm(x)`.
+     * `sqrt`, like every tier (the block forms' float-only `sqrtf` was fixed
+     * 2026-07-17). Full 32 lanes required. NumPy equivalent: `np.linalg.norm(x)`.
      *
      * @tparam T  Scalar type (e.g. `float`, `double`).
      * @param n  Number of elements.

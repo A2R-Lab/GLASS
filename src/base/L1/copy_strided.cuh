@@ -41,6 +41,43 @@ __device__ void copy_strided(T alpha, const T* X, T* Y)
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
+namespace thread {
+    // Single-thread strided COPY: one THREAD walks the M×N block serially
+    // (column-major order — same element order as the flat block/warp stride at
+    // one thread, without the % / division). The block body is inseparable from
+    // threadIdx/blockDim, so this is a fresh serial loop rather than a reuse.
+    // NOTE: no TRAILING_SYNC template parameter — a single thread has nothing to
+    // synchronize, and the thread:: surface carries no sync knobs anywhere
+    // (see thread::dot); dropped rather than kept-and-ignored.
+
+    /**
+     * @brief Row-strided COPY on one thread: `Y[r + c*Y_RS] = alpha * X[r + c*X_RS]`, single-thread.
+     *
+     * One thread moves the column-major `M×N` block of `X` (leading dimension
+     * `X_RS`) into the same-shaped block of `Y` (leading dimension `Y_RS`),
+     * scaling by `alpha` and walking the elements serially. No shared scratch,
+     * no shuffles, no barriers, no `threadIdx` read; operands may be
+     * thread-local register arrays. NumPy: `Y[:M,:N] = alpha * X[:M,:N]`
+     * (col-major lds).
+     *
+     * @tparam T     Scalar type (e.g. `float`, `double`).
+     * @tparam M     Rows of the block.
+     * @tparam N     Columns of the block.
+     * @tparam Y_RS  Column-major leading dimension of `Y`.
+     * @tparam X_RS  Column-major leading dimension of `X` (default `M`).
+     * @param alpha  Scalar multiplier on `X`.
+     * @param X      Input block, addressed at `X[r + c*X_RS]` (read-only).
+     * @param Y      Output block, addressed at `Y[r + c*Y_RS]` (overwritten).
+     */
+    template <typename T, uint32_t M, uint32_t N, uint32_t Y_RS, uint32_t X_RS = M>
+    __device__ void copy_strided(T alpha, const T* X, T* Y)
+    {
+        for (uint32_t c = 0; c < N; c++)
+            for (uint32_t r = 0; r < M; r++)
+                Y[r + c * Y_RS] = alpha * X[r + c * X_RS];
+    }
+}
+
 namespace warp {
     /**
      * @brief Row-strided COPY within one warp: `Y[r + c*Y_RS] = alpha * X[r + c*X_RS]`.

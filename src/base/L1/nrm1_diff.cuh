@@ -102,6 +102,53 @@ __device__ void nrm1_diff_fast(const T *x, const T *y, T *out, T *s_scratch)
     }
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
+namespace thread {
+    /**
+     * @brief `‖x − y‖₁` on one thread: returns `Σ|x[i] − y[i]|`, single-thread.
+     *
+     * Serially accumulates the absolute differences, mirroring `warp::nrm1_diff`
+     * (value-returning, non-destructive; one thread has no reduction strategy,
+     * so the tier ships no `_fast`/`_lowmem` twins). `x`/`y` untouched; no
+     * shared scratch, no shuffles, no barriers, no `threadIdx` read; operands
+     * may be thread-local register arrays. NumPy equivalent:
+     * `np.sum(np.abs(x - y))`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param n  Number of elements.
+     * @param x  Input vector of length `n` (read-only).
+     * @param y  Input vector of length `n` (read-only).
+     * @return `‖x − y‖₁`.
+     */
+    template <typename T>
+    __device__ T nrm1_diff(uint32_t n, const T *x, const T *y)
+    {
+        T val = static_cast<T>(0);
+        for (uint32_t i = 0; i < n; i++) val += abs(x[i] - y[i]);
+        return val;
+    }
+
+    /**
+     * @brief `‖x − y‖₁` on one thread, compile-time size: returns `Σ|x[i] − y[i]|`.
+     *
+     * Compile-time-`N` overload; the trip count folds and the loop unrolls, so
+     * `x` and `y` may be thread-local register arrays. Non-destructive. NumPy
+     * equivalent: `np.sum(np.abs(x - y))`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @tparam N  Number of elements (compile-time constant).
+     * @param x  Input vector of length `N` (read-only).
+     * @param y  Input vector of length `N` (read-only).
+     * @return `‖x − y‖₁`.
+     */
+    template <typename T, uint32_t N>
+    __device__ T nrm1_diff(const T *x, const T *y)
+    {
+        T val = static_cast<T>(0);
+        for (uint32_t i = 0; i < N; i++) val += abs(x[i] - y[i]);
+        return val;
+    }
+}
+
 namespace warp {
     /**
      * @brief `‖x − y‖₁` within one warp: returns `Σ|x[i] − y[i]|` on every lane.
