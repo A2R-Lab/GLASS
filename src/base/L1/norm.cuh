@@ -30,7 +30,7 @@ __device__ void vector_norm(uint32_t N, T *a, T *out)
     // Halving-tree total in out[0]; skip its trailing barrier — rank 0 wrote
     // out[0] last and immediately owns the sqrt (same pattern as nrm2_impl).
     reduce<T, false>(N, out);
-    if (rank == 0) out[0] = sqrtf(out[0]);
+    if (rank == 0) out[0] = sqrt(out[0]);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -72,7 +72,7 @@ __device__ void vector_norm_lowmem(uint32_t N, T *a, T *out)
     __syncthreads();
     if (rank == 0) {
         for (uint32_t i = 1; i < N; i++) out[0] += out[i];
-        out[0] = sqrtf(out[0]);
+        out[0] = sqrt(out[0]);
     }
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
@@ -104,7 +104,7 @@ __device__ void vector_norm_fast(uint32_t N, T *a, T *out, T *s_scratch)
     if (rank < 32) {
         val = (rank < nw) ? s_scratch[rank] : static_cast<T>(0);
         for (int off = 16; off > 0; off >>= 1) val += __shfl_down_sync(0xffffffff, val, off);
-        if (rank == 0) out[0] = sqrtf(val);
+        if (rank == 0) out[0] = sqrt(val);
     }
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
@@ -136,7 +136,7 @@ __device__ void vector_norm_fast(T *a, T *out, T *s_scratch)
     if (rank < 32) {
         val = (rank < nw) ? s_scratch[rank] : static_cast<T>(0);
         for (int off = 16; off > 0; off >>= 1) val += __shfl_down_sync(0xffffffff, val, off);
-        if (rank == 0) out[0] = sqrtf(val);
+        if (rank == 0) out[0] = sqrt(val);
     }
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
