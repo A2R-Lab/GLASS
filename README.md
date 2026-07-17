@@ -23,7 +23,9 @@ It began as hand-rolled SIMT subroutines tuned for the very small matrices where
 launch/dispatch overhead dominates, and has grown into a unified single-block surface that
 also wraps NVIDIA's device-side libraries — CUB (L1), cuBLASDx (L2/L3), cuSOLVERDx (LAPACK) —
 under one `__device__` calling convention, so one kernel can mix hand-rolled and vendor-backed
-primitives without leaving the block.
+primitives without leaving the block — and **you choose the granularity**: the same operations
+exist as block-, warp-, or thread-scoped primitives, so a block can own one problem, pack one
+per warp, or pack 32 per warp with one problem per thread.
 
 ### Interfaces
 

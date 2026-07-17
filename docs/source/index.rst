@@ -15,8 +15,11 @@ block-local linear algebra in one consistent ``__device__`` calling convention:
 (Cholesky, LDLᵀ, and LU/QR via vendor backends), **dense linear-system solvers**
 (``posv`` / ``ldlt`` / ``gesv``), and **related algorithms** — block-tridiagonal
 ``bdmv`` / ``pcg`` for trajectory optimization and MPC, plus a contraction-parallel
-+ fused family. You launch one block per independent problem; the block's threads
-cooperate over data already resident in shared or global memory.
++ fused family. Everything runs inside one CUDA block — and **you choose the
+granularity**: the same operations exist as **block-, warp-, or thread-scoped
+primitives** (plus vendor-backed kernels), so a block can own one problem, pack
+one per warp, or pack 32 per warp with one problem per thread — whatever matches
+your problem size and batch count.
 
 Interfaces
 ----------
