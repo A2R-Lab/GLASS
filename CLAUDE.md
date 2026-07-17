@@ -164,7 +164,7 @@ is absent. Force a clean rebuild with `rm -rf test/build`.
 
 `bench/tune.py --sm auto [--margin 0.05] [--quick] [--dry-run]` is the **one**
 entry point that remeasures this GPU and regenerates every shipped defaults
-table under a single noise margin: the warp/block/nvidia ladder
+table under a single noise margin: the thread/warp/block/nvidia ladder
 (`glass-defaults.cuh` — per-arch `ideal_sm*` tables + SM dispatch; a first-time arch
 gets its own table and dispatch case, other arches' tables stay untouched), the per-(M,N,K) cuBLASDx-vs-SIMT table
 (`src/nvidia/tuning_table.cuh`, via the `bench/autotune.py` engine it drives),
