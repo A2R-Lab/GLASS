@@ -110,6 +110,50 @@ DEFINE_GLASS_GEMM_CT(4,  4,  32)
 DEFINE_GLASS_GEMM_CT(4,  4,  48)
 DEFINE_GLASS_GEMM_CT(4,  4,  64)
 
+// ─── glass::thread:: tier (one problem per THREAD, 32 packed per warp) ─────────
+// A block of THREADS threads runs THREADS independent N×N×N gemm problems at
+// once — thread p owns problem p, operands register-resident (no shared, no
+// barriers). Time is amortized PER PROBLEM to expose the low-DOF packing win.
+// Compile-time N only, worth it below the N<=7 register-residency ceiling
+// (CLAUDE.md), so the tier is instantiated for the small square sizes 4 and 6.
+#define DEFINE_THREAD_GEMM_CT(N)                                                             \
+    namespace thread_gemm_ct_##N {                                                           \
+        __global__ void k_gemm(const float* A, const float* B, volatile float* sink, int iters) { \
+            int p = blockIdx.x*blockDim.x + threadIdx.x;                                     \
+            float a[N*N], b[N*N], c[N*N];                                                    \
+            for (int i = 0; i < N*N; i++) { a[i] = A[(size_t)p*N*N + i]; b[i] = B[(size_t)p*N*N + i]; } \
+            for (int i = 0; i < N*N; i++) c[i] = 0.f;                                        \
+            for (int rep = 0; rep < iters; rep++) {                                          \
+                glass::thread::gemm<float, N, N, N>(1.f, a, b, c);                           \
+                a[0] = c[0];   /* feed back so the loop can't be hoisted */                  \
+            }                                                                                 \
+            sink[p & 0xFF] = c[0];                                                           \
+        }                                                                                     \
+    }
+
+DEFINE_THREAD_GEMM_CT(4)
+DEFINE_THREAD_GEMM_CT(6)
+
+#define RUN_THREAD_GEMM_CT(N, iters, t0, t1)                                                 \
+    {                                                                                         \
+        float *dAt, *dBt;                                                                    \
+        cudaMalloc(&dAt, (size_t)THREADS * N*N * sizeof(float));                             \
+        cudaMalloc(&dBt, (size_t)THREADS * N*N * sizeof(float));                             \
+        float* hAt = new float[(size_t)THREADS * N*N];                                       \
+        for (int i = 0; i < THREADS*N*N; i++) hAt[i] = (float)((i % (N*N)) + 1) / (N*N);     \
+        cudaMemcpy(dAt, hAt, (size_t)THREADS*N*N*sizeof(float), cudaMemcpyHostToDevice);     \
+        cudaMemcpy(dBt, hAt, (size_t)THREADS*N*N*sizeof(float), cudaMemcpyHostToDevice);     \
+        delete[] hAt;                                                                        \
+        float* dSinkT; cudaMalloc(&dSinkT, 256*sizeof(float));                               \
+        clock_gettime(CLOCK_MONOTONIC, &(t0));                                                \
+        thread_gemm_ct_##N::k_gemm<<<1, THREADS>>>(dAt, dBt, dSinkT, iters);                 \
+        cudaDeviceSynchronize();                                                              \
+        clock_gettime(CLOCK_MONOTONIC, &(t1));                                                \
+        printf("glass::thread::gemm<CT>      m=%2d n=%2d k=%2d  %.4f us/problem (%d-packed)\n", \
+               N, N, N, elapsed_us(t0, t1) / ((double)iters * THREADS), THREADS);            \
+        cudaFree(dAt); cudaFree(dBt); cudaFree(dSinkT);                                       \
+    }
+
 #define RUN_GLASS_GEMM_CT(M, N, K, dA, dB, dC, iters, t0, t1)                               \
     cudaMemset(dC, 0, (size_t)M*K*sizeof(float));                                             \
     clock_gettime(CLOCK_MONOTONIC, &(t0));                                                    \
@@ -359,6 +403,10 @@ static void bench_size(int m, int n, int k, int iters) {
     MAYBE_GLASS_GEMM_CT(4,  4,  48)
     MAYBE_GLASS_GEMM_CT(4,  4,  64)
     #undef MAYBE_GLASS_GEMM_CT
+
+    // glass::thread:: tier (one problem per thread) — only for square N in {4,6}
+    if (m == n && n == k && m == 4) RUN_THREAD_GEMM_CT(4, iters, t0, t1);
+    if (m == n && n == k && m == 6) RUN_THREAD_GEMM_CT(6, iters, t0, t1);
 
 #ifdef GLASS_BENCH_CUBLASDX
     #define MAYBE_CUBLASDX_GEMM(M, N, K)                                           \

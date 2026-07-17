@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render the warp/block/nvidia sweep ladder into static docs assets.
+"""Render the thread/warp/block/nvidia sweep ladder into static docs assets.
 
 Reads a ``bench/mega_sweep_*.txt`` run (the same data behind
 ``glass-defaults.cuh``'s ``suggested_backend<>()``) and writes, into
@@ -37,7 +37,8 @@ OPS = ["dot", "gemv", "gemm", "chol", "trsv", "posv"]
 _HDR = re.compile(r"NPROB=(\d+).*dtype=(f32|f64)")
 _ROW = re.compile(
     r"^(dot|gemv|gemm|chol|trsv|posv)\s+N=(\d+).*\|\|\s*"
-    r"block\s+tb\d+=([\d.]+)\s+warp\s+w\d+=([\d.]+)(?:\s+nv=([\d.]+))?"
+    r"block\s+tb\d+=([\d.]+)\s+warp\s+w\d+=([\d.]+)"
+    r"(?:\s+thread\s+t\d+=([\d.]+))?(?:\s+nv=([\d.]+))?"
 )
 
 
@@ -65,7 +66,9 @@ def parse(text, regimes=REGIMES):
             op, N = m.group(1), int(m.group(2))
             d = {"block": float(m.group(3)), "warp": float(m.group(4))}
             if m.group(5):
-                d["nvidia"] = float(m.group(5))
+                d["thread"] = float(m.group(5))
+            if m.group(6):
+                d["nvidia"] = float(m.group(6))
             data[(nprob, dt, op, N)] = d
     return data
 
@@ -88,7 +91,8 @@ def plot_ladder(data, nprob, dt, out_path):
     axes = axes.ravel()
     drew = False
     for ax, op in zip(axes, OPS):
-        for key, c in [("warp", "tab:green"), ("block", "tab:blue"), ("nvidia", "tab:red")]:
+        for key, c in [("warp", "tab:green"), ("block", "tab:blue"),
+                       ("thread", "tab:orange"), ("nvidia", "tab:red")]:
             xs, ys = _series(data, nprob, dt, op, key)
             if xs:
                 ax.plot(xs, ys, "o-", color=c, label=key, ms=4)
@@ -99,7 +103,7 @@ def plot_ladder(data, nprob, dt, out_path):
         ax.set_yscale("log")
         ax.grid(alpha=0.3)
         ax.legend(fontsize=8)
-    fig.suptitle(f"{dt} warp/block/nvidia ladder — NPROB={nprob} "
+    fig.suptitle(f"{dt} thread/warp/block/nvidia ladder — NPROB={nprob} "
                  f"({'throughput' if nprob >= 8192 else 'low-batch' if nprob <= 64 else 'mid-batch'})",
                  fontsize=11)
     fig.tight_layout()

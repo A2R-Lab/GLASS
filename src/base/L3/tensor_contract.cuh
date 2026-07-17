@@ -198,6 +198,67 @@ __device__ void vec_tensor_vec(const T* Tns, const T* u, const T* w, T* s)
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
+// ─── single-thread tensor contractions ───────────────────────────────────────
+namespace thread {
+    // Single-thread tensor contractions: ONE thread owns the whole contraction
+    // via the SAME validated `detail::tvc_impl` / `detail::vtv_impl` engines,
+    // dispatched with (rank=0, size=1). At size=1 the engine takes its sub-warp
+    // path, which is barrier-free and shuffle-free (partials combine through the
+    // register-only `reduced_tree32`), so nothing block- or warp-scoped survives
+    // and the ops are safe in ragged-tail thread-per-problem launches. That path
+    // deliberately reproduces the warp-shuffle summation ORDER, so the thread
+    // result carries the same rounding as every other tier's.
+    //
+    // NO `TRAILING_SYNC` parameter: one thread has nothing to synchronize with,
+    // and none of the existing `thread::` ops carry the flag — dropping it (vs
+    // keeping-and-ignoring) matches the tier's precedent (`thread::gemm`,
+    // `thread::potrf`, ...), whose surfaces also omit it.
+
+    /**
+     * @brief Single-thread tensor ⊗ vector contraction: `Mout (+)= Σ_c v[c] · T[..c..]`.
+     *
+     * Thread-per-problem analogue of `glass::tensor_vec_contract`: ONE thread
+     * performs the whole contraction serially — for packing 32 independent
+     * low-DOF Hessian-folds into a warp. No barriers, no shuffles, no
+     * `threadIdx` read; operands may be thread-local register arrays (the
+     * implied `T[K*A*B]` tensor and `T[A*B]`-scale output stay register-resident
+     * only at very small dims — see the thread-tier N<=7 element-count ceiling
+     * in CLAUDE.md; larger operands still compute correctly but spill to local
+     * memory). Same algorithm and operand order as the `glass::` twin, agreeing
+     * to a few ULP (cross-tier bit-identity is NOT guaranteed).
+     *
+     * @tparam T,K,A,B,CONTRACT,SYMMETRIC,ACCUMULATE,TIN_ROW_MAJOR  See glass::tensor_vec_contract.
+     * @param Tns,v,Mout  See glass::tensor_vec_contract (Mout read only when ACCUMULATE).
+     */
+    template <typename T, uint32_t K, uint32_t A, uint32_t B,
+              TensorAxis CONTRACT = TensorAxis::K, bool SYMMETRIC = false,
+              bool ACCUMULATE = true, bool TIN_ROW_MAJOR = false>
+    __device__ void tensor_vec_contract(const T* Tns, const T* v, T* Mout)
+    {
+        detail::tvc_impl<T, CONTRACT, K, A, B, SYMMETRIC, ACCUMULATE, TIN_ROW_MAJOR>(0u, 1u, Tns, v, Mout);
+    }
+
+    /**
+     * @brief Single-thread vector–tensor–vector triple product: `s[k] (+)= u^T · T_k · w`.
+     *
+     * Thread-per-problem analogue of `glass::vec_tensor_vec`: ONE thread forms
+     * every slab's bilinear form serially. No barriers, no shuffles, no
+     * `threadIdx` read; operands may be thread-local register arrays (subject
+     * to the tier's element-count ceiling — see CLAUDE.md). Same algorithm and
+     * operand order as the `glass::` twin, agreeing to a few ULP (cross-tier
+     * bit-identity is NOT guaranteed).
+     *
+     * @tparam T,K,A,B,ACCUMULATE,TIN_ROW_MAJOR  See glass::vec_tensor_vec.
+     * @param Tns,u,w,s  See glass::vec_tensor_vec (s read only when ACCUMULATE).
+     */
+    template <typename T, uint32_t K, uint32_t A, uint32_t B,
+              bool ACCUMULATE = false, bool TIN_ROW_MAJOR = false>
+    __device__ void vec_tensor_vec(const T* Tns, const T* u, const T* w, T* s)
+    {
+        detail::vtv_impl<T, K, A, B, ACCUMULATE, TIN_ROW_MAJOR>(0u, 1u, Tns, u, w, s);
+    }
+}
+
 // ─── single-warp tensor contractions ─────────────────────────────────────────
 namespace warp {
     /**

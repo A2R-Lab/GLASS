@@ -74,6 +74,51 @@ __device__ void dot_lowmem(uint32_t n, T *x, T *y, T *out)
     if (rank == 0) { for (uint32_t i = 1; i < n; i++) out[0] += out[i]; }
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
+namespace thread {
+
+    /**
+     * @brief Inner product on one thread: returns `x · y`, single-thread.
+     *
+     * Serially accumulates the element-wise products. Inputs untouched; no shared
+     * scratch, no shuffles, no barriers. NumPy equivalent: `np.dot(x, y)`.
+     * Works well on low DOF problems with small vectors that fit into a register
+     * Parallelism can be leveraged by scaling thread count.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param n  Number of elements.
+     * @param x  Input vector of length `n`.
+     * @param y  Input vector of length `n`.
+     * @return The inner product `x · y`.
+     */
+    template <typename T>
+    __device__ T dot(uint32_t n, const T *x, const T *y)
+    {
+        T val = static_cast<T>(0);
+        for (uint32_t i = 0; i < n; i++) val += x[i]*y[i];
+        return val;
+    }
+
+    /**
+     * @brief Inner product on one thread: returns `x · y`, single-thread, compile-time size.
+     *
+     * Compile-time-`N` overload; the trip count folds and the loop unrolls, so `x`
+     * and `y` may be thread-local register arrays. NumPy equivalent: `np.dot(x, y)`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @tparam N  Number of elements (compile-time constant).
+     * @param x  Input vector of length `N`.
+     * @param y  Input vector of length `N`.
+     * @return The inner product `x · y`.
+     */
+    template <typename T, uint32_t N>
+    __device__ T dot(const T *x, const T *y)
+    {
+        T val = static_cast<T>(0);
+        for (uint32_t i = 0; i < N; i++) val += x[i]*y[i];
+        return val;
+    }
+}
+
 namespace warp {
     // Single-warp dot products: one 32-lane warp owns the reduction (raw __shfl,
     // no shared scratch). For warp-per-problem kernels packing many small dots

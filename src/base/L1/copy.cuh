@@ -88,6 +88,49 @@ __device__ void copy(T alpha, T *x, T *y)
     copy_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, N, alpha, x, y);
 }
 
+namespace thread {
+    // Single-thread COPY: one THREAD owns the whole copy, reusing the shared
+    // `copy_impl` body with ThreadBarrier{rank=0, size=1, no-op sync} — the same
+    // algorithm as the block op degenerated to one thread. Mirrors the warp::
+    // surface (plain form only).
+
+    /**
+     * @brief Vector copy on one thread: `y = x` (COPY), single-thread.
+     *
+     * One thread walks the `n` elements serially. No shared scratch, no
+     * shuffles, no barriers, no `threadIdx` read; operands may be thread-local
+     * register arrays. NumPy equivalent: `y = x.copy()`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param n  Number of elements.
+     * @param x  Input vector of length `n`.
+     * @param y  Output vector of length `n` (overwritten with a copy of `x`).
+     */
+    template <typename T>
+    __device__ void copy(uint32_t n, T *x, T *y)
+    {
+        copy_impl<ThreadBarrier, T>(ThreadBarrier{}, n, x, y);
+    }
+
+    /**
+     * @brief Vector copy on one thread: `y = x` (COPY), single-thread, compile-time size.
+     *
+     * Compile-time-`N` overload; the trip count folds and the loop unrolls, so
+     * `x` and `y` may be thread-local register arrays. NumPy equivalent:
+     * `y = x.copy()`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @tparam N  Number of elements (compile-time constant).
+     * @param x  Input vector of length `N`.
+     * @param y  Output vector of length `N` (overwritten with a copy of `x`).
+     */
+    template <typename T, uint32_t N>
+    __device__ void copy(T *x, T *y)
+    {
+        copy_impl<ThreadBarrier, T>(ThreadBarrier{}, N, x, y);
+    }
+}
+
 namespace warp {
     // Single-warp COPY: one 32-lane warp strides over the vector (lane i handles
     // elements i, i+32, …). Elementwise, no cross-lane communication, no shared

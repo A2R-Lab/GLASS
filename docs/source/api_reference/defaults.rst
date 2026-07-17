@@ -1,13 +1,22 @@
 Backend Picker (``glass-defaults.cuh``)
 =======================================
 
-Queryable backend-selection defaults — the measured warp / block / nvidia ladder
-(``bench/MEGA_SWEEP_RESULTS.md``) exposed as ``constexpr`` helpers, so callers and
-GRiD-style codegen pick a backend + launch config instead of hand-copying a table.
+Queryable backend-selection defaults — the measured thread / warp / block / nvidia
+ladder (``bench/MEGA_SWEEP_RESULTS.md``) exposed as ``constexpr`` helpers, so callers
+and GRiD-style codegen pick a backend + launch config instead of hand-copying a table.
 
-The pick **cannot** be a device function: warp, block, and ``nvidia`` need different
+The pick **cannot** be a device function: the tiers need different
 ``<<<grid, block>>>`` launches, so the decision happens host-side / at codegen time. See
 :doc:`../user_guide/concepts/tuning` for the underlying numbers.
+
+.. note::
+
+   ``backend::thread`` exists in the enum and is swept by ``bench_mega_sweep.cu``,
+   but **no shipped table returns it yet** — the in-tree ladders were measured
+   before the thread tier existed, and inventing entries would fabricate a verdict
+   nobody measured. A fresh ``bench/tune.py --sm auto`` sweep contends the thread
+   tier and emits it wherever it wins; until then a ``thread`` caller opts in
+   explicitly (``suggested_threads_per_block<>()`` gives the launch shape).
 
 Include order
 -------------
@@ -23,7 +32,7 @@ Helpers
 .. code-block:: cuda
 
    enum class glass::op      { dot, gemv, gemm, chol, trsv, posv };
-   enum class glass::backend { warp, block, nvidia };
+   enum class glass::backend { warp, block, nvidia, thread };  // thread appended: pre-existing ordinals unchanged
 
    // Which backend for (op, N, T) on this SM? (nvidia only when the vendor lib is linked)
    template <op Op, uint32_t N, typename T, uint32_t SM = GLASS_DEFAULTS_SM>
@@ -36,6 +45,11 @@ Helpers
    // For the `warp` backend: dot packs 8; others 2 warps/block.
    template <op Op, uint32_t N = 0, typename T = float, uint32_t SM = GLASS_DEFAULTS_SM>
    constexpr uint32_t glass::suggested_warps_per_block();
+
+   // For the `thread` backend: launch <<<ceil(P/TPB), TPB>>>, one problem per thread.
+   // Seed heuristic (shrinks as N*N registers/thread grow), NOT measured by the ladder leg.
+   template <op Op, uint32_t N = 0, typename T = float, uint32_t SM = GLASS_DEFAULTS_SM>
+   constexpr uint32_t glass::suggested_threads_per_block();
 
 Example
 -------

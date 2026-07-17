@@ -93,6 +93,53 @@ DEFINE_GLASS_GEMV_CT(14, 14)
 DEFINE_GLASS_GEMV_CT(24, 24)
 DEFINE_GLASS_GEMV_CT(64, 64)
 
+// ─── glass::thread:: tier (one problem per THREAD, 32 packed per warp) ─────────
+// A block of THREADS threads runs THREADS independent N×N gemv problems at once —
+// thread p owns problem p, operands register-resident (no shared, no barriers).
+// Time is amortized PER PROBLEM to expose the low-DOF packing win. Compile-time
+// N only, worth it below the N<=7 register-residency ceiling (CLAUDE.md), so the
+// tier is instantiated for the small square sizes 4 and 6.
+#define DEFINE_THREAD_GEMV_CT(N)                                                             \
+    namespace thread_gemv_ct_##N {                                                           \
+        __global__ void k_gemv(const float* A, const float* x, volatile float* sink, int iters) { \
+            int p = blockIdx.x*blockDim.x + threadIdx.x;                                     \
+            float a[N*N], xv[N], yv[N];                                                      \
+            for (int i = 0; i < N*N; i++) a[i]  = A[(size_t)p*N*N + i];                      \
+            for (int i = 0; i < N;   i++) xv[i] = x[(size_t)p*N + i];                        \
+            for (int i = 0; i < N;   i++) yv[i] = 0.f;                                       \
+            for (int rep = 0; rep < iters; rep++) {                                          \
+                glass::thread::gemv<float, N, N>(1.f, a, xv, 1.f, yv);                       \
+                xv[0] = yv[0];   /* feed back so the loop can't be hoisted */                \
+            }                                                                                 \
+            sink[p & 0xFF] = yv[0];                                                          \
+        }                                                                                     \
+    }
+
+DEFINE_THREAD_GEMV_CT(4)
+DEFINE_THREAD_GEMV_CT(6)
+
+#define RUN_THREAD_GEMV_CT(N, iters, t0, t1)                                                 \
+    {                                                                                         \
+        float *dAt, *dxt;                                                                    \
+        cudaMalloc(&dAt, (size_t)THREADS * N*N * sizeof(float));                             \
+        cudaMalloc(&dxt, (size_t)THREADS * N   * sizeof(float));                             \
+        float* hAt = new float[(size_t)THREADS * N*N];                                       \
+        float* hxt = new float[(size_t)THREADS * N];                                         \
+        for (int i = 0; i < THREADS*N*N; i++) hAt[i] = (float)((i % (N*N)) + 1) / (N*N);     \
+        for (int i = 0; i < THREADS*N;   i++) hxt[i] = (float)((i % N) + 1) / N;             \
+        cudaMemcpy(dAt, hAt, (size_t)THREADS*N*N*sizeof(float), cudaMemcpyHostToDevice);     \
+        cudaMemcpy(dxt, hxt, (size_t)THREADS*N  *sizeof(float), cudaMemcpyHostToDevice);     \
+        delete[] hAt; delete[] hxt;                                                          \
+        float* dSinkT; cudaMalloc(&dSinkT, 256*sizeof(float));                               \
+        clock_gettime(CLOCK_MONOTONIC, &(t0));                                                \
+        thread_gemv_ct_##N::k_gemv<<<1, THREADS>>>(dAt, dxt, dSinkT, iters);                 \
+        cudaDeviceSynchronize();                                                              \
+        clock_gettime(CLOCK_MONOTONIC, &(t1));                                                \
+        printf("glass::thread::gemv<CT>      m=%2d n=%2d  %.4f us/problem (%d-packed)\n",     \
+               N, N, elapsed_us(t0, t1) / ((double)iters * THREADS), THREADS);               \
+        cudaFree(dAt); cudaFree(dxt); cudaFree(dSinkT);                                       \
+    }
+
 #define RUN_GLASS_GEMV_CT(M, N, dA, dx, dy, iters, t0, t1)                                  \
     cudaMemset(dy, 0, (size_t)M*sizeof(float));                                               \
     clock_gettime(CLOCK_MONOTONIC, &(t0));                                                    \
@@ -306,6 +353,10 @@ static void bench_size(int m, int n, int iters) {
     MAYBE_GLASS_GEMV_CT(24, 24)
     MAYBE_GLASS_GEMV_CT(64, 64)
     #undef MAYBE_GLASS_GEMV_CT
+
+    // glass::thread:: tier (one problem per thread) — only for N in {4,6}
+    if (m == n && m == 4) RUN_THREAD_GEMV_CT(4, iters, t0, t1);
+    if (m == n && m == 6) RUN_THREAD_GEMV_CT(6, iters, t0, t1);
 
 #ifdef GLASS_BENCH_CUBLASDX
     #define MAYBE_CUBLASDX_GEMV(M, N)                                           \

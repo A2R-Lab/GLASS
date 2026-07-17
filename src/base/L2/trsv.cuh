@@ -28,7 +28,18 @@
 // core impl: explicit rank/size + flags. Solves op(A) x = b in place.
 // SizeT is deduced: uint32_t from the runtime overload, ct_size<N> from the
 // compile-time overload (constant-folds the trip counts / indexing).
-template <typename T, FillMode FILL, Diag DIAG, bool TRANSPOSE, typename SizeT>
+// Bar supplies the two per-step barriers, exactly as in `potrf_impl` — it is
+// defaulted to BlockBarrier so every existing caller (the public trsv overloads,
+// posv_impl, potrs_impl) is untouched and compiles byte-identically. The
+// `glass::thread::` surface passes ThreadBarrier, whose no-op sync() compiles the
+// barriers out: mandatory, not an optimization. A raw `__syncthreads()` here is
+// BLOCK-WIDE, so in a thread-per-problem kernel — where each thread owns a
+// different problem and the tail block's out-of-range threads have already
+// returned — it is a barrier with divergent participation, i.e. UB/hang. (`rank`
+// and `size` stay explicit params rather than coming from Bar: callers like
+// posv_impl already have them in hand, and the warp surface's trsv is a separate
+// __syncwarp-based body in trsm.cuh, not a Bar instantiation of this one.)
+template <typename T, FillMode FILL, Diag DIAG, bool TRANSPOSE, typename Bar = BlockBarrier, typename SizeT>
 __device__ void trsv_impl(uint32_t rank, uint32_t size, SizeT n, const T* A, T* x)
 {
     static_assert(FILL != FillMode::Full, "trsv: FILL must name a triangle (Lower or Upper)");
@@ -41,7 +52,7 @@ __device__ void trsv_impl(uint32_t rank, uint32_t size, SizeT n, const T* A, T* 
         // resolve pivot x[k] = x[k] / op(A)[k][k]   (diag is A[k+k*n])
         if (!UNIT) {
             if (rank == 0) x[k] = x[k] / A[k + k * n];
-            __syncthreads();           // all threads read the resolved pivot
+            Bar{}.sync();              // all threads read the resolved pivot
         }
         T xk = x[k];
         // subtract x[k] * op(A)[i][k] from the trailing/leading unknowns:
@@ -53,7 +64,7 @@ __device__ void trsv_impl(uint32_t rank, uint32_t size, SizeT n, const T* A, T* 
             for (uint32_t i = rank; i < k; i += size)
                 x[i] -= (TRANSPOSE ? A[k + i * n] : A[i + k * n]) * xk;
         }
-        __syncthreads();               // pivot column consumed before next step
+        Bar{}.sync();                  // pivot column consumed before next step
     }
 }
 
@@ -112,6 +123,37 @@ __device__ void trsv(const T* A, T* x)
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
     trsv_impl<T, FILL, DIAG, TRANSPOSE>(rank, size, ct_size<N>{}, A, x);
+}
+
+namespace thread {
+    // Single-thread triangular solve: one THREAD owns the whole substitution,
+    // reusing the block impl `trsv_impl(0u, 1u, …)`. Unlike `warp::trsv` (which
+    // lives in trsm.cuh, next to the `warp::trsm` it shares a body with), this
+    // composes nothing, so it sits beside `trsv_impl` itself.
+
+
+    /**
+     * @brief Triangular solve on one thread: `A x = b` in place, compile-time size.
+     *
+     * One thread solves the `N×N` triangular system by forward or back
+     * substitution (direction set by `FILL` and `TRANSPOSE`). `A` is column-major
+     * and read-only; `x` is overwritten with the solution. No shared scratch, no
+     * barriers, no `threadIdx` read; operands may be thread-local register arrays.
+     * SciPy equivalent: `x = scipy.linalg.solve_triangular(A, b, lower=...)`.
+     *
+     * @tparam T     Scalar type (e.g. `float`, `double`).
+     * @tparam N     Dimension (`A` is `N×N`, `x` has length `N`).
+     * @tparam FILL  Which triangle of `A` holds the data (default `FillMode::Lower`).
+     * @tparam DIAG  `Diag::Unit` for an implicit unit diagonal (default `Diag::NonUnit`).
+     * @tparam TRANSPOSE  When true solve `Aᵀx = b` (default false).
+     * @param A  Triangular matrix (column-major, `N*N` elements; read-only).
+     * @param x  In/out right-hand side; on return holds the solution.
+     */
+    template <typename T, uint32_t N, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
+    __device__ void trsv(const T* A, T* x)
+    {
+        trsv_impl<T, FILL, DIAG, TRANSPOSE, ThreadBarrier>(0u, 1u, ct_size<N>{}, A, x);
+    }
 }
 
 // ─── trmv: out-of-place core ──────────────────────────────────────────────────

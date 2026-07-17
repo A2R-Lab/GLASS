@@ -15,11 +15,13 @@ The reference is organized by BLAS level and by backend:
   and their host-side query/size helpers.
 * **Warp-scoped** — the ``glass::warp::`` single-warp SIMT variants for
   warp-per-problem kernels.
+* **Thread-scoped** — the ``glass::thread::`` sequential variants for
+  thread-per-problem low-DOF packing.
 * **Block-tridiagonal solvers** — the ``glass::bdmv`` matvec and the
   ``glass::pcg`` preconditioned conjugate-gradient solver for the
   block-tridiagonal SPD systems of trajectory optimization / MPC.
 * **Backend picker** — ``glass-defaults.cuh`` ``constexpr`` helpers
-  (``suggested_backend`` / ``suggested_block_threads`` / ``suggested_warps_per_block``)
+  (``suggested_backend`` / ``suggested_block_threads`` / ``suggested_warps_per_block`` / ``suggested_threads_per_block``)
   that pick a backend + launch config from the measured ladder.
 
 .. note::
@@ -37,6 +39,7 @@ The reference is organized by BLAS level and by backend:
    l3
    nvidia
    warp
+   thread
    banded
    pcg
    defaults

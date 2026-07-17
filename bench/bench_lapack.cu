@@ -82,6 +82,69 @@ __global__ void k_simt_chol_trsm(const float* A_master, const float* b_master,
     if (rank < N*N) A[rank] = s_A[rank];
 }
 
+// ─── glass::thread:: tier (one problem per THREAD, 32 packed per warp) ─────────
+// A block of THREADS threads factors/solves THREADS independent N×N SPD problems
+// at once — thread p owns problem p, operands register-resident (no shared, no
+// barriers). Both reload from the master each iter (potrf/posv are destructive),
+// exactly as the block baselines above do into shared. Time is amortized PER
+// PROBLEM. Compile-time N only, worth it below the N<=7 register-residency
+// ceiling (CLAUDE.md), so the tier is instantiated for the small sizes 4 and 6.
+template<int N>
+__global__ void k_thread_potrf(const float* A_master, volatile float* sink, int iters) {
+    int p = blockIdx.x*blockDim.x + threadIdx.x;
+    float acc = 0.f;
+    for (int rep = 0; rep < iters; rep++) {
+        float a[N*N];
+        for (int i = 0; i < N*N; i++) a[i] = A_master[(size_t)p*N*N + i];
+        glass::thread::potrf<float, N>(a);
+        acc += a[0];
+    }
+    sink[p & 0xFF] = acc;
+}
+
+template<int N>
+__global__ void k_thread_posv(const float* A_master, const float* b_master,
+                              volatile float* sink, int iters) {
+    int p = blockIdx.x*blockDim.x + threadIdx.x;
+    float acc = 0.f;
+    for (int rep = 0; rep < iters; rep++) {
+        float a[N*N], bv[N];
+        for (int i = 0; i < N*N; i++) a[i]  = A_master[(size_t)p*N*N + i];
+        for (int i = 0; i < N;   i++) bv[i] = b_master[(size_t)p*N + i];
+        glass::thread::posv<float, N>(a, bv);
+        acc += bv[0];
+    }
+    sink[p & 0xFF] = acc;
+}
+
+// Per-problem thread-tier launch: build THREADS packed copies of the size-N SPD
+// problem (from the single hA/hb the caller already uploaded to the masters).
+template<int N>
+static void run_thread_lapack(const float* dA_master, const float* db_master, int iters) {
+    float *dAt, *dbt, *dSinkT;
+    cudaMalloc(&dAt, (size_t)THREADS * N*N * sizeof(float));
+    cudaMalloc(&dbt, (size_t)THREADS * N   * sizeof(float));
+    cudaMalloc(&dSinkT, 256 * sizeof(float));
+    for (int p = 0; p < THREADS; p++) {                       // replicate problem 0
+        cudaMemcpy(dAt + (size_t)p*N*N, dA_master, N*N*sizeof(float), cudaMemcpyDeviceToDevice);
+        cudaMemcpy(dbt + (size_t)p*N,   db_master, N  *sizeof(float), cudaMemcpyDeviceToDevice);
+    }
+    struct timespec t0, t1;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    k_thread_potrf<N><<<1, THREADS>>>(dAt, dSinkT, iters);
+    cudaDeviceSynchronize();
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    printf("glass::thread::potrf         n=%2d  %.4f us/problem (%d-packed)\n",
+           N, elapsed_us(t0, t1) / ((double)iters * THREADS), THREADS);
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    k_thread_posv<N><<<1, THREADS>>>(dAt, dbt, dSinkT, iters);
+    cudaDeviceSynchronize();
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    printf("glass::thread::posv (fused)  n=%2d  %.4f us/problem (%d-packed)\n",
+           N, elapsed_us(t0, t1) / ((double)iters * THREADS), THREADS);
+    cudaFree(dAt); cudaFree(dbt); cudaFree(dSinkT);
+}
+
 // ─── glass::nvidia (cuSOLVERDx-backed) variants ──────────────────────────────
 // Pre-instantiate sizes at TC=THREADS (256). NRHS=1 for solve operations.
 
@@ -217,6 +280,9 @@ static void bench_size_ct(int iters) {
     clock_gettime(CLOCK_MONOTONIC, &t1);
     printf("glass::chol+trsm             n=%2d  %.3f us/op\n",
            N, elapsed_us(t0, t1) / iters);
+
+    // glass::thread:: tier (one problem per thread) — only below the N<=7 ceiling
+    if constexpr (N == 4 || N == 6) run_thread_lapack<N>(dA_master, db_master, iters);
 
     // glass::nvidia chol
     constexpr size_t nv_chol_smem = glass::nvidia::potrf_scratch_bytes<float, N, THREADS>();

@@ -26,3 +26,6 @@ bench/paper_*.txt
 
 # Generated companion to the in-tree tuning table (verdicts live in the .cuh comments)
 src/nvidia/tuning_table_results.md
+
+# Logs
+test/sanitizer-logs/*

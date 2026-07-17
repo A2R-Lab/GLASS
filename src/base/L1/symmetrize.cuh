@@ -70,6 +70,47 @@ __device__ void symmetrize(T *A)
     symmetrize_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, N, A);
 }
 
+namespace thread {
+    // Single-thread SYMMETRIZE: one THREAD averages every mirror pair, reusing
+    // the shared `symmetrize_impl` body with ThreadBarrier{rank=0, size=1, no-op
+    // sync} — the same algorithm as the block op degenerated to one thread.
+
+    /**
+     * @brief Symmetrize on one thread: `A = 0.5*(A + Aᵀ)`, single-thread.
+     *
+     * One thread averages each strictly-off-diagonal mirror pair of the `n×n`
+     * column-major matrix serially; the diagonal is untouched. No shared
+     * scratch, no shuffles, no barriers, no `threadIdx` read; `A` may be a
+     * thread-local register array. NumPy equivalent: `A = 0.5*(A + A.T)`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param n  Matrix dimension (number of rows/columns).
+     * @param A  In/out matrix of `n*n` elements (column-major).
+     */
+    template <typename T>
+    __device__ void symmetrize(uint32_t n, T *A)
+    {
+        symmetrize_impl<ThreadBarrier, T>(ThreadBarrier{}, n, A);
+    }
+
+    /**
+     * @brief Symmetrize on one thread: `A = 0.5*(A + Aᵀ)`, single-thread, compile-time size.
+     *
+     * Compile-time-`N` overload; the trip count folds and the loop unrolls, so
+     * `A` may be a thread-local register array. NumPy equivalent:
+     * `A = 0.5*(A + A.T)`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @tparam N  Matrix dimension (compile-time constant).
+     * @param A  In/out matrix of `N*N` elements (column-major).
+     */
+    template <typename T, uint32_t N>
+    __device__ void symmetrize(T *A)
+    {
+        symmetrize_impl<ThreadBarrier, T>(ThreadBarrier{}, N, A);
+    }
+}
+
 namespace warp {
     // Single-warp SYMMETRIZE: one 32-lane warp strides the n*n index space
     // (lane k handles flat indices k, k+32, …) acting on strictly-lower entries.

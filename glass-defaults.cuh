@@ -12,7 +12,17 @@
  *   constexpr auto be = glass::suggested_backend<glass::op::chol, N, float>();
  *   if      constexpr (be == glass::backend::nvidia) { ... cuSOLVERDx launch ... }
  *   else if constexpr (be == glass::backend::warp)   { ... <<<ceil(P/WPB), {32,WPB}>>> ... }
+ *   else if constexpr (be == glass::backend::thread) { ... <<<ceil(P/TPB), TPB>>> ... }
  *   else                                             { ... <<<P, TB>>> ... }
+ *
+ * NOTE ON `thread`: no shipped table returns it yet. The tier exists and is swept by
+ * bench_mega_sweep.cu, but the in-tree ladders (`ideal_sm120`, `ideal_generic`,
+ * `without_nvidia`) predate it and were measured with only warp/block/nvidia
+ * contending — inventing `thread` entries here would fabricate a verdict nobody
+ * measured. Run `bench/tune.py --legs ladder --sm auto` to regenerate this arch's
+ * table WITH the thread column; the marker-block machinery and `_ladder_expr` already
+ * emit `backend::thread` unchanged. Until then callers get the measured warp/block/
+ * nvidia answer, and a `thread` caller opts in explicitly.
  *
  * INCLUDE ORDER: include this AFTER glass.cuh, and after glass-nvidia.cuh if you want the
  * `nvidia` tier to be eligible (it reads GLASS_HAVE_CUBLASDX / GLASS_HAVE_CUSOLVERDX, which
@@ -32,7 +42,10 @@
 namespace glass {
 
 enum class op : int      { dot, gemv, gemm, chol, trsv, posv };
-enum class backend : int { warp, block, nvidia };
+// APPEND-ONLY: `thread` is last so the pre-existing warp/block/nvidia ordinals are
+// unchanged. Scope ladder (most→least problem packing): thread (1 problem/thread,
+// 32 per warp) → warp (1/warp) → block (1/block) → nvidia (1/block, vendor).
+enum class backend : int { warp, block, nvidia, thread };
 
 // SM the table is keyed on: the build's SMS (nvidia builds) else the measured sm_120.
 #ifndef GLASS_DEFAULTS_SM
@@ -171,6 +184,25 @@ constexpr uint32_t suggested_block_threads() {
 template <op Op, uint32_t N = 0, typename T = float, uint32_t SM = GLASS_DEFAULTS_SM>
 constexpr uint32_t suggested_warps_per_block() {
     return Op == op::dot ? 8u : 2u;  // dot packs more (8–16); others 2–4
+}
+
+/// Suggested threads-per-block for the `thread` backend: launch `<<<ceil(P/TPB), TPB>>>`,
+/// one problem per THREAD. Shrinks as N grows — the inverse of
+/// `suggested_block_threads`: there, extra threads split ONE problem and idle on the
+/// serial pivot; here every thread owns a whole problem, so the binding constraint is
+/// the per-thread register footprint (~N*N live for a factor/solve; measured ceiling N<=7
+/// — see CLAUDE.md), and a smaller
+/// block keeps occupancy up. Seed heuristic, NOT measured — `bench/tune.py`'s ladder
+/// leg does not tune this knob (it sweeps TPB but only records the winning tier).
+template <op Op, uint32_t N = 0, typename T = float, uint32_t SM = GLASS_DEFAULTS_SM>
+constexpr uint32_t suggested_threads_per_block() {
+    switch (Op) {
+        case op::chol: case op::posv: case op::trsv: case op::gemm:
+            return N <= 4 ? 128u : N <= 6 ? 64u : 32u;   // N*N registers per thread
+        case op::dot: case op::gemv:
+            return 128u;                                  // ~N live registers, pack hard
+    }
+    return 64u;
 }
 
 }  // namespace glass

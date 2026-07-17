@@ -30,6 +30,7 @@ build. For the full API surface and the backend-choice guide, read that README.
 | [`14_ldlt_solve.cu`](14_ldlt_solve.cu) | symmetric-**indefinite** solve `ldlt` + `ldlt_solve` (no Cholesky exists), plus the `CHECK=true` failure-flag + **inertia** reporting on a good and a zero-pivot matrix (`ldlt_scratch_bytes`) | pure SIMT — no extra deps |
 | [`15_riccati_gain.cu`](15_riccati_gain.cu) | LQR feedback gain `K = (R + BᵀPB)⁻¹(BᵀPA)` via `riccati_gain`, dynamic smem sized by `riccati_scratch_bytes<T,NX,NU>()`, verified against a plain-loop CPU reference | pure SIMT — no extra deps |
 | [`16_inv.cu`](16_inv.cu) | matrix inversion on the augmented `[A \| I]` layout: `inv` (+ `inv_scratch_bytes`), and the robust `inv_pivoted` recovering a matrix with a zero leading pivot that plain `inv` sends non-finite | pure SIMT — no extra deps |
+| [`17_thread_pack.cu`](17_thread_pack.cu) | the `glass::thread::` tier: 4096 N=6 SPD solves, one problem per THREAD (32 packed per warp), staged global→registers→global, launch shape from `suggested_threads_per_block<>`, verified `\|Ax-b\|` per problem | pure SIMT — no extra deps |
 
 **Examples 01–05 and 07–16 are pure SIMT** — they build with plain `nvcc` and
 need no external libraries. **Only `06_nvidia_gemm.cu` needs MathDx** (cuBLASDx);
@@ -61,6 +62,7 @@ nvcc -std=c++17 -arch=sm_75 -I.. 13_gemm_strided.cu -o gemm_strided && ./gemm_st
 nvcc -std=c++17 -arch=sm_75 -I.. 14_ldlt_solve.cu   -o ldlt     && ./ldlt
 nvcc -std=c++17 -arch=sm_75 -I.. 15_riccati_gain.cu -o riccati  && ./riccati
 nvcc -std=c++17 -arch=sm_75 -I.. 16_inv.cu          -o inv      && ./inv
+nvcc -std=c++17 -arch=sm_75 -I.. 17_thread_pack.cu  -o tpack    && ./tpack
 ```
 
 ### NVIDIA / cuBLASDx example (06) — requires MathDx

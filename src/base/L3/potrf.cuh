@@ -181,6 +181,44 @@ __device__ void potrf(T *s_A, int *s_fail = nullptr)
     potrf_impl<BlockBarrier, T, CHECK>(BlockBarrier{}, ct_size<N>{}, s_A, s_fail);
 }
 
+namespace thread {
+    /**
+     * @brief Single-thread in-place Cholesky factorization (LAPACK potrf, lower), compile-time size.
+     *
+     * ONE thread factors the SPD matrix `A = L * L^T` in place, writing only the
+     * lower triangle (column-major) — the sequential algorithm, for
+     * thread-per-problem solvers that pack 32 independent low-DOF problems into a
+     * warp (e.g. N≈7 IK normal equations, one seed per lane). No shared scratch,
+     * no barriers, no `threadIdx` read; `A` may live in a thread-local array and
+     * stay register-resident. `A` must be SPD. NumPy: `L = np.linalg.cholesky(A)`.
+     *
+     * Delegates to the same `potrf_impl` body the block/warp surfaces use, via
+     * `ThreadBarrier` (rank=0, size=1, no-op sync) — the same algorithm and
+     * operand order as `glass::potrf<T, N>` on a single thread. NOT guaranteed
+     * bit-identical across the two instantiations: the no-op sync removes the
+     * optimization fences, so FMA contraction may differ by a last ULP
+     * (test/test_thread.py pins the bound).
+     *
+     * COMPILE-TIME SIZE ONLY (no runtime-`n` overload): the tier's value is an
+     * `A` that nvcc can keep in registers, which requires fully-unrolled,
+     * compile-time-resolvable indexing. A runtime-`n` form would silently spill
+     * to local memory and be strictly worse than `glass::warp::potrf`.
+     *
+     * @tparam T  Scalar type (use `double` for stability on ill-conditioned A).
+     * @tparam N  Matrix dimension (A is N x N). N<=7 keeps `A` register-resident (measured
+     *            ceiling, both dtypes — see the thread-tier constraints in CLAUDE.md); larger N still
+     *            computes correctly but demotes `A` to local memory, forfeiting the tier's premise.
+     * @tparam CHECK  If true, detect a non-PD pivot and report it via `s_fail` (default false, compiles out).
+     * @param s_A     In/out N x N matrix (column-major); on return its lower triangle holds L.
+     * @param s_fail  Optional flag (CHECK only): set to 1 on a non-PD / NaN pivot, else 0. Ignored when null.
+     */
+    template <typename T, uint32_t N, bool CHECK = false>
+    __device__ void potrf(T *s_A, int *s_fail = nullptr)
+    {
+        potrf_impl<ThreadBarrier, T, CHECK>(ThreadBarrier{}, ct_size<N>{}, s_A, s_fail);
+    }
+}
+
 namespace warp {
     /**
      * @brief Single-warp in-place Cholesky factorization (LAPACK potrf, lower), compile-time size.

@@ -546,6 +546,125 @@ __device__ void ldlt_solve(const T *LD, T *b, const int32_t *piv = nullptr)
     ldlt_solve_impl<T>(ct_size<N>{}, LD, b, piv);
 }
 
+namespace thread {
+    /**
+     * @brief Single-thread in-place LDLᵀ factorization (LAPACK `sytrf`, lower,
+     *        NON-pivoted), compile-time size.
+     *
+     * ONE thread factors the symmetric (possibly INDEFINITE) `A = L D Lᵀ` in
+     * place — the sequential recurrence `D_j = A_jj − Σ_{k<j} L_jk² D_k`, then
+     * `L_ij = (A_ij − Σ_{k<j} L_ik D_k L_jk)/D_j` down each column — for
+     * thread-per-problem solvers that pack 32 independent low-DOF problems into
+     * a warp. On return the diagonal slots hold `D`, the strict lower triangle
+     * holds unit-`L` (upper triangle untouched). No square root, so it factors
+     * KKT / saddle-point systems Cholesky cannot. No shared scratch, no
+     * barriers, no `threadIdx` read; `A` may live in a thread-local array and
+     * stay register-resident.
+     *
+     * A FRESH serial body (not a `ThreadBarrier` instantiation of the block
+     * `ldlt_impl`): that impl's runtime `bool pivot` branch would compile the
+     * whole Bunch–Kaufman path — shared-scratch broadcasts, `iamax_lowmem`, raw
+     * block-wide barriers — into the thread-tier function. Same algorithm and
+     * operand order as the NON-pivoted `glass::ldlt<T, N>` path (and
+     * `warp::ldlt`, itself a separate body), agreeing to a few ULP
+     * (FMA-contraction jitter; bit-identity across tiers is NOT guaranteed).
+     * **Non-pivoted only** — the tier is branch-free by contract (every lane
+     * owns a different problem, so the data-dependent Bunch–Kaufman branches
+     * would diverge across the warp; the block path covers the pivoted case).
+     * Every pivot `D_j` must be nonzero; a saddle like `[[0,b],[b,0]]` breaks
+     * down (use the block `ldlt(..., pivot=true, piv)` for those).
+     *
+     * `CHECK` (compile-out, default false) reports a zero/NaN pivot via
+     * `s_fail` and the inertia `{n_pos, n_neg, n_zero}` via `s_inertia`.
+     * SciPy: `lu, d, _ = scipy.linalg.ldl(A, lower=True)` ⇒
+     * `A == lu @ np.diag(d) @ lu.T`.
+     *
+     * @tparam T      Scalar type (use `double` for ill-conditioned A).
+     * @tparam N      Dimension (A is N x N). N<=7 keeps `A` register-resident (measured
+     *                ceiling, both dtypes — see the thread-tier constraints in CLAUDE.md); larger N
+     *                still computes correctly but demotes `A` to local memory, forfeiting the
+     *                tier's premise.
+     * @tparam CHECK  If true, report zero/NaN pivot + inertia (default false, compiles out).
+     * @param A         In/out N x N symmetric matrix (column-major, lower); on return holds
+     *                  L (strict-lower, unit) and D (diagonal).
+     * @param s_fail    Optional flag (CHECK only): set to 1 on a zero/NaN pivot, else 0. Ignored when null.
+     * @param s_inertia Optional length-3 `{n_pos, n_neg, n_zero}` pivot-sign counts (CHECK only).
+     */
+    template <typename T, uint32_t N, bool CHECK = false>
+    __device__ void ldlt(T *A, int *s_fail = nullptr, int *s_inertia = nullptr)
+    {
+        if constexpr (CHECK) {
+            if (s_fail) *s_fail = 0;
+            if (s_inertia) { s_inertia[0] = 0; s_inertia[1] = 0; s_inertia[2] = 0; }
+        }
+        for (uint32_t j = 0; j < N; j++) {
+            // serial diagonal pivot: D_j = A_jj - sum_{k<j} L_jk^2 * D_k
+            T sum = static_cast<T>(0);
+            for (uint32_t k = 0; k < j; k++) {
+                T Ljk = A[k*N + j];               // L_jk (strict-lower, row j, col k)
+                sum += Ljk * Ljk * A[k*N + k];    // * D_k (diagonal slot)
+            }
+            A[j*N + j] -= sum;                    // overwrite diagonal with D_j
+            T Dj = A[j*N + j];
+            if constexpr (CHECK) {
+                if (s_fail && (Dj == static_cast<T>(0) || isnan(Dj))) *s_fail = 1;
+                if (s_inertia) {
+                    if (Dj > static_cast<T>(0)) s_inertia[0]++;
+                    else if (Dj < static_cast<T>(0)) s_inertia[1]++;
+                    else s_inertia[2]++;
+                }
+            }
+            // trailing column: L_ij = (A_ij - sum_{k<j} L_ik * D_k * L_jk) / D_j
+            for (uint32_t i = j + 1; i < N; i++) {
+                T csum = static_cast<T>(0);
+                for (uint32_t k = 0; k < j; k++)
+                    csum += A[k*N + i] * A[k*N + k] * A[k*N + j];  // L_ik * D_k * L_jk
+                A[j*N + i] = (A[j*N + i] - csum) / Dj;
+            }
+        }
+    }
+
+    /**
+     * @brief Single-thread LDLᵀ solve `A x = b` in place from an `ldlt` factor
+     *        (LAPACK `sytrs` analogue, NON-pivoted), compile-time size.
+     *
+     * ONE thread runs the three sweeps — forward unit-`L` (`L y = b`), diagonal
+     * scale (`z = y / D`), back unit-`Lᵀ` (`Lᵀ x = z`) — over the factor `LD`
+     * from `thread::ldlt`. `LD` is read-only; `b` is overwritten with `x`. No
+     * shared scratch, no barriers, no `threadIdx` read; operands may be
+     * thread-local register arrays. Non-pivoted only (matches `thread::ldlt`;
+     * see there for why the pivoted path is excluded from this tier). A fresh
+     * serial body for the same reason as `thread::ldlt` — the block
+     * `ldlt_solve_impl` interleaves runtime `piv` branches through every sweep.
+     * Same algorithm and operand order as the non-pivoted
+     * `glass::ldlt_solve<T, N>` path, agreeing to a few ULP (bit-identity
+     * across tiers is NOT guaranteed). NumPy: `x = np.linalg.solve(A, b)`.
+     *
+     * @tparam T  Scalar type.
+     * @tparam N  Dimension (LD is N x N, b has length N). N<=7 keeps a `T[N*N]` factor
+     *            register-resident (measured ceiling, both dtypes — see the thread-tier
+     *            constraints in CLAUDE.md).
+     * @param LD  LDLᵀ factor from `thread::ldlt` (column-major; unit-L strict-lower, D diagonal).
+     * @param b   In/out right-hand side; on return holds the solution x.
+     */
+    template <typename T, uint32_t N>
+    __device__ void ldlt_solve(const T *LD, T *b)
+    {
+        for (uint32_t col = 0; col < N; col++) {               // forward: L y = b (unit L)
+            T factor = b[col];
+            for (uint32_t row = col + 1; row < N; row++)
+                b[row] -= LD[col*N + row] * factor;            // L_{row,col}
+        }
+        for (uint32_t i = 0; i < N; i++)                       // diagonal scale z = y / D
+            b[i] /= LD[i*N + i];
+        for (int32_t col = (int32_t)N - 1; col >= 0; col--) {  // back: Lᵀ x = z (unit Lᵀ)
+            T factor = b[col];
+            for (uint32_t i = 0; i < (uint32_t)col; i++)
+                b[i] -= LD[i*N + col] * factor;                // (Lᵀ)_{i,col} = L_{col,i}
+        }
+    }
+}
+
 namespace warp {
     /**
      * @brief Single-warp in-place LDLᵀ factorization (LAPACK `sytrf`, lower, NON-pivoted).

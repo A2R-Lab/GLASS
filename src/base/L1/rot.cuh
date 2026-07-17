@@ -117,6 +117,55 @@ __host__ __device__ void rotg(T a, T b, T &c, T &s, T &r)
     r = rr;
 }
 
+namespace thread {
+    // Single-thread ROT: one THREAD applies the whole rotation, reusing the
+    // shared `rot_impl` body with ThreadBarrier{rank=0, size=1, no-op sync} —
+    // the same algorithm as the block op degenerated to one thread. (`rotg` is
+    // already a scalar `__host__ __device__` helper; call it directly.)
+
+    /**
+     * @brief Apply a Givens plane rotation on one thread (ROT), single-thread.
+     *
+     * One thread applies `x[i] = c*x[i] + s*y[i]`, `y[i] = c*y[i] - s*x_old[i]`
+     * serially over the `n` elements (both olds read into registers first). No
+     * shared scratch, no shuffles, no barriers, no `threadIdx` read; operands
+     * may be thread-local register arrays. NumPy equivalent:
+     * `x, y = c*x + s*y, c*y - s*x`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param n  Number of elements.
+     * @param x  In/out vector of length `n`.
+     * @param y  In/out vector of length `n`.
+     * @param c  Rotation cosine.
+     * @param s  Rotation sine.
+     */
+    template <typename T>
+    __device__ void rot(uint32_t n, T *x, T *y, T c, T s)
+    {
+        rot_impl<ThreadBarrier, T>(ThreadBarrier{}, n, x, y, c, s);
+    }
+
+    /**
+     * @brief Apply a Givens plane rotation on one thread (ROT), single-thread, compile-time size.
+     *
+     * Compile-time-`N` overload; the trip count folds and the loop unrolls, so
+     * `x` and `y` may be thread-local register arrays. NumPy equivalent:
+     * `x, y = c*x + s*y, c*y - s*x`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @tparam N  Number of elements (compile-time constant).
+     * @param x  In/out vector of length `N`.
+     * @param y  In/out vector of length `N`.
+     * @param c  Rotation cosine.
+     * @param s  Rotation sine.
+     */
+    template <typename T, uint32_t N>
+    __device__ void rot(T *x, T *y, T c, T s)
+    {
+        rot_impl<ThreadBarrier, T>(ThreadBarrier{}, N, x, y, c, s);
+    }
+}
+
 namespace warp {
     /**
      * @brief Apply a Givens plane rotation within one warp (ROT), single-warp.

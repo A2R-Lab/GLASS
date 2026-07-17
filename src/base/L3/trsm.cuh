@@ -102,6 +102,48 @@ __device__ void trsm(const T *A, T *B)
     trsm_impl<BlockBarrier, T, FILL, DIAG, TRANSPOSE>(BlockBarrier{}, ct_size<N>{}, ct_size<NRHS>{}, A, B);
 }
 
+namespace thread {
+    /**
+     * @brief Single-thread triangular solve with multiple right-hand sides
+     *        `op(A) X = B`, in place (TRSM), compile-time size.
+     *
+     * ONE thread solves the `N×N` triangular system for all `NRHS` columns of
+     * `B` (`N×NRHS`, column-major), overwriting `B` with `X` — for
+     * thread-per-problem solvers that pack 32 independent low-DOF problems into
+     * a warp. `A` is column-major and read-only; only the triangle named by
+     * `FILL` is read; `TRANSPOSE=true` solves `Aᵀ X = B` against that same
+     * stored triangle; `DIAG=Diag::Unit` skips the diagonal divide. No shared
+     * scratch, no barriers, no `threadIdx` read; operands may be thread-local
+     * register arrays. SciPy equivalent:
+     * `X = scipy.linalg.solve_triangular(A, B, lower=(FILL==Lower), unit_diagonal=(DIAG==Unit), trans=(1 if TRANSPOSE else 0))`.
+     *
+     * Delegates to the same `trsm_impl` body the block surface uses, via
+     * `ThreadBarrier` (rank=0, size=1, no-op sync) — the same algorithm and
+     * operand order as `glass::trsm<T, N, NRHS, …>` on one thread, agreeing to a
+     * few ULP (FMA-contraction jitter; bit-identity across the two
+     * instantiations is NOT guaranteed — see test/test_thread.py).
+     *
+     * @tparam T     Scalar type.
+     * @tparam N     Dimension (`A` is `N×N`; each column of `B` has length `N`). N<=7 keeps a
+     *               `T[N*N]` operand register-resident (measured ceiling, both dtypes — see the
+     *               thread-tier constraints in CLAUDE.md); larger N — or a `B` wider than that
+     *               element budget — still computes correctly but spills to local memory,
+     *               forfeiting the tier's premise.
+     * @tparam NRHS  Number of right-hand sides (columns of `B`).
+     * @tparam FILL  Which triangle of `A` holds the data (default `FillMode::Lower`).
+     * @tparam DIAG  `Diag::Unit` for an implicit unit diagonal (default `Diag::NonUnit`).
+     * @tparam TRANSPOSE  When true solve `Aᵀ X = B` (default false).
+     * @param A  Triangular matrix (column-major, `N*N`; read-only).
+     * @param B  In/out right-hand sides (`N×NRHS`, column-major); on return holds `X`.
+     */
+    template <typename T, uint32_t N, uint32_t NRHS,
+              FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
+    __device__ void trsm(const T *A, T *B)
+    {
+        trsm_impl<ThreadBarrier, T, FILL, DIAG, TRANSPOSE>(ThreadBarrier{}, ct_size<N>{}, ct_size<NRHS>{}, A, B);
+    }
+}
+
 namespace warp {
     /**
      * @brief Single-warp triangular solve `op(A) x = b` in place (TRSV), compile-time size.
@@ -224,6 +266,30 @@ namespace warp {
         potrf<T, N>(A);
         trsv<T, N>(A, b);                                                        // forward: L y = b
         trsv<T, N, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/true>(A, b);    // back:   Lᵀ x = y
+    }
+
+    /**
+     * @brief Single-warp SPD solve from a precomputed Cholesky factor (LAPACK potrs), compile-time size.
+     *
+     * Given the lower factor `L` (e.g. from `warp::potrf`), one 32-lane warp
+     * solves `L Lᵀ x = b` by forward then back substitution — the same two
+     * `warp::trsv` legs `warp::posv` composes, without the re-factor: the
+     * reusable-factor / multi-solve path. `L` is read-only; `b` is overwritten
+     * with `x`. No shared scratch, no `__syncthreads`; every pivot is broadcast
+     * from lane 0's register via `__shfl_sync` (§1g — immune to the
+     * `__restrict__` stale-shared-reread miscompile, see `warp::trsv`). SciPy
+     * equivalent: `x = scipy.linalg.cho_solve((L, True), b)`.
+     *
+     * @tparam T  Scalar type.
+     * @tparam N  Dimension (`L` is `N×N`, `b` has length `N`).
+     * @param L  Lower Cholesky factor (column-major, `N*N`; read-only).
+     * @param b  In/out right-hand side; on return holds the solution `x`.
+     */
+    template <typename T, uint32_t N>
+    __device__ void potrs(const T *L, T *b)
+    {
+        trsv<T, N>(L, b);                                                        // forward: L y = b
+        trsv<T, N, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/true>(L, b);    // back:   Lᵀ x = y
     }
 
     /**

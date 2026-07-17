@@ -484,6 +484,54 @@ __device__ void inv_dense(T *A, T *Ainv, T *s_scratch)
     inv_dense_impl<T>(ct_size<N>{}, A, Ainv, s_scratch);
 }
 
+namespace thread {
+    /**
+     * @brief Single-thread in-place matrix inverse (unpivoted Gauss-Jordan,
+     *        augmented `[A | I]`), compile-time size.
+     *
+     * ONE thread reduces a column-major augmented `N x 2*N` `[A | I]` buffer so
+     * that on return columns `N..2*N-1` hold `A^-1` — the sequential
+     * Gauss-Jordan sweep, for thread-per-problem solvers that pack 32
+     * independent low-DOF problems into a warp. No shared scratch requirement,
+     * no barriers, no `threadIdx` read.
+     *
+     * Delegates to the same `inv_impl` body the block surface uses, via
+     * `ThreadBarrier` (rank=0, size=1, no-op sync) — the same algorithm and
+     * operand order as `glass::inv<T, N>` on one thread, agreeing to a few ULP
+     * (FMA-contraction jitter; bit-identity across the two instantiations is
+     * NOT guaranteed — see test/test_thread.py).
+     *
+     * `s_scratch` keeps the caller-provided-pointer signature for surface
+     * uniformity with `glass::inv` / `warp::inv`, but on this tier the intended
+     * use is a THREAD-LOCAL array — `T scratch[2*N + 1];` declared in the
+     * caller — so both the operand and the scratch can stay register-resident
+     * (per-thread shared-memory scratch would defeat the tier's packing).
+     *
+     * Unpivoted: divides by the leading pivots as-is (no row exchange) — the
+     * data-dependent `inv_pivoted` is deliberately excluded from this tier
+     * (its argmax branches diverge across a warp of independent problems; use
+     * the block `inv_pivoted` when robustness to small/zero leading pivots is
+     * needed). NumPy equivalent: `Ainv = np.linalg.inv(A)`.
+     *
+     * @tparam T  Scalar type.
+     * @tparam N  Matrix dimension (A is N x N). NOTE the augmented operand is `T[2*N*N]` — twice
+     *            the `T[N*N]` the measured N<=7 register-residency ceiling refers to (see the
+     *            thread-tier constraints in CLAUDE.md), so expect the local-memory cliff at a
+     *            SMALLER N than for the factor/solve ops; larger sizes still compute correctly,
+     *            they just forfeit the tier's premise.
+     * @param A          In/out augmented `[A | I]` buffer (column-major, N x 2*N);
+     *                   on return its right half holds `A^-1`.
+     * @param s_scratch  Scratch of `2*N + 1` elements of `T`
+     *                   (= `inv_scratch_bytes<T>(N)` bytes); a thread-local
+     *                   `T scratch[2*N + 1]` is the intended use here.
+     */
+    template <typename T, uint32_t N>
+    __device__ void inv(T *A, T *s_scratch)
+    {
+        inv_impl<ThreadBarrier, T>(ThreadBarrier{}, ct_size<N>{}, A, s_scratch);
+    }
+}
+
 namespace warp {
     /**
      * @brief Single-warp in-place matrix inverse (unpivoted Gauss-Jordan, augmented `[A | I]`), compile-time size.

@@ -266,6 +266,24 @@ __global__ void k_posv(T* A, T* b) {
     glass::posv<T, N>(A + p * (size_t)N*N, b + p * (size_t)N);
 }
 
+// glass::thread:: tier: one problem per THREAD (32 packed per warp), operands
+// register-resident. A whole grid solves all NPROB problems in one launch — the
+// same unit time_restored_ns already normalises to (so ns/problem is directly
+// comparable to the block-per-problem contenders). Reads A/b from global into
+// registers (leaving global A untouched) and writes the solution back to b so the
+// correctness guard and restore protocol behave exactly as for the block solvers.
+// Only valid below the N<=7 register-residency ceiling (CLAUDE.md).
+template<typename T, int N>
+__global__ void k_thread_posv(T* A, T* b, int nprob) {
+    size_t p = (size_t)blockIdx.x*blockDim.x + threadIdx.x;
+    if (p >= (size_t)nprob) return;
+    T a[N*N], bv[N];
+    for (int i = 0; i < N*N; i++) a[i]  = A[p*(size_t)N*N + i];
+    for (int i = 0; i < N;   i++) bv[i] = b[p*(size_t)N + i];
+    glass::thread::posv<T, N>(a, bv);
+    for (int i = 0; i < N;   i++) b[p*(size_t)N + i] = bv[i];
+}
+
 template<typename T, int N>
 __global__ void k_invsolve(T* G, T* b, T* y) {   // Gauss-Jordan inv on [A|I], then x = A⁻¹·b
     extern __shared__ double solvers_smem[];
@@ -446,6 +464,13 @@ static void bench_spdsv(int reps) {
     md = max_abs_diff_dev(dY, hRef, N);
     if (md >= 1e-3) guard_fail("inv+gemv vs CPU chol", md);
     restore_g(); CK(cudaDeviceSynchronize());
+    if constexpr (N <= 7) {                          // thread-tier guard (problem 0)
+        k_thread_posv<T, N><<<(NPROB + 255) / 256, 256>>>(dA, dB, NPROB);
+        CK(cudaDeviceSynchronize()); CK(cudaGetLastError());
+        md = max_abs_diff_dev(dB, hRef, N);
+        if (md >= 1e-3) guard_fail("thread::posv vs CPU chol", md);
+        restore_ab(); CK(cudaDeviceSynchronize());
+    }
 
     printf("spdsv  N=%-3d | GESV", N);
     double best[3] = {1e30, 1e30, 1e30};
@@ -469,9 +494,24 @@ static void bench_spdsv(int reps) {
         printf("  tb%d=%.2f", TB, ns);
         if (ns < best[2]) best[2] = ns;
     }
+    double best_thr = 1e30;
+    if constexpr (N <= 7) {                          // thread-tier posv (one problem/thread)
+        printf("  | THR-POSV");
+        for (int TB : {32, 256}) {
+            double ns = time_restored_ns(
+                [&] { k_thread_posv<T, N><<<(NPROB + TB - 1) / TB, TB>>>(dA, dB, NPROB); },
+                restore_ab, reps);
+            printf("  tb%d=%.2f", TB, ns);
+            if (ns < best_thr) best_thr = ns;
+        }
+    }
     const char* names[3] = {"GESV", "POSV", "INVSV"};
     int w = 0;
     for (int i = 1; i < 3; i++) if (best[i] < best[w]) w = i;
+    if constexpr (N <= 7)
+        printf("  || gesv=%.2f  posv=%.2f  invsv=%.2f  thr-posv=%.2f  -> block %s (",
+               best[0], best[1], best[2], best_thr, names[w]);
+    else
     printf("  || gesv=%.2f  posv=%.2f  invsv=%.2f  -> %s (", best[0], best[1], best[2], names[w]);
     bool first = true;
     for (int i = 0; i < 3; i++) {

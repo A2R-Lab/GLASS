@@ -10,7 +10,7 @@
 // exercise the §1g shared-reread broadcast miscompile path under -O3.
 //
 // Usage: ./test_warp <op> <n> <WARPS> [flags] <files...>
-//   ops: dot axpy copy scal gemv gemv_t trsv posv
+//   ops: dot axpy copy scal gemv gemv_t trsv posv potrs
 //   flags (trsv): <lower> <unit> <trans>  (each 0/1)
 
 #include <cstdio>
@@ -81,6 +81,10 @@ __global__ void k_scal_warp(int n, int W, float alpha, float* x) {
     __global__ void k_posv_warp_##Nc(int W, float* __restrict__ A, float* __restrict__ b){\
         int w = threadIdx.y; if (w >= W) return;                                          \
         glass::warp::posv<float, Nc>(A + w*Nc*Nc, b + w*Nc);                              \
+    }                                                                                     \
+    __global__ void k_potrs_warp_##Nc(int W, float* __restrict__ L, float* __restrict__ b){\
+        int w = threadIdx.y; if (w >= W) return;                                          \
+        glass::warp::potrs<float, Nc>(L + w*Nc*Nc, b + w*Nc);                             \
     }
 
 #define DEFINE_ALL(Nc) DEFINE_GEMV_KERNEL(Nc) DEFINE_GEMM_KERNEL(Nc) DEFINE_TRI_KERNEL(Nc)
@@ -159,6 +163,18 @@ static void launch_posv(int n, int W, float* A, float* b) {
         default: fprintf(stderr, "unsupported n=%d for posv\n", n); exit(1);
     }
 }
+static void launch_potrs(int n, int W, float* L, float* b) {
+    dim3 blk(32, W);
+    switch (n) {
+        case 5:  k_potrs_warp_5 <<<1,blk>>>(W,L,b); break;
+        case 7:  k_potrs_warp_7 <<<1,blk>>>(W,L,b); break;
+        case 16: k_potrs_warp_16<<<1,blk>>>(W,L,b); break;
+        case 33: k_potrs_warp_33<<<1,blk>>>(W,L,b); break;
+        case 40: k_potrs_warp_40<<<1,blk>>>(W,L,b); break;
+        case 64: k_potrs_warp_64<<<1,blk>>>(W,L,b); break;
+        default: fprintf(stderr, "unsupported n=%d for potrs\n", n); exit(1);
+    }
+}
 
 // ─── main ────────────────────────────────────────────────────────────────────
 int main(int argc, char** argv) {
@@ -233,6 +249,13 @@ int main(int argc, char** argv) {
         float* A = read_device_vec(argv[4], n*n*W);
         float* b = read_device_vec(argv[5], n*W);
         launch_posv(n, W, A, b);
+        cudaDeviceSynchronize();
+        print_device_vec(b, n*W);
+
+    } else if (strcmp(op, "potrs") == 0) {
+        float* L = read_device_vec(argv[4], n*n*W);
+        float* b = read_device_vec(argv[5], n*W);
+        launch_potrs(n, W, L, b);
         cudaDeviceSynchronize();
         print_device_vec(b, n*W);
 

@@ -35,6 +35,18 @@ struct BlockBarrier {
     __device__ __forceinline__ void sync() const { __syncthreads(); }
 };
 
+/**
+ * @brief Barrier policy for the `glass::thread::`
+
+ this exists as a no-op for single threaded synchronization: if there is only one thread,
+ then nothing needs to be synchronized. 
+ */
+struct ThreadBarrier {
+    __device__ __forceinline__ uint32_t rank() const { return 0u; }
+    __device__ __forceinline__ uint32_t size() const { return 1u; }
+    __device__ __forceinline__ void sync() const { }
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ct_size — compile-time size carrier for the factor/solve `*_impl` bodies.
 //

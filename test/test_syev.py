@@ -169,3 +169,175 @@ def test_eig_clamp_thread_invariance(bins):
             ref = out
         else:
             assert np.array_equal(out, ref), f"non-invariant at threads={th}"
+
+
+# ═══ eigh + psd_project (fixed-sweep Jacobi; see src/base/L3/eigh.cuh) ═══════
+#
+# The deterministic sibling of syev: FIXED sweeps, round-robin schedule,
+# UNSORTED spectrum, dtype-templated driver ops. Gates per the 2026-07-17
+# handoff: (1) A·V = V·diag(W); (2) V orthonormal; (3) parity vs the
+# jacobi_study.py oracle at the SAME sweep count (near-bitwise f64, ~2e-6 f32);
+# (4) psd_project symmetric PSD + matches the oracle clip-reconstruct;
+# (5) thread-count bit-invariance + run-twice determinism.
+#
+# The oracle below is jacobi_study.py's round_robin_rounds()/jacobi_eigh()
+# ported VERBATIM (GATO so_sqp_prototype). One known divergence, documented in
+# eigh.cuh: the device applies a round's disjoint pairs PHASED (rows then
+# cols), the oracle serially — identical in exact arithmetic, so parity is
+# tolerance-gated, not bitwise.
+
+import subprocess as _sp
+import tempfile as _tf
+import os as _os
+
+EIGH_SIZES = [4, 7, 12, 14, 18, 21, 33]      # must match EIGH_SIZES in the driver
+_EIGH_SWEEPS = {"f32": 6, "f64": 12}          # must match eigh_sweeps<T>()
+_EIGH_NPDT = {"f32": np.float32, "f64": np.float64}
+
+
+def _rr_rounds(n):
+    """jacobi_study.py round_robin_rounds(), verbatim."""
+    m = n + (n % 2)
+    idx = list(range(m))
+    rounds = []
+    for _ in range(m - 1):
+        pairs = []
+        for i in range(m // 2):
+            p, q = idx[i], idx[m - 1 - i]
+            if p < n and q < n:
+                pairs.append((min(p, q), max(p, q)))
+        rounds.append(pairs)
+        idx = [idx[0]] + [idx[-1]] + idx[1:-1]
+    return rounds
+
+
+def _jacobi_eigh(A, sweeps, dtype=np.float64):
+    """jacobi_study.py jacobi_eigh(), verbatim (minus the off-norm history)."""
+    A = np.array(A, dtype=dtype)
+    n = A.shape[0]
+    V = np.eye(n, dtype=dtype)
+    for _ in range(sweeps):
+        for pairs in _rr_rounds(n):
+            for (p, q) in pairs:
+                apq = A[p, q]
+                if apq == 0.0:
+                    continue
+                theta = (A[q, q] - A[p, p]) / (dtype(2.0) * apq)
+                t = np.sign(theta) / (abs(theta) + np.sqrt(dtype(1.0) + theta * theta))
+                if theta == 0.0:
+                    t = dtype(1.0)
+                c = dtype(1.0) / np.sqrt(dtype(1.0) + t * t)
+                s = t * c
+                rp, rq = A[p, :].copy(), A[q, :].copy()
+                A[p, :] = c * rp - s * rq
+                A[q, :] = s * rp + c * rq
+                cp, cq = A[:, p].copy(), A[:, q].copy()
+                A[:, p] = c * cp - s * cq
+                A[:, q] = s * cp + c * cq
+                vp, vq = V[:, p].copy(), V[:, q].copy()
+                V[:, p] = c * vp - s * vq
+                V[:, q] = s * vp + c * vq
+    return np.diag(A).copy(), V
+
+
+def _run_eigh_raw(bins, op, n, threads, dtype, extra, A):
+    """Dtype-aware driver invocation (run_op parses float32 only); returns the
+    raw stdout lines parsed at the native dtype — exact text comparison happens
+    on the parsed bits via the invariance/determinism gates."""
+    fh = _tf.NamedTemporaryFile(suffix=".bin", delete=False)
+    np.asfortranarray(A).ravel(order="F").astype(np.float32).tofile(fh)
+    fh.close()
+    try:
+        cmd = [str(bins["syev"]), op, "simple", str(n), str(threads), dtype] +               [str(x) for x in extra] + [fh.name]
+        r = _sp.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RuntimeError(f"Binary failed:\n{r.stdout}\n{r.stderr}")
+        return [np.fromstring(l, sep=" ").astype(_EIGH_NPDT[dtype])
+                for l in r.stdout.strip().split("\n")]
+    finally:
+        _os.unlink(fh.name)
+
+
+def run_eigh(bins, n, threads, dtype, A):
+    W, Vf = _run_eigh_raw(bins, "eigh", n, threads, dtype, [], A)
+    return W, Vf.reshape(n, n, order="F")
+
+
+def run_psd_project(bins, n, threads, dtype, eps, A):
+    (Af,) = _run_eigh_raw(bins, "psd_project", n, threads, dtype, [eps], A)
+    return Af.reshape(n, n, order="F")
+
+
+@pytest.mark.parametrize("dtype", ["f32", "f64"])
+@pytest.mark.parametrize("n", EIGH_SIZES)
+def test_eigh_decomposition(bins, n, dtype):
+    """Gate 1+2: A·V = V·diag(W) and V orthonormal (W is unsorted by design)."""
+    A = make_sym(n, seed=n)
+    W, V = run_eigh(bins, n, 128, dtype, A)
+    A64, V64 = A.astype(np.float64), V.astype(np.float64)
+    scale = max(np.abs(W).max(), 1e-6)
+    tol = 2e-5 if dtype == "f32" else 1e-11
+    assert np.allclose(A64 @ V64, V64 * W.astype(np.float64), atol=tol * scale), \
+        "A V != V diag(W)"
+    assert np.allclose(V64.T @ V64, np.eye(n), atol=tol * 10), "V not orthonormal"
+    # And the spectrum matches numpy's (sorted, since ours is unsorted).
+    wref = np.linalg.eigvalsh(A64)
+    assert np.allclose(np.sort(W), wref, atol=tol * scale, rtol=tol), "spectrum off"
+
+
+@pytest.mark.parametrize("dtype", ["f32", "f64"])
+@pytest.mark.parametrize("n", [12, 14, 18, 21])
+def test_eigh_oracle_parity(bins, n, dtype):
+    """Gate 3: parity vs the jacobi_study.py oracle at the SAME sweep count —
+    same schedule, same formulas, so W (unsorted!) and V match column-for-column
+    including sign. f64 near-bitwise; f32 to rounding (the handoff's ~2e-6)."""
+    A = make_sym(n, seed=100 + n)
+    W, V = run_eigh(bins, n, 128, dtype, A)
+    npdt = _EIGH_NPDT[dtype]
+    Wo, Vo = _jacobi_eigh(A.astype(np.float64), _EIGH_SWEEPS[dtype], dtype=npdt)
+    scale = max(np.abs(Wo).max(), 1e-6)
+    tol = 2e-6 if dtype == "f32" else 1e-9
+    assert np.allclose(W, Wo, atol=tol * scale, rtol=tol), \
+        f"eigenvalue parity vs oracle: max diff {np.abs(W - Wo).max():.3e}"
+    assert np.allclose(V, Vo, atol=tol * 10), \
+        f"eigenvector parity vs oracle: max diff {np.abs(V - Vo).max():.3e}"
+
+
+@pytest.mark.parametrize("dtype", ["f32", "f64"])
+@pytest.mark.parametrize("n", EIGH_SIZES)
+def test_psd_project(bins, n, dtype):
+    """Gate 4: output symmetric (bit-exact, canonical-order reconstruction),
+    PSD at the floor, and matches the oracle's clip-reconstruct."""
+    A = make_sym(n, seed=200 + n)          # indefinite in general
+    eps = 1e-6 * (1.0 + float(np.abs(np.diag(A)).max()))   # the consumer's rule
+    P = run_psd_project(bins, n, 128, dtype, eps, A)
+    assert np.array_equal(P, P.T), "psd_project output not bit-exactly symmetric"
+    w = np.linalg.eigvalsh(P.astype(np.float64))
+    scale = max(np.abs(w).max(), 1e-6)
+    slack = (2e-5 if dtype == "f32" else 1e-11) * scale
+    assert w.min() >= eps - slack, f"not PSD at the floor: min eig {w.min():.3e} < {eps:.3e}"
+    # Oracle: clip-reconstruct from the SAME fixed-sweep Jacobi.
+    npdt = _EIGH_NPDT[dtype]
+    Wo, Vo = _jacobi_eigh(A.astype(np.float64), _EIGH_SWEEPS[dtype], dtype=npdt)
+    Po = (Vo.astype(np.float64) * np.maximum(Wo.astype(np.float64), eps)) @ Vo.T.astype(np.float64)
+    tol = 2e-6 if dtype == "f32" else 1e-9
+    assert np.allclose(P.astype(np.float64), Po, atol=tol * scale, rtol=tol), \
+        f"psd_project vs oracle: max diff {np.abs(P - Po).max():.3e}"
+
+
+@pytest.mark.parametrize("dtype", ["f32", "f64"])
+@pytest.mark.parametrize("op,extra", [("eigh", []), ("psd_project", [1e-5])])
+@pytest.mark.parametrize("n", [12, 21])
+def test_eigh_thread_invariance_and_determinism(bins, n, op, extra, dtype):
+    """Gate 5: byte-identical output across the thread sweep AND across two
+    runs at the same thread count (fixed schedule/sweeps, no reductions)."""
+    A = make_sym(n, seed=300 + n)
+    ref = None
+    for threads in list(THREAD_SWEEP) + [32]:   # full sweep incl. 1 thread; 32 repeats for run-twice
+        outs = _run_eigh_raw(bins, op, n, threads, dtype, extra, A)
+        flat = np.concatenate([o.ravel() for o in outs])
+        if ref is None:
+            ref = flat
+        else:
+            assert np.array_equal(ref, flat), \
+                f"{op}: output not bit-identical at threads={threads}"

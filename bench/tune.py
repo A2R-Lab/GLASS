@@ -9,7 +9,12 @@ one shared tie rule in ``bench/tune_pick.py`` (a dependency-carrying impl wins
 only if it clears the margin), so no table bakes sub-noise jitter and a
 pure-noise re-run reproduces the same tables. The legs:
 
-  ladder   bench_mega_sweep.cu  → warp/block/nvidia ladder in glass-defaults.cuh
+  ladder   bench_mega_sweep.cu  → thread/warp/block/nvidia ladder in glass-defaults.cuh
+                                  (thread — one problem/thread, N<=7 — is a
+                                  dependency-free contender alongside warp/block:
+                                  the shared pick takes the cheapest SIMT tier, so
+                                  a fresh sweep emits `backend::thread` wherever the
+                                  low-DOF packing actually wins)
                                   (per-arch constexpr ideal_sm* tables + the SM
                                   dispatch switch; a first-time arch — e.g. sm_87
                                   on a Jetson Orin — gets a new table + case,
@@ -474,7 +479,12 @@ _SLV_A_RE = re.compile(
     r"^bdsv_pcg\s+BS=(\d+)\s+KP=(\d+)\b.*?it=(\d+)\s*\|\|\s*"
     r"bdsv tb\d+=([\d.]+)\s+pcg tb\d+=([\d.]+)")
 _SLV_B_RE = re.compile(
-    r"^spdsv\s+N=(\d+)\b.*\|\|\s*gesv=([\d.]+)\s+posv=([\d.]+)\s+invsv=([\d.]+)")
+    r"^spdsv\s+N=(\d+)\b.*\|\|\s*gesv=([\d.]+)\s+posv=([\d.]+)\s+invsv=([\d.]+)"
+    r"(?:\s+thr-posv=([\d.]+))?")
+# The thr-posv group is OPTIONAL: it is absent from archived solver sweeps (every
+# run before the thread tier existed — replayed via --from-solvers) and from live
+# rows at N>7, where bench_solvers skips the tier (register-residency ceiling).
+# Keep it optional or old sweeps stop parsing and the section-B table drops.
 _SLV_C_RE = re.compile(r"^(syev|eig_clamp)\s+N=(\d+)\b.*\|\|\s*best tb\d+=([\d.]+)")
 
 
@@ -483,7 +493,8 @@ def parse_solvers(text, nprob=8192):
 
     ``bdsv_pcg``: ``(dtype, BS, KP) -> {bdsv, pcg, iters}`` (best-TB ns/problem
     from the ``||`` summary + pcg's converged iteration count);
-    ``spdsv``:    ``(dtype, N) -> {gesv, posv, invsv}``;
+    ``spdsv``:    ``(dtype, N) -> {gesv, posv, invsv[, thrposv]}`` (``thrposv`` is
+    the thread-tier ``glass::thread::posv``, present only for N<=7);
     ``eig``:      ``(dtype, N) -> {syev, eig_clamp}``.
     """
     data = {"bdsv_pcg": {}, "spdsv": {}, "eig": {}}
@@ -504,8 +515,11 @@ def parse_solvers(text, nprob=8192):
             continue
         m = _SLV_B_RE.match(s)
         if m:
-            data["spdsv"][(dtype, int(m.group(1)))] = dict(
-                gesv=float(m.group(2)), posv=float(m.group(3)), invsv=float(m.group(4)))
+            rec = dict(gesv=float(m.group(2)), posv=float(m.group(3)),
+                       invsv=float(m.group(4)))
+            if m.group(5):                       # thread-tier posv (N<=7 only)
+                rec["thrposv"] = float(m.group(5))
+            data["spdsv"][(dtype, int(m.group(1)))] = rec
             continue
         m = _SLV_C_RE.match(s)
         if m:
@@ -537,16 +551,35 @@ def gen_solvers_block(data, src):
         L.append("")
     B = data["spdsv"]
     if B:
+        has_thr = any("thrposv" in v for v in B.values())
         L += ["### gesv vs posv vs inv+gemv — same SPD system, single RHS", "",
               "posv (Cholesky) is the intended SPD path; gesv prices the pivoted-LU "
-              "robustness fallback, inv+gemv the invert-then-multiply anti-pattern.", "",
-              "| N | dtype | gesv ns | posv ns | inv+gemv ns | gesv/posv | inv/posv |",
-              "|---|-------|---------|---------|-------------|-----------|----------|"]
-        for key in sorted(B, key=lambda k: (k[1], k[0])):
-            v = B[key]
-            L.append(f"| {key[1]} | {key[0]} | {v['gesv']:.2f} | {v['posv']:.2f} | "
-                     f"{v['invsv']:.2f} | {v['gesv']/v['posv']:.2f} | "
-                     f"{v['invsv']/v['posv']:.2f} |")
+              "robustness fallback, inv+gemv the invert-then-multiply anti-pattern."]
+        if has_thr:
+            L += ["", "The `thr-posv` column is the **thread-tier** `glass::thread::posv` "
+                  "(one problem per thread, 32 packed per warp) — measured only below the "
+                  "N<=7 register-residency ceiling. Where `thr/posv` < 1 the thread tier "
+                  "beats the block Cholesky solve on that low-DOF shape."]
+        if has_thr:
+            L += ["",
+                  "| N | dtype | gesv ns | posv ns | inv+gemv ns | thr-posv ns | gesv/posv | inv/posv | thr/posv |",
+                  "|---|-------|---------|---------|-------------|-------------|-----------|----------|----------|"]
+            for key in sorted(B, key=lambda k: (k[1], k[0])):
+                v = B[key]
+                thr = f"{v['thrposv']:.2f}" if "thrposv" in v else "—"
+                thr_ratio = f"{v['thrposv']/v['posv']:.2f}" if "thrposv" in v else "—"
+                L.append(f"| {key[1]} | {key[0]} | {v['gesv']:.2f} | {v['posv']:.2f} | "
+                         f"{v['invsv']:.2f} | {thr} | {v['gesv']/v['posv']:.2f} | "
+                         f"{v['invsv']/v['posv']:.2f} | {thr_ratio} |")
+        else:
+            L += ["",
+                  "| N | dtype | gesv ns | posv ns | inv+gemv ns | gesv/posv | inv/posv |",
+                  "|---|-------|---------|---------|-------------|-----------|----------|"]
+            for key in sorted(B, key=lambda k: (k[1], k[0])):
+                v = B[key]
+                L.append(f"| {key[1]} | {key[0]} | {v['gesv']:.2f} | {v['posv']:.2f} | "
+                         f"{v['invsv']:.2f} | {v['gesv']/v['posv']:.2f} | "
+                         f"{v['invsv']/v['posv']:.2f} |")
         L.append("")
     C = data["eig"]
     if C:

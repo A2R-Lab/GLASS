@@ -59,13 +59,17 @@ def detect_arch() -> str:
 
 def check_cub() -> pathlib.Path:
     """Find CUB header. Raises SystemExit if not found."""
-    cuda_root = pathlib.Path(
-        subprocess.check_output(["nvcc", "--version"], text=True)
-    )  # just to verify nvcc exists
-    cub_header = pathlib.Path("/usr/local/cuda/include/cub/cub.cuh")
-    if cub_header.exists():
-        return cub_header.parent.parent.parent  # /usr/local/cuda
-    sys.exit("ERROR: CUB not found at /usr/local/cuda/include/cub/cub.cuh\n"
+    subprocess.check_output(["nvcc", "--version"], text=True)  # just to verify nvcc exists
+    cuda_root = pathlib.Path("/usr/local/cuda")
+    # CUDA 12.x and earlier ship CUB directly under include/; CUDA 13+ moved
+    # the CCCL headers (cub/thrust/libcu++) under include/cccl/.
+    for cub_header in (
+        cuda_root / "include" / "cub" / "cub.cuh",
+        cuda_root / "include" / "cccl" / "cub" / "cub.cuh",
+    ):
+        if cub_header.exists():
+            return cuda_root
+    sys.exit("ERROR: CUB not found under /usr/local/cuda/include(/cccl)/cub/cub.cuh\n"
              "CUB is part of the CUDA Toolkit — ensure CUDA 11.0+ is installed.")
 
 

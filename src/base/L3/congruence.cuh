@@ -212,6 +212,102 @@ __device__ void congruence_accum(T alpha, const T* G, const T* M, T beta, T* C, 
     congruence_sym<T, Q, P, ACCUMULATE, TRAILING_SYNC>(alpha, Gt, M, beta, C, scr);
 }
 
+// ─── single-thread congruence / bilinear ─────────────────────────────────────
+namespace thread {
+    // Single-thread congruence forms: ONE thread runs the same two-step
+    // algorithm as the block/warp surfaces — `thread::gemm` (the shared
+    // `gemm_impl_ct` at rank=0/size=1) forms M·X into `scratch`, then the SAME
+    // validated `detail::xtY_impl` engine (whose size=1 path is barrier-free
+    // and shuffle-free, reducing through the register-only `reduced_tree32`)
+    // contracts Xᵀ·(MX). The inter-step barrier the block/warp glue needs is
+    // gone: on one thread, sequential program order already makes MX visible.
+    //
+    // SCRATCH IS ALGORITHMIC, NOT CROSS-LANE: the buffer holds the materialized
+    // M·X intermediate that step 2 re-reads (it is a workspace, not a lane-
+    // exchange staging area), so the thread tier keeps the caller-provided
+    // pointer — intended to be a THREAD-LOCAL array (e.g. `T scr[N*Kdim]`),
+    // never shared memory shared between lanes. Same sizes as the block twin:
+    // `congruence_scratch_bytes` / `congruence_accum_scratch_bytes`.
+    //
+    // NO `TRAILING_SYNC` parameter, matching the tier's precedent (see the
+    // thread:: block in tensor_contract.cuh).
+
+    /**
+     * @brief Single-thread symmetric congruence: `Q = alpha * Xᵀ·M·X + beta * Q`.
+     *
+     * Thread-per-problem analogue of `glass::congruence_sym`: ONE thread forms
+     * `MX = M·X` into `scratch` then contracts `Q = Xᵀ·MX` (lower triangle +
+     * mirror). No barriers, no shuffles, no `threadIdx` read; operands and
+     * `scratch` may be thread-local register arrays (the implied `T[N*N]` M
+     * stays register-resident only under the tier's N<=7 element-count ceiling
+     * — see CLAUDE.md). Same algorithm and operand order as the `glass::` twin,
+     * agreeing to a few ULP (cross-tier bit-identity is NOT guaranteed).
+     *
+     * @tparam T,N,Kdim,ACCUMULATE  See glass::congruence_sym.
+     * @param alpha,X,M,beta,Q  See glass::congruence_sym (Q read only when ACCUMULATE).
+     * @param scratch  Workspace of `congruence_scratch_bytes<T,N,Kdim>()` bytes
+     *                 (holds M·X); a thread-local `T[N*Kdim]` is the intended form.
+     */
+    template <typename T, uint32_t N, uint32_t Kdim, bool ACCUMULATE = false>
+    __device__ void congruence_sym(T alpha, const T* X, const T* M, T beta, T* Q, T* scratch)
+    {
+        thread::gemm<T, N, Kdim, N>(static_cast<T>(1), M, X, scratch);   // MX = M·X
+        detail::xtY_impl<T, N, Kdim, Kdim, true, ACCUMULATE>(0u, 1u, alpha, X, scratch, beta, Q);
+    }
+
+    /**
+     * @brief Single-thread general bilinear form: `R = alpha * Xᵀ·M·Y + beta * R`.
+     *
+     * Thread-per-problem analogue of `glass::bilinear`: ONE thread forms
+     * `MY = M·Y` into `scratch` then contracts the full `P x Qd` result. No
+     * barriers, no shuffles, no `threadIdx` read; operands and `scratch` may be
+     * thread-local register arrays (subject to the tier's element-count ceiling
+     * — see CLAUDE.md). Same algorithm and operand order as the `glass::` twin,
+     * agreeing to a few ULP (cross-tier bit-identity is NOT guaranteed).
+     *
+     * @tparam T,N,P,Qd,ACCUMULATE  See glass::bilinear.
+     * @param alpha,X,M,Y,beta,R  See glass::bilinear (R read only when ACCUMULATE).
+     * @param scratch  Workspace of `congruence_scratch_bytes<T,N,Qd>()` bytes
+     *                 (holds M·Y); a thread-local `T[N*Qd]` is the intended form.
+     */
+    template <typename T, uint32_t N, uint32_t P, uint32_t Qd, bool ACCUMULATE = false>
+    __device__ void bilinear(T alpha, const T* X, const T* M, const T* Y, T beta, T* R, T* scratch)
+    {
+        thread::gemm<T, N, Qd, N>(static_cast<T>(1), M, Y, scratch);     // MY = M·Y
+        detail::xtY_impl<T, N, P, Qd, false, ACCUMULATE>(0u, 1u, alpha, X, scratch, beta, R);
+    }
+
+    /**
+     * @brief Single-thread accumulating congruence `C = alpha*G*M*Gᵀ + beta*C` (G is P×Q).
+     *
+     * Thread-per-problem analogue of `glass::congruence_accum`: ONE thread
+     * transposes `G` into `scratch` and defers to `thread::congruence_sym<Q,P>`
+     * — the same construction as the block/warp twins, minus their barrier
+     * (sequential program order makes `Gᵀ` visible). No barriers, no shuffles,
+     * no `threadIdx` read; `scratch` is algorithmic workspace (holds `Gᵀ` then
+     * `M·Gᵀ`), intended as a thread-local `T[2*P*Q]` (see the tier's
+     * element-count ceiling in CLAUDE.md). Same algorithm and operand order as
+     * the `glass::` twin, agreeing to a few ULP (cross-tier bit-identity is NOT
+     * guaranteed).
+     *
+     * @tparam T,P,Q,ACCUMULATE  See glass::congruence_accum.
+     * @param alpha,G,M,beta,C  See glass::congruence_accum (C read only when ACCUMULATE).
+     * @param scratch  Workspace of `congruence_accum_scratch_bytes<T,P,Q>()` bytes;
+     *                 a thread-local `T[2*P*Q]` is the intended form.
+     */
+    template <typename T, uint32_t P, uint32_t Q, bool ACCUMULATE = false>
+    __device__ void congruence_accum(T alpha, const T* G, const T* M, T beta, T* C, T* scratch)
+    {
+        T* Gt  = scratch;              // Q×P transpose of G (column-major)
+        T* scr = scratch + Q * P;      // congruence_sym scratch (M·Gᵀ), Q×P
+        for (uint32_t k = 0; k < P * Q; ++k) {
+            uint32_t p = k % P, q = k / P;       // G col-major P×Q: G[q*P + p] = G(p,q)
+            Gt[p * Q + q] = G[q * P + p];        // Gt col-major Q×P: Gt(q,p) = G(p,q)
+        }
+        thread::congruence_sym<T, Q, P, ACCUMULATE>(alpha, Gt, M, beta, C, scr);
+    }
+}
+
 // ─── single-warp congruence / bilinear ───────────────────────────────────────
 namespace warp {
     /**

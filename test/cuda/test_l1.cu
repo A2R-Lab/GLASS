@@ -89,6 +89,20 @@ __global__ void k_reduce_partial_hs(int n, float* x, float* out, float* scratch)
     out[0] = total;   // broadcast check: every thread holds the same `total`
 }
 
+// Register-partial -> block-MIN overload (reduce_fast_min): the min twin of
+// k_reduce_partial_hs. Each thread folds a strided slice of x to a per-thread
+// minimum, passes it to reduce_fast_min(partial, scratch), and gets the block
+// minimum back. Threads with no element seed with +inf (the min identity).
+// Written from EVERY thread to verify the broadcast.
+__global__ void k_reduce_min_partial_hs(int n, float* x, float* out, float* scratch) {
+    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    float partial = INFINITY;
+    for (uint32_t i = rank; i < (uint32_t)n; i += size) partial = fminf(partial, x[i]);
+    float total = glass::reduce_fast_min(partial, scratch);
+    out[0] = total;   // broadcast check: every thread holds the same `total`
+}
+
 __global__ void k_nrm2_cg(int n, float* x) { glass::cgrps::nrm2(n, x); }
 __global__ void k_nrm2_simple_lm(int n, float* x) { glass::nrm2_lowmem(n, x); }
 __global__ void k_nrm2_simple_hs(int n, float* x, float* scratch) {
@@ -362,6 +376,13 @@ int main(int argc, char** argv) {
         } else {
             k_reduce_partial_hs<<<1, THREADS>>>(n, dx, dout, d_scratch);
         }
+        cudaDeviceSynchronize();
+        print_device_vec(dout, 1);
+
+    } else if (strcmp(op, "reduce_min_partial") == 0) {
+        float* dx  = read_device_vec(argv[4], n);
+        float* dout = alloc_device_vec(1);
+        k_reduce_min_partial_hs<<<1, THREADS>>>(n, dx, dout, d_scratch);
         cudaDeviceSynchronize();
         print_device_vec(dout, 1);
 

@@ -2,7 +2,7 @@
 
 ## One command — `bench/tune.py`
 
-GLASS ships three measured defaults tables: the warp/block/nvidia **backend
+GLASS ships three measured defaults tables: the thread/warp/block/nvidia **backend
 ladder** (`glass-defaults.cuh`, consumed by `glass::suggested_backend<>`; the
 tables are **per-arch** — the ladder leg replaces the marker block + dispatch
 case for the arch it measured, so a first-time GPU like a Jetson Orin gains an

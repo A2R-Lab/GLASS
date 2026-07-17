@@ -222,6 +222,75 @@ __device__ void gemv(T alpha, const T *A, const T *x, T *y)
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
+namespace thread {
+    // Single-thread GEMV: one THREAD computes the whole matvec, walking the output
+    // rows serially. Reuses the block impl `gemv_impl_ct(0u, 1u, …)` exactly as
+    // `warp::gemv` reuses it with `(lane, 32u)`. No shared scratch, no barriers.
+    // For thread-per-problem kernels packing 32 independent low-DOF matvecs into
+    // one warp.
+    //
+    // LAYOUT NOTE: `ROW_MAJOR` is a correctness flag, not a free choice. The
+    // block/warp tiers map lane rank onto the ROW index, so column-major
+    // (`A[row + col*M]`, row fastest-varying) makes lane-adjacent reads
+    // address-adjacent. A single thread has no lane axis at all, so within-matrix
+    // layout costs nothing here — but if `A` is in GLOBAL memory laid out
+    // per-problem-contiguous, then it is the PROBLEM index that strides across
+    // lanes, and neither flag helps: consecutive threads land N*N elements apart
+    // and every access serializes. Keep `A` thread-local (register-resident) —
+    // CUDA local memory is hardware-interleaved across lanes, so it coalesces for
+    // free — or interleave the batch yourself so the problem index is
+    // fastest-varying.
+
+    /**
+     * @brief Matrix-vector product on one thread: `y = alpha * A * x + beta * y` (GEMV), compile-time size.
+     *
+     * One thread computes the matvec, walking the output rows of the `M×N` matrix
+     * `A` serially (each row an independent inner product). Set `TRANSPOSE=true`
+     * for `Aᵀ * x` and `ROW_MAJOR=true` for row-major `A`. No shared scratch, no
+     * barriers, no `threadIdx` read; operands may be thread-local register arrays.
+     * `y` is read only when `beta != 0` (BLAS semantics: `beta == 0` treats `y` as
+     * write-only). NumPy equivalent: `y = alpha*A@x + beta*y`.
+     *
+     * @tparam T          Scalar type (e.g. `float`, `double`).
+     * @tparam M          Number of rows of `A` (compile-time constant).
+     * @tparam N          Number of columns of `A` (compile-time constant).
+     * @tparam TRANSPOSE  When true, multiply by `Aᵀ` instead of `A` (default false).
+     * @tparam ROW_MAJOR  When true, `A` is stored row-major (default false = column-major).
+     * @param alpha  Scalar multiplier on the product.
+     * @param A      Input matrix of `M*N` elements.
+     * @param x      Input vector (length `N`, or `M` when transposed).
+     * @param beta   Scalar multiplier on the prior `y`.
+     * @param y      In/out vector (length `M`, or `N` when transposed).
+     */
+    template <typename T, uint32_t M, uint32_t N, bool TRANSPOSE = false, bool ROW_MAJOR = false>
+    __device__ void gemv(T alpha, const T *A, const T *x, T beta, T *y)
+    {
+        gemv_impl_ct<T, M, N, TRANSPOSE, ROW_MAJOR>(0u, 1u, alpha, A, x, beta, y);
+    }
+
+    /**
+     * @brief Matrix-vector product on one thread: `y = alpha * A * x` (GEMV), compile-time size, no-beta overload.
+     *
+     * Overwrites `y` (no `beta * y` term). NumPy equivalent: `y = alpha*A@x`
+     * (or `alpha*A.T@x` when transposed).
+     *
+     * @tparam T          Scalar type (e.g. `float`, `double`).
+     * @tparam M          Number of rows of `A` (compile-time constant).
+     * @tparam N          Number of columns of `A` (compile-time constant).
+     * @tparam TRANSPOSE  When true, multiply by `Aᵀ` instead of `A` (default false).
+     * @tparam ROW_MAJOR  When true, `A` is stored row-major (default false = column-major).
+     * @param alpha  Scalar multiplier on the product.
+     * @param A      Input matrix of `M*N` elements.
+     * @param x      Input vector (length `N`, or `M` when transposed).
+     * @param y      Output vector (length `M`, or `N` when transposed).
+     */
+    template <typename T, uint32_t M, uint32_t N, bool TRANSPOSE = false, bool ROW_MAJOR = false>
+    __device__ void gemv(T alpha, const T *A, const T *x, T *y)
+    {
+        gemv_impl_ct<T, M, N, TRANSPOSE, ROW_MAJOR>(0u, 1u, alpha, A, x, y);
+    }
+}
+
 namespace warp {
     // Single-warp GEMV: one 32-lane warp computes the matvec, lanes striding over
     // the output rows (lane i owns output rows i, i+32, …). Each lane's row is an

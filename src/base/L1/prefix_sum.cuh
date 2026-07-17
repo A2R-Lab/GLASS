@@ -17,7 +17,10 @@ template <typename T, bool TRAILING_SYNC = true>
 __device__ void prefix_sum_exclusive(T *s_input, T *s_output, int n)
 {
     int tid = threadIdx.x;
-    s_output[tid] = (tid < n && tid > 0) ? s_input[tid-1] : static_cast<T>(0);
+    // Guard the WRITE, not just the value: threads past n must not touch
+    // s_output at all (a buffer sized n gets an out-of-bounds store otherwise —
+    // memcheck-confirmed 2026-07-17; the inclusive twin below was always guarded).
+    if (tid < n) s_output[tid] = (tid > 0) ? s_input[tid-1] : static_cast<T>(0);
     __syncthreads();
     T tmp;
     for (int d = 1; d < n; d *= 2) {

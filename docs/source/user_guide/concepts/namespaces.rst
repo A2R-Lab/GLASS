@@ -8,18 +8,30 @@ Axis A — scope / backend (the namespace)
 ----------------------------------------
 
 The namespace says **who cooperates and how**, never *what* the operation is.
-There are **three primary interfaces** — Block (``glass::``), Warp
-(``glass::warp::``), and Nvidia (``glass::nvidia::``) — plus ``glass::cgrps::``, a
-convenience alias of the Block interface:
+There are **four primary interfaces** — Block (``glass::``), Warp
+(``glass::warp::``), Thread (``glass::thread::``), and Nvidia
+(``glass::nvidia::``) — plus ``glass::cgrps::``, a convenience alias of the
+Block interface. The ladder runs most→least problem packing: thread (1
+problem/thread, 32 per warp) → warp (1/warp) → block (1/block) → nvidia
+(1/block, vendor):
 
 ================================  ======  =================================================
 Namespace                         Scope   What it is
 ================================  ======  =================================================
 ``glass::``                       block   **Block** — hand-rolled pure-SIMT (``threadIdx`` / ``blockDim``).
 ``glass::warp::``                 warp    **Warp** — single-warp SIMT (``__shfl_*_sync``), warp-per-problem.
+``glass::thread::``               thread  **Thread** — sequential, thread-per-problem, for low-DOF packing (compile-time sizes; register-resident up to ``N≤7``). No barriers, no shuffles, no ``threadIdx`` read.
 ``glass::nvidia::``               block   **Nvidia** — CUB / cuBLASDx / cuSOLVERDx, auto-dispatched by size.
 ``glass::cgrps::``                block   *Convenience alias* of Block via a cooperative-groups handle (same numerics; not a separately-tuned backend).
 ================================  ======  =================================================
+
+``glass::thread::`` mirrors the branch-free surface only: reduction *strategy*
+twins (``_fast`` / ``_lowmem``), the contraction-parallel ``*_reduced`` family,
+and the data-dependent/pivoted ops (``iamax``, pivoted ``ldlt``, ``getrf``,
+``syev``) are deliberately absent — one thread has no reduction strategy to
+choose, and with a different problem on every lane a data-dependent branch
+diverges the whole warp. See the ``glass::thread::`` constraints block in
+``CLAUDE.md`` for the full policy.
 
 The convention is **namespace = scope, function name = operation**. So a warp
 band-matvec is ``glass::warp::bdmv`` — never a ``glass::banded::`` namespace.

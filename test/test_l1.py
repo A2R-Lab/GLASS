@@ -185,6 +185,22 @@ def test_reduce_partial(bins, n, kind):
                  exact=False)
 
 
+# ─── reduce_fast_min register-partial overload ─────────────────────────
+# Min twin of test_reduce_partial. Exact: min selects an input element, so no
+# summation-order rounding — unlike the sum overload it must match the oracle
+# bit-for-bit at every thread count.
+
+@pytest.mark.parametrize("n,kind", SIZED_KINDS)
+def test_reduce_min_partial(bins, n, kind):
+    x = make_vec(n, seed=n + 17, kind=kind)
+    expected = float(np.min(x.astype(np.float64)))
+    # exact=True: min SELECTS an input element rather than accumulating, so unlike
+    # the sum overload there is no grouping-dependent rounding — it must hit the
+    # oracle and stay byte-identical across every thread count.
+    sweep_scalar(bins["l1"], "reduce_min_partial", "simple_hs", [n], [x], expected,
+                 exact=True)
+
+
 # ─── warp::reduce (single warp, always launched <<<1,32>>>) ───────────────────
 
 @pytest.mark.parametrize("n,kind", SIZED_KINDS)

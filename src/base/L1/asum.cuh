@@ -101,6 +101,51 @@ __device__ void asum_fast(T *x, T *s_scratch)
     }
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
+namespace thread {
+    /**
+     * @brief Sum of absolute values on one thread: returns `Σ|x[i]|` (ASUM), single-thread.
+     *
+     * Serially accumulates the absolute values, mirroring `warp::asum`
+     * (value-returning, non-destructive — unlike the block `_fast`/`_lowmem`
+     * forms; one thread has no reduction strategy, so the tier ships no such
+     * twins). Inputs untouched; no shared scratch, no shuffles, no barriers, no
+     * `threadIdx` read; operands may be thread-local register arrays. NumPy
+     * equivalent: `np.sum(np.abs(x))`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param n  Number of elements.
+     * @param x  Input vector of length `n` (read-only).
+     * @return `Σ|x[i]|`.
+     */
+    template <typename T>
+    __device__ T asum(uint32_t n, const T *x)
+    {
+        T val = static_cast<T>(0);
+        for (uint32_t i = 0; i < n; i++) val += abs(x[i]);
+        return val;
+    }
+
+    /**
+     * @brief Sum of absolute values on one thread, compile-time size: returns `Σ|x[i]|`.
+     *
+     * Compile-time-`N` overload; the trip count folds and the loop unrolls, so
+     * `x` may be a thread-local register array. Non-destructive. NumPy
+     * equivalent: `np.sum(np.abs(x))`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @tparam N  Number of elements (compile-time constant).
+     * @param x  Input vector of length `N` (read-only).
+     * @return `Σ|x[i]|`.
+     */
+    template <typename T, uint32_t N>
+    __device__ T asum(const T *x)
+    {
+        T val = static_cast<T>(0);
+        for (uint32_t i = 0; i < N; i++) val += abs(x[i]);
+        return val;
+    }
+}
+
 namespace warp {
     /**
      * @brief Sum of absolute values within one warp: returns `Σ|x[i]|` on every lane.

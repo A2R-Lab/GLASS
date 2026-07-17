@@ -8,6 +8,7 @@ Each binary is compiled with nvcc against the local glass.cuh.
 import hashlib
 import os
 import pathlib
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -142,87 +143,40 @@ def make_vec(n, seed=0, kind="normal"):
 
 def _hash_sources(cu_path: pathlib.Path) -> str:
     h = hashlib.sha256()
-    for p in [cu_path, CUDA_DIR / "helpers.cuh",
-              GLASS_DIR / "glass.cuh", GLASS_DIR / "glass-cgrps.cuh",
-              # shared cross-file headers every base header sees (include-order
-              # roots) — edits here must bust EVERY cached binary
-              GLASS_DIR / "src" / "base" / "barrier.cuh",
-              GLASS_DIR / "src" / "base" / "flags.cuh",
-              GLASS_DIR / "src" / "L3" / "box_qp.cuh",
-              GLASS_DIR / "src" / "base" / "L1" / "dot_strided_coalesced.cuh",
-              # base headers carrying the warp:: variants — listed explicitly so
-              # edits to them (pulled in only transitively via glass.cuh) bust the cache.
-              GLASS_DIR / "src" / "base" / "L1" / "reduce.cuh",
-              GLASS_DIR / "src" / "base" / "L1" / "iamax.cuh",
-              GLASS_DIR / "test" / "cuda" / "test_iamax.cu",
-              GLASS_DIR / "src" / "base" / "L1" / "dot.cuh",
-              GLASS_DIR / "src" / "base" / "L1" / "axpy.cuh",
-              GLASS_DIR / "src" / "base" / "L1" / "copy.cuh",
-              GLASS_DIR / "src" / "base" / "L1" / "scal.cuh",
-              GLASS_DIR / "src" / "base" / "L1" / "asum.cuh",
-              GLASS_DIR / "src" / "base" / "L1" / "nrm2.cuh",
-              GLASS_DIR / "src" / "base" / "L1" / "norm.cuh",
-              GLASS_DIR / "src" / "base" / "L1" / "nrm1_diff.cuh",
-              GLASS_DIR / "src" / "base" / "L1" / "symmetrize.cuh",
-              GLASS_DIR / "test" / "cuda" / "test_symmetrize.cu",
-              GLASS_DIR / "src" / "base" / "L1" / "rot.cuh",
-              GLASS_DIR / "src" / "base" / "L3" / "symm.cuh",
-              GLASS_DIR / "test" / "cuda" / "test_symm_rot.cu",
-              GLASS_DIR / "src" / "base" / "L1" / "axpy_strided.cuh",
-              GLASS_DIR / "src" / "base" / "L1" / "copy_strided.cuh",
-              GLASS_DIR / "test" / "cuda" / "test_l1_round2.cu",
-              GLASS_DIR / "src" / "base" / "L2" / "gemv.cuh",
-              GLASS_DIR / "src" / "base" / "L2" / "gemv_strided.cuh",
-              GLASS_DIR / "src" / "base" / "L2" / "gemv_reduced.cuh",
-              GLASS_DIR / "src" / "base" / "L3" / "syrk_reduced.cuh",
-              GLASS_DIR / "test" / "cuda" / "test_reduced_blas.cu",
-              GLASS_DIR / "test" / "cuda" / "test_warp.cu",
-              GLASS_DIR / "src" / "base" / "L3" / "gemm.cuh",
-              GLASS_DIR / "src" / "base" / "L3" / "gemm_strided.cuh",
-              GLASS_DIR / "src" / "base" / "L3" / "gemm_reduced.cuh",
-              GLASS_DIR / "test" / "cuda" / "test_reduced.cu",
-              GLASS_DIR / "src" / "base" / "L3" / "tensor_contract.cuh",
-              GLASS_DIR / "test" / "cuda" / "test_tensor.cu",
-              GLASS_DIR / "src" / "base" / "L3" / "congruence.cuh",
-              GLASS_DIR / "test" / "cuda" / "test_congruence.cu",
-              GLASS_DIR / "src" / "cgrps" / "l3.cuh",
-              GLASS_DIR / "src" / "base" / "L3" / "syrk.cuh",
-              GLASS_DIR / "test" / "cuda" / "test_syrk.cu",
-              GLASS_DIR / "test" / "cuda" / "test_fused.cu",
-              GLASS_DIR / "src" / "base" / "L3" / "potrf.cuh",
-              GLASS_DIR / "test" / "cuda" / "test_factor_check.cu",
-              GLASS_DIR / "src" / "base" / "L3" / "inv.cuh",
-              GLASS_DIR / "src" / "base" / "L3" / "trsm.cuh",
-              GLASS_DIR / "src" / "base" / "L3" / "getrf.cuh",
-              GLASS_DIR / "test" / "cuda" / "test_getrf.cu",
-              GLASS_DIR / "src" / "base" / "L3" / "ldlt.cuh",
-              GLASS_DIR / "test" / "cuda" / "test_ldlt.cu",
-              GLASS_DIR / "src" / "base" / "L2" / "gemv_segmented.cuh",
-              GLASS_DIR / "src" / "base" / "L2" / "trsv.cuh",
-              GLASS_DIR / "test" / "cuda" / "test_trsv.cu",
-              GLASS_DIR / "src" / "base" / "L3" / "posv.cuh",
-              GLASS_DIR / "test" / "cuda" / "test_posv.cu",
-              GLASS_DIR / "src" / "base" / "L3" / "syev.cuh",
-              GLASS_DIR / "test" / "cuda" / "test_syev.cu",
-              GLASS_DIR / "src" / "base" / "L3" / "riccati.cuh",
-              GLASS_DIR / "test" / "cuda" / "test_solve.cu",
-              GLASS_DIR / "src" / "base" / "L3" / "gemm_batched_indexed.cuh",
-              GLASS_DIR / "src" / "base" / "banded" / "bdmv.cuh",
-              GLASS_DIR / "src" / "base" / "banded" / "block_access.cuh",
-              GLASS_DIR / "src" / "base" / "banded" / "bdsv.cuh",
-              GLASS_DIR / "test" / "cuda" / "test_bdsv.cu",
-              GLASS_DIR / "test" / "cuda" / "test_block_access.cu",
-              GLASS_DIR / "src" / "base" / "pcg" / "solve.cuh",
-              GLASS_DIR / "glass-defaults.cuh",
-              GLASS_DIR / "glass-nvidia.cuh",
-              GLASS_DIR / "src" / "nvidia" / "types.cuh",
-              GLASS_DIR / "src" / "nvidia" / "l1.cuh",
-              GLASS_DIR / "src" / "nvidia" / "l2.cuh",
-              GLASS_DIR / "src" / "nvidia" / "l3.cuh",
-              GLASS_DIR / "src" / "nvidia" / "l3_simt.cuh",
-              GLASS_DIR / "src" / "nvidia" / "lapack.cuh",
-              GLASS_DIR / "src" / "nvidia" / "query_simt.cuh",
-              GLASS_DIR / "src" / "nvidia" / "tuning_table.cuh"]:
+    # EVERY library header is hashed via the glob — a new/edited .cuh can never be
+    # forgotten again (the old explicit list silently omitted 12 headers, so e.g.
+    # a prefix_sum.cuh fix never rebuilt test_l1; found 2026-07-17). The named
+    # test/cuda drivers stay explicit: they are shared-fixture inputs whose edits
+    # must bust every binary, but globbing ALL drivers would rebust the world on
+    # any single-driver edit.
+    paths = [cu_path, CUDA_DIR / "helpers.cuh",
+             GLASS_DIR / "glass.cuh", GLASS_DIR / "glass-cgrps.cuh",
+             GLASS_DIR / "glass-defaults.cuh", GLASS_DIR / "glass-nvidia.cuh"]
+    paths += sorted((GLASS_DIR / "src").rglob("*.cuh"))
+    paths += [
+              CUDA_DIR / "test_iamax.cu",
+              CUDA_DIR / "test_symmetrize.cu",
+              CUDA_DIR / "test_symm_rot.cu",
+              CUDA_DIR / "test_l1_round2.cu",
+              CUDA_DIR / "test_reduced_blas.cu",
+              CUDA_DIR / "test_warp.cu",
+              CUDA_DIR / "test_thread.cu",
+              CUDA_DIR / "test_reduced.cu",
+              CUDA_DIR / "test_tensor.cu",
+              CUDA_DIR / "test_congruence.cu",
+              CUDA_DIR / "test_syrk.cu",
+              CUDA_DIR / "test_fused.cu",
+              CUDA_DIR / "test_factor_check.cu",
+              CUDA_DIR / "test_getrf.cu",
+              CUDA_DIR / "test_ldlt.cu",
+              CUDA_DIR / "test_trsv.cu",
+              CUDA_DIR / "test_posv.cu",
+              CUDA_DIR / "test_syev.cu",
+              CUDA_DIR / "test_solve.cu",
+              CUDA_DIR / "test_bdsv.cu",
+              CUDA_DIR / "test_block_access.cu",
+    ]
+    for p in paths:
         if p.exists():
             h.update(p.read_bytes())
     return h.hexdigest()[:16]
@@ -284,6 +238,7 @@ def bins(tmp_path_factory):
         "iamax": compile_binary("test_iamax", build_dir, CUDA_ARCH),
         "fused": compile_binary("test_fused", build_dir, CUDA_ARCH),
         "warp": compile_binary("test_warp", build_dir, CUDA_ARCH),
+        "thread": compile_binary("test_thread", build_dir, CUDA_ARCH),
         "posv": compile_binary("test_posv", build_dir, CUDA_ARCH),
         "reduced": compile_binary("test_reduced", build_dir, CUDA_ARCH),
         "tensor": compile_binary("test_tensor", build_dir, CUDA_ARCH),
@@ -444,12 +399,19 @@ def run_op(binary: pathlib.Path, op: str, version: str, args: list, inputs: list
             f.close()
             tmpfiles.append(f.name)
 
-        cmd = [str(binary), op, version] + [str(a) for a in args] + tmpfiles
+        # GLASS_RUN_PREFIX lets a wrapper (e.g. compute-sanitizer) wrap every
+        # kernel launch. Sanitizer diagnostics go to stderr, so parsed stdout
+        # stays clean; pair with --error-exitcode so a finding trips returncode.
+        prefix = shlex.split(os.environ.get("GLASS_RUN_PREFIX", ""))
+        cmd = prefix + [str(binary), op, version] + [str(a) for a in args] + tmpfiles
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            raise RuntimeError(f"Binary failed:\n{result.stderr}")
+            raise RuntimeError(f"Binary failed:\n{result.stdout}\n{result.stderr}")
 
-        lines = [l.strip() for l in result.stdout.strip().split("\n") if l.strip()]
+        # Drop compute-sanitizer's own "=========" banner lines (stdout) so the
+        # numeric parse below is unaffected when GLASS_RUN_PREFIX wraps the launch.
+        lines = [l.strip() for l in result.stdout.strip().split("\n")
+                 if l.strip() and not l.lstrip().startswith("=========")]
         if len(lines) == 1:
             return np.fromstring(lines[0], sep=" ").astype(np.float32)
         else:
