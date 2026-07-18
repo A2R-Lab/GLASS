@@ -275,7 +275,13 @@ template<typename T,int N> static constexpr bool nv_lapack_ok()
 
 template<typename F>
 static double time_ns_per_prob(F launch, int reps) {
+    cudaGetLastError();                          // clear any sticky prior error
     launch(); cudaDeviceSynchronize();
+    // An infeasible config (e.g. tile4 register pressure x 1024 threads exceeds
+    // the per-block register file) fails to LAUNCH; without this check the empty
+    // launch times as ~350ns total and poisons the argmin as a fake sub-ns win
+    // (caught 2026-07-18: gemm N=16 w16/w32). FAIL is printed instead.
+    if (cudaGetLastError() != cudaSuccess) return 1e30;
     double best = 1e30;
     for (int t = 0; t < 3; t++) {
         struct timespec t0, t1;
@@ -380,21 +386,21 @@ static void bench_size(Op op, int reps) {
     printf("%-5s N=%-3d | BLOCK", op_name(op), N);
     for (int TB : {32, 64, 128, 256}) {
         double ns = time_ns_per_prob([&]{ launch_block<T,N>(op, TB, A, B, C, x, y); }, reps);
-        printf("  tb%d=%.4f", TB, ns);
+        if (ns < 1e29) printf("  tb%d=%.4f", TB, ns); else printf("  tb%d=FAIL", TB);
         if (ns < best_block) { best_block = ns; best_tb = TB; }
     }
     printf("  | WARP");
     for (int WPB : {1, 2, 4, 8, 16, 32}) {
         if (WPB > NPROB) break;
         double ns = time_ns_per_prob([&]{ launch_warp<T,N>(op, WPB, A, B, C, x, y); }, reps);
-        printf("  w%d=%.4f", WPB, ns);
+        if (ns < 1e29) printf("  w%d=%.4f", WPB, ns); else printf("  w%d=FAIL", WPB);
         if (ns < best_warp) { best_warp = ns; best_wpb = WPB; }
     }
     if constexpr (thread_ok<T,N>()) {
         printf("  | THREAD");
         for (int TPB : {32, 64, 128, 256}) {
             double ns = time_ns_per_prob([&]{ launch_thread<T,N>(op, TPB, A, B, C, x, y); }, reps);
-            printf("  t%d=%.4f", TPB, ns);
+            if (ns < 1e29) printf("  t%d=%.4f", TPB, ns); else printf("  t%d=FAIL", TPB);
             if (ns < best_thread) { best_thread = ns; best_tpb = TPB; }
         }
     }
