@@ -58,7 +58,7 @@ The block between the markers below is auto-refreshed by `bench/tune.py`.
 <!-- BEGIN tune.py: latest measured run -->
 ## Latest measured run (auto-refreshed by `bench/tune.py`)
 
-_Source: `solvers_sweep_20260708_0058.txt` · NPROB=8192 ns/problem (best swept TB, min of 3 trials, restore-outside-timing protocol) · characterization only — no dispatch table is regenerated._
+_Source: `solvers_sweep_20260718_0329.txt` · NPROB=8192 ns/problem (best swept TB, min of 3 trials, restore-outside-timing protocol) · characterization only — no dispatch table is regenerated._
 
 ### bdsv (direct) vs pcg (iterative) — identical block-tridiagonal SPD input
 
@@ -66,48 +66,50 @@ bdsv is faster in 1 of 12 cells **on this well-conditioned test system** (see th
 
 | BlockSize | Knots | dtype | bdsv ns | pcg ns | pcg iters | pcg/bdsv |
 |-----------|-------|-------|---------|--------|-----------|----------|
-| 2 | 8 | f32 | 6.06 | 2.25 | 3 | 0.37 |
-| 2 | 8 | f64 | 26.01 | 8.24 | 3 | 0.32 |
-| 2 | 32 | f32 | 24.00 | 3.49 | 3 | 0.15 |
-| 2 | 32 | f64 | 106.59 | 11.49 | 3 | 0.11 |
-| 6 | 8 | f32 | 18.64 | 6.43 | 3 | 0.34 |
-| 6 | 8 | f64 | 93.92 | 30.98 | 3 | 0.33 |
-| 6 | 32 | f32 | 85.23 | 30.45 | 3 | 0.36 |
-| 6 | 32 | f64 | 388.88 | 130.13 | 3 | 0.33 |
-| 6 | 64 | f32 | 177.78 | 82.46 | 3 | 0.46 |
-| 6 | 64 | f64 | 785.74 | 254.54 | 3 | 0.32 |
-| 12 | 16 | f32 | 108.43 | 195.73 | 2 | 1.81 |
-| 12 | 16 | f64 | 459.02 | 230.36 | 2 | 0.50 |
+| 2 | 8 | f32 | 7.00 | 2.73 | 3 | 0.39 |
+| 2 | 8 | f64 | 30.09 | 9.50 | 3 | 0.32 |
+| 2 | 32 | f32 | 27.55 | 3.99 | 3 | 0.14 |
+| 2 | 32 | f64 | 121.15 | 12.23 | 3 | 0.10 |
+| 6 | 8 | f32 | 21.00 | 6.50 | 3 | 0.31 |
+| 6 | 8 | f64 | 99.82 | 31.31 | 3 | 0.31 |
+| 6 | 32 | f32 | 92.22 | 30.51 | 3 | 0.33 |
+| 6 | 32 | f64 | 391.36 | 130.44 | 3 | 0.33 |
+| 6 | 64 | f32 | 178.10 | 83.55 | 3 | 0.47 |
+| 6 | 64 | f64 | 791.46 | 252.34 | 3 | 0.32 |
+| 12 | 16 | f32 | 109.70 | 197.92 | 2 | 1.80 |
+| 12 | 16 | f64 | 462.31 | 230.11 | 2 | 0.50 |
 
 ### gesv vs posv vs inv+gemv — same SPD system, single RHS
 
 posv (Cholesky) is the intended SPD path; gesv prices the pivoted-LU robustness fallback, inv+gemv the invert-then-multiply anti-pattern.
 
-| N | dtype | gesv ns | posv ns | inv+gemv ns | gesv/posv | inv/posv |
-|---|-------|---------|---------|-------------|-----------|----------|
-| 4 | f32 | 1.25 | 1.23 | 1.00 | 1.02 | 0.81 |
-| 4 | f64 | 3.74 | 5.50 | 1.99 | 0.68 | 0.36 |
-| 8 | f32 | 2.50 | 2.48 | 2.25 | 1.01 | 0.91 |
-| 8 | f64 | 8.99 | 12.36 | 5.70 | 0.73 | 0.46 |
-| 16 | f32 | 6.50 | 5.52 | 10.57 | 1.18 | 1.91 |
-| 16 | f64 | 25.39 | 29.42 | 23.13 | 0.86 | 0.79 |
-| 32 | f32 | 27.59 | 15.28 | 57.37 | 1.81 | 3.75 |
-| 32 | f64 | 85.46 | 78.25 | 150.82 | 1.09 | 1.93 |
-| 64 | f32 | 160.33 | 76.74 | 357.33 | 2.09 | 4.66 |
-| 64 | f64 | 417.37 | 264.98 | 1065.11 | 1.58 | 4.02 |
+The `thr-posv` column is the **thread-tier** `glass::thread::posv` (one problem per thread, 32 packed per warp) — measured only below the N<=7 register-residency ceiling. Where `thr/posv` < 1 the thread tier beats the block Cholesky solve on that low-DOF shape.
+
+| N | dtype | gesv ns | posv ns | inv+gemv ns | thr-posv ns | gesv/posv | inv/posv | thr/posv |
+|---|-------|---------|---------|-------------|-------------|-----------|----------|----------|
+| 4 | f32 | 1.24 | 1.22 | 1.00 | 0.49 | 1.02 | 0.82 | 0.40 |
+| 4 | f64 | 3.74 | 5.51 | 1.99 | 0.98 | 0.68 | 0.36 | 0.18 |
+| 8 | f32 | 2.50 | 2.48 | 2.25 | — | 1.01 | 0.91 | — |
+| 8 | f64 | 9.00 | 12.50 | 5.59 | — | 0.72 | 0.45 | — |
+| 16 | f32 | 6.50 | 5.53 | 10.56 | — | 1.18 | 1.91 | — |
+| 16 | f64 | 25.53 | 30.36 | 23.75 | — | 0.84 | 0.78 | — |
+| 32 | f32 | 27.84 | 15.96 | 57.73 | — | 1.74 | 3.62 | — |
+| 32 | f64 | 86.11 | 78.69 | 151.90 | — | 1.09 | 1.93 | — |
+| 64 | f32 | 162.24 | 77.13 | 359.54 | — | 2.10 | 4.66 | — |
+| 64 | f64 | 420.32 | 266.83 | 1072.80 | — | 1.58 | 4.02 | — |
 
 ### syev + eig_clamp — timing only (no contender)
 
 | N | dtype | syev ns | eig_clamp ns |
 |---|-------|---------|--------------|
-| 4 | f32 | 3.89 | 3.99 |
-| 4 | f64 | 58.00 | 58.64 |
-| 8 | f32 | 25.33 | 25.25 |
-| 8 | f64 | 384.99 | 386.82 |
-| 16 | f32 | 114.81 | 115.58 |
-| 16 | f64 | 1769.52 | 1741.92 |
-| 32 | f32 | 875.65 | 1012.52 |
-| 32 | f64 | 8808.53 | 9263.20 |
+| 4 | f32 | 3.91 | 3.99 |
+| 4 | f64 | 58.38 | 59.03 |
+| 8 | f32 | 25.43 | 25.50 |
+| 8 | f64 | 388.32 | 390.09 |
+| 16 | f32 | 115.70 | 116.32 |
+| 16 | f64 | 1781.17 | 1754.45 |
+| 32 | f32 | 881.79 | 1019.54 |
+| 32 | f64 | 8849.49 | 9305.33 |
 
 <!-- END tune.py -->
 

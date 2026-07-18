@@ -1,12 +1,14 @@
 # Mega sweep — warp vs block(SIMT) vs nvidia(MathDx), the full ladder
 
-> **STALE COLUMN NOTE (2026-07-17):** the harness now also contends the
-> **THREAD** tier (`glass::thread::`, one problem per thread, N≤16). The
-> tables below predate it — they are the authoritative warp/block/nvidia
-> numbers, but say nothing about thread. The next quiet-GPU
-> `bench/tune.py --sm auto` run regenerates this file's data with the thread
-> column included (see `bench/THREAD_SWEEP_RESULTS.md` for the interim
-> thread-only analysis).
+> **FOUR-WAY UPDATE (2026-07-18):** the ladder now contends the **THREAD**
+> tier and the dispatch tables were regenerated from the four-way capture
+> `bench/mega_sweep_20260718_1021.txt` (quiet 5090) — **thread takes the
+> low-DOF corner of every op except gemm** (see
+> `bench/THREAD_SWEEP_RESULTS.md` for the verdicts and ratios; figures in
+> `docs/source/_static/` are rendered from the same capture). The narrative
+> tables below are the 2026-06-23 three-way analysis — still accurate for the
+> warp/block/nvidia relationships at N ≥ 24, superseded at small N by the
+> thread column.
 
 Three contenders on one ns/problem axis, measured by `bench/bench_mega_sweep.cu`
 (run via `run_mega_sweep.sh`). **RTX 5090, sm_120, 2026-06-23** (boost 3090 MHz,

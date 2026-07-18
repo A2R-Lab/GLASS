@@ -11,12 +11,12 @@ The pick **cannot** be a device function: the tiers need different
 
 .. note::
 
-   ``backend::thread`` exists in the enum and is swept by ``bench_mega_sweep.cu``,
-   but **no shipped table returns it yet** — the in-tree ladders were measured
-   before the thread tier existed, and inventing entries would fabricate a verdict
-   nobody measured. A fresh ``bench/tune.py --sm auto`` sweep contends the thread
-   tier and emits it wherever it wins; until then a ``thread`` caller opts in
-   explicitly (``suggested_threads_per_block<>()`` gives the launch shape).
+   ``backend::thread`` is **measured and shipped for sm_120** (2026-07-18 quiet-GPU
+   sweep): the thread tier takes the low-DOF corner of every op except ``gemm`` —
+   up to 7.5× on ``posv`` f64 at N≤6 (``bench/THREAD_SWEEP_RESULTS.md`` has the
+   full verdicts). A ``thread`` pick means a thread-per-problem launch:
+   ``<<<ceil(P/TPB), TPB>>>`` with ``suggested_threads_per_block<>()``. The
+   ``ideal_generic`` fallback for unswept arches remains warp/block/nvidia-only.
 
 Include order
 -------------

@@ -46,6 +46,8 @@ tier exists to avoid.
   ``vec_tensor_vec``, ``congruence_sym`` / ``bilinear`` / ``congruence_accum``,
   ``riccati_gain``. See :doc:`l3`.
 
-The dispatch ladder (:doc:`defaults`) sweeps the tier alongside warp / block /
-nvidia; no shipped table returns ``backend::thread`` yet — run
-``bench/tune.py --sm auto`` to contend it on your GPU.
+The dispatch ladder (:doc:`defaults`) contends the tier alongside warp / block /
+nvidia, and the sm_120 tables ship thread verdicts (2026-07-18 sweep): thread
+takes the low-DOF corner of every op except ``gemm`` — up to 7.5× on ``posv``
+f64 at N≤6 (``bench/THREAD_SWEEP_RESULTS.md``). Run ``bench/tune.py --sm auto``
+to contend it on your own GPU.

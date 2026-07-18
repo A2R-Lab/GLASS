@@ -15,14 +15,13 @@
  *   else if constexpr (be == glass::backend::thread) { ... <<<ceil(P/TPB), TPB>>> ... }
  *   else                                             { ... <<<P, TB>>> ... }
  *
- * NOTE ON `thread`: no shipped table returns it yet. The tier exists and is swept by
- * bench_mega_sweep.cu, but the in-tree ladders (`ideal_sm120`, `ideal_generic`,
- * `without_nvidia`) predate it and were measured with only warp/block/nvidia
- * contending — inventing `thread` entries here would fabricate a verdict nobody
- * measured. Run `bench/tune.py --legs ladder --sm auto` to regenerate this arch's
- * table WITH the thread column; the marker-block machinery and `_ladder_expr` already
- * emit `backend::thread` unchanged. Until then callers get the measured warp/block/
- * nvidia answer, and a `thread` caller opts in explicitly.
+ * NOTE ON `thread`: measured and shipped for sm_120 (2026-07-18 sweep) — the tier
+ * takes the low-DOF corner of every op except gemm (up to 7.5x on posv f64 at
+ * N<=6; see bench/THREAD_SWEEP_RESULTS.md). `ideal_generic` and `without_nvidia`
+ * still predate the tier (warp/block/nvidia only) — a thread verdict appears on an
+ * arch once `bench/tune.py --sm auto` sweeps it there. A `backend::thread` pick
+ * means a thread-per-problem launch: <<<ceil(P/TPB), TPB>>> with
+ * suggested_threads_per_block<>().
  *
  * INCLUDE ORDER: include this AFTER glass.cuh, and after glass-nvidia.cuh if you want the
  * `nvidia` tier to be eligible (it reads GLASS_HAVE_CUBLASDX / GLASS_HAVE_CUSOLVERDX, which
@@ -83,26 +82,28 @@ constexpr bool nv_available(op o) {
 // inserts a new block + dispatch case for a first-time arch), leaving the rest alone. ───
 
 // === BEGIN tune.py ladder sm_120 ===
-// Source sweep: mega_sweep_20260704_2300.txt   tie margin: ±5% (nvidia must clear it)
+// Source sweep: mega_sweep_20260718_1021.txt   tie margin: ±5% (nvidia must clear it)
 // Returns the *ideal* tier assuming nvidia is linked; nv_available() filters after.
 constexpr backend ideal_sm120(op o, uint32_t N, bool f64) {
     switch (o) {
-        case op::dot: return backend::warp;
+        case op::dot:
+            if (!f64) return N <= 12u ? backend::thread : backend::warp;
+            else      return N <= 16u ? backend::thread : backend::warp;
         case op::gemv:
-            if (!f64) return N <= 32u ? backend::warp : N <= 48u ? backend::block : backend::warp;
-            else      return N <= 24u ? backend::warp : N <= 32u ? backend::block : N <= 64u ? backend::warp : backend::block;
+            if (!f64) return N <= 6u ? backend::thread : N <= 32u ? backend::warp : N <= 48u ? backend::block : backend::warp;
+            else      return N <= 6u ? backend::thread : N <= 16u ? backend::warp : N <= 24u ? backend::block : N <= 32u ? backend::warp : backend::block;
         case op::gemm:
-            if (!f64) return N <= 16u ? backend::warp : N <= 24u ? backend::block : N <= 64u ? backend::nvidia : backend::block;
-            else      return N <= 4u ? backend::warp : N <= 12u ? backend::block : N <= 16u ? backend::warp : backend::block;
+            if (!f64) return N <= 8u ? backend::warp : N <= 12u ? backend::block : N <= 16u ? backend::warp : N <= 24u ? backend::block : N <= 32u ? backend::nvidia : backend::block;
+            else      return N <= 6u ? backend::warp : backend::block;
         case op::chol:
-            if (!f64) return N <= 12u ? backend::warp : backend::nvidia;
-            else      return N <= 24u ? backend::block : N <= 64u ? backend::nvidia : backend::block;
+            if (!f64) return N <= 6u ? backend::thread : N <= 12u ? backend::warp : backend::nvidia;
+            else      return N <= 16u ? backend::thread : N <= 24u ? backend::block : N <= 64u ? backend::nvidia : backend::block;
         case op::trsv:
-            if (!f64) return N <= 16u ? backend::warp : N <= 32u ? backend::nvidia : backend::warp;
-            else      return N <= 48u ? backend::nvidia : backend::block;
+            if (!f64) return N <= 16u ? backend::thread : N <= 32u ? backend::nvidia : backend::warp;
+            else      return N <= 16u ? backend::thread : N <= 48u ? backend::nvidia : backend::block;
         case op::posv:
-            if (!f64) return N <= 12u ? backend::warp : backend::nvidia;
-            else      return N <= 64u ? backend::nvidia : backend::block;
+            if (!f64) return N <= 12u ? backend::thread : backend::nvidia;
+            else      return N <= 16u ? backend::thread : N <= 64u ? backend::nvidia : backend::block;
     }
     return backend::block;
 }

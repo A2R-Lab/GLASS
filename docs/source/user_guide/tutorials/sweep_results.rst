@@ -1,9 +1,9 @@
 Backend Sweep Results
 =====================
 
-GLASS ships three interchangeable block-scoped backends plus a warp-scoped
-surface, and which one is fastest depends on the operation, the matrix size
-``N``, and the dtype. The **mega sweep** (``bench/tune.py``'s ladder leg) times all
+GLASS ships four interchangeable execution tiers — thread-, warp-, and
+block-scoped SIMT plus the vendor-backed ``nvidia`` path — and which one is
+fastest depends on the operation, the matrix size ``N``, and the dtype. The **mega sweep** (``bench/tune.py``'s ladder leg) times all
 of them head-to-head so the choice is data-driven rather than guessed — this is
 exactly the measurement behind ``glass-defaults.cuh``'s ``suggested_backend<>()``
 (see :doc:`../../api_reference/defaults`).
@@ -25,9 +25,12 @@ regenerate them for your own hardware with::
 The ladder — ns/problem vs N, per backend
 ------------------------------------------
 
-Lower is faster. Each subplot is one op; the three curves are ``warp`` (green),
-``block`` (blue), and ``nvidia`` / MathDx (red). The crossover points are where
-``suggested_backend`` switches tiers. ``suggested_backend<>()`` is keyed on the
+Lower is faster. Each subplot is one op; the curves are ``warp`` (green),
+``block`` (blue), ``thread`` (orange, N≤16 — one problem per thread, 32 packed
+per warp), and ``nvidia`` / MathDx (red). The crossover points are where
+``suggested_backend`` switches tiers — the 2026-07-18 sweep hands thread the
+low-DOF corner of every op except ``gemm`` (up to 7.5× on ``posv`` f64 at N≤6;
+verdict tables in ``bench/THREAD_SWEEP_RESULTS.md``). ``suggested_backend<>()`` is keyed on the
 **NPROB=8192** throughput regime; the 64/1024 figures show how the crossovers
 move at smaller batch.
 

@@ -51,14 +51,11 @@ their own serial code before adopting them for speed.
 <!-- BEGIN tune.py: latest measured run -->
 ## Latest measured run (auto-refreshed by `bench/tune.py`)
 
-_Source: `reduced_sweep_20260708_0056.txt` · tie margin ±5% (reduced must clear it) · 0 of 48 configs pick reduced._
+_Source: `reduced_sweep_20260718_0130.txt` · tie margin ±5% (reduced must clear it) · 0 of 48 configs pick reduced._
 
 Predicate `suggested_use_reduced<n_out,K_contract,blockDim>()` = `(n_out <= blockDim/32) && (K_contract >= 32)` (K_contract is the N column here).
 
-⚠️ **2 config(s) disagree** with the predicate — review before trusting the formula on this GPU:
-
-- 2×64×2 bd=128 (n_out=4): measured **None**, predicate **reduced**
-- 2×64×2 bd=256 (n_out=4): measured **None**, predicate **reduced**
+✅ Measurement matches the predicate for every swept config — the formula needs no change.
 
 <!-- END tune.py -->
 

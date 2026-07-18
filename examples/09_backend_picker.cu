@@ -29,13 +29,25 @@ template <int N> __global__ void k_warp_posv (float* A, float* b) {
     int w = blockIdx.x * blockDim.y + threadIdx.y;            // one warp per problem
     glass::warp::posv<float, N>(A + (size_t)w*N*N, b + w*N);
 }
+template <int N> __global__ void k_thread_posv(float* A, float* b) {
+    int p = blockIdx.x * blockDim.x + threadIdx.x;            // one problem per THREAD
+    float a[N*N], x[N];                                       // register-resident at N<=7
+    for (int i = 0; i < N*N; i++) a[i] = A[(size_t)p*N*N + i];
+    for (int i = 0; i < N;   i++) x[i] = b[(size_t)p*N + i];
+    glass::thread::posv<float, N>(a, x);
+    for (int i = 0; i < N;   i++) b[(size_t)p*N + i] = x[i];
+}
 
 template <int N>
 static void solve_dispatch(float* dA, float* db) {
     // Compile-time pick from the measured table (T=float, build's SM).
     constexpr backend be = glass::suggested_backend<op::posv, N, float>();
     printf("  posv N=%d -> backend=%s", N, name(be));
-    if constexpr (be == backend::warp) {
+    if constexpr (be == backend::thread) {
+        constexpr int TPB = glass::suggested_threads_per_block<op::posv, N, float>();
+        printf(" (TPB=%d)\n", TPB);
+        k_thread_posv<N><<<1, 1>>>(dA, db);                   // 1 problem here -> 1 thread
+    } else if constexpr (be == backend::warp) {
         constexpr int WPB = glass::suggested_warps_per_block<op::posv>();
         printf(" (WPB=%d)\n", WPB);
         k_warp_posv<N><<<1, dim3(32, 1)>>>(dA, db);           // 1 problem here -> 1 warp
@@ -50,7 +62,9 @@ static void solve_dispatch(float* dA, float* db) {
 int main() {
     // 1) Show what the picker chooses across ops/sizes (all compile-time constants).
     printf("backend picks (T=float, this build's SM; no MathDx -> nvidia collapses):\n");
+    printf("  dot  N=8   : %s\n", name(glass::suggested_backend<op::dot,   8, float>()));
     printf("  dot  N=64  : %s\n", name(glass::suggested_backend<op::dot,  64, float>()));
+    printf("  posv N=8   : %s\n", name(glass::suggested_backend<op::posv,  8, float>()));
     printf("  gemv N=16  : %s\n", name(glass::suggested_backend<op::gemv, 16, float>()));
     printf("  gemv N=64  : %s\n", name(glass::suggested_backend<op::gemv, 64, float>()));
     printf("  gemm N=8   : %s\n", name(glass::suggested_backend<op::gemm,  8, float>()));

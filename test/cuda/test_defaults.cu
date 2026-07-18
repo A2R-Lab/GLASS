@@ -11,28 +11,35 @@ using glass::op; using glass::backend;
 namespace gd = glass::defaults;
 
 // ── measured sm_120 ladder (the ideal tier, independent of what's linked) ──
-//   gemm f32: warp<=16, block@24, nvidia 32..64, block>=96 (2026-07-04 retune)
+//   (2026-07-18 retune — first sweep with the THREAD contender: it takes the
+//    low-DOF corner of every op except gemm.)
+//   gemm f32: warp/block interleave <=24, nvidia 25..32, block >=48 — no thread
 static_assert(gd::ideal_sm120(op::gemm, 8,  false) == backend::warp,   "gemm8 f32");
-static_assert(gd::ideal_sm120(op::gemm, 12, false) == backend::warp,   "gemm12 f32");
+static_assert(gd::ideal_sm120(op::gemm, 12, false) == backend::block,  "gemm12 f32");
 static_assert(gd::ideal_sm120(op::gemm, 24, false) == backend::block,  "gemm24 f32");
 static_assert(gd::ideal_sm120(op::gemm, 32, false) == backend::nvidia, "gemm32 f32");
 static_assert(gd::ideal_sm120(op::gemm, 96, false) == backend::block,  "gemm96 f32 (smem cap)");
-//   chol f32: warp<=12, nvidia>=16 (through 128)
+//   chol f32: thread<=6, warp<=12, nvidia>=16 (through 128)
+static_assert(gd::ideal_sm120(op::chol, 4,   false) == backend::thread, "chol4 f32");
 static_assert(gd::ideal_sm120(op::chol, 8,   false) == backend::warp,   "chol8 f32");
 static_assert(gd::ideal_sm120(op::chol, 24,  false) == backend::nvidia, "chol24 f32");
 static_assert(gd::ideal_sm120(op::chol, 128, false) == backend::nvidia, "chol128 f32");
-//   trsv f32: nvidia only mid-band 16..32, warp otherwise
-static_assert(gd::ideal_sm120(op::trsv, 12, false) == backend::warp,   "trsv12 f32");
+//   trsv f32: thread<=16, nvidia 17..32, warp above
+static_assert(gd::ideal_sm120(op::trsv, 12, false) == backend::thread, "trsv12 f32");
 static_assert(gd::ideal_sm120(op::trsv, 24, false) == backend::nvidia, "trsv24 f32");
 static_assert(gd::ideal_sm120(op::trsv, 64, false) == backend::warp,   "trsv64 f32");
-//   dot: warp always ; gemv: warp<=32 / block>=48
+//   dot: thread<=16, warp above ; gemv: thread<=6, warp<=32, block@48
+static_assert(gd::ideal_sm120(op::dot,  8,   false) == backend::thread, "dot8");
 static_assert(gd::ideal_sm120(op::dot,  128, false) == backend::warp,  "dot128");
+static_assert(gd::ideal_sm120(op::gemv, 4,   false) == backend::thread, "gemv4");
 static_assert(gd::ideal_sm120(op::gemv, 32,  false) == backend::warp,  "gemv32");
 static_assert(gd::ideal_sm120(op::gemv, 48,  false) == backend::block, "gemv48");
-//   f64: narrower nvidia band (chol tiny->block, gemm band 16..32, posv nv to 64)
-static_assert(gd::ideal_sm120(op::chol, 8,  true) == backend::block,  "chol8 f64");
+//   f64: thread reaches N<=16 on chol/trsv/posv (block/warp f64 small-N is slow
+//   enough that even the spilled thread path wins); nvidia bands as before
+static_assert(gd::ideal_sm120(op::chol, 8,  true) == backend::thread, "chol8 f64");
 static_assert(gd::ideal_sm120(op::chol, 48, true) == backend::nvidia, "chol48 f64");
 static_assert(gd::ideal_sm120(op::gemm, 64, true) == backend::block,  "gemm64 f64");
+static_assert(gd::ideal_sm120(op::posv, 12, true) == backend::thread, "posv12 f64");
 static_assert(gd::ideal_sm120(op::posv, 64, true) == backend::nvidia, "posv64 f64");
 
 // ── per-arch dispatch: a measured SM hits its table, an unmeasured SM falls to generic ──

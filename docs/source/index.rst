@@ -82,10 +82,9 @@ fastest one per ``(operation, size, dtype)`` from a measured ladder:
 ``glass::suggested_backend<op, N, T>()`` returns the winning interface and a
 launch config for codegen and host-side dispatch. The shipped defaults are tuned
 on an RTX 5090 (sm_120); you can regenerate the table for your own GPU with the
-GLASS autotune workflow. (The shipped tables predate the ``thread`` interface —
-they return the measured warp/block/nvidia answer; a fresh ``bench/tune.py``
-sweep contends the thread tier too and emits it wherever the low-DOF packing
-actually wins.) See :doc:`user_guide/concepts/tuning` for how the
+GLASS autotune workflow. The sm_120 tables now include the ``thread`` interface
+(2026-07-18 sweep): it wins the low-DOF corner of every operation except
+``gemm`` — up to 7.5× on the small-``N`` factor/solve chain in f64. See :doc:`user_guide/concepts/tuning` for how the
 benchmarks drive the defaults, and the :ref:`measured ladders <measured-performance>`
 at the bottom of this page.
 
