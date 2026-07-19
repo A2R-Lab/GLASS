@@ -122,13 +122,13 @@ static void launch_warp(Op op, int WPB, T* A, T* B, T* C, T* x, T* y) {
 //       pyroffi IK case (A = JᵀJ built on-chip); no memory traffic to attribute,
 //       so it trivially wins and would be a meaningless table entry.
 //
-// Gated to N<=16: past the measured N<=7 register-residency ceiling the tier's
-// premise is gone, but 8/12/16 are swept anyway so the local-memory cliff is
-// visible in the table rather than assumed. Past 16 a per-thread T[N*N] gets
-// absurd (N=64/f64 is a 32KB-per-thread local array) and the column would only
-// document ever-worse spill — tune_pick's parser treats the column as optional
-// for exactly this reason.
-template<typename T,int N> static constexpr bool thread_ok() { return N <= 16; }
+// Swept over the FULL size domain so every contender shares the same points and
+// the figures show the spill catastrophe explicitly instead of a truncated line
+// (a per-thread T[N*N] is local-memory-resident far past the N<=7 register
+// ceiling — N=128/f64 is a 128KB-per-thread array; the numbers document how bad,
+// they never win). tune_pick's parser still treats the column as optional so
+// pre-2026-07 captures (no thread column) keep parsing.
+template<typename T,int N> static constexpr bool thread_ok() { return true; }
 
 template<typename T,int N> __global__ void kt_dot (T* x, T* y, int np) { int p=blockIdx.x*blockDim.x+threadIdx.x; if(p>=np)return; T r=glass::thread::dot<T,N>(x+(size_t)p*N, y+(size_t)p*N); y[(size_t)p*N]=r; }
 template<typename T,int N> __global__ void kt_gemv(T* A, T* x, T* y, int np) {
@@ -409,7 +409,7 @@ static void bench_size(Op op, int reps) {
     // 4-way winner. thread/warp/block are all dependency-free pure SIMT, so they
     // compete on raw time; only nvidia (MathDx) must clear tune_pick's margin —
     // hence `base` is the best of the three SIMT tiers, as before, now including
-    // thread where it ran (N<=16).
+    // thread (full domain).
     const bool has_thread = (best_thread < 1e29);
     double base = best_block; const char* base_winner = "BLOCK";
     if (best_warp < base)               { base = best_warp;   base_winner = "WARP"; }
@@ -448,7 +448,7 @@ int main(int argc, char** argv) {
     bool f64 = (strcmp(dt, "f64") == 0 || strcmp(dt, "fp64") == 0 || strcmp(dt, "double") == 0);
     { int v = 48*1024; cudaDeviceGetAttribute(&v, cudaDevAttrMaxSharedMemoryPerBlockOptin, 0); g_optin_smem = (size_t)v; }
     printf("# mega sweep | NPROB=%d reps=%d dtype=%s | ns/problem (lower=better) | optin_smem=%zuKB\n", NPROB, reps, f64 ? "f64" : "f32", g_optin_smem/1024);
-    printf("# contenders: BLOCK(SIMT, TB swept) | WARP(WPB swept) | THREAD(SIMT, TPB swept; N<=16 only) | NV(cuBLASDx/cuSOLVERDx, forced; f32<=128, f64<=64)\n");
+    printf("# contenders: BLOCK(SIMT, TB swept) | WARP(WPB swept) | THREAD(SIMT, TPB swept) | NV(cuBLASDx/cuSOLVERDx, forced; f32<=128, f64<=64)\n");
     printf("# THREAD stages operands global->registers->global in the per-problem-contiguous layout (uncoalesced; the layout tax is IN the timing).\n");
     if (f64) run_all<double>(reps);
     else     run_all<float>(reps);

@@ -97,11 +97,11 @@ _HDR_RE = re.compile(r"NPROB=(\d+).*dtype=(f32|f64)")
 # Raw per-backend ns from a mega_sweep row:
 #   "<op>  N=<N> | BLOCK ... | WARP ... [| THREAD ...] || block tb<TB>=<ns>
 #    warp w<WPB>=<ns> [thread t<TPB>=<ns>] [nv=<ns>] -> ..."
-# The thread group is OPTIONAL on purpose: it is absent both from archived sweep
+# The thread group is OPTIONAL on purpose: it is absent from archived sweep
 # .txt files (every run before the tier existed — `tune.py --from-ladder` replays
-# them) and from live rows at N>16, where the harness skips the tier rather than
-# instantiate an absurd per-thread T[N*N]. Keep it optional or old sweeps stop
-# parsing and regen silently drops every op.
+# them) and from mid-2026-07 captures where the harness gated the tier to N<=16
+# (since lifted to the full domain so all contenders share the same points).
+# Keep it optional or old sweeps stop parsing and regen silently drops every op.
 _ROW_RE = re.compile(
     r"^(dot|gemv|gemm|chol|trsv|posv)\s+N=(\d+)\b.*\|\|\s*"
     r"block\s+tb\d+=([\d.]+)\s+warp\s+w\d+=([\d.]+)"
