@@ -103,6 +103,10 @@ def plot_ladder(data, nprob, dt, out_path):
         ax.set_yscale("log")
         ax.grid(alpha=0.3)
         ax.legend(fontsize=8)
+    fig.text(0.5, 0.005,
+             "thread curves end where the per-thread local-memory footprint makes the launch infeasible "
+             "(FAIL cells in the capture) — not unmeasured; nvidia f64 caps at N=64 (smem).",
+             ha="center", fontsize=7, style="italic")
     fig.suptitle(f"{dt} thread/warp/block/nvidia ladder — NPROB={nprob} "
                  f"({'throughput' if nprob >= 8192 else 'low-batch' if nprob <= 64 else 'mid-batch'})",
                  fontsize=11)

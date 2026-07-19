@@ -30,7 +30,11 @@ Lower is faster. Each subplot is one op; the curves are ``warp`` (green),
 per warp), and ``nvidia`` / MathDx (red). The crossover points are where
 ``suggested_backend`` switches tiers — the 2026-07-18 sweep hands thread the
 low-DOF corner of every op except ``gemm`` (up to 7.5× on ``posv`` f64 at N≤6;
-verdict tables in ``bench/THREAD_SWEEP_RESULTS.md``). ``suggested_backend<>()`` is keyed on the
+verdict tables in ``bench/THREAD_SWEEP_RESULTS.md``). Where a ``thread`` curve
+stops short of N=128 the remaining launches are *infeasible*, not unmeasured —
+the per-thread local-memory footprint exceeds the launch limit (those cells are
+``FAIL``-marked in the capture); the ``nvidia`` f64 curves cap at N=64 for the
+same reason on the shared-memory side. ``suggested_backend<>()`` is keyed on the
 **NPROB=8192** throughput regime; the 64/1024 figures show how the crossovers
 move at smaller batch.
 
