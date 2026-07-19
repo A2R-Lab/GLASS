@@ -2,7 +2,7 @@
 
 > **FOUR-WAY UPDATE (2026-07-18):** the ladder now contends the **THREAD**
 > tier and the dispatch tables were regenerated from the four-way capture
-> `bench/mega_sweep_20260718_1021.txt` (quiet 5090) — **thread takes the
+> `bench/mega_sweep_20260719_0234.txt` (quiet 5090) — **thread takes the
 > low-DOF corner of every op except gemm** (see
 > `bench/THREAD_SWEEP_RESULTS.md` for the verdicts and ratios; figures in
 > `docs/source/_static/` are rendered from the same capture). The narrative

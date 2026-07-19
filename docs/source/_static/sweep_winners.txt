@@ -1,17 +1,17 @@
 NPROB=64  f32 winner by op x N:
 op           4      6      8     12     16     24     32     48     64     96    128
-dot       warp   warp   warp   warp   warp   warp   warp   warp   warp   warp nvidia
-gemv      warp  block   warp  block nvidia nvidia nvidia nvidia nvidia nvidia nvidia
-gemm      warp  block  block  block nvidia nvidia nvidia nvidia nvidia  block  block
-chol    thread nvidia nvidia nvidia nvidia nvidia nvidia nvidia nvidia nvidia nvidia
-trsv    thread nvidia nvidia nvidia nvidia nvidia nvidia nvidia nvidia nvidia nvidia
+dot       warp  block   warp   warp thread   warp  block   warp   warp   warp nvidia
+gemv      warp  block  block   warp   warp nvidia nvidia nvidia nvidia nvidia nvidia
+gemm      warp  block  block   warp nvidia nvidia nvidia nvidia nvidia  block  block
+chol      warp nvidia nvidia nvidia nvidia nvidia nvidia nvidia nvidia nvidia nvidia
+trsv    thread thread nvidia nvidia nvidia nvidia nvidia nvidia nvidia nvidia nvidia
 posv    thread nvidia nvidia nvidia nvidia nvidia nvidia nvidia nvidia nvidia nvidia
 
 NPROB=64  f64 winner by op x N:
 op           4      6      8     12     16     24     32     48     64     96    128
 dot       warp   warp   warp   warp   warp   warp   warp   warp   warp   warp  block
-gemv     block   warp  block  block  block  block  block  block  block  block  block
-gemm     block  block nvidia nvidia nvidia  block  block nvidia  block  block  block
+gemv      warp   warp   warp  block  block  block  block  block  block  block  block
+gemm      warp  block nvidia nvidia nvidia  block  block nvidia  block  block  block
 chol    nvidia nvidia nvidia nvidia nvidia nvidia nvidia nvidia nvidia  block  block
 trsv    nvidia nvidia nvidia nvidia nvidia nvidia nvidia nvidia nvidia  block  block
 posv    nvidia nvidia nvidia nvidia nvidia nvidia nvidia nvidia nvidia  block  block
@@ -20,16 +20,16 @@ NPROB=1024  f32 winner by op x N:
 op           4      6      8     12     16     24     32     48     64     96    128
 dot       warp   warp   warp   warp   warp   warp   warp   warp   warp   warp   warp
 gemv      warp   warp   warp   warp   warp   warp   warp  block  block  block  block
-gemm      warp   warp   warp  block   warp  block nvidia nvidia nvidia  block  block
-chol      warp thread nvidia nvidia nvidia nvidia nvidia nvidia nvidia nvidia nvidia
+gemm      warp   warp   warp  block   warp nvidia nvidia nvidia nvidia  block  block
+chol    thread thread nvidia nvidia nvidia nvidia nvidia nvidia nvidia nvidia nvidia
 trsv    thread thread thread nvidia nvidia nvidia nvidia nvidia nvidia  block  block
 posv    thread thread nvidia nvidia nvidia nvidia nvidia nvidia nvidia nvidia nvidia
 
 NPROB=1024  f64 winner by op x N:
 op           4      6      8     12     16     24     32     48     64     96    128
 dot     thread thread thread   warp   warp   warp   warp   warp   warp   warp   warp
-gemv      warp   warp   warp   warp   warp   warp  block  block  block  block  block
-gemm      warp   warp  block  block nvidia  block  block  block  block  block  block
+gemv      warp   warp   warp   warp   warp   warp   warp  block  block  block  block
+gemm      warp   warp  block  block  block  block  block  block  block  block  block
 chol    thread thread  block  block  block  block nvidia nvidia nvidia  block  block
 trsv    thread thread nvidia nvidia nvidia nvidia nvidia nvidia  block  block  block
 posv    thread thread thread nvidia nvidia nvidia nvidia nvidia nvidia  block  block
@@ -45,9 +45,9 @@ posv    thread thread thread thread nvidia nvidia nvidia nvidia nvidia nvidia nv
 
 NPROB=8192  f64 winner by op x N:
 op           4      6      8     12     16     24     32     48     64     96    128
-dot     thread thread thread thread thread   warp   warp   warp   warp   warp   warp
-gemv    thread thread   warp   warp   warp  block   warp  block  block  block  block
-gemm      warp   warp  block  block  block  block  block  block  block  block  block
-chol    thread thread thread thread thread  block nvidia nvidia nvidia  block  block
+dot     thread thread thread thread thread thread thread   warp   warp   warp   warp
+gemv    thread thread   warp   warp   warp   warp   warp   warp   warp  block  block
+gemm      warp   warp  block  block nvidia  block  block  block  block  block  block
+chol    thread thread thread thread thread thread nvidia nvidia nvidia  block  block
 trsv    thread thread thread thread thread nvidia nvidia nvidia  block  block  block
-posv    thread thread thread thread thread nvidia nvidia nvidia nvidia  block  block
+posv    thread thread thread thread thread thread nvidia nvidia nvidia  block  block
