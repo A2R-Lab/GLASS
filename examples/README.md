@@ -31,6 +31,11 @@ build. For the full API surface and the backend-choice guide, read that README.
 | [`15_riccati_gain.cu`](15_riccati_gain.cu) | LQR feedback gain `K = (R + BᵀPB)⁻¹(BᵀPA)` via `riccati_gain`, dynamic smem sized by `riccati_scratch_bytes<T,NX,NU>()`, verified against a plain-loop CPU reference | pure SIMT — no extra deps |
 | [`16_inv.cu`](16_inv.cu) | matrix inversion on the augmented `[A \| I]` layout: `inv` (+ `inv_scratch_bytes`), and the robust `inv_pivoted` recovering a matrix with a zero leading pivot that plain `inv` sends non-finite | pure SIMT — no extra deps |
 | [`17_thread_pack.cu`](17_thread_pack.cu) | the `glass::thread::` tier: 4096 N=6 SPD solves, one problem per THREAD (32 packed per warp), staged global→registers→global, launch shape from `suggested_threads_per_block<>`, verified `\|Ax-b\|` per problem | pure SIMT — no extra deps |
+| [`18_spatial_dynamics.cu`](18_spatial_dynamics.cu) | Featherstone spatial cross products (the RNEA inner loop): fused `motion_cross_mul`/`force_cross_mul` verified against materialize-6×6 + `gemv` composition | pure SIMT — no extra deps |
+| [`19_floating_base_retract.cu`](19_floating_base_retract.cu) | batched SE(3) manifold integration at thread scope (`se3_retract`, 4096 states × 200 steps): unit-norm drift-free, one-parameter-subgroup check vs `quat_retract` | pure SIMT — no extra deps |
+| [`20_mppi_weights.cu`](20_mppi_weights.cu) | the MPPI path-integral weight update: `softmax` + `argmin` per controller block, verified vs a double host reference and bit-identical across block sizes | pure SIMT — no extra deps |
+| [`21_cone_projection.cu`](21_cone_projection.cu) | friction-cone AL constraint step: `soc_project` + `al_soc_value`/`al_hinge_value` per thread, with projection-orthogonality and m=1 hinge-degeneration checks | pure SIMT — no extra deps |
+| [`22_collision_spheres.cu`](22_collision_spheres.cu) | sphere narrow phase: `transform_sphere` → `sphere_box_dist` → `smooth_hinge` cost chain, one (sphere, box) pair per thread, verified vs a double host SDF | pure SIMT — no extra deps |
 
 **Examples 01–05 and 07–16 are pure SIMT** — they build with plain `nvcc` and
 need no external libraries. **Only `06_nvidia_gemm.cu` needs MathDx** (cuBLASDx);
@@ -63,6 +68,11 @@ nvcc -std=c++17 -arch=sm_75 -I.. 14_ldlt_solve.cu   -o ldlt     && ./ldlt
 nvcc -std=c++17 -arch=sm_75 -I.. 15_riccati_gain.cu -o riccati  && ./riccati
 nvcc -std=c++17 -arch=sm_75 -I.. 16_inv.cu          -o inv      && ./inv
 nvcc -std=c++17 -arch=sm_75 -I.. 17_thread_pack.cu  -o tpack    && ./tpack
+nvcc -std=c++17 -arch=sm_75 -I.. 18_spatial_dynamics.cu -o spatial && ./spatial
+nvcc -std=c++17 -arch=sm_75 -I.. 19_floating_base_retract.cu -o retract && ./retract
+nvcc -std=c++17 -arch=sm_75 -I.. 20_mppi_weights.cu -o mppi     && ./mppi
+nvcc -std=c++17 -arch=sm_75 -I.. 21_cone_projection.cu -o cone  && ./cone
+nvcc -std=c++17 -arch=sm_75 -I.. 22_collision_spheres.cu -o spheres && ./spheres
 ```
 
 ### NVIDIA / cuBLASDx example (06) — requires MathDx
