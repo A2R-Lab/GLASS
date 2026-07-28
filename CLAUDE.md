@@ -3,9 +3,11 @@
 GLASS is a **comprehensive, header-only CUDA C++ `__device__` template library
 for block-local linear algebra on GPUs** — BLAS, LAPACK-style factorizations and
 triangular solves, dense linear-system solvers, related algorithms, and
-**robotics-specialized operators** (spatial 6-D cross products, the SO(3)/SE(3)/
-quaternion Lie family + derivative chain, cone/AL projections, sphere-collision
-distances, softmax/argreduce — see `src/base/{spatial,lie,proj,geom}/` and
+**robotics-specialized operators** (spatial 6-D cross products + transforms +
+10-param inertia, the SO(3)/SE(3)/quaternion Lie family + derivative chain +
+pose errors, cone/AL projections, sphere-collision distances, the eig3/svd3/
+closest_rotation estimation kit, softmax/argreduce (+`_fast`) — see
+`src/base/{spatial,lie,proj,geom,est}/` and
 `docs/source/user_guide/concepts/robotics_conventions.rst` for the LOAD-BEARING
 conventions: spatial vectors are angular-first `[ω; v]`, SE(3) tangent blocks are
 linear-first `[ρ; φ]`, quaternions carry a compile-time `QuatLayout` tag, all

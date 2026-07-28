@@ -57,6 +57,49 @@ __device__ void argreduce(uint32_t n, const T *x, uint32_t *out, T *out_val, T *
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
+// tier-shared body, warp-shuffle variant (`_fast`): per-thread strided scan,
+// in-warp `__shfl_down_sync` fold of the (key, index) pair, per-warp winners
+// combined through scratch by warp 0 — the argreduce twin of `iamax_fast`.
+// Same combine (lower-index tie-break at EVERY step) so the result is
+// bit-identical to the default variant at any block size.
+template <typename T, bool MINIMUM, bool TRAILING_SYNC>
+__device__ void argreduce_fast(uint32_t n, const T *x, uint32_t *out, T *out_val,
+                               T *s_scratch) {
+    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t nw = (size + 31) / 32;
+    T *s_key = s_scratch;
+    uint32_t *s_idx = reinterpret_cast<uint32_t *>(s_scratch + nw);
+
+    T key = static_cast<T>(0);
+    uint32_t idx = UINT32_MAX;
+    for (uint32_t i = rank; i < n; i += size)
+        combine<T, MINIMUM>(key, idx, x[i], i);
+    for (int off = 16; off > 0; off >>= 1) {
+        T okey = __shfl_down_sync(0xffffffffu, key, off);
+        uint32_t oidx = __shfl_down_sync(0xffffffffu, idx, off);
+        combine<T, MINIMUM>(key, idx, okey, oidx);
+    }
+    uint32_t lane = rank & 31, warp = rank >> 5;
+    if (lane == 0) { s_key[warp] = key; s_idx[warp] = idx; }
+    __syncthreads();
+
+    if (rank < 32) {
+        key = (rank < nw) ? s_key[rank] : static_cast<T>(0);
+        idx = (rank < nw) ? s_idx[rank] : UINT32_MAX;
+        for (int off = 16; off > 0; off >>= 1) {
+            T okey = __shfl_down_sync(0xffffffffu, key, off);
+            uint32_t oidx = __shfl_down_sync(0xffffffffu, idx, off);
+            combine<T, MINIMUM>(key, idx, okey, oidx);
+        }
+        if (rank == 0) {
+            out[0] = (idx == UINT32_MAX) ? 0u : idx;
+            if (out_val != nullptr) out_val[0] = (idx == UINT32_MAX) ? x[0] : key;
+        }
+    }
+    if constexpr (TRAILING_SYNC) __syncthreads();
+}
+
 // single-warp body: strided per-lane scan + shuffle fold, index broadcast.
 template <typename T, bool MINIMUM>
 __device__ uint32_t argreduce_warp(uint32_t n, const T *x) {
@@ -160,6 +203,80 @@ __device__ void argmin(uint32_t n, const T *x, uint32_t *out, T *s_scratch) {
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void argmin(uint32_t n, const T *x, uint32_t *out, T *out_val, T *s_scratch) {
     argreduce_detail::argreduce<T, true, TRAILING_SYNC>(n, x, out, out_val, s_scratch);
+}
+
+/**
+ * @brief Shared-scratch size in bytes for `argmax_fast` / `argmin_fast`.
+ *
+ * One (key, index) slot per warp — the same layout (and size) as
+ * `iamax_fast_scratch_bytes`.
+ *
+ * @tparam T  Scalar type.
+ * @param block_threads  Number of threads in the launching block.
+ * @return Bytes to allocate for the `_fast` scratch.
+ */
+template <typename T>
+__host__ __device__ constexpr std::size_t argreduce_fast_scratch_bytes(uint32_t block_threads) {
+    return (static_cast<std::size_t>(((block_threads + 31) / 32)
+         + (((block_threads + 31) / 32) * sizeof(uint32_t) + sizeof(T) - 1) / sizeof(T))) * sizeof(T);
+}
+
+/**
+ * @brief `argmax`, warp-shuffle variant (in-register warp folds + per-warp
+ *        scratch combine — the `iamax_fast` strategy, signed).
+ *
+ * Bit-identical result to `argmax` (same combine, same tie-break/NaN policy);
+ * fewer scratch bytes and no serial thread-0 fold — the wide-block fast path.
+ * Scratch via `argreduce_fast_scratch_bytes<T>(blockDim)`. REQUIRES a
+ * full-warp block size (a multiple of 32): the shuffle folds use the full
+ * 0xffffffff mask (the `iamax_fast` contract) — use the default `argmax` for
+ * partial-warp blocks.
+ *
+ * @tparam T  Scalar type (e.g. `float`, `double`).
+ * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+ * @param n          Number of elements.
+ * @param x          Read-only input vector of length `n`.
+ * @param out        Output: `out[0]` receives the argmax index.
+ * @param s_scratch  Shared scratch of `argreduce_fast_scratch_bytes<T>(blockDim)` bytes.
+ */
+template <typename T, bool TRAILING_SYNC = true>
+__device__ void argmax_fast(uint32_t n, const T *x, uint32_t *out, T *s_scratch) {
+    argreduce_detail::argreduce_fast<T, false, TRAILING_SYNC>(n, x, out, nullptr, s_scratch);
+}
+
+/**
+ * @brief `argmax_fast` also returning the maximum value in `out_val[0]`.
+ *
+ * @tparam T,TRAILING_SYNC  See `argmax_fast`.
+ * @param n,x,s_scratch  See `argmax_fast`.
+ * @param out      Output index slot.
+ * @param out_val  Output value slot.
+ */
+template <typename T, bool TRAILING_SYNC = true>
+__device__ void argmax_fast(uint32_t n, const T *x, uint32_t *out, T *out_val, T *s_scratch) {
+    argreduce_detail::argreduce_fast<T, false, TRAILING_SYNC>(n, x, out, out_val, s_scratch);
+}
+
+/**
+ * @brief `argmin`, warp-shuffle variant. See `argmax_fast`.
+ *
+ * @tparam T,TRAILING_SYNC  See `argmax_fast`.
+ * @param n,x,out,s_scratch  See `argmax_fast`.
+ */
+template <typename T, bool TRAILING_SYNC = true>
+__device__ void argmin_fast(uint32_t n, const T *x, uint32_t *out, T *s_scratch) {
+    argreduce_detail::argreduce_fast<T, true, TRAILING_SYNC>(n, x, out, nullptr, s_scratch);
+}
+
+/**
+ * @brief `argmin_fast` also returning the minimum value in `out_val[0]`.
+ *
+ * @tparam T,TRAILING_SYNC  See `argmax_fast`.
+ * @param n,x,out,out_val,s_scratch  See the value-returning `argmax_fast`.
+ */
+template <typename T, bool TRAILING_SYNC = true>
+__device__ void argmin_fast(uint32_t n, const T *x, uint32_t *out, T *out_val, T *s_scratch) {
+    argreduce_detail::argreduce_fast<T, true, TRAILING_SYNC>(n, x, out, out_val, s_scratch);
 }
 
 // ─── single-thread argreductions ─────────────────────────────────────────────

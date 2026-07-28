@@ -149,21 +149,13 @@ namespace lie_detail {
 
     // serial core: φ = log(R), canonical branch |φ| ≤ π. Route through the
     // Shepperd quaternion (stable at EVERY rotation) then the quaternion log
-    // φ = 2·atan2(|v|, w)·v̂ — no near-π axis loss, no trace clamping games.
+    // (quat_detail::quat_log_core) — no near-π axis loss, no trace clamping
+    // games. Shepperd already yields w >= 0, so the log's cover fold is a no-op.
     template <typename T>
     __device__ __forceinline__ void so3_log_core(const T *R, T *phi) {
-        T q[4];   // xyzw, w >= 0 from the Shepperd extraction
+        T q[4];
         quat_detail::rot_to_quat_core<T, QuatLayout::xyzw>(R, q);
-        const T n = sqrt(q[0]*q[0] + q[1]*q[1] + q[2]*q[2]);
-        T s;   // scale = θ/|v| with θ = 2·atan2(|v|, w)
-        if (n < static_cast<T>(1e-8)) {
-            // atan2(n,w)/n → 1/w − n²/(3w³): smooth through the identity.
-            const T w = q[3];
-            s = static_cast<T>(2)/w - static_cast<T>(2)*n*n/(static_cast<T>(3)*w*w*w);
-        } else {
-            s = static_cast<T>(2)*atan2(n, q[3])/n;
-        }
-        phi[0] = s*q[0]; phi[1] = s*q[1]; phi[2] = s*q[2];
+        quat_detail::quat_log_core<T, QuatLayout::xyzw>(q, phi);
     }
 } // namespace lie_detail
 

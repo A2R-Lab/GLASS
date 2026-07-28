@@ -59,6 +59,11 @@ enum Op {
     OP_SMOOTH_HINGE, OP_ANGLE,
     OP_SPHERE_SPHERE, OP_SPHERE_BOX, OP_TRANSFORM_SPHERE, OP_FRAME, OP_SEGMENT,
     OP_SOFTMAX, OP_LOGSUMEXP, OP_ARGMAX, OP_ARGMIN,
+    OP_MOTION_XFORM, OP_FORCE_XFORM, OP_MXFORM_MUL, OP_FXFORM_MUL,
+    OP_SPATIAL_INERTIA, OP_SINERTIA_MUL,
+    OP_QUAT_LOG, OP_QUAT_ERROR, OP_POSE_ERROR, OP_QUAT_ANGLE, OP_LOG_COSH,
+    OP_EIG3, OP_SVD3, OP_CLOSEST_ROT,
+    OP_ARGMAX_FAST, OP_ARGMIN_FAST,
     OP_COUNT
 };
 
@@ -88,6 +93,16 @@ static const OpInfo OPS[OP_COUNT] = {
     {"segment", 12, 0, 0, 9},
     {"softmax", -1, 0, 0, -1},         {"logsumexp", -1, 0, 0, 1},
     {"argmax", -1, 0, 0, 2},           {"argmin", -1, 0, 0, 2},
+    // wave 2: transforms pack (E|r) as one 12-elem input; inertia is pi[10].
+    {"motion_xform", 12, 0, 0, 36},    {"force_xform", 12, 0, 0, 36},
+    {"mxform_mul", 12, 6, 6, 6},       {"fxform_mul", 12, 6, 6, 6},
+    {"spatial_inertia", 10, 0, 0, 36}, {"sinertia_mul", 10, 6, 6, 6},
+    {"quat_log", 4, 0, 0, 3},          {"quat_error", 4, 4, 0, 3},
+    {"pose_error", 7, 7, 0, 6},        {"quat_angle", 4, 4, 0, 1},
+    {"log_cosh", 1, 0, 0, 2},
+    {"eig3", 9, 0, 0, 12},             {"svd3", 9, 0, 0, 21},
+    {"closest_rot", 9, 0, 0, 9},
+    {"argmax_fast", -1, 0, 0, 2},      {"argmin_fast", -1, 0, 0, 2},
 };
 
 // ─── dtype-generic I/O ───────────────────────────────────────────────────────
@@ -246,6 +261,72 @@ __device__ void dev_tier_op(int op, int flag0, int flag1,
             }
             break;
         }
+        case OP_MOTION_XFORM: TIER3(motion_transform, a, a + 9, out); break;
+        case OP_FORCE_XFORM:  TIER3(force_transform, a, a + 9, out); break;
+        case OP_MXFORM_MUL:
+        case OP_FXFORM_MUL: {
+            const T al = (T)ALPHA_MUL, be = (T)BETA_MUL;
+            // flag0 = INVERSE, flag1 = HAS_BETA (seeds out from c).
+            if (flag1 && writer) for (int i = 0; i < 6; i++) out[i] = c[i];
+            if constexpr (M == 0) __syncthreads(); else if constexpr (M == 1) __syncwarp();
+            #define XFM_CASE(FN, INV, HB)                                                     \
+                if constexpr (M == 0)      glass::FN<T, INV, HB>(al, a, a + 9, b, be, out);        \
+                else if constexpr (M == 1) glass::warp::FN<T, INV, HB>(al, a, a + 9, b, be, out);  \
+                else                       glass::thread::FN<T, INV, HB>(al, a, a + 9, b, be, out);
+            #define XFM_DISPATCH(FN)                                                          \
+                if (!flag0 && !flag1)      { XFM_CASE(FN, false, false) }                      \
+                else if (!flag0 && flag1)  { XFM_CASE(FN, false, true) }                       \
+                else if (flag0 && !flag1)  { XFM_CASE(FN, true, false) }                       \
+                else                       { XFM_CASE(FN, true, true) }
+            if (op == OP_MXFORM_MUL) { XFM_DISPATCH(motion_transform_mul) }
+            else                     { XFM_DISPATCH(force_transform_mul) }
+            #undef XFM_DISPATCH
+            #undef XFM_CASE
+            break;
+        }
+        case OP_SPATIAL_INERTIA: TIER3(spatial_inertia, a, out); break;
+        case OP_SINERTIA_MUL: {
+            const T al = (T)ALPHA_MUL, be = (T)BETA_MUL;
+            if (flag1 && writer) for (int i = 0; i < 6; i++) out[i] = c[i];
+            if constexpr (M == 0) __syncthreads(); else if constexpr (M == 1) __syncwarp();
+            if (flag1) {
+                if constexpr (M == 0)      glass::spatial_inertia_mul<T, true>(al, a, b, be, out);
+                else if constexpr (M == 1) glass::warp::spatial_inertia_mul<T, true>(al, a, b, be, out);
+                else                       glass::thread::spatial_inertia_mul<T, true>(al, a, b, be, out);
+            } else {
+                if constexpr (M == 0)      glass::spatial_inertia_mul<T, false>(al, a, b, be, out);
+                else if constexpr (M == 1) glass::warp::spatial_inertia_mul<T, false>(al, a, b, be, out);
+                else                       glass::thread::spatial_inertia_mul<T, false>(al, a, b, be, out);
+            }
+            break;
+        }
+        case OP_QUAT_LOG:    TIER3(quat_log, a, out); break;
+        case OP_QUAT_ERROR:  TIER3(quat_error, a, b, out); break;
+        case OP_POSE_ERROR:  TIER3(pose_error, a, b, out); break;
+        case OP_EIG3:        TIER3(eig3, a, out, out + 3); break;
+        case OP_SVD3:        TIER3(svd3, a, out, out + 9, out + 12); break;
+        case OP_CLOSEST_ROT: TIER3(closest_rotation, a, out); break;
+        case OP_ARGMAX_FAST:
+        case OP_ARGMIN_FAST: {
+            // Block model exercises the _fast variant; warp/thread models fall
+            // back to their (only) argreduce forms — the cross-model equality
+            // check then pins _fast against the same answer.
+            const bool mn = (op == OP_ARGMIN_FAST);
+            if constexpr (M == 0) {
+                __shared__ uint32_t s_idx[1];
+                __shared__ T s_val[1];
+                if (mn) glass::argmin_fast<T>(nrt, a, s_idx, s_val, smem);
+                else    glass::argmax_fast<T>(nrt, a, s_idx, s_val, smem);
+                if (writer) { out[0] = (T)s_idx[0]; out[1] = s_val[0]; }
+            } else if constexpr (M == 1) {
+                uint32_t i = mn ? glass::warp::argmin<T>(nrt, a) : glass::warp::argmax<T>(nrt, a);
+                if (writer) { out[0] = (T)i; out[1] = a[i]; }
+            } else {
+                uint32_t i = mn ? glass::thread::argmin<T>(nrt, a) : glass::thread::argmax<T>(nrt, a);
+                out[0] = (T)i; out[1] = a[i];
+            }
+            break;
+        }
         default: break;   // scalar tier-free ops handled by dev_scalar_op
     }
 }
@@ -302,6 +383,13 @@ __device__ void dev_scalar_op(int op, int flag0, const T* a, const T* b, const T
             out[1] = s; out[2] = t;
             break;
         }
+        case OP_QUAT_ANGLE:
+            out[0] = glass::quat_angle<T>(a, b);
+            break;
+        case OP_LOG_COSH:
+            out[0] = glass::log_cosh<T>(a[0]);
+            out[1] = glass::log_cosh_grad<T>(a[0]);
+            break;
         default: break;
     }
 }
@@ -311,7 +399,7 @@ static bool is_scalar_op(int op) {
         case OP_SOC_SCALARS: case OP_INTERVAL_SCALARS: case OP_RBAR:
         case OP_SMOOTH_HINGE: case OP_ANGLE: case OP_SPHERE_SPHERE:
         case OP_SPHERE_BOX: case OP_TRANSFORM_SPHERE: case OP_FRAME:
-        case OP_SEGMENT:
+        case OP_SEGMENT: case OP_QUAT_ANGLE: case OP_LOG_COSH:
             return true;
         default: return false;
     }

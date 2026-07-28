@@ -87,20 +87,26 @@ namespace glass {
     #include "./src/base/pcg/solve.cuh"
 
     /*  robotics-specialized operators (see docs: robotics_conventions) —
-        Lie/quaternion family (angle → quat → so3 → se3, dependency order),
-        Featherstone spatial 6-D cross products, projections/cones/AL scalars,
-        and geometry distance primitives. All array-shaped ops span the block/
+        Lie/quaternion family (angle → quat → so3 → se3 → pose, dependency
+        order), Featherstone spatial 6-D ops (cross products, coordinate
+        transforms, 10-parameter inertia), projections/cones/AL scalars,
+        geometry distance primitives, and the 3x3 estimation kit
+        (eig3/svd3/closest_rotation). All array-shaped ops span the block/
         warp/thread interfaces; scalar ops are tier-free.  */
     #include "./src/base/lie/angle.cuh"
     #include "./src/base/lie/quat.cuh"
     #include "./src/base/lie/so3.cuh"
     #include "./src/base/lie/se3.cuh"
+    #include "./src/base/lie/pose.cuh"
     #include "./src/base/spatial/cross.cuh"
+    #include "./src/base/spatial/transform.cuh"
+    #include "./src/base/spatial/inertia.cuh"
     #include "./src/base/proj/cone.cuh"
     #include "./src/base/proj/interval.cuh"
     #include "./src/base/geom/sphere.cuh"
     #include "./src/base/geom/frame.cuh"
     #include "./src/base/geom/segment.cuh"
+    #include "./src/base/est/svd3.cuh"
 }
 
 /**

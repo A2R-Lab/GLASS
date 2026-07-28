@@ -294,3 +294,32 @@ __device__ __forceinline__ T smooth_hinge_grad(T d, T eta)
     if (d >= eta) return static_cast<T>(0);
     return (d - eta)/eta;
 }
+
+/**
+ * @brief Smooth absolute value: `log(cosh(x))` (overflow-safe).
+ *
+ * The classic C-infinity |x| surrogate of pose/tracking costs (cuRobo's
+ * smooth pose-distance metric): quadratic (`x²/2`) near zero, asymptotically
+ * `|x| − log 2`. Evaluated as `|x| + log1p(exp(−2|x|)) − log 2`, which never
+ * overflows (naive `log(cosh(x))` dies at |x| ≈ 89 in f32). For a scaled
+ * width use `log_cosh(x/s)·s`. Scalar, tier-free.
+ *
+ * @tparam T  Scalar type (e.g. `float`, `double`).
+ * @param x  Input value.
+ * @return `log(cosh(x))` (>= 0).
+ */
+template <typename T>
+__device__ __forceinline__ T log_cosh(T x)
+{
+    const T a = (x < static_cast<T>(0)) ? -x : x;
+    return a + log1p(exp(static_cast<T>(-2)*a)) - static_cast<T>(0.6931471805599453);
+}
+
+/**
+ * @brief `log_cosh` derivative: `tanh(x)`. See `log_cosh`.
+ */
+template <typename T>
+__device__ __forceinline__ T log_cosh_grad(T x)
+{
+    return tanh(x);
+}

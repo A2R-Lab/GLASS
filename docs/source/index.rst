@@ -16,9 +16,11 @@ block-local linear algebra in one consistent ``__device__`` calling convention:
 (``posv`` / ``ldlt`` / ``gesv``), **related algorithms** — block-tridiagonal
 ``bdmv`` / ``pcg`` for trajectory optimization and MPC, plus a contraction-parallel
 + fused family — and **robotics-specialized operators**: Featherstone spatial
-6-D cross products, the SO(3)/SE(3)/quaternion Lie family with its derivative
-chain, cone/augmented-Lagrangian projections, sphere-collision distance
-primitives, and the sampling-planner ``softmax``/``argmin`` reductions (see
+6-D cross products, coordinate transforms, and the 10-parameter inertia, the
+SO(3)/SE(3)/quaternion Lie family with its derivative chain and pose-error
+metrics, cone/augmented-Lagrangian projections, sphere-collision distance
+primitives, the 3x3 estimation kit (``eig3``/``svd3``/``closest_rotation``),
+and the sampling-planner ``softmax``/``argmin`` reductions (see
 :doc:`user_guide/concepts/robotics_conventions`). Everything runs inside one CUDA block — and **you choose the
 granularity**: the same operations exist as **block-, warp-, or thread-scoped
 primitives** (plus vendor-backed kernels), so a block can own one problem, pack

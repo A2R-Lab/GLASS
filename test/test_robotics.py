@@ -70,6 +70,12 @@ _OUT = {
     "sphere_sphere": 4, "sphere_box": 4, "transform_sphere": 4, "frame": 6,
     "segment": 9,
     "softmax": -1, "logsumexp": 1, "argmax": 2, "argmin": 2,
+    "motion_xform": 36, "force_xform": 36, "mxform_mul": 6, "fxform_mul": 6,
+    "spatial_inertia": 36, "sinertia_mul": 6,
+    "quat_log": 3, "quat_error": 3, "pose_error": 6, "quat_angle": 1,
+    "log_cosh": 2,
+    "eig3": 12, "svd3": 21, "closest_rot": 9,
+    "argmax_fast": 2, "argmin_fast": 2,
 }
 
 
@@ -185,6 +191,52 @@ def _rotvecs(n, lo=0.0, hi=2.5):
     return _f32((ax*th).astype(np.float32))
 
 
+def _rot_mats(n, hi=2.5):
+    """Random rotation matrices, column-major flattened (device layout)."""
+    return np.stack([_f32(Rotation.from_rotvec(v).as_matrix().T.ravel()
+                          .astype(np.float32)) for v in _rotvecs(n, hi=hi)])
+
+
+def _pis(n):
+    """Random (non-physical) inertia parameter 10-vectors [m, h, I6]."""
+    pi = RNG.standard_normal((n, 10))
+    pi[:, 0] = RNG.uniform(0.5, 3.0, n)          # positive mass
+    return _f32(pi.astype(np.float32))
+
+
+def _sym3s(n, spread=True):
+    """Random symmetric 3x3s, column-major flattened."""
+    A = RNG.standard_normal((n, 3, 3))
+    A = A + np.transpose(A, (0, 2, 1))
+    if spread:
+        A += np.eye(3) * RNG.uniform(-2, 2, (n, 1, 1))
+    return _f32(A.reshape(n, 9).astype(np.float32))   # symmetric: order-free
+
+
+def _xform_np(E, r, force=False):
+    X = np.zeros((6, 6))
+    X[:3, :3] = E
+    X[3:, 3:] = E
+    B = -E @ _skew_np(r)
+    if force:
+        X[:3, 3:] = B
+    else:
+        X[3:, :3] = B
+    return X
+
+
+def _inertia_np(pi):
+    m, h = pi[0], pi[1:4]
+    Ixx, Ixy, Ixz, Iyy, Iyz, Izz = pi[4:]
+    IO = np.array([[Ixx, Ixy, Ixz], [Ixy, Iyy, Iyz], [Ixz, Iyz, Izz]])
+    M = np.zeros((6, 6))
+    M[:3, :3] = IO
+    M[:3, 3:] = _skew_np(h)
+    M[3:, :3] = _skew_np(h).T
+    M[3:, 3:] = m * np.eye(3)
+    return M
+
+
 # ─── tier machinery: invariance + cross-tier ─────────────────────────────────
 # input factory: op → (inputs, flag0, flag1); 'policy': ulp | tight | exact.
 
@@ -223,12 +275,30 @@ def _tier_case(op):
         return [_f32(RNG.standard_normal((P, 96)).astype(np.float32))], 96, 0, "tight"
     if op == "argmax":
         return [_f32(RNG.standard_normal((P, 96)).astype(np.float32))], 96, 0, "exact"
+    if op in ("mxform_mul", "fxform_mul"):
+        Er = np.hstack([_rot_mats(P), _f32(RNG.standard_normal((P, 3)).astype(np.float32))])
+        x = _f32(RNG.standard_normal((P, 6)).astype(np.float32))
+        y0 = _f32(RNG.standard_normal((P, 6)).astype(np.float32))
+        return [Er, x, y0], 1, 1, "ulp"          # INVERSE + HAS_BETA path
+    if op == "spatial_inertia":
+        return [_pis(P)], 0, 0, "ulp"
+    if op == "sinertia_mul":
+        return [_pis(P), _f32(RNG.standard_normal((P, 6)).astype(np.float32)),
+                _f32(RNG.standard_normal((P, 6)).astype(np.float32))], 0, 1, "ulp"
+    if op == "quat_error":
+        return [_quats(P), _quats(P)], 0, 0, "tight"
+    if op == "eig3":
+        return [_sym3s(P)], 0, 0, "tight"
+    if op == "closest_rot":
+        return [_f32(RNG.standard_normal((P, 9)).astype(np.float32))], 0, 0, "tight"
     raise KeyError(op)
 
 
 TIER_OPS = ["quat_mul", "quat_retract", "so3_exp", "so3_log", "so3_rjac_inv",
             "se3_retract", "se3_jac_v", "se3_hess_v", "motion_cross",
-            "mcross_mul", "force_cross_dual", "soc_project", "softmax", "argmax"]
+            "mcross_mul", "force_cross_dual", "soc_project", "softmax", "argmax",
+            "mxform_mul", "fxform_mul", "spatial_inertia", "sinertia_mul",
+            "quat_error", "eig3", "closest_rot"]
 
 
 @pytest.mark.parametrize("dtype", DTYPES)
@@ -857,3 +927,265 @@ def test_argreduce_oracle(bins, which):
     vals = x[np.arange(P), ref]
     np.testing.assert_allclose(out[:, 1], vals, atol=0)
     assert out[2, 0] == 10, "equal-key tie must keep the LOWER index"
+
+
+# ─── spatial transforms + inertia (wave 2) ───────────────────────────────────
+
+@pytest.mark.parametrize("dtype", DTYPES)
+def test_transform_matrices_oracle(bins, dtype):
+    """motion/force transform materializers vs the numpy block formulas."""
+    Er = np.hstack([_rot_mats(P), _f32(RNG.standard_normal((P, 3)).astype(np.float32))])
+    for op, force in (("motion_xform", False), ("force_xform", True)):
+        got = _run(bins, op, "block", dtype, [Er])
+        ref = np.stack([_xform_np(Er[i, :9].reshape(3, 3, order="F"), Er[i, 9:],
+                                  force).flatten(order="F") for i in range(P)])
+        np.testing.assert_allclose(got, ref, **_TOL[dtype], err_msg=op)
+
+
+@pytest.mark.parametrize("dtype", DTYPES)
+@pytest.mark.parametrize("inverse", [0, 1])
+@pytest.mark.parametrize("has_beta", [0, 1])
+def test_transform_mul_fused_vs_composed(bins, dtype, inverse, has_beta):
+    """Fused applies == alpha·X·v + beta·y (X materialized in numpy; the
+    INVERSE flag == the explicit inverse-transform block formula)."""
+    Er = np.hstack([_rot_mats(P), _f32(RNG.standard_normal((P, 3)).astype(np.float32))])
+    x = _f32(RNG.standard_normal((P, 6)).astype(np.float32))
+    y0 = _f32(RNG.standard_normal((P, 6)).astype(np.float32))
+    for op, force in (("mxform_mul", False), ("fxform_mul", True)):
+        got = _run(bins, op, "block", dtype, [Er, x, y0], flag0=inverse, flag1=has_beta)
+        ref = np.empty((P, 6))
+        for i in range(P):
+            X = _xform_np(Er[i, :9].reshape(3, 3, order="F"), Er[i, 9:], force)
+            if inverse:
+                X = np.linalg.inv(X)
+            ref[i] = ALPHA_MUL * (X @ x[i]) + (BETA_MUL * y0[i] if has_beta else 0.0)
+        np.testing.assert_allclose(got, ref, **_TOL[dtype], err_msg=op)
+
+
+def test_transform_identities(bins):
+    """force_transform == inv(motion_transform)ᵀ, and the fused INVERSE apply
+    undoes the fused forward apply (round trip to the original vector).
+    Tolerances are f32-QUANTIZATION scale, not f64: both identities hold
+    exactly only for orthonormal E, and the file harness rounds E through
+    float32 (~1e-8 off orthogonal); the round trip additionally quantizes the
+    intermediate vector."""
+    Er = np.hstack([_rot_mats(P), _f32(RNG.standard_normal((P, 3)).astype(np.float32))])
+    Xm = _run(bins, "motion_xform", "block", "f64", [Er])
+    Xf = _run(bins, "force_xform", "block", "f64", [Er])
+    for i in range(P):
+        M = Xm[i].reshape(6, 6, order="F")
+        F = Xf[i].reshape(6, 6, order="F")
+        np.testing.assert_allclose(F, np.linalg.inv(M).T, rtol=2e-6, atol=2e-6)
+    v = _f32(RNG.standard_normal((P, 6)).astype(np.float32))
+    zero = np.zeros((P, 6), np.float32)
+    fwd = _run(bins, "mxform_mul", "block", "f64", [Er, v, zero])
+    back = _run(bins, "mxform_mul", "block", "f64", [Er, fwd / ALPHA_MUL, zero], flag0=1)
+    np.testing.assert_allclose(back / ALPHA_MUL, v, rtol=1e-5, atol=1e-5)
+
+
+@pytest.mark.parametrize("dtype", DTYPES)
+@pytest.mark.parametrize("has_beta", [0, 1])
+def test_spatial_inertia_oracle(bins, dtype, has_beta):
+    """Materializer vs the 10-param block formula (symmetric by construction);
+    fused apply vs alpha·M·v + beta·f."""
+    pis = _pis(P)
+    got_M = _run(bins, "spatial_inertia", "block", dtype, [pis])
+    v = _f32(RNG.standard_normal((P, 6)).astype(np.float32))
+    f0 = _f32(RNG.standard_normal((P, 6)).astype(np.float32))
+    got_f = _run(bins, "sinertia_mul", "block", dtype, [pis, v, f0], flag1=has_beta)
+    for i in range(P):
+        M = _inertia_np(pis[i])
+        np.testing.assert_allclose(got_M[i], M.flatten(order="F"), **_TOL[dtype])
+        Md = got_M[i].reshape(6, 6, order="F")
+        np.testing.assert_allclose(Md, Md.T, rtol=0, atol=0)   # exact symmetry
+        ref = ALPHA_MUL * (M @ v[i]) + (BETA_MUL * f0[i] if has_beta else 0.0)
+        np.testing.assert_allclose(got_f[i], ref, **_TOL[dtype])
+
+
+# ─── pose errors (wave 2) ────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("dtype", DTYPES)
+def test_quat_log_oracle(bins, dtype):
+    """quat_log vs scipy as_rotvec, incl. the double-cover fold and the
+    near-identity series region."""
+    q = _quats(P)
+    q[1::3] = -q[1::3]                       # exercise the w<0 fold
+    tiny = Rotation.from_rotvec(_rotvecs(5, hi=1e-6)).as_quat()
+    q[:5] = _f32(tiny.astype(np.float32))
+    got = _run(bins, "quat_log", "block", dtype, [q])
+    ref = np.stack([Rotation.from_quat(qi).as_rotvec() for qi in q])
+    np.testing.assert_allclose(got, ref, **_TOL[dtype])
+    assert np.all(np.linalg.norm(got, axis=1) <= np.pi + 1e-5)
+
+
+@pytest.mark.parametrize("dtype", DTYPES)
+def test_quat_pose_error_oracle(bins, dtype):
+    """quat_error/pose_error vs the scipy local-error oracle
+    (q_des⁻¹ ⊗ q).as_rotvec(), plus the retract-composition identity."""
+    q, qd = _quats(P), _quats(P)
+    pose = np.hstack([_f32(RNG.standard_normal((P, 3)).astype(np.float32)), q])
+    posed = np.hstack([_f32(RNG.standard_normal((P, 3)).astype(np.float32)), qd])
+    e3 = _run(bins, "quat_error", "block", dtype, [q, qd])
+    e6 = _run(bins, "pose_error", "block", dtype, [pose, posed])
+    for i in range(P):
+        ref = (Rotation.from_quat(qd[i]).inv() * Rotation.from_quat(q[i])).as_rotvec()
+        np.testing.assert_allclose(e3[i], ref, **_TOL[dtype])
+        np.testing.assert_allclose(e6[i, 3:], ref, **_TOL[dtype])
+        np.testing.assert_allclose(e6[i, :3], pose[i, :3] - posed[i, :3], **_TOL[dtype])
+        # retract-composition: quat_retract(q_des, e) recovers q (up to cover)
+        q_back = (Rotation.from_quat(qd[i]) * Rotation.from_rotvec(e3[i])).as_quat()
+        np.testing.assert_allclose(_sign_align(q_back, q[i]), q[i],
+                                   rtol=2e-3, atol=2e-3)
+
+
+def test_quat_error_cover_invariance(bins):
+    """The error is shortest-path: negating either stored quaternion (same
+    rotation, other cover) leaves the error unchanged."""
+    q, qd = _quats(P), _quats(P)
+    a = _run(bins, "quat_error", "block", "f64", [q, qd])
+    b = _run(bins, "quat_error", "block", "f64", [-q, qd])
+    c = _run(bins, "quat_error", "block", "f64", [q, -qd])
+    np.testing.assert_allclose(a, b, rtol=1e-14, atol=1e-14)
+    np.testing.assert_allclose(a, c, rtol=1e-14, atol=1e-14)
+
+
+@pytest.mark.parametrize("dtype", DTYPES)
+def test_quat_angle_oracle(bins, dtype):
+    """quat_angle vs scipy magnitude, and == |quat_error| (consistency)."""
+    q, qd = _quats(P), _quats(P)
+    ang = _run(bins, "quat_angle", "block", dtype, [q, qd])[:, 0]
+    err = _run(bins, "quat_error", "block", dtype, [q, qd])
+    ref = np.array([(Rotation.from_quat(qd[i]).inv()
+                     * Rotation.from_quat(q[i])).magnitude() for i in range(P)])
+    np.testing.assert_allclose(ang, ref, **_TOL[dtype])
+    np.testing.assert_allclose(ang, np.linalg.norm(err, axis=1), **_TOL[dtype])
+    assert np.all(ang >= 0) and np.all(ang <= np.pi + 1e-5)
+
+
+@pytest.mark.parametrize("dtype", DTYPES)
+def test_log_cosh_oracle(bins, dtype):
+    """log_cosh vs np.log(np.cosh) in the safe range, the |x|−log2 asymptote
+    at overflow-scale inputs, and grad == tanh."""
+    x = np.concatenate([np.linspace(-5, 5, P - 6),
+                        [-200.0, -88.0, 0.0, 1e-4, 88.0, 200.0]])[:, None]
+    x = _f32(x.astype(np.float32))
+    got = _run(bins, "log_cosh", "block", dtype, [x])
+    safe = np.abs(x[:, 0]) < 20
+    np.testing.assert_allclose(got[safe, 0], np.log(np.cosh(x[safe, 0])), **_TOL[dtype])
+    big = np.abs(x[:, 0]) >= 88
+    np.testing.assert_allclose(got[big, 0], np.abs(x[big, 0]) - np.log(2), **_TOL[dtype])
+    assert np.all(np.isfinite(got))
+    np.testing.assert_allclose(got[:, 1], np.tanh(x[:, 0]), **_TOL[dtype])
+
+
+# ─── 3x3 estimation kit (family E) ───────────────────────────────────────────
+
+@pytest.mark.parametrize("dtype", DTYPES)
+def test_eig3_oracle(bins, dtype):
+    """eig3 vs np.linalg.eigh: ascending spectrum, orthonormal V,
+    reconstruction — incl. a repeated-eigenvalue case."""
+    A = _sym3s(P)
+    A[0] = _f32(np.eye(3).ravel())                       # fully repeated
+    iso = 2.0 * np.eye(3) + np.outer([1, 1, 0], [1, 1, 0])
+    A[1] = _f32(iso.ravel().astype(np.float32))          # doubly repeated
+    got = _run(bins, "eig3", "block", dtype, [A])
+    tol = _TOL[dtype]
+    for i in range(P):
+        Ai = A[i].reshape(3, 3, order="F")
+        W, V = got[i, :3], got[i, 3:].reshape(3, 3, order="F")
+        Wref = np.linalg.eigh(Ai)[0]
+        np.testing.assert_allclose(W, Wref, **tol)
+        assert np.all(np.diff(W) >= -1e-5)
+        np.testing.assert_allclose(V.T @ V, np.eye(3), **tol)
+        np.testing.assert_allclose(V @ np.diag(W) @ V.T, Ai, **tol)
+
+
+@pytest.mark.parametrize("dtype", DTYPES)
+def test_svd3_oracle(bins, dtype):
+    """svd3 vs np.linalg.svd: descending σ, orthonormal U/V, reconstruction —
+    incl. rank-2 / rank-1 / zero / reflection inputs (deficient ranks check
+    reconstruction + orthonormality only; the completed columns are free)."""
+    A = _f32(RNG.standard_normal((P, 9)).astype(np.float32))
+    a1, a2 = RNG.standard_normal(3), RNG.standard_normal(3)
+    A[0] = _f32((np.outer(a1, a2) + np.outer(a2, a1)).flatten(order="F").astype(np.float32))
+    A[1] = _f32(np.outer(a1, a2).flatten(order="F").astype(np.float32))   # rank 1
+    A[2] = 0.0                                                            # zero
+    A[3] = _f32(np.diag([2.0, 1.0, -0.5]).flatten(order="F"))             # det < 0
+    got = _run(bins, "svd3", "block", dtype, [A])
+    tol = _TOL[dtype]
+    for i in range(P):
+        Ai = A[i].reshape(3, 3, order="F")
+        U = got[i, :9].reshape(3, 3, order="F")
+        S = got[i, 9:12]
+        V = got[i, 12:].reshape(3, 3, order="F")
+        Sref = np.linalg.svd(Ai, compute_uv=False)
+        np.testing.assert_allclose(S, Sref, **tol)
+        assert np.all(np.diff(S) <= 1e-5) and np.all(S >= -1e-12)
+        np.testing.assert_allclose(U.T @ U, np.eye(3), **tol)
+        np.testing.assert_allclose(V.T @ V, np.eye(3), **tol)
+        np.testing.assert_allclose(U @ np.diag(S) @ V.T, Ai, **tol)
+
+
+def _closest_rot_np(A):
+    U, S, Vt = np.linalg.svd(A)
+    d = np.sign(np.linalg.det(U) * np.linalg.det(Vt))
+    return U @ np.diag([1.0, 1.0, d]) @ Vt
+
+
+@pytest.mark.parametrize("dtype", DTYPES)
+def test_closest_rotation_oracle(bins, dtype):
+    """closest_rotation: always proper (det +1, orthonormal), matches the
+    numpy det-fixed SVD answer, and re-orthonormalizes drifted rotations."""
+    A = _f32(RNG.standard_normal((P, 9)).astype(np.float32))
+    drift = Rotation.from_rotvec(_rotvecs(1)[0]).as_matrix()
+    A[0] = _f32((drift + 1e-3 * RNG.standard_normal((3, 3)))
+                .flatten(order="F").astype(np.float32))
+    A[1] = _f32(np.diag([2.0, 1.0, -0.5]).flatten(order="F"))   # det < 0
+    got = _run(bins, "closest_rot", "block", dtype, [A])
+    tol = _TOL[dtype]
+    for i in range(P):
+        Ai = A[i].reshape(3, 3, order="F")
+        R = got[i].reshape(3, 3, order="F")
+        np.testing.assert_allclose(R.T @ R, np.eye(3), **tol)
+        np.testing.assert_allclose(np.linalg.det(R), 1.0, **tol)
+        s = np.linalg.svd(Ai, compute_uv=False)
+        if s[1] + s[2] > 1e-3:                       # unique-solution regime
+            np.testing.assert_allclose(R, _closest_rot_np(Ai), **tol)
+    # drifted-rotation case recovers the underlying rotation
+    R0 = got[0].reshape(3, 3, order="F")
+    assert np.abs(R0 - drift).max() < 5e-3
+
+
+def test_kabsch_best_fit(bins):
+    """The Kabsch/Wahba use: feed M = Σ b_i a_iᵀ with b = R_true·a — the
+    closest rotation recovers R_true."""
+    for _ in range(5):
+        R_true = Rotation.from_rotvec(_rotvecs(1)[0]).as_matrix()
+        a = RNG.standard_normal((20, 3))
+        b = a @ R_true.T
+        M = b.T @ a                                   # Σ b aᵀ
+        Mf = _f32(M.flatten(order="F").astype(np.float32))
+        got = _run(bins, "closest_rot", "block", "f64", [np.tile(Mf, (P, 1))])
+        R = got[0].reshape(3, 3, order="F")
+        np.testing.assert_allclose(R, R_true, rtol=1e-5, atol=1e-5)
+
+
+# ─── argreduce _fast twins ───────────────────────────────────────────────────
+
+@pytest.mark.parametrize("which", ["argmax_fast", "argmin_fast"])
+def test_argreduce_fast(bins, which):
+    """_fast (warp-shuffle strategy) is bit-identical to the default variant —
+    index AND value — at every full-warp block size, incl. tie inputs.
+    (tpb=1 is excluded: the _fast strategy requires full warps, as iamax_fast.)"""
+    plain = which.replace("_fast", "")
+    n = 257
+    x = _f32(RNG.standard_normal((P, n)).astype(np.float32))
+    ties = RNG.integers(0, 5, (P, n)).astype(np.float32)   # heavy ties
+    for arr in (x, _f32(ties)):
+        for tpb in (32, 64, 256):
+            a = _run(bins, which, "block", "f32", [arr], tpb=tpb, flag0=n)
+            b = _run(bins, plain, "block", "f32", [arr], tpb=tpb, flag0=n)
+            assert np.array_equal(a, b), f"{which} != {plain} at tpb={tpb}"
+        idx = a[:, 0].astype(int)
+        ref = (np.argmin if "min" in which else np.argmax)(arr, axis=1)
+        assert np.array_equal(idx, ref)

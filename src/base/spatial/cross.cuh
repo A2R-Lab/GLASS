@@ -117,19 +117,32 @@ namespace spatial_detail {
             M[i] = motion_cross_entry<T>(i % 6, i / 6, v);
     }
 
-    template <typename T, int AXIS, bool HAS_BETA>
+    template <typename T, int AXIS, bool HAS_BETA, bool FULL_UNROLL = false>
     __device__ __forceinline__ void motion_cross_mul_impl(uint32_t rank, uint32_t size,
                                                           T alpha, const T *v, const T *x,
                                                           T beta, T *y) {
         static_assert(AXIS >= -1 && AXIS < 6, "AXIS must be -1 (dense x) or 0..5");
         // unroll 1: differing FMA contraction between unroll copies would break
-        // bit-identity across thread counts (see se3_retract_hessian_impl).
-        #pragma unroll 1
-        for (uint32_t r = rank; r < 6; r += size) {
-            T res;
-            if constexpr (AXIS >= 0) res = motion_cross_entry<T>(r, (uint32_t)AXIS, v);
-            else                     res = motion_cross_mul_row<T>(r, v, x);
-            y[r] = HAS_BETA ? beta_blend(alpha*res, beta, y[r]) : (alpha*res);
+        // bit-identity across thread counts (see se3_retract_hessian_impl). The
+        // thread:: tier opts back into full unrolling (FULL_UNROLL) — one thread
+        // owns every row, so there is no cross-thread split to keep bit-stable
+        // (cross-tier agreement stays within the documented ULP policy).
+        if constexpr (FULL_UNROLL) {
+            #pragma unroll
+            for (uint32_t r = rank; r < 6; r += size) {
+                T res;
+                if constexpr (AXIS >= 0) res = motion_cross_entry<T>(r, (uint32_t)AXIS, v);
+                else                     res = motion_cross_mul_row<T>(r, v, x);
+                y[r] = HAS_BETA ? beta_blend(alpha*res, beta, y[r]) : (alpha*res);
+            }
+        } else {
+            #pragma unroll 1
+            for (uint32_t r = rank; r < 6; r += size) {
+                T res;
+                if constexpr (AXIS >= 0) res = motion_cross_entry<T>(r, (uint32_t)AXIS, v);
+                else                     res = motion_cross_mul_row<T>(r, v, x);
+                y[r] = HAS_BETA ? beta_blend(alpha*res, beta, y[r]) : (alpha*res);
+            }
         }
     }
 
@@ -140,14 +153,23 @@ namespace spatial_detail {
             M[i] = force_cross_entry<T>(i % 6, i / 6, v);
     }
 
-    template <typename T, bool HAS_BETA>
+    template <typename T, bool HAS_BETA, bool FULL_UNROLL = false>
     __device__ __forceinline__ void force_cross_mul_impl(uint32_t rank, uint32_t size,
                                                          T alpha, const T *v, const T *f,
                                                          T beta, T *y) {
-        #pragma unroll 1
-        for (uint32_t r = rank; r < 6; r += size) {
-            const T res = force_cross_mul_row<T>(r, v, f);
-            y[r] = HAS_BETA ? beta_blend(alpha*res, beta, y[r]) : (alpha*res);
+        // unroll policy: see motion_cross_mul_impl.
+        if constexpr (FULL_UNROLL) {
+            #pragma unroll
+            for (uint32_t r = rank; r < 6; r += size) {
+                const T res = force_cross_mul_row<T>(r, v, f);
+                y[r] = HAS_BETA ? beta_blend(alpha*res, beta, y[r]) : (alpha*res);
+            }
+        } else {
+            #pragma unroll 1
+            for (uint32_t r = rank; r < 6; r += size) {
+                const T res = force_cross_mul_row<T>(r, v, f);
+                y[r] = HAS_BETA ? beta_blend(alpha*res, beta, y[r]) : (alpha*res);
+            }
         }
     }
 
@@ -286,20 +308,20 @@ namespace thread {
     __device__ void motion_cross(const T *v, T *M)
     { spatial_detail::motion_cross_impl(0u, 1u, v, M); }
 
-    /** @brief Single-thread fused motion cross apply. See `glass::motion_cross_mul`. */
+    /** @brief Single-thread fused motion cross apply (fully unrolled). See `glass::motion_cross_mul`. */
     template <typename T, int AXIS = -1, bool HAS_BETA = false>
     __device__ void motion_cross_mul(T alpha, const T *v, const T *x, T beta, T *y)
-    { spatial_detail::motion_cross_mul_impl<T, AXIS, HAS_BETA>(0u, 1u, alpha, v, x, beta, y); }
+    { spatial_detail::motion_cross_mul_impl<T, AXIS, HAS_BETA, true>(0u, 1u, alpha, v, x, beta, y); }
 
     /** @brief Single-thread force cross matrix. See `glass::force_cross`. */
     template <typename T>
     __device__ void force_cross(const T *v, T *M)
     { spatial_detail::force_cross_impl(0u, 1u, v, M); }
 
-    /** @brief Single-thread fused force cross apply. See `glass::force_cross_mul`. */
+    /** @brief Single-thread fused force cross apply (fully unrolled). See `glass::force_cross_mul`. */
     template <typename T, bool HAS_BETA = false>
     __device__ void force_cross_mul(T alpha, const T *v, const T *f, T beta, T *y)
-    { spatial_detail::force_cross_mul_impl<T, HAS_BETA>(0u, 1u, alpha, v, f, beta, y); }
+    { spatial_detail::force_cross_mul_impl<T, HAS_BETA, true>(0u, 1u, alpha, v, f, beta, y); }
 
     /** @brief Single-thread operand-swapped force cross matrix. See `glass::force_cross_dual`. */
     template <typename T>

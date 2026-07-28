@@ -169,6 +169,26 @@ namespace quat_detail {
         quat_normalize_core<T, L, false>(qm, q_new);
     }
 
+    // serial core: φ = log(q) — the rotation vector of a UNIT quaternion,
+    // canonical branch |φ| ≤ π (the double cover folds via the w-sign flip, so
+    // q and −q give the same shortest-path answer). `φ = 2·atan2(|v|, w)·v̂`
+    // with the series head `2/w − 2|v|²/(3w³)` below |v| = 1e-8 keeping the
+    // map smooth through the identity.
+    template <typename T, QuatLayout L>
+    __device__ __forceinline__ void quat_log_core(const T *q, T *phi) {
+        using QL = layout<L>;
+        T x = q[QL::X], y = q[QL::Y], z = q[QL::Z], w = q[QL::W];
+        if (w < static_cast<T>(0)) { x = -x; y = -y; z = -z; w = -w; }
+        const T n = sqrt(x*x + y*y + z*z);
+        T s;   // scale = θ/|v| with θ = 2·atan2(|v|, w)
+        if (n < static_cast<T>(1e-8)) {
+            s = static_cast<T>(2)/w - static_cast<T>(2)*n*n/(static_cast<T>(3)*w*w*w);
+        } else {
+            s = static_cast<T>(2)*atan2(n, w)/n;
+        }
+        phi[0] = s*x; phi[1] = s*y; phi[2] = s*z;
+    }
+
     // tier glue: strided copy-out of a register tmp (the redundant-core pattern).
     template <typename T, uint32_t N>
     __device__ __forceinline__ void copy_out(uint32_t rank, uint32_t size,
@@ -267,6 +287,30 @@ __device__ void quat_exp(const T *phi, T *out)
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
     T tmp[4]; quat_detail::quat_exp_core<T, L>(phi, tmp);
     quat_detail::copy_out<T, 4>(rank, size, tmp, out);
+    if constexpr (TRAILING_SYNC) __syncthreads();
+}
+
+/**
+ * @brief Quaternion logarithm: the rotation vector `φ` of a unit quaternion.
+ *
+ * The inverse of `quat_exp` on the canonical branch `|φ| ≤ π`: `φ = 2·log(q)`
+ * with the double cover folded (q and −q return the SAME shortest-path
+ * vector). Routed through `2·atan2(|v|, w)` — stable across the whole range
+ * including θ near π — with a series head below `|v| = 1e-8` keeping the map
+ * smooth through the identity. `q` must be unit length. NumPy equivalent
+ * (xyzw): `Rotation.from_quat(q).as_rotvec()`.
+ *
+ * @tparam T,L,TRAILING_SYNC  See `quat_mul`.
+ * @param q    Unit quaternion (4 elements).
+ * @param phi  Output rotation vector (3 elements; no aliasing at block/warp scope).
+ */
+template <typename T, QuatLayout L = QuatLayout::xyzw, bool TRAILING_SYNC = true>
+__device__ void quat_log(const T *q, T *phi)
+{
+    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    T tmp[3]; quat_detail::quat_log_core<T, L>(q, tmp);
+    quat_detail::copy_out<T, 3>(rank, size, tmp, phi);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -425,6 +469,14 @@ namespace thread {
         quat_detail::quat_exp_core<T, L>(phi, out);
     }
 
+    /** @brief Single-thread quaternion logarithm. See `glass::quat_log`. */
+    template <typename T, QuatLayout L = QuatLayout::xyzw>
+    __device__ void quat_log(const T *q, T *phi)
+    {
+        T tmp[3]; quat_detail::quat_log_core<T, L>(q, tmp);
+        phi[0] = tmp[0]; phi[1] = tmp[1]; phi[2] = tmp[2];
+    }
+
     /** @brief Single-thread `R(q)·p`. See `glass::quat_rotate`. */
     template <typename T, QuatLayout L = QuatLayout::xyzw>
     __device__ void quat_rotate(const T *q, const T *p, T *out)
@@ -511,6 +563,16 @@ namespace warp {
         uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
         T tmp[4]; quat_detail::quat_exp_core<T, L>(phi, tmp);
         quat_detail::copy_out<T, 4>(lane, 32u, tmp, out);
+        __syncwarp();
+    }
+
+    /** @brief Single-warp quaternion logarithm. See `glass::quat_log`. */
+    template <typename T, QuatLayout L = QuatLayout::xyzw>
+    __device__ void quat_log(const T *q, T *phi)
+    {
+        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+        T tmp[3]; quat_detail::quat_log_core<T, L>(q, tmp);
+        quat_detail::copy_out<T, 3>(lane, 32u, tmp, phi);
         __syncwarp();
     }
 
