@@ -48,6 +48,8 @@ namespace glass {
     #include "./src/base/L1/nrm1_diff.cuh"
     #include "./src/base/L1/axpy_strided.cuh"
     #include "./src/base/L1/copy_strided.cuh"
+    #include "./src/base/L1/softmax.cuh"
+    #include "./src/base/L1/argreduce.cuh"
 
     /*      L2      */
     #include "./src/base/L2/gemv.cuh"
@@ -83,6 +85,22 @@ namespace glass {
     #include "./src/base/banded/block_access.cuh"
     #include "./src/base/banded/bdsv.cuh"
     #include "./src/base/pcg/solve.cuh"
+
+    /*  robotics-specialized operators (see docs: robotics_conventions) —
+        Lie/quaternion family (angle → quat → so3 → se3, dependency order),
+        Featherstone spatial 6-D cross products, projections/cones/AL scalars,
+        and geometry distance primitives. All array-shaped ops span the block/
+        warp/thread interfaces; scalar ops are tier-free.  */
+    #include "./src/base/lie/angle.cuh"
+    #include "./src/base/lie/quat.cuh"
+    #include "./src/base/lie/so3.cuh"
+    #include "./src/base/lie/se3.cuh"
+    #include "./src/base/spatial/cross.cuh"
+    #include "./src/base/proj/cone.cuh"
+    #include "./src/base/proj/interval.cuh"
+    #include "./src/base/geom/sphere.cuh"
+    #include "./src/base/geom/frame.cuh"
+    #include "./src/base/geom/segment.cuh"
 }
 
 /**

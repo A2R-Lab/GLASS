@@ -1,0 +1,196 @@
+#pragma once
+#include <cstdint>
+
+// ─── argmax / argmin with index payload (L1) ─────────────────────────────────
+//
+// The SIGNED-value argreductions (`np.argmax` / `np.argmin`) that generalize
+// the BLAS `iamax` (which reduces over |x|): best-rollout selection in
+// sampling planners, best-cost line-search index picking, argmin-carrying
+// collision reductions. Same invariance mechanism as `iamax.cuh`: the
+// (key, index) pair with the LOWER-index tie-break applied at EVERY combine
+// step, so the winner cannot depend on the block size.
+//
+// NaN policy: NaN inputs are SKIPPED (IEEE compares are false, so a NaN never
+// wins — diverges from `np.argmax`, which propagates NaN; exclude NaN in
+// oracles). An all-NaN (or empty) vector returns index 0. Unlike `iamax`, the
+// running best seeds EMPTY (idx = UINT32_MAX) rather than key = 0, so
+// all-negative (argmax) / all-positive (argmin) vectors reduce correctly.
+
+namespace argreduce_detail {
+
+// Fold candidate (ckey, cidx) into the running best in place. MINIMUM picks
+// the comparison direction; empty slots (idx == UINT32_MAX) lose to any real
+// candidate; NaN candidates are skipped; equal keys keep the lower index.
+template <typename T, bool MINIMUM>
+__device__ __forceinline__ void combine(T &key, uint32_t &idx, T ckey, uint32_t cidx) {
+    if (cidx == UINT32_MAX || ckey != ckey) return;           // empty or NaN candidate
+    const bool better = MINIMUM ? (ckey < key) : (ckey > key);
+    if (idx == UINT32_MAX || better || (ckey == key && cidx < idx)) { key = ckey; idx = cidx; }
+}
+
+// tier-shared body: default (per-thread strided scan + thread-0 serial fold
+// through scratch) — the iamax default variant's shape, signed and two-sided.
+template <typename T, bool MINIMUM, bool TRAILING_SYNC>
+__device__ void argreduce(uint32_t n, const T *x, uint32_t *out, T *out_val, T *s_scratch) {
+    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    T *s_key = s_scratch;
+    uint32_t *s_idx = reinterpret_cast<uint32_t *>(s_scratch + size);
+
+    T best_key = static_cast<T>(0);
+    uint32_t best_idx = UINT32_MAX;
+    for (uint32_t i = rank; i < n; i += size)
+        combine<T, MINIMUM>(best_key, best_idx, x[i], i);
+    s_key[rank] = best_key;
+    s_idx[rank] = best_idx;
+    __syncthreads();
+
+    if (rank == 0) {
+        T key = s_key[0];
+        uint32_t idx = s_idx[0];
+        uint32_t lim = (size < n) ? size : n;
+        for (uint32_t i = 1; i < lim; i++)
+            combine<T, MINIMUM>(key, idx, s_key[i], s_idx[i] == UINT32_MAX ? UINT32_MAX : s_idx[i]);
+        out[0] = (idx == UINT32_MAX) ? 0u : idx;
+        if (out_val != nullptr) out_val[0] = (idx == UINT32_MAX) ? x[0] : key;
+    }
+    if constexpr (TRAILING_SYNC) __syncthreads();
+}
+
+// single-warp body: strided per-lane scan + shuffle fold, index broadcast.
+template <typename T, bool MINIMUM>
+__device__ uint32_t argreduce_warp(uint32_t n, const T *x) {
+    uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+    T key = static_cast<T>(0);
+    uint32_t idx = UINT32_MAX;
+    for (uint32_t i = lane; i < n; i += 32u)
+        combine<T, MINIMUM>(key, idx, x[i], i);
+    for (int off = 16; off > 0; off >>= 1) {
+        T okey = __shfl_down_sync(0xffffffffu, key, off);
+        uint32_t oidx = __shfl_down_sync(0xffffffffu, idx, off);
+        combine<T, MINIMUM>(key, idx, okey, oidx);
+    }
+    idx = (idx == UINT32_MAX) ? 0u : idx;
+    return __shfl_sync(0xffffffffu, idx, 0);
+}
+
+// single-thread body: serial scan, register return.
+template <typename T, bool MINIMUM>
+__device__ __forceinline__ uint32_t argreduce_serial(uint32_t n, const T *x) {
+    T key = static_cast<T>(0);
+    uint32_t idx = UINT32_MAX;
+    for (uint32_t i = 0; i < n; i++) combine<T, MINIMUM>(key, idx, x[i], i);
+    return (idx == UINT32_MAX) ? 0u : idx;
+}
+
+} // namespace argreduce_detail
+
+/**
+ * @brief Shared-scratch size in bytes for `argmax` / `argmin`.
+ *
+ * One signed key (`T`) plus one index (`uint32_t`) per thread — the same
+ * layout (and size) as `iamax_scratch_bytes`.
+ *
+ * @tparam T  Scalar type.
+ * @param block_threads  Number of threads in the launching block.
+ * @return Bytes to allocate for `s_scratch`.
+ */
+template <typename T>
+__host__ __device__ constexpr std::size_t argreduce_scratch_bytes(uint32_t block_threads) {
+    return (static_cast<std::size_t>(block_threads
+          + (block_threads * sizeof(uint32_t) + sizeof(T) - 1) / sizeof(T))) * sizeof(T);
+}
+
+/**
+ * @brief Index of the maximum element (signed), into `out[0]`.
+ *
+ * `np.argmax` semantics with the LOWER-index tie-break at every combine step
+ * (thread-count invariant) and NaN skipped (see the header note; all-NaN → 0).
+ * Non-destructive. NumPy equivalent: `int(np.argmax(x))` (NaN-free inputs).
+ *
+ * @tparam T  Scalar type (e.g. `float`, `double`).
+ * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+ * @param n          Number of elements.
+ * @param x          Read-only input vector of length `n`.
+ * @param out        Output: `out[0]` receives the argmax index.
+ * @param s_scratch  Shared scratch of `argreduce_scratch_bytes<T>(blockDim)` bytes.
+ */
+template <typename T, bool TRAILING_SYNC = true>
+__device__ void argmax(uint32_t n, const T *x, uint32_t *out, T *s_scratch) {
+    argreduce_detail::argreduce<T, false, TRAILING_SYNC>(n, x, out, nullptr, s_scratch);
+}
+
+/**
+ * @brief `argmax` also returning the maximum value in `out_val[0]`.
+ *
+ * NumPy equivalents: `out[0] = int(np.argmax(x))`, `out_val[0] = np.max(x)`
+ * (NaN-free inputs; all-NaN returns `x[0]`).
+ *
+ * @tparam T,TRAILING_SYNC  See `argmax`.
+ * @param n,x,s_scratch  See `argmax`.
+ * @param out      Output index slot.
+ * @param out_val  Output value slot.
+ */
+template <typename T, bool TRAILING_SYNC = true>
+__device__ void argmax(uint32_t n, const T *x, uint32_t *out, T *out_val, T *s_scratch) {
+    argreduce_detail::argreduce<T, false, TRAILING_SYNC>(n, x, out, out_val, s_scratch);
+}
+
+/**
+ * @brief Index of the minimum element (signed), into `out[0]`.
+ *
+ * `np.argmin` semantics; tie-break, NaN policy, and invariance as `argmax`.
+ *
+ * @tparam T,TRAILING_SYNC  See `argmax`.
+ * @param n,x,out,s_scratch  See `argmax`.
+ */
+template <typename T, bool TRAILING_SYNC = true>
+__device__ void argmin(uint32_t n, const T *x, uint32_t *out, T *s_scratch) {
+    argreduce_detail::argreduce<T, true, TRAILING_SYNC>(n, x, out, nullptr, s_scratch);
+}
+
+/**
+ * @brief `argmin` also returning the minimum value in `out_val[0]`.
+ *
+ * NumPy equivalents: `out[0] = int(np.argmin(x))`, `out_val[0] = np.min(x)`.
+ *
+ * @tparam T,TRAILING_SYNC  See `argmax`.
+ * @param n,x,out,out_val,s_scratch  See the value-returning `argmax`.
+ */
+template <typename T, bool TRAILING_SYNC = true>
+__device__ void argmin(uint32_t n, const T *x, uint32_t *out, T *out_val, T *s_scratch) {
+    argreduce_detail::argreduce<T, true, TRAILING_SYNC>(n, x, out, out_val, s_scratch);
+}
+
+// ─── single-thread argreductions ─────────────────────────────────────────────
+namespace thread {
+    /** @brief Single-thread argmax (register return). See `glass::argmax`. */
+    template <typename T>
+    __device__ uint32_t argmax(uint32_t n, const T *x)
+    { return argreduce_detail::argreduce_serial<T, false>(n, x); }
+
+    /** @brief Single-thread argmin (register return). See `glass::argmin`. */
+    template <typename T>
+    __device__ uint32_t argmin(uint32_t n, const T *x)
+    { return argreduce_detail::argreduce_serial<T, true>(n, x); }
+}
+
+// ─── single-warp argreductions ───────────────────────────────────────────────
+namespace warp {
+    /**
+     * @brief Single-warp argmax, index returned on every lane (register
+     * broadcast, no scratch). Full 32 lanes required. See `glass::argmax` and
+     * the `warp::iamax` notes (same mechanism, signed).
+     */
+    template <typename T>
+    __device__ uint32_t argmax(uint32_t n, const T *x)
+    { return argreduce_detail::argreduce_warp<T, false>(n, x); }
+
+    /**
+     * @brief Single-warp argmin, index returned on every lane. Full 32 lanes
+     * required. See `glass::argmin`.
+     */
+    template <typename T>
+    __device__ uint32_t argmin(uint32_t n, const T *x)
+    { return argreduce_detail::argreduce_warp<T, true>(n, x); }
+}
