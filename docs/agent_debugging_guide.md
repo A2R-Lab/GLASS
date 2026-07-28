@@ -260,6 +260,30 @@ Nasty properties, so check for it deliberately:
   block-scoped `cgrps`/`__syncthreads` twins are safe *today* (full-block fence) but carry a note to
   prefer `g.shfl(pivot, 0)` if ever called with a warp-tiled group.
 
+### 1h. Loop-unroll copies contract FMAs differently → thread-count NON-invariance inside ONE kernel
+
+Found 2026-07-28 landing the robotics ops. A `for (i = rank; i < n; i += size)` loop whose body
+contains a float multiply-add chain is NOT automatically bit-invariant across block sizes, even
+though the arithmetic per element is "the same code": ptxas may UNROLL the loop, and different
+unroll copies of the body can contract the multiply-adds differently. At `tpb=1` one thread runs
+elements through the copy sequence (prologue copy, then main-loop copies); at `tpb=32` each thread
+executes only the FIRST copy — so the same element computes through differently-contracted code
+and the outputs differ by 1 ulp on a handful of elements. Caught by the tpb∈{1,32,64,256}
+bit-equality gate on `se3_retract_hessian` (3/864 f64 elements, 1 ulp, uniform-looking until you
+diff bits).
+
+- **Fix:** `#pragma unroll 1` on every rank-strided loop whose body does FP arithmetic
+  (see `spatial/cross.cuh` fused applies, `lie/se3.cuh` hessian k-loop, `L1/softmax.cuh` exp
+  loops). Pure copy-out loops (`out[i] = tmp[i]`) and comparison-only loops (argreduce combine)
+  are immune — don't pessimize those.
+- **Not the same bug as** the cross-TIER 1-ulp jitter (test_thread's `-fmad=false` finding):
+  that one is across template instantiations and is handled by test tolerance; THIS one is within
+  a single compiled kernel and breaks the hard bit-invariance contract, so it must be fixed in
+  the source, not tolerated in tests.
+- **The tell:** block output differs between two block sizes by ≤1-2 ulp on a SPARSE subset of
+  elements (the elements whose iteration parity lands in a different unroll copy), while
+  everything is deterministic run-to-run at any fixed size.
+
 ---
 
 ## 2. Debugging methodology (what localizes a bug fast here)
