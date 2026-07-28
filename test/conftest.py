@@ -175,6 +175,7 @@ def _hash_sources(cu_path: pathlib.Path) -> str:
               CUDA_DIR / "test_solve.cu",
               CUDA_DIR / "test_bdsv.cu",
               CUDA_DIR / "test_block_access.cu",
+              CUDA_DIR / "test_robotics.cu",
     ]
     for p in paths:
         if p.exists():
@@ -253,6 +254,7 @@ def bins(tmp_path_factory):
         "symmetrize": compile_binary("test_symmetrize", build_dir, CUDA_ARCH),
         "symm_rot": compile_binary("test_symm_rot", build_dir, CUDA_ARCH),
         "syev": compile_binary("test_syev", build_dir, CUDA_ARCH),
+        "robotics": compile_binary("test_robotics", build_dir, CUDA_ARCH),
     }
     # test_l3_nvidia.cu includes glass-nvidia.cuh and exercises the SIMT-only
     # batched APIs (gemm_batched_1d, gemm_strided_batched_1d). It does NOT
