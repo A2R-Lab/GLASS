@@ -13,9 +13,13 @@ Like Eigen on the CPU, GLASS aims to be *comprehensive* — it covers all
 block-local linear algebra in one consistent ``__device__`` calling convention:
 **BLAS** (L1/L2/L3), **LAPACK-style factorizations and triangular solves**
 (Cholesky, LDLᵀ, and LU/QR via vendor backends), **dense linear-system solvers**
-(``posv`` / ``ldlt`` / ``gesv``), and **related algorithms** — block-tridiagonal
+(``posv`` / ``ldlt`` / ``gesv``), **related algorithms** — block-tridiagonal
 ``bdmv`` / ``pcg`` for trajectory optimization and MPC, plus a contraction-parallel
-+ fused family. Everything runs inside one CUDA block — and **you choose the
++ fused family — and **robotics-specialized operators**: Featherstone spatial
+6-D cross products, the SO(3)/SE(3)/quaternion Lie family with its derivative
+chain, cone/augmented-Lagrangian projections, sphere-collision distance
+primitives, and the sampling-planner ``softmax``/``argmin`` reductions (see
+:doc:`user_guide/concepts/robotics_conventions`). Everything runs inside one CUDA block — and **you choose the
 granularity**: the same operations exist as **block-, warp-, or thread-scoped
 primitives** (plus vendor-backed kernels), so a block can own one problem, pack
 one per warp, or pack 32 per warp with one problem per thread — whatever matches

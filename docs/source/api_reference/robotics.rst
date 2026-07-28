@@ -1,0 +1,67 @@
+Robotics operators
+==================
+
+The robotics-specialized small-operator families — spatial 6-D cross products
+(rigid-body dynamics), the SO(3)/SE(3)/quaternion Lie family (manifold states
+and their derivatives), projection/cone/augmented-Lagrangian scalars
+(constrained trajectory optimization), geometry distance primitives
+(sphere-decomposed collision checking), and the sampling-planner L1 additions
+(``softmax``/``logsumexp``/``argmax``/``argmin``).
+
+**Read the conventions first**: :doc:`../user_guide/concepts/robotics_conventions`
+pins the angular-first spatial ordering, the linear-first SE(3) tangent blocks,
+the ``QuatLayout`` storage tag, column-major storage, and the small-angle
+branch policy. Every array-shaped op below also exists as ``glass::warp::``
+and ``glass::thread::`` (same serial core, one tier per problem-packing
+granularity); scalar ops are tier-free.
+
+Spatial 6-D cross products
+--------------------------
+
+.. doxygenfile:: src/base/spatial/cross.cuh
+
+Quaternions
+-----------
+
+.. doxygenfile:: src/base/lie/quat.cuh
+
+SO(3): exp / log / Jacobians
+----------------------------
+
+.. doxygenfile:: src/base/lie/so3.cuh
+
+SE(3): retract + derivatives
+----------------------------
+
+.. doxygenfile:: src/base/lie/se3.cuh
+
+Planar angles
+-------------
+
+.. doxygenfile:: src/base/lie/angle.cuh
+
+Cones & projections
+-------------------
+
+.. doxygenfile:: src/base/proj/cone.cuh
+
+Interval / AL / barrier scalars
+-------------------------------
+
+.. doxygenfile:: src/base/proj/interval.cuh
+
+Geometry distances
+------------------
+
+.. doxygenfile:: src/base/geom/sphere.cuh
+
+.. doxygenfile:: src/base/geom/frame.cuh
+
+.. doxygenfile:: src/base/geom/segment.cuh
+
+Sampling reductions (L1)
+------------------------
+
+.. doxygenfile:: src/base/L1/softmax.cuh
+
+.. doxygenfile:: src/base/L1/argreduce.cuh

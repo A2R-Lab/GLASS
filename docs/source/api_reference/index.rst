@@ -20,6 +20,9 @@ The reference is organized by BLAS level and by backend:
 * **Block-tridiagonal solvers** — the ``glass::bdmv`` matvec and the
   ``glass::pcg`` preconditioned conjugate-gradient solver for the
   block-tridiagonal SPD systems of trajectory optimization / MPC.
+* **Robotics operators** — the spatial 6-D, Lie/quaternion, projection/cone,
+  geometry-distance, and sampling-reduction families (all three SIMT tiers;
+  see :doc:`../user_guide/concepts/robotics_conventions`).
 * **Backend picker** — ``glass-defaults.cuh`` ``constexpr`` helpers
   (``suggested_backend`` / ``suggested_block_threads`` / ``suggested_warps_per_block`` / ``suggested_threads_per_block``)
   that pick a backend + launch config from the measured ladder.
@@ -42,4 +45,5 @@ The reference is organized by BLAS level and by backend:
    thread
    banded
    pcg
+   robotics
    defaults

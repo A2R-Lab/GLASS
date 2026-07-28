@@ -2,8 +2,10 @@
 
 **GLASS is a comprehensive, header-only CUDA C++ `__device__` template library for
 block-local linear algebra on GPUs** — BLAS, LAPACK-style factorizations and triangular
-solves, dense linear-system solvers, and related algorithms, all under one single-block
-calling convention. It is the foundational linear-algebra layer underneath
+solves, dense linear-system solvers, related algorithms, and **robotics-specialized
+operators** (Featherstone spatial 6-D algebra, the SO(3)/SE(3)/quaternion Lie family and
+its derivative chain, cone/augmented-Lagrangian projections, sphere-collision distances,
+sampling-planner softmax/argmin), all under one single-block calling convention. It is the foundational linear-algebra layer underneath
 [GRiD](https://github.com/A2R-Lab/GRiD),
 [MPCGPU](https://a2r-lab.org/publication/mpcgpu/),
 [GATO](http://a2r-lab.org/GATO/),
