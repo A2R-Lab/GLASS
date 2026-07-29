@@ -25,7 +25,13 @@ A2R Lab GPU solvers.
 `test/` MUST end with a fresh signed receipt** — run `./test/run_gpu_proof.sh`
 (full GPU suite, ~40 min) and include the regenerated `test/gpu-proof.json` in
 the push, or the `verify-gpu-proof` gate goes red (the receipt fingerprints the
-source tree, so an un-attested source change can't verify). Library headers are
+source tree, so an un-attested source change can't verify). ⚠ The fingerprint
+walks **git-TRACKED files only**: `git add` any NEW files under the
+fingerprinted paths (`glass*.cuh`, `src/`, `test/cuda/`, `test/conftest.py`)
+BEFORE running the receipt, or the receipt hashes the old file set and verify
+fails with a fingerprint mismatch (caught 2026-07-28). Sanity-check locally
+with `.venv/bin/gpu-proof verify --receipt test/gpu-proof.json --expected-skips
+test/expected_skips.txt` before pushing. Library headers are
 hashed into the test-binary cache key by GLOB (`src/**/*.cuh` + the `glass*.cuh`
 roots) — new headers bust the cache automatically; only a NEW test/cuda driver
 needs registering in `test/conftest.py` (compile target + hash entry).
