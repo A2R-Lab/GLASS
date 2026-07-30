@@ -34,6 +34,23 @@ LEGS = {
 }
 
 
+# Jetson boards don't reliably answer nvidia-smi's compute_cap query; map the
+# device-tree model string instead. All Orin-class boards are sm_87.
+TEGRA_MODELS = (("orin", "sm_87"), ("xavier", "sm_72"), ("tx2", "sm_62"),
+                ("tx1", "sm_53"), ("nano", "sm_53"))
+
+
+def detect_tegra():
+    try:
+        model = pathlib.Path("/proc/device-tree/model").read_text().lower()
+    except OSError:
+        return None
+    for key, sm in TEGRA_MODELS:
+        if key in model:
+            return sm
+    return None
+
+
 def detect_arch():
     try:
         cap = subprocess.run(
@@ -42,8 +59,14 @@ def detect_arch():
         major, minor = cap.split(".")
         return f"sm_{major}{minor}"
     except Exception:
-        print("WARNING: could not detect arch via nvidia-smi; defaulting to sm_75")
-        return "sm_75"
+        tegra = detect_tegra()
+        if tegra:
+            print(f"arch: nvidia-smi query failed; Tegra device tree -> {tegra}")
+            return tegra
+        # A silently wrong arch produces SASS that won't run (or worse, a stale
+        # binary that does) — fail hard instead of guessing.
+        sys.exit("could not detect GPU arch (nvidia-smi compute_cap query "
+                 "failed, no Tegra device tree); pass --arch sm_XX explicitly")
 
 
 def gpu_busy():
@@ -105,6 +128,8 @@ def main():
                     help="compile everything, run nothing (safe on a busy GPU)")
     ap.add_argument("--force", action="store_true",
                     help="run timed legs even if the GPU looks busy")
+    ap.add_argument("--arch", default=None,
+                    help="override GPU arch (e.g. sm_87); default: auto-detect")
     args = ap.parse_args()
 
     legs = [l.strip() for l in args.legs.split(",") if l.strip()]
@@ -112,7 +137,7 @@ def main():
         if l not in LEGS:
             sys.exit(f"unknown leg {l!r}; choose from {list(LEGS)}")
 
-    arch = detect_arch()
+    arch = args.arch or detect_arch()
     print(f"GPU arch: {arch}")
     binaries = {l: build(l, arch) for l in legs}
     if args.build_only:

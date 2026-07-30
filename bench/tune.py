@@ -133,18 +133,31 @@ _FULL_SCHED  = [("64", "1000"), ("1024", "500"), ("8192", "250")]
 _QUICK_SCHED = [("8192", "300")]
 
 
-def build_mega_sweep(sms, mdx):
-    if mdx is None:
+def build_mega_sweep(sms, mdx, allow_no_mathdx=False):
+    if mdx is None and not allow_no_mathdx:
         sys.exit("ERROR: ladder leg needs MATHDX_ROOT (the nvidia contender). "
-                 "Set it, or run with --legs reduced (no MathDx) / --from-ladder.")
-    flags = ["nvcc", "-std=c++17", f"-arch=sm_{sms // 10}", "-O3",
-             "--expt-relaxed-constexpr", "-Xptxas", "-O1", "-I..", "-I../src",
-             f"-I{mdx/'include'}", f"-I{mdx/'external'/'cutlass'/'include'}",
-             "-DGLASS_BENCH_CUBLASDX", "-DGLASS_BENCH_CUSOLVERDX", f"-DSMS={sms}",
-             "-DCUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT", "-rdc=true", "-dlto",
-             f"-L{mdx/'lib'}", "-lcusolverdx", "-lcublas", "-lcusolver", "-lcudart",
-             "bench_mega_sweep.cu"]
-    binp, status = cached_build("mega_sweep", "bench_mega_sweep.cu", flags, sms)
+                 "Set it, run with --legs reduced (no MathDx) / --from-ladder, "
+                 "or pass --allow-no-mathdx for a 3-tier SIMT-only ladder "
+                 "(the only option on Tegra, where MathDx does not ship).")
+    if mdx is None:
+        # 3-tier ladder: bench_mega_sweep.cu compiles out its vendor legs when
+        # the GLASS_BENCH_CUBLASDX/CUSOLVERDX macros are absent, so the sweep
+        # and the regenerated table simply lack the nvidia contender.
+        print("  bench_mega_sweep: MathDx absent -> 3-tier (thread/warp/block)")
+        flags = ["nvcc", "-std=c++17", f"-arch=sm_{sms // 10}", "-O3",
+                 "--expt-relaxed-constexpr", "-Xptxas", "-O1", "-I..", "-I../src",
+                 f"-DSMS={sms}", "bench_mega_sweep.cu"]
+        binp, status = cached_build("mega_sweep_simt", "bench_mega_sweep.cu",
+                                    flags, sms)
+    else:
+        flags = ["nvcc", "-std=c++17", f"-arch=sm_{sms // 10}", "-O3",
+                 "--expt-relaxed-constexpr", "-Xptxas", "-O1", "-I..", "-I../src",
+                 f"-I{mdx/'include'}", f"-I{mdx/'external'/'cutlass'/'include'}",
+                 "-DGLASS_BENCH_CUBLASDX", "-DGLASS_BENCH_CUSOLVERDX", f"-DSMS={sms}",
+                 "-DCUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT", "-rdc=true", "-dlto",
+                 f"-L{mdx/'lib'}", "-lcusolverdx", "-lcublas", "-lcusolver", "-lcudart",
+                 "bench_mega_sweep.cu"]
+        binp, status = cached_build("mega_sweep", "bench_mega_sweep.cu", flags, sms)
     if status == "fail":
         sys.exit("ERROR: bench_mega_sweep compile failed.")
     print(f"  bench_mega_sweep: {status} ({binp.name})")
@@ -634,6 +647,11 @@ def main():
                         "cuBLASDx compile needs ~6-7GB RAM, so size to free_RAM/7 "
                         "(e.g. 6 on a 64GB box). The timed legs always run serially.")
     p.add_argument("--iters", type=int, default=200000, help="bench_reduced iters")
+    p.add_argument("--allow-no-mathdx", action="store_true",
+                   help="let the ladder leg run without MATHDX_ROOT as a 3-tier "
+                        "(thread/warp/block) SIMT sweep — the regenerated table "
+                        "simply lacks the nvidia contender. Required on Tegra/"
+                        "Jetson, where MathDx does not ship.")
     p.add_argument("--dry-run", action="store_true",
                    help="regenerate + diff against in-tree tables, write nothing")
     p.add_argument("--from-ladder", metavar="TXT",
@@ -672,7 +690,7 @@ def main():
                      "ensure nvidia-smi works); it compiles for a target arch.")
         if "ladder" in legs:
             print("── prebuild: ladder ──────────────────────────────────────")
-            build_mega_sweep(sms, mdx)
+            build_mega_sweep(sms, mdx, args.allow_no_mathdx)
         if "shapes" in legs:
             print("── prebuild: shapes (cuBLASDx microbenches) ──────────────")
             if mdx is None:
@@ -712,7 +730,7 @@ def main():
             sweep_path = pathlib.Path(args.from_ladder)
             sweep_text = sweep_path.read_text()
         else:
-            binp = build_mega_sweep(sms, mdx)
+            binp = build_mega_sweep(sms, mdx, args.allow_no_mathdx)
             sweep_path = run_mega_sweep(binp, args.quick)
             sweep_text = sweep_path.read_text()
         new_defaults, n = regen_ladder(sweep_text, args.margin, sweep_path.name, sms)
