@@ -60,9 +60,9 @@
 // exercises a non-square (N x NRHS) B without widening the driver's CLI.
 #define TRHS 3
 
-using glass::FillMode;
-using glass::Diag;
-using glass::TensorAxis;
+using glass::block::FillMode;
+using glass::block::Diag;
+using glass::block::TensorAxis;
 
 // ─── dtype-generic I/O (helpers.cuh is float32-only) ─────────────────────────
 // Read a float32 .bin and widen to T; print with round-trip precision so that
@@ -335,37 +335,37 @@ template <typename T, int N, bool REG> __global__ void kt_riccati(int P_, T* Pm,
 
 template <typename T, int N> __global__ void kb1_dot(T* x, T* y, T* out) {
     int p = blockIdx.x;
-    glass::dot<T, N>(x + (size_t)p*N, y + (size_t)p*N);   // destructive: result in y[0]
+    glass::block::dot<T, N>(x + (size_t)p*N, y + (size_t)p*N);   // destructive: result in y[0]
     out[p] = y[(size_t)p*N];
 }
 template <typename T, int N, bool TR, bool RM> __global__ void kb1_gemv(T alpha, T* A, T* x, T* y) {
     int p = blockIdx.x;
-    glass::gemv<T, N, N, TR, RM>(alpha, A + (size_t)p*N*N, x + (size_t)p*N, y + (size_t)p*N);
+    glass::block::gemv<T, N, N, TR, RM>(alpha, A + (size_t)p*N*N, x + (size_t)p*N, y + (size_t)p*N);
 }
 template <typename T, int N> __global__ void kb1_gemm(T alpha, T* A, T* B, T* C) {
     int p = blockIdx.x;
-    glass::gemm<T, N, N, N>(alpha, A + (size_t)p*N*N, B + (size_t)p*N*N, C + (size_t)p*N*N);
+    glass::block::gemm<T, N, N, N>(alpha, A + (size_t)p*N*N, B + (size_t)p*N*N, C + (size_t)p*N*N);
 }
 template <typename T, int N> __global__ void kb1_potrf(T* A) {
     int p = blockIdx.x;
-    glass::potrf<T, N>(A + (size_t)p*N*N);
+    glass::block::potrf<T, N>(A + (size_t)p*N*N);
 }
 template <typename T, int N, FillMode F, Diag D, bool TR> __global__ void kb1_trsv(T* A, T* x) {
     int p = blockIdx.x;
-    glass::trsv<T, N, F, D, TR>(A + (size_t)p*N*N, x + (size_t)p*N);
+    glass::block::trsv<T, N, F, D, TR>(A + (size_t)p*N*N, x + (size_t)p*N);
 }
 template <typename T, int N> __global__ void kb1_posv(T* A, T* b) {
     int p = blockIdx.x;
-    glass::posv<T, N>(A + (size_t)p*N*N, b + (size_t)p*N);
+    glass::block::posv<T, N>(A + (size_t)p*N*N, b + (size_t)p*N);
 }
 template <typename T, int N> __global__ void kb1_potrs(T* L, T* b) {
     int p = blockIdx.x;
-    glass::potrs<T, N>(L + (size_t)p*N*N, b + (size_t)p*N);
+    glass::block::potrs<T, N>(L + (size_t)p*N*N, b + (size_t)p*N);
 }
 
 template <typename T, int N> __global__ void kb1_reduce(T* x, T* out) {
     int p = blockIdx.x;
-    glass::reduce<T, N>(x + (size_t)p*N);     // destructive halving tree; sum in x[0]
+    glass::block::reduce<T, N>(x + (size_t)p*N);     // destructive halving tree; sum in x[0]
     out[p] = x[(size_t)p*N];
 }
 // block1 oracle = runtime-n nrm2_fast (block surface has no plain nrm2; _fast is
@@ -373,37 +373,37 @@ template <typename T, int N> __global__ void kb1_reduce(T* x, T* out) {
 template <typename T, int N> __global__ void kb1_nrm2(T* x, T* out) {
     int p = blockIdx.x;
     __shared__ T scr[1];                       // ceil(1 thread / 32) = 1 slot
-    glass::nrm2_fast<T>((uint32_t)N, x + (size_t)p*N, scr);
+    glass::block::nrm2_fast<T>((uint32_t)N, x + (size_t)p*N, scr);
     out[p] = x[(size_t)p*N];
 }
 // block1 oracle = runtime-n asum_fast (matches semantics; destructive into x[0]).
 template <typename T, int N> __global__ void kb1_asum(T* x, T* out) {
     int p = blockIdx.x;
     __shared__ T scr[1];
-    glass::asum_fast<T>((uint32_t)N, x + (size_t)p*N, scr);
+    glass::block::asum_fast<T>((uint32_t)N, x + (size_t)p*N, scr);
     out[p] = x[(size_t)p*N];
 }
 // block1 oracle = runtime-n nrm1_diff_fast (matches semantics; result in out[0]).
 template <typename T, int N> __global__ void kb1_nrm1_diff(T* x, T* y, T* out) {
     int p = blockIdx.x;
     __shared__ T scr[1];
-    glass::nrm1_diff_fast<T>((uint32_t)N, x + (size_t)p*N, y + (size_t)p*N, out + p, scr);
+    glass::block::nrm1_diff_fast<T>((uint32_t)N, x + (size_t)p*N, y + (size_t)p*N, out + p, scr);
 }
 template <typename T, int N> __global__ void kb1_axpy(T alpha, T* x, T* y) {
     int p = blockIdx.x;
-    glass::axpy<T, N>(alpha, x + (size_t)p*N, y + (size_t)p*N);
+    glass::block::axpy<T, N>(alpha, x + (size_t)p*N, y + (size_t)p*N);
 }
 template <typename T, int N> __global__ void kb1_scal(T alpha, T* x) {
     int p = blockIdx.x;
-    glass::scal<T, N>(alpha, x + (size_t)p*N);
+    glass::block::scal<T, N>(alpha, x + (size_t)p*N);
 }
 template <typename T, int N> __global__ void kb1_copy(T* x, T* y) {
     int p = blockIdx.x;
-    glass::copy<T, N>(x + (size_t)p*N, y + (size_t)p*N);
+    glass::block::copy<T, N>(x + (size_t)p*N, y + (size_t)p*N);
 }
 template <typename T, int N> __global__ void kb1_rot(int P, T* x, T* y, T* out, T c, T s) {
     int p = blockIdx.x;
-    glass::rot<T, N>(x + (size_t)p*N, y + (size_t)p*N, c, s);
+    glass::block::rot<T, N>(x + (size_t)p*N, y + (size_t)p*N, c, s);
     for (int i = 0; i < N; i++) {              // same [all x' | all y'] packing as kt_rot
         out[(size_t)p*N + i]              = x[(size_t)p*N + i];
         out[(size_t)P*N + (size_t)p*N + i] = y[(size_t)p*N + i];
@@ -411,67 +411,67 @@ template <typename T, int N> __global__ void kb1_rot(int P, T* x, T* y, T* out, 
 }
 template <typename T, int N> __global__ void kb1_symmetrize(T* A) {
     int p = blockIdx.x;
-    glass::symmetrize<T, N>(A + (size_t)p*N*N);
+    glass::block::symmetrize<T, N>(A + (size_t)p*N*N);
 }
 template <typename T, int N> __global__ void kb1_axpy_strided(T alpha, T* X, T* Y) {
     int p = blockIdx.x;
-    glass::axpy_strided<T, N, N, N+2, N+1>(alpha, X + (size_t)p*(N+1)*N, Y + (size_t)p*(N+2)*N);
+    glass::block::axpy_strided<T, N, N, N+2, N+1>(alpha, X + (size_t)p*(N+1)*N, Y + (size_t)p*(N+2)*N);
 }
 template <typename T, int N> __global__ void kb1_copy_strided(T alpha, T* X, T* Y) {
     int p = blockIdx.x;
-    glass::copy_strided<T, N, N, N+2, N+1>(alpha, X + (size_t)p*(N+1)*N, Y + (size_t)p*(N+2)*N);
+    glass::block::copy_strided<T, N, N, N+2, N+1>(alpha, X + (size_t)p*(N+1)*N, Y + (size_t)p*(N+2)*N);
 }
 
 template <typename T, int N, FillMode F, Diag D, bool TR> __global__ void kb1_trsm(T* A, T* B) {
     int p = blockIdx.x;
-    glass::trsm<T, N, TRHS, F, D, TR>(A + (size_t)p*N*N, B + (size_t)p*N*TRHS);
+    glass::block::trsm<T, N, TRHS, F, D, TR>(A + (size_t)p*N*N, B + (size_t)p*N*TRHS);
 }
 template <typename T, int N> __global__ void kb1_ldlt(T* A) {
     int p = blockIdx.x;
-    glass::ldlt<T, N>(A + (size_t)p*N*N, nullptr);   // NON-pivoted block call = the oracle
+    glass::block::ldlt<T, N>(A + (size_t)p*N*N, nullptr);   // NON-pivoted block call = the oracle
 }
 template <typename T, int N> __global__ void kb1_ldlt_solve(T* LD, T* b) {
     int p = blockIdx.x;
-    glass::ldlt_solve<T, N>(LD + (size_t)p*N*N, b + (size_t)p*N);   // piv=nullptr (non-pivoted)
+    glass::block::ldlt_solve<T, N>(LD + (size_t)p*N*N, b + (size_t)p*N);   // piv=nullptr (non-pivoted)
 }
 template <typename T, int N> __global__ void kb1_inv(T* A) {
     int p = blockIdx.x;
     __shared__ T sc[2*N + 1];                 // block-scoped scratch, per the glass:: contract
-    glass::inv<T, N>(A + (size_t)p*2*N*N, sc);
+    glass::block::inv<T, N>(A + (size_t)p*2*N*N, sc);
 }
 
 template <typename T, int N, FillMode F, bool TR> __global__ void kb1_syrk(T* A, T* C) {
     int p = blockIdx.x;
-    glass::syrk<T, N, N, F, TR>((T)1, A + (size_t)p*N*N, C + (size_t)p*N*N);   // C pre-zeroed by alloc_dev
+    glass::block::syrk<T, N, N, F, TR>((T)1, A + (size_t)p*N*N, C + (size_t)p*N*N);   // C pre-zeroed by alloc_dev
 }
 template <typename T, int N, FillMode F, bool TR> __global__ void kb1_syr2k(T* A, T* B, T* C) {
     int p = blockIdx.x;
-    glass::syr2k<T, N, N, F, TR>((T)1, A + (size_t)p*N*N, B + (size_t)p*N*N, C + (size_t)p*N*N);
+    glass::block::syr2k<T, N, N, F, TR>((T)1, A + (size_t)p*N*N, B + (size_t)p*N*N, C + (size_t)p*N*N);
 }
 template <typename T, int N, TensorAxis C, bool SYM, bool ACC> __global__ void kb1_tvc(T* Tns, T* v, T* M) {
     int p = blockIdx.x;
     T* m = M + (size_t)p*N*N;
     for (int i = 0; i < N*N; i++) m[i] = ACC ? acc_pat<T>(i) : (T)0;
     __syncthreads();
-    glass::tensor_vec_contract<T, N, N, N, C, SYM, ACC>(Tns + (size_t)p*N*N*N, v + (size_t)p*N, m);
+    glass::block::tensor_vec_contract<T, N, N, N, C, SYM, ACC>(Tns + (size_t)p*N*N*N, v + (size_t)p*N, m);
 }
 template <typename T, int N, bool ACC> __global__ void kb1_vtv(T* Tns, T* u, T* w, T* s) {
     int p = blockIdx.x;
     T* sv = s + (size_t)p*N;
     for (int i = 0; i < N; i++) sv[i] = ACC ? acc_pat<T>(i) : (T)0;
     __syncthreads();
-    glass::vec_tensor_vec<T, N, N, N, ACC>(Tns + (size_t)p*N*N*N, u + (size_t)p*N, w + (size_t)p*N, sv);
+    glass::block::vec_tensor_vec<T, N, N, N, ACC>(Tns + (size_t)p*N*N*N, u + (size_t)p*N, w + (size_t)p*N, sv);
 }
 template <typename T, int N, bool ACC> __global__ void kb1_congr(T* X, T* M, T* Q, T* scr) {
     int p = blockIdx.x;
     T* q = Q + (size_t)p*N*N;
     for (int i = 0; i < N*N; i++) q[i] = ACC ? acc_pat<T>(i) : (T)0;
     __syncthreads();
-    glass::congruence_sym<T, N, N, ACC>((T)1, X + (size_t)p*N*N, M + (size_t)p*N*N, (T)1, q, scr + (size_t)p*2*N*N);
+    glass::block::congruence_sym<T, N, N, ACC>((T)1, X + (size_t)p*N*N, M + (size_t)p*N*N, (T)1, q, scr + (size_t)p*2*N*N);
 }
 template <typename T, int N> __global__ void kb1_bilinear(T* X, T* M, T* Y, T* R, T* scr) {
     int p = blockIdx.x;
-    glass::bilinear<T, N, N, N, false>((T)1, X + (size_t)p*N*N, M + (size_t)p*N*N, Y + (size_t)p*N*N,
+    glass::block::bilinear<T, N, N, N, false>((T)1, X + (size_t)p*N*N, M + (size_t)p*N*N, Y + (size_t)p*N*N,
                                        (T)0, R + (size_t)p*N*N, scr + (size_t)p*2*N*N);
 }
 template <typename T, int N, bool ACC> __global__ void kb1_caccum(T* G, T* M, T* C, T* scr) {
@@ -479,11 +479,11 @@ template <typename T, int N, bool ACC> __global__ void kb1_caccum(T* G, T* M, T*
     T* c = C + (size_t)p*N*N;
     for (int i = 0; i < N*N; i++) c[i] = ACC ? acc_pat<T>(i) : (T)0;
     __syncthreads();
-    glass::congruence_accum<T, N, N, ACC>((T)1, G + (size_t)p*N*N, M + (size_t)p*N*N, (T)1, c, scr + (size_t)p*2*N*N);
+    glass::block::congruence_accum<T, N, N, ACC>((T)1, G + (size_t)p*N*N, M + (size_t)p*N*N, (T)1, c, scr + (size_t)p*2*N*N);
 }
 template <typename T, int N, bool REG> __global__ void kb1_riccati(T* Pm, T* Am, T* Bm, T* Rm, T* K, T* scr) {
     int p = blockIdx.x;
-    glass::riccati_gain<T, N, N, REG>(Pm + (size_t)p*N*N, Am + (size_t)p*N*N, Bm + (size_t)p*N*N,
+    glass::block::riccati_gain<T, N, N, REG>(Pm + (size_t)p*N*N, Am + (size_t)p*N*N, Bm + (size_t)p*N*N,
                                       Rm + (size_t)p*N*N, K + (size_t)p*N*N,
                                       scr + (size_t)p*2*N*N, (T)0.05, nullptr);
 }

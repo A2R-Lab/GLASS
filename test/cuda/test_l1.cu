@@ -26,44 +26,44 @@ __global__ void k_axpy_cg(int n, float alpha, float* x, float* y) {
     glass::cgrps::axpy(n, alpha, x, y);
 }
 __global__ void k_axpy_simple(int n, float alpha, float* x, float* y) {
-    glass::axpy(n, alpha, x, y);
+    glass::block::axpy(n, alpha, x, y);
 }
 __global__ void k_axpy3_cg(int n, float alpha, float* x, float* y, float* z) {
     glass::cgrps::axpy(n, alpha, x, y, z);
 }
 __global__ void k_axpy3_simple(int n, float alpha, float* x, float* y, float* z) {
-    glass::axpy(n, alpha, x, y, z);
+    glass::block::axpy(n, alpha, x, y, z);
 }
 __global__ void k_axpby_cg(int n, float alpha, float* x, float beta, float* y, float* z) {
     glass::cgrps::axpby(n, alpha, x, beta, y, z);
 }
 __global__ void k_axpby_simple(int n, float alpha, float* x, float beta, float* y, float* z) {
-    glass::axpby(n, alpha, x, beta, y, z);
+    glass::block::axpby(n, alpha, x, beta, y, z);
 }
 
 __global__ void k_copy_cg(int n, float* x, float* y) { glass::cgrps::copy(n, x, y); }
-__global__ void k_copy_simple(int n, float* x, float* y) { glass::copy(n, x, y); }
+__global__ void k_copy_simple(int n, float* x, float* y) { glass::block::copy(n, x, y); }
 
 __global__ void k_scal_cg(int n, float alpha, float* x) { glass::cgrps::scal(n, alpha, x); }
-__global__ void k_scal_simple(int n, float alpha, float* x) { glass::scal(n, alpha, x); }
+__global__ void k_scal_simple(int n, float alpha, float* x) { glass::block::scal(n, alpha, x); }
 
 __global__ void k_swap_cg(int n, float* x, float* y) { glass::cgrps::swap(n, x, y); }
-__global__ void k_swap_simple(int n, float* x, float* y) { glass::swap(n, x, y); }
+__global__ void k_swap_simple(int n, float* x, float* y) { glass::block::swap(n, x, y); }
 
 __global__ void k_dot_cg(int n, float* x, float* y) {
     glass::cgrps::dot(n, x, y);
 }
 __global__ void k_dot_simple_lm(int n, float* x, float* y, float* out) {
-    glass::dot_lowmem(n, x, y, out);
+    glass::block::dot_lowmem(n, x, y, out);
 }
 __global__ void k_dot_simple_hs(int n, float* x, float* y, float* out, float* scratch) {
-    glass::dot_fast(n, x, y, out, scratch);
+    glass::block::dot_fast(n, x, y, out, scratch);
 }
 
 __global__ void k_reduce_cg(int n, float* x) { glass::cgrps::reduce(n, x); }
-__global__ void k_reduce_simple_lm(int n, float* x) { glass::reduce_lowmem(n, x); }
+__global__ void k_reduce_simple_lm(int n, float* x) { glass::block::reduce_lowmem(n, x); }
 __global__ void k_reduce_simple_hs(int n, float* x, float* scratch) {
-    glass::reduce_fast(n, x, scratch);
+    glass::block::reduce_fast(n, x, scratch);
 }
 // Single-warp reduce (launch <<<1,32>>>): raw __shfl, no scratch, no inter-warp combine.
 __global__ void k_reduce_warp(int n, float* x) { glass::warp::reduce(n, x); }
@@ -85,7 +85,7 @@ __global__ void k_reduce_partial_hs(int n, float* x, float* out, float* scratch)
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
     float partial = 0.0f;
     for (uint32_t i = rank; i < (uint32_t)n; i += size) partial += x[i];
-    float total = glass::reduce_fast(partial, scratch);
+    float total = glass::block::reduce_fast(partial, scratch);
     out[0] = total;   // broadcast check: every thread holds the same `total`
 }
 
@@ -99,134 +99,134 @@ __global__ void k_reduce_min_partial_hs(int n, float* x, float* out, float* scra
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
     float partial = INFINITY;
     for (uint32_t i = rank; i < (uint32_t)n; i += size) partial = fminf(partial, x[i]);
-    float total = glass::reduce_fast_min(partial, scratch);
+    float total = glass::block::reduce_fast_min(partial, scratch);
     out[0] = total;   // broadcast check: every thread holds the same `total`
 }
 
 __global__ void k_nrm2_cg(int n, float* x) { glass::cgrps::nrm2(n, x); }
-__global__ void k_nrm2_simple_lm(int n, float* x) { glass::nrm2_lowmem(n, x); }
+__global__ void k_nrm2_simple_lm(int n, float* x) { glass::block::nrm2_lowmem(n, x); }
 __global__ void k_nrm2_simple_hs(int n, float* x, float* scratch) {
-    glass::nrm2_fast(n, x, scratch);
+    glass::block::nrm2_fast(n, x, scratch);
 }
 
 __global__ void k_infnorm_cg(int n, float* x) { glass::cgrps::infnorm(n, x); }
-__global__ void k_infnorm_simple(int n, float* x) { glass::infnorm(n, x); }
+__global__ void k_infnorm_simple(int n, float* x) { glass::block::infnorm(n, x); }
 
 // ── vector_norm family (non-destructive ‖a‖₂ into out[0]; a untouched) ───────
 __global__ void k_vector_norm_simple(int n, float* a, float* out) {
-    glass::vector_norm(n, a, out);
+    glass::block::vector_norm(n, a, out);
 }
 __global__ void k_vector_norm_simple_lm(int n, float* a, float* out) {
-    glass::vector_norm_lowmem(n, a, out);
+    glass::block::vector_norm_lowmem(n, a, out);
 }
 __global__ void k_vector_norm_simple_hs(int n, float* a, float* out, float* scratch) {
-    glass::vector_norm_fast(n, a, out, scratch);
+    glass::block::vector_norm_fast(n, a, out, scratch);
 }
 
 __global__ void k_asum_cg(int n, float* x, float* out) { glass::cgrps::asum(n, x, out); }
 __global__ void k_asum_simple_lm(int n, float* x, float* out) {
-    glass::asum_lowmem(n, x, out);
+    glass::block::asum_lowmem(n, x, out);
 }
 __global__ void k_asum_simple_hs(int n, float* x, float* scratch) {
-    glass::asum_fast(n, x, scratch);
+    glass::block::asum_fast(n, x, scratch);
 }
 
 __global__ void k_clip_cg(int n, float* x, float* l, float* u) { glass::cgrps::clip(n, x, l, u); }
 __global__ void k_clip_simple(int n, float* x, float* l, float* u) {
-    glass::clip(n, x, l, u);
+    glass::block::clip(n, x, l, u);
 }
 
 __global__ void k_set_const_cg(int n, float alpha, float* x) { glass::cgrps::set_const(n, alpha, x); }
 __global__ void k_set_const_simple(int n, float alpha, float* x) {
-    glass::set_const(n, alpha, x);
+    glass::block::set_const(n, alpha, x);
 }
 
 __global__ void k_loadIdentity_cg(int n, float* A) { glass::cgrps::set_identity(n, A); }
-__global__ void k_loadIdentity_simple(int n, float* A) { glass::set_identity(n, A); }
+__global__ void k_loadIdentity_simple(int n, float* A) { glass::block::set_identity(n, A); }
 
 __global__ void k_addI_cg(int n, float alpha, float* A) { glass::cgrps::add_identity(n, A, alpha); }
-__global__ void k_addI_simple(int n, float alpha, float* A) { glass::add_identity(n, A, alpha); }
+__global__ void k_addI_simple(int n, float alpha, float* A) { glass::block::add_identity(n, A, alpha); }
 
 __global__ void k_transpose_cg(int N, int M, float* a, float* b) {
     glass::cgrps::transpose(N, M, a, b);
 }
 __global__ void k_transpose_simple(int N, int M, float* a, float* b) {
-    glass::transpose(N, M, a, b);
+    glass::block::transpose(N, M, a, b);
 }
 
 __global__ void k_elementwise_add_cg(int n, float* a, float* b, float* c) {
     glass::cgrps::elementwise_add(n, a, b, c);
 }
 __global__ void k_elementwise_add_simple(int n, float* a, float* b, float* c) {
-    glass::elementwise_add(n, a, b, c);
+    glass::block::elementwise_add(n, a, b, c);
 }
 
 __global__ void k_elementwise_sub_cg(int n, float* a, float* b, float* c) {
     glass::cgrps::elementwise_sub(n, a, b, c);
 }
 __global__ void k_elementwise_sub_simple(int n, float* a, float* b, float* c) {
-    glass::elementwise_sub(n, a, b, c);
+    glass::block::elementwise_sub(n, a, b, c);
 }
 
 __global__ void k_elementwise_mult_cg(int n, float* a, float* b, float* c) {
     glass::cgrps::elementwise_mult(n, a, b, c);
 }
 __global__ void k_elementwise_mult_simple(int n, float* a, float* b, float* c) {
-    glass::elementwise_mult(n, a, b, c);
+    glass::block::elementwise_mult(n, a, b, c);
 }
 
 __global__ void k_elementwise_abs_cg(int n, float* a, float* b) {
     glass::cgrps::elementwise_abs(n, a, b);
 }
 __global__ void k_elementwise_abs_simple(int n, float* a, float* b) {
-    glass::elementwise_abs(n, a, b);
+    glass::block::elementwise_abs(n, a, b);
 }
 
 __global__ void k_elementwise_max_cg(int n, float* a, float* b, float* c) {
     glass::cgrps::elementwise_max(n, a, b, c);
 }
 __global__ void k_elementwise_max_simple(int n, float* a, float* b, float* c) {
-    glass::elementwise_max(n, a, b, c);
+    glass::block::elementwise_max(n, a, b, c);
 }
 
 __global__ void k_elementwise_min_cg(int n, float* a, float* b, float* c) {
     glass::cgrps::elementwise_min(n, a, b, c);
 }
 __global__ void k_elementwise_min_simple(int n, float* a, float* b, float* c) {
-    glass::elementwise_min(n, a, b, c);
+    glass::block::elementwise_min(n, a, b, c);
 }
 
 // ── comparison / logic / scalar elementwise (cg + simple) ───────────────────
 #define EW3(NAME) \
   __global__ void k_##NAME##_cg(int n, float* a, float* b, float* c)     { glass::cgrps::NAME(n,a,b,c); } \
-  __global__ void k_##NAME##_simple(int n, float* a, float* b, float* c) { glass::NAME(n,a,b,c); }
+  __global__ void k_##NAME##_simple(int n, float* a, float* b, float* c) { glass::block::NAME(n,a,b,c); }
 EW3(elementwise_less_than)
 EW3(elementwise_more_than)
 EW3(elementwise_less_than_or_eq)
 EW3(elementwise_and)
 __global__ void k_elementwise_not_cg(int n, float* a, float* c)     { glass::cgrps::elementwise_not(n,a,c); }
-__global__ void k_elementwise_not_simple(int n, float* a, float* c) { glass::elementwise_not(n,a,c); }
+__global__ void k_elementwise_not_simple(int n, float* a, float* c) { glass::block::elementwise_not(n,a,c); }
 #define EWS(NAME) \
   __global__ void k_##NAME##_cg(int n, float* a, float b, float* c)     { glass::cgrps::NAME(n,a,b,c); } \
-  __global__ void k_##NAME##_simple(int n, float* a, float b, float* c) { glass::NAME(n,a,b,c); }
+  __global__ void k_##NAME##_simple(int n, float* a, float b, float* c) { glass::block::NAME(n,a,b,c); }
 EWS(elementwise_mult_scalar)
 EWS(elementwise_max_scalar)
 EWS(elementwise_min_scalar)
 // less_than_scalar has no cgrps variant — simple only.
-__global__ void k_elementwise_less_than_scalar_simple(int n, float* a, float b, float* c) { glass::elementwise_less_than_scalar(n,a,b,c); }
+__global__ void k_elementwise_less_than_scalar_simple(int n, float* a, float b, float* c) { glass::block::elementwise_less_than_scalar(n,a,b,c); }
 
 __global__ void k_prefix_sum_excl_cg(int n, float* x, float* out) {
-    glass::prefix_sum_exclusive(x, out, n);
+    glass::block::prefix_sum_exclusive(x, out, n);
 }
 __global__ void k_prefix_sum_excl_simple(int n, float* x, float* out) {
-    glass::prefix_sum_exclusive(x, out, n);
+    glass::block::prefix_sum_exclusive(x, out, n);
 }
 
 __global__ void k_prefix_sum_incl_cg(int n, float* x, float* out) {
-    glass::prefix_sum_inclusive(x, out, n);
+    glass::block::prefix_sum_inclusive(x, out, n);
 }
 __global__ void k_prefix_sum_incl_simple(int n, float* x, float* out) {
-    glass::prefix_sum_inclusive(x, out, n);
+    glass::block::prefix_sum_inclusive(x, out, n);
 }
 
 // ─── dot_strided kernels (compile-time N, SX, SY; per-thread, no reduction) ──
@@ -234,7 +234,7 @@ __global__ void k_prefix_sum_incl_simple(int n, float* x, float* out) {
 // Launch with 1 thread — the operation is intentionally not block-parallel.
 #define DEFINE_DOT_STRIDED_KERNEL(N, SX, SY)                                           \
     __global__ void k_dot_strided_##N##_##SX##_##SY(float* x, float* y, float* out) { \
-        glass::dot_strided<float, N, SX, SY>(x, y, out);                               \
+        glass::block::dot_strided<float, N, SX, SY>(x, y, out);                               \
     }
 DEFINE_DOT_STRIDED_KERNEL(4, 4, 1)
 DEFINE_DOT_STRIDED_KERNEL(6, 1, 1)
@@ -248,11 +248,11 @@ DEFINE_DOT_STRIDED_KERNEL(6, 6, 6)
 #define DEFINE_DOT_COALESCED_KERNEL(N, SX, SY)                                          \
     __global__ void k_dot_coalesced_##N##_##SX##_##SY(float* x, float* y, float* out,  \
                                                       float* scratch) {                 \
-        glass::dot_strided_coalesced<float, N, SX, SY>(x, y, out, scratch);            \
+        glass::block::dot_strided_coalesced<float, N, SX, SY>(x, y, out, scratch);            \
     }                                                                                    \
     __global__ void k_dot_strided_ref_##N##_##SX##_##SY(float* x, float* y, float* out){\
         uint32_t r = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;\
-        float v = glass::dot_strided<float, N, SX, SY>(x, y);                           \
+        float v = glass::block::dot_strided<float, N, SX, SY>(x, y);                           \
         if (r == 0) *out = v;                                                           \
     }
 DEFINE_DOT_COALESCED_KERNEL(64, 64, 64)
@@ -288,8 +288,8 @@ int main(int argc, char** argv) {
     // Inter-warp scratch for the *_fast reductions and dot_strided_coalesced:
     // ceil(threads/32) elements of T (see glass::reduce_fast_scratch_bytes).
     float* d_scratch;
-    cudaMalloc(&d_scratch, glass::reduce_fast_scratch_bytes<float>(THREADS));
-    cudaMemset(d_scratch, 0, glass::reduce_fast_scratch_bytes<float>(THREADS));
+    cudaMalloc(&d_scratch, glass::block::reduce_fast_scratch_bytes<float>(THREADS));
+    cudaMemset(d_scratch, 0, glass::block::reduce_fast_scratch_bytes<float>(THREADS));
 
     if (strcmp(op, "axpy") == 0) {
         float alpha = atof(argv[4]);

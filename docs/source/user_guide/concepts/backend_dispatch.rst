@@ -9,8 +9,24 @@ wins they route to cuBLASDx via the ``DEFINE_NVIDIA_*`` macros.
 This means ``glass::nvidia::gemm<float, 6, 6, 6>(...)`` "just works" without any
 DEFINE macro — small shapes route to SIMT automatically. Larger shapes such as
 ``glass::nvidia::gemm<float, 32, 32, 32>(...)`` still require a
-``DEFINE_NVIDIA_GEMM(32, 32, 32)`` in scope, but produce a clean compile-time
-message when it is missing.
+``DEFINE_NVIDIA_GEMM(32, 32, 32)`` in scope (placed inside
+``namespace glass { namespace nvidia { namespace block {``), but produce a
+clean compile-time message when it is missing.
+
+.. note::
+
+   This cuBLASDx-vs-SIMT decision is one of **three** distinct dispatch layers.
+   ``glass::suggested_backend<>`` (:doc:`tuning`) is a *host-side* ladder that
+   advises **launch-level packing** — which tier (thread / warp / block /
+   nvidia) to launch, i.e. the shape of ``<<<grid, block>>>``. Newest, and
+   different from both: ``glass::dispatch_body()`` (``glass-defaults.cuh``)
+   picks the **in-block body** behind the bare ``glass::op`` /
+   ``glass::nvidia::op`` face, under a *fixed* block-scope calling contract —
+   the launch does not change. Phase 1 pins every cell to the block body (bare
+   names are exactly ``glass::block::``); a future measured in-block body sweep
+   (``bench/tune.py``) may move cells to a warp- or thread-body executed inside
+   the block — an attested, receipt-gated retune. Pin ``glass::block::`` where
+   determinism is load-bearing; see :doc:`namespaces`.
 
 The dispatch flow
 -----------------
@@ -39,8 +55,10 @@ The decision is made at compile time by ``should_use_cublasdx*<T,M,N,K,SM>()``
 2. The shipped **global table** (``src/nvidia/tuning_table.cuh``).
 3. A fallback **static heuristic**.
 
-The shipped table covers ``sm_86`` (Ampere consumer) and ``sm_120``
-(Blackwell-class) for square shapes from 3×3×3 up to 64×64×64.
+The shipped table currently covers ``sm_120`` (Blackwell-class) for square
+shapes from 3×3×3 up to 64×64×64; regenerate for another arch with
+``bench/autotune.py`` (a new arch gets its own entries without touching the
+existing ones).
 
 The size heuristic
 ------------------

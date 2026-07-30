@@ -24,7 +24,7 @@ static const char* name(backend b) {
 }
 
 // ── one SPD solve A x = b, dispatched to the picked backend ──────────────────
-template <int N> __global__ void k_block_posv(float* A, float* b) { glass::posv<float, N>(A, b); }
+template <int N> __global__ void k_block_posv(float* A, float* b) { glass::block::posv<float, N>(A, b); }
 template <int N> __global__ void k_warp_posv (float* A, float* b) {
     int w = blockIdx.x * blockDim.y + threadIdx.y;            // one warp per problem
     glass::warp::posv<float, N>(A + (size_t)w*N*N, b + w*N);

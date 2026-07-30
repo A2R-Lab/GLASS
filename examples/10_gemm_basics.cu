@@ -26,7 +26,7 @@ static constexpr int M = 2, N = 3, K = 4;
 template <bool TA, bool TB>
 __global__ void run(const float* A, const float* B, float* C) {
     // beta = 0 overload: C is overwritten (never read).
-    glass::gemm<float, M, N, K, TA, TB>(1.0f, const_cast<float*>(A), const_cast<float*>(B), C);
+    glass::block::gemm<float, M, N, K, TA, TB>(1.0f, const_cast<float*>(A), const_cast<float*>(B), C);
 }
 
 // Host reference: logical op(A) is M×K, op(B) is K×N, C is M×N (all col-major).

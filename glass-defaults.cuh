@@ -158,6 +158,28 @@ constexpr backend ideal(op o, uint32_t N, bool f64, uint32_t sm) {
 
 }  // namespace defaults
 
+// ─── bare-namespace body dispatch (Phase-2 hook) ─────────────────────────────
+//
+// The bare `glass::op` face carries a BLOCK-SCOPE calling contract whose
+// implementation body is chosen per (op, N, dtype) from this table. Phase 1
+// (2026-07-30 restructure): every cell pins to `body::block`, so the bare
+// names resolve to the SAME entities as `glass::block::` (the using-directive
+// in glass.cuh; function-pointer identity pinned in test_defaults.cu). A
+// future in-block body sweep (tune.py) regenerates this table and adds
+// shadowing wrappers in glass.cuh for exactly the cells that move — a
+// measured, receipt-attested event. `warp_in_block` / `thread_in_block` mean
+// "the warp/thread serial body executed by lane 0 / warp 0 of the block,
+// followed by a block sync" — same contract, fewer participating lanes.
+// Determinism-sensitive consumers should pin `glass::block::` explicitly.
+enum class body : int { block, warp_in_block, thread_in_block };
+
+// === BEGIN tune.py body dispatch ===
+// Phase 1: no sweep has run — every cell is the block body.
+constexpr body dispatch_body(op, uint32_t /*N*/, bool /*f64*/) {
+    return body::block;
+}
+// === END tune.py body dispatch ===
+
 /// Suggested backend for (op, N, T) on `SM`. `nvidia` only when the vendor lib is linked.
 template <op Op, uint32_t N, typename T, uint32_t SM = GLASS_DEFAULTS_SM>
 constexpr backend suggested_backend() {

@@ -20,16 +20,16 @@
 #include "../../glass.cuh"
 
 __global__ void k_posv(uint32_t n, float* A, float* b) {
-    glass::posv<float>(n, A, b);
+    glass::block::posv<float>(n, A, b);
 }
 __global__ void k_potrs(uint32_t n, const float* L, float* b) {
-    glass::potrs<float>(n, L, b);
+    glass::block::potrs<float>(n, L, b);
 }
 __global__ void k_posv_m(uint32_t n, uint32_t nrhs, float* A, float* B) {
-    glass::posv<float>(n, nrhs, A, B);
+    glass::block::posv<float>(n, nrhs, A, B);
 }
 __global__ void k_potrs_m(uint32_t n, uint32_t nrhs, const float* L, float* B) {
-    glass::potrs<float>(n, nrhs, L, B);
+    glass::block::potrs<float>(n, nrhs, L, B);
 }
 
 // ─── flagged solves (compile-time N=7, NRHS=1) — REGULARIZE/CHECK/REG_DIAG ─────
@@ -38,7 +38,7 @@ __global__ void k_potrs_m(uint32_t n, uint32_t nrhs, const float* L, float* B) {
 static constexpr uint32_t FN = 7;
 template <bool REG, bool CHK, bool DIAG>
 __global__ void k_posv_flag(float* A, float* b, float rho, int* s_fail) {
-    glass::posv<float, FN, 1, REG, CHK, DIAG>(A, b, rho, s_fail);
+    glass::block::posv<float, FN, 1, REG, CHK, DIAG>(A, b, rho, s_fail);
 }
 template <bool REG, bool CHK, bool DIAG>
 __global__ void k_posv_warp_flag(float* A, float* b, float rho, int* s_fail) {

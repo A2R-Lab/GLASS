@@ -17,15 +17,15 @@
 template <uint32_t KP, uint32_t SS, bool CHECK>
 __global__ void k_bdsv(float* M, float* v, int* fail) {
     extern __shared__ float s[];
-    glass::bdsv<float, KP, SS, CHECK>(M, v, s, fail);
+    glass::block::bdsv<float, KP, SS, CHECK>(M, v, s, fail);
 }
 
 template <uint32_t KP, uint32_t SS>
 __global__ void k_bdsv_two_rhs(float* M, float* v1, float* v2) {
     extern __shared__ float s[];
-    glass::bdsv_factor<float, KP, SS>(M, s);
-    glass::bdsv_solve<float, KP, SS>(M, v1, s);
-    glass::bdsv_solve<float, KP, SS>(M, v2, s);
+    glass::block::bdsv_factor<float, KP, SS>(M, s);
+    glass::block::bdsv_solve<float, KP, SS>(M, v1, s);
+    glass::block::bdsv_solve<float, KP, SS>(M, v2, s);
 }
 
 #define BDSV_SHAPES(F) F(2,3) F(6,4) F(3,1) F(1,5) F(4,7)
@@ -46,7 +46,7 @@ int main(int argc, char** argv) {
         bool check = (strcmp(op, "check") == 0);
         int* dFail; cudaMalloc(&dFail, sizeof(int)); cudaMemset(dFail, 0, sizeof(int));
         #define DB(ss, kp) if (!ok && SS==ss && KP==kp) { \
-            int sm = (int)glass::bdsv_scratch_bytes<float, ss>(); \
+            int sm = (int)glass::block::bdsv_scratch_bytes<float, ss>(); \
             if (check) k_bdsv<kp, ss, true ><<<1, threads, sm>>>(dM, dv, dFail); \
             else       k_bdsv<kp, ss, false><<<1, threads, sm>>>(dM, dv, dFail); ok = true; }
         BDSV_SHAPES(DB)
@@ -60,7 +60,7 @@ int main(int argc, char** argv) {
     } else if (strcmp(op, "two_rhs") == 0) {
         float* dv2 = read_device_vec(argv[8], vec_n);
         #define DB2(ss, kp) if (!ok && SS==ss && KP==kp) { \
-            int sm = (int)glass::bdsv_scratch_bytes<float, ss>(); \
+            int sm = (int)glass::block::bdsv_scratch_bytes<float, ss>(); \
             k_bdsv_two_rhs<kp, ss><<<1, threads, sm>>>(dM, dv, dv2); ok = true; }
         BDSV_SHAPES(DB2)
         #undef DB2

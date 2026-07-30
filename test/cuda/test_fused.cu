@@ -27,10 +27,10 @@
 #include "helpers.cuh"
 
 __global__ void k_inv_fused(uint32_t K, const uint32_t* dims, uint32_t MAX_DIM, float** mats, float* s_temp) {
-    glass::inv<float>(K, dims, MAX_DIM, mats, s_temp);
+    glass::block::inv<float>(K, dims, MAX_DIM, mats, s_temp);
 }
 __global__ void k_chol_fused(uint32_t K, const uint32_t* dims, uint32_t MAX_DIM, float** mats) {
-    glass::potrf<float>(K, dims, MAX_DIM, mats);
+    glass::block::potrf<float>(K, dims, MAX_DIM, mats);
 }
 // Warp-packed: block of dim3(32, W); warp w = threadIdx.y inverts mats[w] with
 // its OWN (2*N+1)-element span of the dynamic shared scratch.
@@ -42,7 +42,7 @@ __global__ void k_inv_warp(float** mats) {
 }
 // Block single-matrix baseline (glass::inv on one matrix at <threads> threads).
 __global__ void k_inv_block(uint32_t dim, float* A, float* s_scratch) {
-    glass::inv<float>(dim, A, s_scratch);
+    glass::block::inv<float>(dim, A, s_scratch);
 }
 
 int main(int argc, char** argv) {

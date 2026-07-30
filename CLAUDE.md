@@ -50,19 +50,37 @@ threads (one warp runs lockstep), a race at 64+.
 
 ## Interfaces
 
-Four **primary interfaces** — **Block** (`glass::`), **Warp** (`glass::warp::`),
-**Thread** (`glass::thread::`), and **Nvidia** (`glass::nvidia::`) — picked by how the
-problem maps onto the GPU. Block and Nvidia are block-scoped (one block per problem);
-Warp is warp-scoped (one warp per problem); Thread is thread-scoped (one problem per
-THREAD, 32 packed per warp). The ladder runs most→least problem packing:
-thread → warp → block → nvidia.
+**NAMESPACE CONTRACT (2026-07-30 restructure).** Four **primary interfaces** —
+**Block** (`glass::block::`), **Warp** (`glass::warp::`), **Thread**
+(`glass::thread::`), and **Nvidia** (`glass::nvidia::block::` /
+`glass::nvidia::warp::`) — picked by how the problem maps onto the GPU. Block
+and Nvidia-block are block-scoped (one block per problem); Warp is warp-scoped
+(one warp per problem); Thread is thread-scoped (one problem per THREAD, 32
+packed per warp). The ladder runs most→least problem packing: thread → warp →
+block → nvidia. **Explicit namespaces are the CONTRACT tier** (bit-exact,
+thread-count invariant, never re-dispatched). **BARE `glass::op` (and bare
+`glass::nvidia::op`) is the measured-DEFAULT face**: block-scope calling
+contract, body chosen per (op, N, dtype) by `glass::dispatch_body()`
+(glass-defaults.cuh). Phase 1 pins every cell to the block body, so bare names
+are the SAME entities as the explicit block tier (re-exported via
+`using namespace block;` in the umbrellas; function-pointer identity pinned in
+test_defaults.cu) — old spellings all still compile with identical meaning. A
+future in-block body sweep (tune.py) may move cells (warp-/thread-body under
+the same block-scope contract) as a receipt-attested retune; emit
+`glass::block::` from codegen and anywhere determinism is load-bearing.
+Mechanically: the base headers are included inside `namespace glass::block`
+(their inline `warp`/`thread` sub-namespaces land at `block::warp`/
+`block::thread` and are aliased back to `glass::warp`/`glass::thread`), and
+consumer files that place `DEFINE_NVIDIA_*` macros or template specializations
+inside `namespace glass { namespace nvidia {` must now open
+`namespace block {` there too.
 
 | Interface | Scope | What it is | Header |
 |-----------|-------|------------|--------|
 | `glass::` (Block) | block | Hand-rolled pure-SIMT (`threadIdx`/`blockDim`). No deps. | `glass.cuh` |
 | `glass::warp::` (Warp) | warp | Single-warp SIMT (`__shfl_*_sync`) mirroring most of the block surface — L1 reductions/vector ops, gemv/gemm/syrk, the factor/solve chain, tensor/congruence/riccati. Inline in the base L1/L2/L3 headers. | via `glass.cuh` |
 | `glass::thread::` (Thread) | thread | One problem per thread, for LOW-DOF packing (N≲7: a warp-per-problem factor leaves ~26/32 lanes idle; this packs 32 problems in the warp instead). Sequential — no barriers, no shuffles, no `threadIdx` read. The `ThreadBarrier` (rank=0, size=1, no-op sync) collapses the SAME `*_impl` bodies, so each op runs the identical algorithm as its `glass::` twin on one thread (`test/test_thread.py` asserts agreement to a few ULP — bit-identity across the two instantiations is NOT guaranteed; the no-op sync frees nvcc to contract FMAs differently). Mirrors the branch-free warp surface: L1 `dot`/`reduce`/`nrm2`/`asum`/`nrm1_diff`/`axpy`(+`_strided`)/`scal`/`copy`(+`_strided`)/`rot`/`symmetrize`; L2 `gemv`/`trsv`; L3 `gemm`/`syrk`/`syr2k`/`trsm`/`potrf`/`posv`/`potrs`/`ldlt`(non-pivoted)/`ldlt_solve`/`inv`(non-pivoted) + the fused `tensor_vec_contract`/`vec_tensor_vec`/`congruence_sym`/`bilinear`/`congruence_accum`/`riccati_gain`. Inline in the base headers. | via `glass.cuh` |
-| `glass::nvidia::` (Nvidia) | block | CUB / cuBLASDx / cuSOLVERDx, auto-dispatched by size. Needs MathDx (`MATHDX_ROOT`). | `glass-nvidia.cuh` |
+| `glass::nvidia::` (Nvidia) | block (+ warp for L1 reductions via `glass::nvidia::warp::` = `cub::WarpReduce`, full warps only) | CUB / cuBLASDx / cuSOLVERDx, auto-dispatched by size. MathDx (`MATHDX_ROOT`) needed only for the cuBLASDx/cuSOLVERDx paths — the CUB L1 forms compile everywhere. | `glass-nvidia.cuh` |
 
 **`glass::thread::` constraints (read before extending it):**
 - **Compile-time `N` only.** The tier's value is a register-resident `T A[N*N]`; a

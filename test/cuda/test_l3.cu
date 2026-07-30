@@ -33,28 +33,28 @@ static int* read_device_ivec(const char* path, int n) {
 // ─── gemm_batched_indexed kernel (DIM=4) ─────────────────────────────────────
 __global__ void k_indexed_bgemm_4(uint32_t pairs, int* a_idx, int* b_idx, int* c_idx,
                                    float* A, float* B, float* C) {
-    glass::gemm_batched_indexed<float, 4>(pairs, a_idx, b_idx, c_idx, A, B, C);
+    glass::block::gemm_batched_indexed<float, 4>(pairs, a_idx, b_idx, c_idx, A, B, C);
 }
 
 // ─── gemm_batched_indexed: TRANSPOSE_A / TRANSPOSE_B / ATOMIC_C variants ──────
 __global__ void k_indexed_bgemm_4_ta(uint32_t pairs, int* a_idx, int* b_idx, int* c_idx,
                                       float* A, float* B, float* C) {
-    glass::gemm_batched_indexed<float, 4, /*TA*/true, /*TB*/false, /*ATOMIC*/false>(
+    glass::block::gemm_batched_indexed<float, 4, /*TA*/true, /*TB*/false, /*ATOMIC*/false>(
         pairs, a_idx, b_idx, c_idx, A, B, C);
 }
 __global__ void k_indexed_bgemm_4_tb(uint32_t pairs, int* a_idx, int* b_idx, int* c_idx,
                                       float* A, float* B, float* C) {
-    glass::gemm_batched_indexed<float, 4, /*TA*/false, /*TB*/true, /*ATOMIC*/false>(
+    glass::block::gemm_batched_indexed<float, 4, /*TA*/false, /*TB*/true, /*ATOMIC*/false>(
         pairs, a_idx, b_idx, c_idx, A, B, C);
 }
 __global__ void k_indexed_bgemm_4_atomic(uint32_t pairs, int* a_idx, int* b_idx, int* c_idx,
                                          float* A, float* B, float* C) {
-    glass::gemm_batched_indexed<float, 4, /*TA*/false, /*TB*/false, /*ATOMIC*/true>(
+    glass::block::gemm_batched_indexed<float, 4, /*TA*/false, /*TB*/false, /*ATOMIC*/true>(
         pairs, a_idx, b_idx, c_idx, A, B, C);
 }
 __global__ void k_indexed_bgemm_4_ta_atomic(uint32_t pairs, int* a_idx, int* b_idx, int* c_idx,
                                             float* A, float* B, float* C) {
-    glass::gemm_batched_indexed<float, 4, /*TA*/true, /*TB*/false, /*ATOMIC*/true>(
+    glass::block::gemm_batched_indexed<float, 4, /*TA*/true, /*TB*/false, /*ATOMIC*/true>(
         pairs, a_idx, b_idx, c_idx, A, B, C);
 }
 
@@ -63,8 +63,8 @@ __global__ void k_indexed_bgemm_4_ta_atomic(uint32_t pairs, int* a_idx, int* b_i
 // (so a NaN-poisoned C must survive); when 0, the beta overload.
 template <bool TA, bool TB, bool RMC>
 __global__ void k_gemm_rt(int m, int n, int k, float alpha, float* A, float* B, float beta, float* C, int nb) {
-    if (nb) glass::gemm<float, TA, TB, RMC>(m, n, k, alpha, A, B, C);
-    else    glass::gemm<float, TA, TB, RMC>(m, n, k, alpha, A, B, beta, C);
+    if (nb) glass::block::gemm<float, TA, TB, RMC>(m, n, k, alpha, A, B, C);
+    else    glass::block::gemm<float, TA, TB, RMC>(m, n, k, alpha, A, B, beta, C);
 }
 template <bool TA, bool TB, bool RMC>
 __global__ void k_gemm_rt_cg(int m, int n, int k, float alpha, float* A, float* B, float beta, float* C, int nb) {
@@ -74,8 +74,8 @@ __global__ void k_gemm_rt_cg(int m, int n, int k, float alpha, float* A, float* 
 // Compile-time-size (magic-multiply path).
 template <int M, int N, int K, bool TA, bool TB, bool RMC>
 __global__ void k_gemm_ct(float alpha, float* A, float* B, float beta, float* C, int nb) {
-    if (nb) glass::gemm<float, M, N, K, TA, TB, RMC>(alpha, A, B, C);
-    else    glass::gemm<float, M, N, K, TA, TB, RMC>(alpha, A, B, beta, C);
+    if (nb) glass::block::gemm<float, M, N, K, TA, TB, RMC>(alpha, A, B, C);
+    else    glass::block::gemm<float, M, N, K, TA, TB, RMC>(alpha, A, B, beta, C);
 }
 // Single-warp compile-time (run <<<1,32>>>).
 template <int M, int N, int K, bool TA, bool TB, bool RMC>
@@ -141,16 +141,16 @@ __global__ void k_inv_cg(int n, float* A, float* scratch) {
     glass::cgrps::inv(n, A, scratch);
 }
 __global__ void k_inv_simple(int n, float* A, float* scratch) {
-    glass::inv(n, A, scratch);
+    glass::block::inv(n, A, scratch);
 }
 __global__ void k_inv_pivot_simple(int n, float* A, float* scratch) {
-    glass::inv_pivoted(n, A, scratch);
+    glass::block::inv_pivoted(n, A, scratch);
 }
 __global__ void k_inv2_simple(int dimA, int dimB, int maxd, float* A, float* B, float* scratch) {
-    glass::inv(dimA, dimB, maxd, A, B, scratch);
+    glass::block::inv(dimA, dimB, maxd, A, B, scratch);
 }
 __global__ void k_inv3_simple(int dimA, int dimB, int dimC, int maxd, float* A, float* B, float* C, float* scratch) {
-    glass::inv(dimA, dimB, dimC, maxd, A, B, C, scratch);
+    glass::block::inv(dimA, dimB, dimC, maxd, A, B, C, scratch);
 }
 
 // ─── chol kernels ─────────────────────────────────────────────────────────────
@@ -158,7 +158,7 @@ __global__ void k_chol_cg(int n, float* A) {
     glass::cgrps::potrf(n, A);
 }
 __global__ void k_chol_simple(int n, float* A) {
-    glass::potrf(n, A);
+    glass::block::potrf(n, A);
 }
 
 // ─── trsm kernels (multi-RHS, flagged) ────────────────────────────────────────
@@ -167,53 +167,53 @@ __global__ void k_trsm_cg(int n, int nrhs, const float* A, float* B) {
 }
 __global__ void k_trsm_cg_t(int n, int nrhs, const float* A, float* B) {
     // Transpose-flag instantiation: de-gates the 8 formerly-pinned cg skips.
-    glass::cgrps::trsm<float, glass::FillMode::Lower, glass::Diag::NonUnit, true>(
+    glass::cgrps::trsm<float, glass::block::FillMode::Lower, glass::block::Diag::NonUnit, true>(
         n, (uint32_t)nrhs, A, B);
 }
 __global__ void k_trsm_simple(int n, int nrhs, const float* A, float* B) {
-    glass::trsm<float>(n, nrhs, A, B);
+    glass::block::trsm<float>(n, nrhs, A, B);
 }
 __global__ void k_trsm_simple_t(int n, int nrhs, const float* A, float* B) {
-    glass::trsm<float, glass::FillMode::Lower, glass::Diag::NonUnit, true>(n, nrhs, A, B);
+    glass::block::trsm<float, glass::block::FillMode::Lower, glass::block::Diag::NonUnit, true>(n, nrhs, A, B);
 }
 // warp multi-RHS trsm (compile-time N=7, NRHS=3), forward + transpose forms
 __global__ void k_trsm_warp_7_3(const float* A, float* B) {
     glass::warp::trsm<float, 7, 3>(A, B);
 }
 __global__ void k_trsm_warp_7_3_t(const float* A, float* B) {
-    glass::warp::trsm<float, 7, 3, glass::FillMode::Lower, glass::Diag::NonUnit, true>(A, B);
+    glass::warp::trsm<float, 7, 3, glass::block::FillMode::Lower, glass::block::Diag::NonUnit, true>(A, B);
 }
 
 // ─── warp SPD solve (N=7) ─────────────────────────────────────────────────────
 __global__ void k_posv_warp_7(float* A, float* b) {
     glass::warp::potrf<float, 7>(A);
     glass::warp::trsv<float, 7>(A, b);                                                       // forward: L y = b
-    glass::warp::trsv<float, 7, glass::FillMode::Lower, glass::Diag::NonUnit, true>(A, b);   // back:   Lᵀ x = y
+    glass::warp::trsv<float, 7, glass::block::FillMode::Lower, glass::block::Diag::NonUnit, true>(A, b);   // back:   Lᵀ x = y
 }
 
 // ─── gemm_strided kernels (standard convention: A M×K lead A_RS, B K×N lead B_RS) ──
 __global__ void k_rsgemm_6x6x6_6_6(float alpha, float* A, float* B, float beta, float* C) {
-    glass::gemm_strided<float, 6, 6, 6, 6, 6>(alpha, A, B, beta, C);
+    glass::block::gemm_strided<float, 6, 6, 6, 6, 6>(alpha, A, B, beta, C);
 }
 __global__ void k_rsgemm_6x6x6_8_8(float alpha, float* A, float* B, float beta, float* C) {
-    glass::gemm_strided<float, 6, 6, 6, 8, 8>(alpha, A, B, beta, C);
+    glass::block::gemm_strided<float, 6, 6, 6, 8, 8>(alpha, A, B, beta, C);
 }
 __global__ void k_rsgemm_4x4x4_4_4(float alpha, float* A, float* B, float beta, float* C) {
-    glass::gemm_strided<float, 4, 4, 4, 4, 4>(alpha, A, B, beta, C);
+    glass::block::gemm_strided<float, 4, 4, 4, 4, 4>(alpha, A, B, beta, C);
 }
 __global__ void k_rsgemm_4x4x4_6_6(float alpha, float* A, float* B, float beta, float* C) {
-    glass::gemm_strided<float, 4, 4, 4, 6, 6>(alpha, A, B, beta, C);
+    glass::block::gemm_strided<float, 4, 4, 4, 6, 6>(alpha, A, B, beta, C);
 }
 // Non-square strided: C 5×7, contract 3; A 5×3 lead 8, B 3×7 lead 6.
 __global__ void k_rsgemm_5x7x3_8_6(float alpha, float* A, float* B, float beta, float* C) {
-    glass::gemm_strided<float, 5, 7, 3, 8, 6>(alpha, A, B, beta, C);
+    glass::block::gemm_strided<float, 5, 7, 3, 8, 6>(alpha, A, B, beta, C);
 }
 
 // ─── packed GEMM CT kernels (4×4×{16,32,48,64}) ──────────────────────────────
 #define DEFINE_PACKED_GEMM_KERNEL(M, N, K)                                              \
     __global__ void k_packed_gemm_##M##x##N##x##K(                                     \
             float alpha, float* A, float* B, float beta, float* C) {                   \
-        glass::gemm<float, M, N, K>(alpha, A, B, beta, C);                             \
+        glass::block::gemm<float, M, N, K>(alpha, A, B, beta, C);                             \
     }
 DEFINE_PACKED_GEMM_KERNEL(4, 4, 16)
 DEFINE_PACKED_GEMM_KERNEL(4, 4, 32)
@@ -225,7 +225,7 @@ __global__ void k_gemm_tiled(int m, int n, int k, float alpha, float* A, float* 
     extern __shared__ float smem[];
     float* s_A = smem;
     float* s_B = smem + m * 8;
-    glass::gemm_tiled<float, 8>(m, n, k, alpha, A, B, beta, C, s_A, s_B);
+    glass::block::gemm_tiled<float, 8>(m, n, k, alpha, A, B, beta, C, s_A, s_B);
 }
 
 // ─── main ────────────────────────────────────────────────────────────────────

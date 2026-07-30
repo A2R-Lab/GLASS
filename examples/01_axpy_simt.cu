@@ -11,7 +11,7 @@
 
 __global__ void axpy_kernel(float *x, float *y, int n) {
     // Runtime size: every thread in the block strides over the n elements.
-    glass::axpy(static_cast<uint32_t>(n), 1.5f, x, y);   // y = 1.5*x + y
+    glass::block::axpy(static_cast<uint32_t>(n), 1.5f, x, y);   // y = 1.5*x + y
 }
 
 int main() {

@@ -20,7 +20,7 @@ __global__ void k_posvreg(float* A, float* B, float rho, int* fail) {
     for (uint32_t i = threadIdx.x; i < N*N; i += blockDim.x) sA[i] = A[i];
     for (uint32_t i = threadIdx.x; i < N*NRHS; i += blockDim.x) sB[i] = B[i];
     __syncthreads();
-    glass::posv<float, N, NRHS, REG, true>(sA, sB, rho, fail);
+    glass::block::posv<float, N, NRHS, REG, true>(sA, sB, rho, fail);
     __syncthreads();
     for (uint32_t i = threadIdx.x; i < N*NRHS; i += blockDim.x) B[i] = sB[i];
 }
@@ -29,7 +29,7 @@ template <uint32_t NX, uint32_t NU, bool REG>
 __global__ void k_riccati(const float* P, const float* A, const float* B, const float* R,
                           float* K, float rho, int* fail) {
     extern __shared__ float st[];
-    glass::riccati_gain<float, NX, NU, REG>(P, A, B, R, K, st, rho, fail);
+    glass::block::riccati_gain<float, NX, NU, REG>(P, A, B, R, K, st, rho, fail);
 }
 
 template <uint32_t NX, uint32_t NU, bool REG>
@@ -77,7 +77,7 @@ int main(int argc, char** argv) {
         int* dFail; cudaMalloc(&dFail, sizeof(int));
         bool ok = false;
         #define DR(XX,UU) if(!ok && NX==XX && NU==UU){ \
-            int sm = glass::riccati_scratch_bytes<float,XX,UU>(); \
+            int sm = glass::block::riccati_scratch_bytes<float,XX,UU>(); \
             if(warp){ if(reg) k_riccati_warp<XX,UU,true><<<1,32,sm>>>(dP,dA,dB,dR,dK,rho,dFail); \
                       else    k_riccati_warp<XX,UU,false><<<1,32,sm>>>(dP,dA,dB,dR,dK,rho,dFail); } \
             else    { if(reg) k_riccati<XX,UU,true><<<1,th,sm>>>(dP,dA,dB,dR,dK,rho,dFail); \

@@ -2,7 +2,9 @@ NVIDIA Backend (``glass::nvidia::``)
 ====================================
 
 Vendor-accelerated paths built on CUB (reductions), cuBLASDx (GEMM/GEMV), and
-cuSOLVERDx (LAPACK). The entry points auto-dispatch between a pure-SIMT
+cuSOLVERDx (LAPACK). The block-scope ops live in ``glass::nvidia::block::``
+(the contract tier; bare ``glass::nvidia::`` re-exports them as the
+measured-default face). The entry points auto-dispatch between a pure-SIMT
 implementation and the vendor backend based on a size heuristic / tuning table;
 see :doc:`../user_guide/concepts/backend_dispatch`. The L2/L3/LAPACK paths
 require NVIDIA MathDx (``MATHDX_ROOT``) — see
@@ -13,6 +15,11 @@ Each call has a companion **host-side** query helper (``*_scratch_bytes``,
 
 L1 (CUB-backed reductions)
 --------------------------
+
+``reduce`` / ``dot`` / ``nrm2`` at block scope (``cub::BlockReduce``) and, in
+``glass::nvidia::warp::``, at warp scope (``cub::WarpReduce`` — one FULL
+32-lane warp per problem, per-warp scratch via
+``warp_reduce_scratch_bytes<T>()``, ``TRAILING_SYNC`` emits ``__syncwarp()``).
 
 .. doxygenfile:: src/nvidia/l1.cuh
 

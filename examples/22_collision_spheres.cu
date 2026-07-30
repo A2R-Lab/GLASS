@@ -32,12 +32,12 @@ __global__ void k_narrow_phase(const float* q, const float* t, const float* sph,
     if (p >= P) return;
     // link sphere -> world (FK pose), world == box frame here for brevity
     float world[4];
-    glass::transform_sphere<float>(q + 4*p, t + 3*p, sph + 4*p, world);
+    glass::block::transform_sphere<float>(q + 4*p, t + 3*p, sph + 4*p, world);
     float g[3];
-    float d = glass::sphere_box_dist<float>(world, world[3], half + 3*p, g);
+    float d = glass::block::sphere_box_dist<float>(world, world[3], half + 3*p, g);
     dist[p] = d;
-    cost[p] = glass::smooth_hinge<float>(d, ETA);
-    float dcdd = glass::smooth_hinge_grad<float>(d, ETA);
+    cost[p] = glass::block::smooth_hinge<float>(d, ETA);
+    float dcdd = glass::block::smooth_hinge_grad<float>(d, ETA);
     for (int i = 0; i < 3; i++) grad[3*p + i] = dcdd*g[i];   // chain rule to the center
 }
 

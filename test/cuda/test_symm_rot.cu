@@ -25,8 +25,8 @@
 #include "helpers.cuh"
 #include "glass.cuh"
 
-using glass::FillMode;
-using glass::Diag;
+using glass::block::FillMode;
+using glass::block::Diag;
 
 // ─── symm ─────────────────────────────────────────────────────────────────────
 
@@ -34,11 +34,11 @@ template <FillMode FILL, bool CT, bool HASBETA, uint32_t N, uint32_t M>
 __global__ void k_symm(uint32_t n, uint32_t m, float alpha, float beta,
                        const float* A, const float* B, float* C) {
     if constexpr (CT) {
-        if constexpr (HASBETA) glass::symm<float, N, M, FILL>(alpha, A, B, beta, C);
-        else                   glass::symm<float, N, M, FILL>(alpha, A, B, C);
+        if constexpr (HASBETA) glass::block::symm<float, N, M, FILL>(alpha, A, B, beta, C);
+        else                   glass::block::symm<float, N, M, FILL>(alpha, A, B, C);
     } else {
-        if constexpr (HASBETA) glass::symm<float, FILL>(n, m, alpha, A, B, beta, C);
-        else                   glass::symm<float, FILL>(n, m, alpha, A, B, C);
+        if constexpr (HASBETA) glass::block::symm<float, FILL>(n, m, alpha, A, B, beta, C);
+        else                   glass::block::symm<float, FILL>(n, m, alpha, A, B, C);
     }
 }
 
@@ -63,8 +63,8 @@ static void launch_symm(bool upper, bool ct, bool hasbeta, int th, uint32_t n, u
 template <FillMode FILL, Diag DIAG, bool TRANS, bool CT, uint32_t N, uint32_t M>
 __global__ void k_trmm(uint32_t n, uint32_t m, float alpha,
                        const float* A, const float* B, float* C) {
-    if constexpr (CT) glass::trmm<float, N, M, FILL, DIAG, TRANS>(alpha, A, B, C);
-    else              glass::trmm<float, FILL, DIAG, TRANS>(n, m, alpha, A, B, C);
+    if constexpr (CT) glass::block::trmm<float, N, M, FILL, DIAG, TRANS>(alpha, A, B, C);
+    else              glass::block::trmm<float, FILL, DIAG, TRANS>(n, m, alpha, A, B, C);
 }
 
 template <uint32_t N, uint32_t M>
@@ -97,8 +97,8 @@ __global__ void k_rot(uint32_t n, float c, float s, float* x, float* y) {
         if constexpr (CT) glass::warp::rot<float, N>(x, y, c, s);
         else              glass::warp::rot<float>(n, x, y, c, s);
     } else {
-        if constexpr (CT) glass::rot<float, N>(x, y, c, s);
-        else              glass::rot<float>(n, x, y, c, s);
+        if constexpr (CT) glass::block::rot<float, N>(x, y, c, s);
+        else              glass::block::rot<float>(n, x, y, c, s);
     }
 }
 
@@ -113,7 +113,7 @@ static void launch_rot(bool warp, bool ct, int th, uint32_t n, float c, float s,
 
 __global__ void k_rotg(float a, float b, float* out) {
     float c, s, r;
-    glass::rotg<float>(a, b, c, s, r);
+    glass::block::rotg<float>(a, b, c, s, r);
     out[0] = c; out[1] = s; out[2] = r;
 }
 
@@ -201,7 +201,7 @@ int main(int argc, char** argv) {
         if (check_sync()) return 1;
         print_device_vec(dout, 3);          // device line: c s r
         float hc, hs, hr;
-        glass::rotg<float>(a, b, hc, hs, hr);
+        glass::block::rotg<float>(a, b, hc, hs, hr);
         float host[3] = {hc, hs, hr};
         print_host_vec(host, 3);            // host line:   c s r
         return 0;

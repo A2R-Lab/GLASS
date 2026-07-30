@@ -31,8 +31,8 @@ constexpr int P = 512;   // links × timesteps in flight
 __global__ void k_fused(const float* v, const float* x, const float* f,
                         float* y, float* fo) {
     int p = blockIdx.x;
-    glass::motion_cross_mul<float>(1.f, v + 6*p, x + 6*p, 0.f, y + 6*p);
-    glass::force_cross_mul<float>(1.f, v + 6*p, f + 6*p, 0.f, fo + 6*p);
+    glass::block::motion_cross_mul<float>(1.f, v + 6*p, x + 6*p, 0.f, y + 6*p);
+    glass::block::force_cross_mul<float>(1.f, v + 6*p, f + 6*p, 0.f, fo + 6*p);
 }
 
 // COMPOSED: materialize the 6x6s in shared memory, then gemv.
@@ -40,10 +40,10 @@ __global__ void k_composed(const float* v, const float* x, const float* f,
                            float* y, float* fo) {
     __shared__ float M[36], F[36];
     int p = blockIdx.x;
-    glass::motion_cross<float>(v + 6*p, M);
-    glass::force_cross<float>(v + 6*p, F);
-    glass::gemv<float, 6, 6>(1.f, M, x + 6*p, 0.f, y + 6*p);
-    glass::gemv<float, 6, 6>(1.f, F, f + 6*p, 0.f, fo + 6*p);
+    glass::block::motion_cross<float>(v + 6*p, M);
+    glass::block::force_cross<float>(v + 6*p, F);
+    glass::block::gemv<float, 6, 6>(1.f, M, x + 6*p, 0.f, y + 6*p);
+    glass::block::gemv<float, 6, 6>(1.f, F, f + 6*p, 0.f, fo + 6*p);
 }
 
 int main() {

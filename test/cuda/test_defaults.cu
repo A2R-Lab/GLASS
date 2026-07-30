@@ -50,6 +50,23 @@ static_assert(gd::ideal(op::posv, 64, true,  1200u) == gd::ideal_sm120(op::posv,
 static_assert(gd::ideal(op::gemm, 32, false, 0u) == gd::ideal_generic(op::gemm, 32, false), "unmeasured SM falls to generic");
 static_assert(gd::ideal(op::chol, 24, false, 1u) == gd::ideal_generic(op::chol, 24, false), "unmeasured SM falls to generic");
 
+// ── bare-namespace face (2026-07-30 restructure): Phase-1 pins ──
+// Every dispatch_body cell is the block body, and the bare glass:: names are
+// the SAME entities as glass::block:: (using-directive re-export) — pinned by
+// function-pointer identity. When a Phase-2 sweep moves cells, tune.py must
+// regenerate the table AND add shadowing wrappers; these asserts then update
+// as part of that attested retune.
+static_assert(glass::dispatch_body(op::gemm, 8,  false) == glass::body::block, "phase-1: all cells block");
+static_assert(glass::dispatch_body(op::chol, 64, true)  == glass::body::block, "phase-1: all cells block");
+static_assert(glass::dispatch_body(op::dot,  4,  false) == glass::body::block, "phase-1: all cells block");
+// (one op suffices: the re-export is a single using-directive, so it covers
+//  every name identically — heavily-overloaded names like gemv/potrf can't be
+//  address-compared without a disambiguating cast, but resolve the same way)
+static_assert(&glass::dot<float, 8, true>  == &glass::block::dot<float, 8, true>,  "bare dot IS block::dot");
+// tier aliases: glass::warp/thread are namespace aliases of block::warp/thread
+static_assert(&glass::warp::dot<float, 8>  == &glass::block::warp::dot<float, 8>,  "warp alias");
+static_assert(&glass::thread::dot<float, 8> == &glass::block::thread::dot<float, 8>, "thread alias");
+
 // ── no-nvidia collapse (this TU links no vendor lib) ──
 static_assert(glass::suggested_backend<op::chol, 24, float>() == backend::warp,  "chol24 collapses to warp");
 static_assert(glass::suggested_backend<op::chol, 64, float>() == backend::block, "chol64 collapses to block");

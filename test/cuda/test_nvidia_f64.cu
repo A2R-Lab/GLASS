@@ -18,7 +18,7 @@
 #include <cublasdx.hpp>
 #include "glass-nvidia.cuh"
 
-namespace glass { namespace nvidia {
+namespace glass { namespace nvidia { namespace block {
     DEFINE_NVIDIA_POSV_BLOCKDIM_PREC(8,  1, 256, double)
     DEFINE_NVIDIA_POSV_BLOCKDIM_PREC(16, 1, 256, double)
     DEFINE_NVIDIA_POSV_BLOCKDIM_PREC(32, 1, 256, double)
@@ -28,16 +28,16 @@ namespace glass { namespace nvidia {
     DEFINE_NVIDIA_GEMV_PREC(8,  8,  double)
     DEFINE_NVIDIA_GEMV_PREC(16, 16, double)
     DEFINE_NVIDIA_GEMV_PREC(32, 32, double)
-}}
+}}}
 
 template<int N> __global__ void k_posv(double* A, double* b) {
-    extern __shared__ char s[]; glass::nvidia::posv<double,N,1,256>(A, b, s);
+    extern __shared__ char s[]; glass::nvidia::block::posv<double,N,1,256>(A, b, s);
 }
 template<int N> __global__ void k_gemm(double* A, double* B, double* C) {
-    extern __shared__ char s[]; glass::nvidia::gemm<double,N,N,N>(1.0, A, B, 0.0, C, s);
+    extern __shared__ char s[]; glass::nvidia::block::gemm<double,N,N,N>(1.0, A, B, 0.0, C, s);
 }
 template<int N> __global__ void k_gemv(double* A, double* x, double* y) {
-    extern __shared__ char s[]; glass::nvidia::gemv<double,N,N>(1.0, A, x, 0.0, y, s);
+    extern __shared__ char s[]; glass::nvidia::block::gemv<double,N,N>(1.0, A, x, 0.0, y, s);
 }
 
 static void build(int N, double* A, double* B, double* b) {
@@ -59,19 +59,19 @@ template<int N> static void run(const char* op) {
     cudaMemcpy(db,hb,N*8,cudaMemcpyHostToDevice);
     int nout=N;
     if (!strcmp(op,"posv")) {
-        size_t sm=glass::nvidia::posv_scratch_bytes<double,N,1,256>();
+        size_t sm=glass::nvidia::block::posv_scratch_bytes<double,N,1,256>();
         cudaFuncSetAttribute(k_posv<N>,cudaFuncAttributeMaxDynamicSharedMemorySize,(int)sm);
         k_posv<N><<<1,256,sm>>>(dA,db); cudaDeviceSynchronize();
         cudaMemcpy(hout,db,N*8,cudaMemcpyDeviceToHost); nout=N;
     } else if (!strcmp(op,"gemm")) {
-        size_t sm=glass::nvidia::gemm_scratch_bytes<double,N,N,N>();
-        int tb=(int)glass::nvidia::gemm_threads<double,N,N,N>();
+        size_t sm=glass::nvidia::block::gemm_scratch_bytes<double,N,N,N>();
+        int tb=(int)glass::nvidia::block::gemm_threads<double,N,N,N>();
         cudaFuncSetAttribute(k_gemm<N>,cudaFuncAttributeMaxDynamicSharedMemorySize,(int)sm);
         k_gemm<N><<<1,tb,sm>>>(dA,dB,dC); cudaDeviceSynchronize();
         cudaMemcpy(hout,dC,N*N*8,cudaMemcpyDeviceToHost); nout=N*N;
     } else { // gemv
-        size_t sm=glass::nvidia::gemv_scratch_bytes<double,N,N>();
-        int tb=(int)glass::nvidia::gemv_threads<double,N,N>();
+        size_t sm=glass::nvidia::block::gemv_scratch_bytes<double,N,N>();
+        int tb=(int)glass::nvidia::block::gemv_threads<double,N,N>();
         cudaFuncSetAttribute(k_gemv<N>,cudaFuncAttributeMaxDynamicSharedMemorySize,(int)sm);
         k_gemv<N><<<1,tb,sm>>>(dA,db,dC); cudaDeviceSynchronize();
         cudaMemcpy(hout,dC,N*8,cudaMemcpyDeviceToHost); nout=N;

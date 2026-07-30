@@ -138,7 +138,8 @@ Tiers
 -----
 
 Every **array-shaped** robotics op spans the three SIMT interfaces — block
-(``glass::``), warp (``glass::warp::``), thread (``glass::thread::``) — from
+(``glass::block::``, re-exported as bare ``glass::``), warp
+(``glass::warp::``), thread (``glass::thread::``) — from
 one shared serial core: each active thread computes the small fixed-size
 result redundantly in registers and the tier strides the copy-out. That
 construction is thread-count **bit-invariant** at block scope (asserted at
@@ -148,7 +149,7 @@ tolerance for trig chains). Outputs must not alias inputs at block/warp scope.
 
 **Scalar-returning** ops (the angle utilities, the AL/barrier scalars, the
 geometry distances) are *tier-free*: they read no ``threadIdx`` and return by
-value, so the same ``glass::`` function is correct at any scope — there is
+value, so the same bare-``glass::`` function is correct at any scope — there is
 nothing for a tier variant to change, and none exist by design.
 
 Fused vs composed

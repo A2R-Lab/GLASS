@@ -30,7 +30,7 @@ static double elapsed_us(struct timespec a, struct timespec b) {
 }
 
 // Pre-instantiate at the standard sizes for both pinned thread counts.
-namespace glass { namespace nvidia {
+namespace glass { namespace nvidia { namespace block {
     DEFINE_NVIDIA_GEMM_BLOCKDIM(4,  4,  4,  128)
     DEFINE_NVIDIA_GEMM_BLOCKDIM(6,  6,  6,  128)
     DEFINE_NVIDIA_GEMM_BLOCKDIM(8,  8,  8,  128)
@@ -46,13 +46,13 @@ namespace glass { namespace nvidia {
     DEFINE_NVIDIA_GEMM_BLOCKDIM(14, 14, 14, 352)
     DEFINE_NVIDIA_GEMM_BLOCKDIM(24, 24, 24, 352)
     DEFINE_NVIDIA_GEMM_BLOCKDIM(64, 64, 64, 352)
-}}
+}}}
 
 template<int M, int N, int K>
 __global__ void k_default(float* A, float* B, float* C, volatile float* sink, int iters) {
     extern __shared__ __align__(16) char smem[];
     for (int rep = 0; rep < iters; rep++) {
-        glass::nvidia::gemm<float, M, N, K>(1.f, A, B, 0.f, C, smem);
+        glass::nvidia::block::gemm<float, M, N, K>(1.f, A, B, 0.f, C, smem);
         __syncthreads();
         if (threadIdx.x == 0) sink[rep & 0xFF] = C[0];
         __syncthreads();
@@ -63,7 +63,7 @@ template<int M, int N, int K, int TC>
 __global__ void k_pinned(float* A, float* B, float* C, volatile float* sink, int iters) {
     extern __shared__ __align__(16) char smem[];
     for (int rep = 0; rep < iters; rep++) {
-        glass::nvidia::gemm<float, M, N, K, TC>(1.f, A, B, 0.f, C, smem);
+        glass::nvidia::block::gemm<float, M, N, K, TC>(1.f, A, B, 0.f, C, smem);
         __syncthreads();
         if (threadIdx.x == 0) sink[rep & 0xFF] = C[0];
         __syncthreads();
@@ -81,8 +81,8 @@ static void bench_one(int iters) {
     struct timespec t0, t1;
 
     // default (cuBLASDx-chosen block_dim)
-    constexpr auto smem_def = glass::nvidia::gemm_scratch_bytes<float, M, N, K>();
-    constexpr auto thr_def  = glass::nvidia::gemm_threads<float, M, N, K>();
+    constexpr auto smem_def = glass::nvidia::block::gemm_scratch_bytes<float, M, N, K>();
+    constexpr auto thr_def  = glass::nvidia::block::gemm_threads<float, M, N, K>();
     cudaMemset(dC, 0, M*K*sizeof(float));
     clock_gettime(CLOCK_MONOTONIC, &t0);
     k_default<M, N, K><<<1, thr_def, smem_def>>>(dA, dB, dC, dSink, iters);
@@ -92,7 +92,7 @@ static void bench_one(int iters) {
            M, N, K, thr_def, elapsed_us(t0, t1) / iters);
 
     // pinned 128
-    constexpr auto smem_128 = glass::nvidia::gemm_scratch_bytes<float, M, N, K, 128>();
+    constexpr auto smem_128 = glass::nvidia::block::gemm_scratch_bytes<float, M, N, K, 128>();
     cudaMemset(dC, 0, M*K*sizeof(float));
     clock_gettime(CLOCK_MONOTONIC, &t0);
     k_pinned<M, N, K, 128><<<1, 128, smem_128>>>(dA, dB, dC, dSink, iters);
@@ -102,7 +102,7 @@ static void bench_one(int iters) {
            M, N, K, elapsed_us(t0, t1) / iters);
 
     // pinned 352 (GRiD iiwa14 MAX_PERF_LEVEL_THREADS — the value that deadlocked pre-P0-1)
-    constexpr auto smem_352 = glass::nvidia::gemm_scratch_bytes<float, M, N, K, 352>();
+    constexpr auto smem_352 = glass::nvidia::block::gemm_scratch_bytes<float, M, N, K, 352>();
     cudaMemset(dC, 0, M*K*sizeof(float));
     clock_gettime(CLOCK_MONOTONIC, &t0);
     k_pinned<M, N, K, 352><<<1, 352, smem_352>>>(dA, dB, dC, dSink, iters);

@@ -125,7 +125,7 @@ __device__ void nrm2(T *x, T *out, T *s_scratch)
     __syncthreads();
     T block_sum = BlockReduce(*reinterpret_cast<typename BlockReduce::TempStorage*>(s_scratch))
                       .Sum(thread_sum);
-    if (threadIdx.x == 0) *out = sqrtf(block_sum);
+    if (threadIdx.x == 0) *out = sqrt(block_sum);   // overload-resolved (sqrtf truncated f64)
     if constexpr (TRAILING_SYNC) {
         __syncthreads();
     }
@@ -146,3 +146,4 @@ inline constexpr std::size_t reduce_scratch_bytes()
 {
     return sizeof(typename cub::BlockReduce<T, THREADS>::TempStorage);
 }
+

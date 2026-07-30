@@ -21,8 +21,8 @@ enum { SURF_BLOCK = 0, SURF_WARP = 1, SURF_CGRPS = 2 };
 template <int SURF, uint32_t N, bool CT>
 __global__ void k_sym(uint32_t n, float* A) {
     if constexpr (SURF == SURF_BLOCK) {
-        if constexpr (CT) glass::symmetrize<float, N>(A);
-        else              glass::symmetrize<float>(n, A);
+        if constexpr (CT) glass::block::symmetrize<float, N>(A);
+        else              glass::block::symmetrize<float>(n, A);
     } else if constexpr (SURF == SURF_WARP) {
         if constexpr (CT) glass::warp::symmetrize<float, N>(A);
         else              glass::warp::symmetrize<float>(n, A);

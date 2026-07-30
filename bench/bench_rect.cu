@@ -56,7 +56,7 @@ static double time_ns_per_prob(F launch, int reps) {
 // ─── gemv: y(M) = A(MxN)·x(N), one problem per block / per warp ──────────────
 template<typename T,int M,int N> __global__ void kb_gemv(T* A, T* x, T* y) {
     int p = blockIdx.x;
-    glass::gemv<T,M,N>((T)1, A+(size_t)p*M*N, x+(size_t)p*N, (T)0, y+(size_t)p*M);
+    glass::block::gemv<T,M,N>((T)1, A+(size_t)p*M*N, x+(size_t)p*N, (T)0, y+(size_t)p*M);
 }
 template<typename T,int M,int N> __global__ void kw_gemv(T* A, T* x, T* y, int np) {
     int p = blockIdx.x*blockDim.y+threadIdx.y; if (p>=np) return;
@@ -66,7 +66,7 @@ template<typename T,int M,int N> __global__ void kw_gemv(T* A, T* x, T* y, int n
 // ─── gemm: C(MxN) = A(MxK)·B(KxN) — glass template order <T,M,N,K> ──────────
 template<typename T,int M,int K,int N> __global__ void kb_gemm(T* A, T* B, T* C) {
     int p = blockIdx.x;
-    glass::gemm<T,M,N,K>((T)1, A+(size_t)p*M*K, B+(size_t)p*K*N, (T)0, C+(size_t)p*M*N);
+    glass::block::gemm<T,M,N,K>((T)1, A+(size_t)p*M*K, B+(size_t)p*K*N, (T)0, C+(size_t)p*M*N);
 }
 template<typename T,int M,int K,int N> __global__ void kw_gemm(T* A, T* B, T* C, int np) {
     int p = blockIdx.x*blockDim.y+threadIdx.y; if (p>=np) return;

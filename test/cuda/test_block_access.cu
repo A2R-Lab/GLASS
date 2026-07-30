@@ -18,13 +18,13 @@
 
 template <uint32_t d, bool TRANSPOSE, bool WARP, bool LOAD>
 __global__ void k_blk(uint32_t slot_i, float scale, const float* in, float* out) {
-    glass::BandSlot slot = static_cast<glass::BandSlot>(slot_i);
+    glass::block::BandSlot slot = static_cast<glass::block::BandSlot>(slot_i);
     if constexpr (LOAD) {
         if constexpr (WARP) glass::warp::load_block<float, d, 3 * d, TRANSPOSE>(out, in, slot, scale);
-        else                glass::load_block<float, d, 3 * d, TRANSPOSE>(out, in, slot, scale);
+        else                glass::block::load_block<float, d, 3 * d, TRANSPOSE>(out, in, slot, scale);
     } else {
         if constexpr (WARP) glass::warp::store_block<float, d, 3 * d, TRANSPOSE>(out, slot, in, scale);
-        else                glass::store_block<float, d, 3 * d, TRANSPOSE>(out, slot, in, scale);
+        else                glass::block::store_block<float, d, 3 * d, TRANSPOSE>(out, slot, in, scale);
     }
 }
 

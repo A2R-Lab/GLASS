@@ -22,8 +22,8 @@
 #include "../../glass.cuh"
 
 // bool → enum translators for the flag-templated test kernels
-__host__ __device__ constexpr glass::FillMode FM(bool lower) { return lower ? glass::FillMode::Lower : glass::FillMode::Upper; }
-__host__ __device__ constexpr glass::Diag     DG(bool unit)  { return unit ? glass::Diag::Unit : glass::Diag::NonUnit; }
+__host__ __device__ constexpr glass::block::FillMode FM(bool lower) { return lower ? glass::block::FillMode::Lower : glass::block::FillMode::Upper; }
+__host__ __device__ constexpr glass::block::Diag     DG(bool unit)  { return unit ? glass::block::Diag::Unit : glass::block::Diag::NonUnit; }
 
 
 // ─── L1 kernels (runtime n; one warp per problem) ────────────────────────────

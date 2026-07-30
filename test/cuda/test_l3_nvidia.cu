@@ -21,21 +21,21 @@ static constexpr int TC = 32;
 // ─── gemm_batched_1d kernels (col-major) ─────────────────────────────────────
 template <int M_, int N_, int K_, int BATCH_>
 __global__ void k_batched_1d(float alpha, float** A, float** B, float beta, float** C) {
-    glass::nvidia::gemm_batched_1d<float, M_, N_, K_, BATCH_, TC>(alpha, A, B, beta, C);
+    glass::nvidia::block::gemm_batched_1d<float, M_, N_, K_, BATCH_, TC>(alpha, A, B, beta, C);
 }
 
 template <int M_, int N_, int K_, int BATCH_>
 __global__ void k_batched_1d_rowmajor(float alpha, float** A, float** B, float beta, float** C) {
-    glass::nvidia::gemm_batched_1d<float, M_, N_, K_, BATCH_, TC,
-        glass::nvidia::layout::row_major,
-        glass::nvidia::layout::row_major,
-        glass::nvidia::layout::row_major>(alpha, A, B, beta, C);
+    glass::nvidia::block::gemm_batched_1d<float, M_, N_, K_, BATCH_, TC,
+        glass::nvidia::block::layout::row_major,
+        glass::nvidia::block::layout::row_major,
+        glass::nvidia::block::layout::row_major>(alpha, A, B, beta, C);
 }
 
 // ─── gemm_strided_batched_1d kernels ─────────────────────────────────────────
 template <int M_, int N_, int K_, int BATCH_>
 __global__ void k_strided_1d(float alpha, float* A_shared, float* B, float beta, float* C) {
-    glass::nvidia::gemm_strided_batched_1d<float, M_, N_, K_, BATCH_, TC>(
+    glass::nvidia::block::gemm_strided_batched_1d<float, M_, N_, K_, BATCH_, TC>(
         alpha, A_shared, B, beta, C);
 }
 
@@ -43,7 +43,7 @@ __global__ void k_strided_1d(float alpha, float* A_shared, float* B, float beta,
 // C_STRIDE > M*N). Exercises the * b * STRIDE indexing inside the kernel.
 template <int M_, int N_, int K_, int BATCH_, int B_STRIDE_, int C_STRIDE_>
 __global__ void k_strided_1d_padded(float alpha, float* A_shared, float* B, float beta, float* C) {
-    glass::nvidia::gemm_strided_batched_1d<float, M_, N_, K_, BATCH_, TC,
+    glass::nvidia::block::gemm_strided_batched_1d<float, M_, N_, K_, BATCH_, TC,
                                             B_STRIDE_, C_STRIDE_>(
         alpha, A_shared, B, beta, C);
 }

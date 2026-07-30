@@ -5,7 +5,10 @@
  *
  * Include this (instead of, or in addition to, glass.cuh) to access the
  * vendor-accelerated single-block linear-algebra paths. It pulls in:
- *   - L1 (l1.cuh)         CUB-backed block reductions: reduce / dot / nrm2.
+ *   - L1 (l1.cuh)         CUB-backed reductions: reduce / dot / nrm2 at block
+ *                         scope (cub::BlockReduce) AND warp scope
+ *                         (glass::nvidia::warp::, cub::WarpReduce — one full
+ *                         warp per problem, per-warp scratch).
  *   - query_simt.cuh      SIMT-only dispatch + diagnostic helpers
  *                         (should_use_cublasdx<>, print_dispatch<>, ...).
  *   - L3 SIMT (l3_simt.cuh)  1D-launch batched GEMMs (no cuBLASDx dependency).
@@ -66,6 +69,12 @@
 
 namespace glass {
 namespace nvidia {
+namespace block {
+
+    // `layout` lives at glass::nvidia:: scope (types.cuh, included above);
+    // re-declare it here so the uniform glass::nvidia::block::layout spelling
+    // also resolves.
+    using ::glass::nvidia::layout;
 
     // L1: CUB-backed reduce / dot / nrm2
     #include "./src/nvidia/l1.cuh"
@@ -245,6 +254,20 @@ namespace nvidia {
     // (primary templates + DEFINE_NVIDIA_CHOL* / DEFINE_NVIDIA_TRSM* macros)
     #include "./src/nvidia/lapack.cuh"
 #endif // GLASS_HAVE_CUSOLVERDX
+
+}  // namespace block
+
+/*  Bare glass::nvidia:: face — same contract as the bare glass:: face
+    (glass.cuh): the block-scope vendor surface re-exported, so existing
+    glass::nvidia::op spellings resolve to the SAME entities as
+    glass::nvidia::block::op. The warp-scope vendor forms (cub::WarpReduce)
+    live in their own sub-namespace below, included at nvidia:: scope so the
+    spelling is glass::nvidia::warp:: (a warp tier is not a block-scope
+    body, so it does NOT nest under block::).  */
+using namespace block;
+
+// warp-scope CUB reductions: glass::nvidia::warp::{reduce, dot, nrm2}
+#include "./src/nvidia/l1_warp.cuh"
 
 } // namespace nvidia
 } // namespace glass

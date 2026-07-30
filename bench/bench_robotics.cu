@@ -76,45 +76,45 @@ static const char* OP_NAMES[OP_N] = {
 template <typename T>
 __device__ __forceinline__ void run_block_op(int op, const T* a, const T* b, T* o, T* smem) {
     switch (op) {
-        case QUAT_RETRACT: glass::quat_retract<T>(a, b, o); break;
-        case SE3_RETRACT:  glass::se3_retract<T>(a, b, b + 3, o); break;
-        case QUAT_ERROR:   glass::quat_error<T>(a, a + 4, o); break;
-        case MCROSS_FUSED: glass::motion_cross_mul<T>((T)1, a, b, (T)0, o); break;
+        case QUAT_RETRACT: glass::block::quat_retract<T>(a, b, o); break;
+        case SE3_RETRACT:  glass::block::se3_retract<T>(a, b, b + 3, o); break;
+        case QUAT_ERROR:   glass::block::quat_error<T>(a, a + 4, o); break;
+        case MCROSS_FUSED: glass::block::motion_cross_mul<T>((T)1, a, b, (T)0, o); break;
         case MCROSS_COMPOSED:
-            glass::motion_cross<T>(a, smem);
-            glass::gemv<T, 6, 6>((T)1, smem, b, (T)0, o);
+            glass::block::motion_cross<T>(a, smem);
+            glass::block::gemv<T, 6, 6>((T)1, smem, b, (T)0, o);
             break;
-        case FCROSS_FUSED: glass::force_cross_mul<T>((T)1, a, b, (T)0, o); break;
+        case FCROSS_FUSED: glass::block::force_cross_mul<T>((T)1, a, b, (T)0, o); break;
         case FCROSS_COMPOSED:
-            glass::force_cross<T>(a, smem);
-            glass::gemv<T, 6, 6>((T)1, smem, b, (T)0, o);
+            glass::block::force_cross<T>(a, smem);
+            glass::block::gemv<T, 6, 6>((T)1, smem, b, (T)0, o);
             break;
-        case MXFORM_FUSED: glass::motion_transform_mul<T>((T)1, a, a + 9, b, (T)0, o); break;
+        case MXFORM_FUSED: glass::block::motion_transform_mul<T>((T)1, a, a + 9, b, (T)0, o); break;
         case MXFORM_COMPOSED:
-            glass::motion_transform<T>(a, a + 9, smem);
-            glass::gemv<T, 6, 6>((T)1, smem, b, (T)0, o);
+            glass::block::motion_transform<T>(a, a + 9, smem);
+            glass::block::gemv<T, 6, 6>((T)1, smem, b, (T)0, o);
             break;
-        case SINERTIA_FUSED: glass::spatial_inertia_mul<T>((T)1, a, b, (T)0, o); break;
+        case SINERTIA_FUSED: glass::block::spatial_inertia_mul<T>((T)1, a, b, (T)0, o); break;
         case SINERTIA_COMPOSED:
-            glass::spatial_inertia<T>(a, smem);
-            glass::gemv<T, 6, 6>((T)1, smem, b, (T)0, o);
+            glass::block::spatial_inertia<T>(a, smem);
+            glass::block::gemv<T, 6, 6>((T)1, smem, b, (T)0, o);
             break;
-        case EIG3:        glass::eig3<T>(a, o, o + 3); break;
-        case SVD3:        glass::svd3<T>(a, o, o + 9, o + 12); break;
-        case CLOSEST_ROT: glass::closest_rotation<T>(a, o); break;
+        case EIG3:        glass::block::eig3<T>(a, o, o + 3); break;
+        case SVD3:        glass::block::svd3<T>(a, o, o + 9, o + 12); break;
+        case CLOSEST_ROT: glass::block::closest_rotation<T>(a, o); break;
         case ARGMAX_DEFAULT: {
             __shared__ uint32_t idx[1];
-            glass::argmax<T>(SM_N, a, idx, smem);
+            glass::block::argmax<T>(SM_N, a, idx, smem);
             if (threadIdx.x == 0) o[0] = (T)idx[0];
             break;
         }
         case ARGMAX_FAST: {
             __shared__ uint32_t idx[1];
-            glass::argmax_fast<T>(SM_N, a, idx, smem);
+            glass::block::argmax_fast<T>(SM_N, a, idx, smem);
             if (threadIdx.x == 0) o[0] = (T)idx[0];
             break;
         }
-        case SOFTMAX16: glass::softmax<T>(SM_N, (T)-0.75, a, o, smem); break;
+        case SOFTMAX16: glass::block::softmax<T>(SM_N, (T)-0.75, a, o, smem); break;
         default: break;
     }
 }

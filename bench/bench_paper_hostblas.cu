@@ -178,16 +178,16 @@ static void xpotrs(cusolverDnHandle_t h, int n, const double* A, double* b, int*
 template <typename T, uint32_t N>
 __global__ void k_block_gemm(const T* A, const T* B, T* C, int nprob) {
     size_t p = blockIdx.x;
-    glass::gemm<T, N, N, N>((T)1, A + p*N*N, B + p*N*N, (T)0, C + p*N*N);
+    glass::block::gemm<T, N, N, N>((T)1, A + p*N*N, B + p*N*N, (T)0, C + p*N*N);
 }
 template <typename T, uint32_t N>
 __global__ void k_block_potrf(T* A, int nprob) {
-    glass::potrf<T, N>(A + (size_t)blockIdx.x * N*N);
+    glass::block::potrf<T, N>(A + (size_t)blockIdx.x * N*N);
 }
 template <typename T, uint32_t N>
 __global__ void k_block_posv(T* A, T* b, int nprob) {
     size_t p = blockIdx.x;
-    glass::posv<T, N>(A + p*N*N, b + p*N);
+    glass::block::posv<T, N>(A + p*N*N, b + p*N);
 }
 template <typename T, uint32_t N>
 __global__ void k_warp_gemm(const T* A, const T* B, T* C, int nprob) {

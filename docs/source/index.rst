@@ -38,14 +38,15 @@ ladder runs most→least problem packing: **thread → warp → block → nvidia
 .. grid:: 2
    :gutter: 3
 
-   .. grid-item-card:: Block — ``glass::``
+   .. grid-item-card:: Block — ``glass::block::``
       :link: user_guide/getting_started/library_overview
       :link-type: doc
 
       The default. One **block** per problem; the block's threads cooperate over
       shared/global data. Pure SIMT, **no dependencies**
-      (``#include "glass.cuh"``). Choose this for a single moderate-to-large
-      problem per block.
+      (``#include "glass.cuh"``). The **contract tier**: bit-exact,
+      thread-count invariant, never re-dispatched. Choose this for a single
+      moderate-to-large problem per block.
 
    .. grid-item-card:: Warp — ``glass::warp::``
       :link: api_reference/warp
@@ -64,13 +65,14 @@ ladder runs most→least problem packing: **thread → warp → block → nvidia
       barriers, no shuffles. Choose this when a warp-per-problem factor at
       ``N≲7`` would leave most lanes idle.
 
-   .. grid-item-card:: Nvidia — ``glass::nvidia::``
+   .. grid-item-card:: Nvidia — ``glass::nvidia::block::``
       :link: user_guide/concepts/backend_dispatch
       :link-type: doc
 
-      CUB / cuBLASDx / cuSOLVERDx, auto-dispatched against SIMT by size. Choose
-      this when a vendor **tensor-core** kernel wins at your size (needs NVIDIA
-      MathDx).
+      CUB / cuBLASDx / cuSOLVERDx, auto-dispatched against SIMT by size — plus
+      ``glass::nvidia::warp::`` CUB ``WarpReduce`` L1 reductions (one full
+      32-lane warp per problem). Choose this when a vendor **tensor-core**
+      kernel wins at your size (needs NVIDIA MathDx).
 
 .. note::
 
@@ -79,6 +81,17 @@ ladder runs most→least problem packing: **thread → warp → block → nvidia
    ``thread_group`` handle), for callers already in a cooperative-groups context
    or tiling arbitrary sub-block groups. It is **not** a separately-tuned backend.
    ``#include "glass-cgrps.cuh"``.
+
+.. note::
+
+   **Bare** ``glass::op`` (and bare ``glass::nvidia::op``) is the
+   **measured-default face**: the same block-scope calling contract, with the
+   implementation body chosen per (op, size, dtype) by
+   ``glass::dispatch_body()`` (``glass-defaults.cuh``). Phase 1 pins every cell
+   to the block body, so the bare names are today the *same entities* as
+   ``glass::block::`` — all pre-restructure spellings compile unchanged,
+   bit-identical. Determinism-sensitive callers pin ``glass::block::``
+   explicitly; see :doc:`user_guide/concepts/namespaces`.
 
 Performance
 -----------

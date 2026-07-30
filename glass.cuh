@@ -1,7 +1,7 @@
 #pragma once
 /**
  * @file glass.cuh
- * @brief Umbrella header for the hand-rolled SIMT `glass::` namespace (no deps).
+ * @brief Umbrella header for the hand-rolled SIMT surface (no deps).
  *
  * Pulls in the full pure-SIMT, single-block BLAS/LAPACK surface — L1 vector
  * ops, L2 matrix-vector (gemv/ger), and L3 matrix ops (gemm, inv, Cholesky,
@@ -9,9 +9,31 @@
  * using `threadIdx` / `blockDim` directly (no cooperative-groups dependency).
  * Every op offers runtime-size and compile-time-size (`<T, N, ...>`) overloads.
  *
+ * NAMESPACE CONTRACT (2026-07-30 restructure):
+ *   - `glass::block::`  — the explicit block-scope SIMT tier. CONTRACT tier:
+ *                         bit-exact, thread-count invariant, never re-dispatched.
+ *   - `glass::warp::`   — one problem per warp (alias of block::warp — the
+ *                         warp mirrors live inline in the same base headers).
+ *   - `glass::thread::` — one problem per thread (alias of block::thread).
+ *   - `glass::op` BARE  — the measured-DEFAULT face: block-scope calling
+ *                         contract, implementation chosen per (op, size, dtype)
+ *                         from the shipped dispatch table. Phase 1 pins every
+ *                         cell to the block body (`glass::dispatch_body()` in
+ *                         glass-defaults.cuh), so today the bare names ARE the
+ *                         block tier via the using-directive below — identical
+ *                         symbols, bit-identical results. A future measured
+ *                         retune may add shadowing wrappers that route specific
+ *                         cells to a warp- or thread-body executed under the
+ *                         same block-scope contract (all threads enter, result
+ *                         valid after return); such a retune is an attested
+ *                         event, and determinism-sensitive consumers should pin
+ *                         `glass::block::` explicitly.
+ *
  * Include glass-cgrps.cuh for the cooperative-groups variants, or
- * glass-nvidia.cuh for the CUB / cuBLASDx / cuSOLVERDx-accelerated paths. Also
- * defines the host helper ::glass_gemm_dispatch_smem below.
+ * glass-nvidia.cuh for the CUB / cuBLASDx / cuSOLVERDx-accelerated paths
+ * (`glass::nvidia::block::` / `glass::nvidia::warp::`, with the same
+ * bare-name re-export inside `glass::nvidia::`). Also defines the host
+ * helper ::glass_gemm_dispatch_smem below.
  */
 // Pre-include system headers at global scope so they are not pulled into the
 // namespace glass { } block when the base files include them via #pragma once.
@@ -20,6 +42,7 @@
 #include <math.h>
 
 namespace glass {
+namespace block {
     /*  barrier policy (shared *_impl bodies; BlockBarrier = threadIdx + __syncthreads)  */
     #include "./src/base/barrier.cuh"
 
@@ -108,7 +131,19 @@ namespace glass {
     #include "./src/base/geom/frame.cuh"
     #include "./src/base/geom/segment.cuh"
     #include "./src/base/est/svd3.cuh"
-}
+}  // namespace block
+
+/*  The bare glass:: face. Phase 1 of the dispatch contract: every cell of
+    dispatch_body() (glass-defaults.cuh) pins to the block body, so the bare
+    names resolve to the SAME entities as glass::block:: via this directive
+    (function-pointer identical — pinned by static_asserts in test_defaults).
+    The warp/thread sub-namespaces are hoisted back to glass:: scope: they
+    are written inline in the base headers, so under the block wrap they land
+    at block::warp / block::thread; the aliases keep the public spellings. */
+using namespace block;
+namespace warp   = block::warp;
+namespace thread = block::thread;
+}  // namespace glass
 
 /**
  * @brief Host helper: shared-memory bytes needed for glass::gemm_dispatch (tiled path).

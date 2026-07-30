@@ -13,11 +13,11 @@
 
 #define DEFINE_BDMV(BS, NBR)                                                       \
     __global__ void k_bdmv_##BS##_##NBR(float* out, float* mat, float* vec) {     \
-        glass::bdmv<float, NBR, BS>(out, mat, vec);                        \
+        glass::block::bdmv<float, NBR, BS>(out, mat, vec);                        \
     }                                                                              \
     __global__ void k_bdmv_dual_##BS##_##NBR(float* o1, float* o2,                \
                                              float* mat, float* vec) {            \
-        glass::bdmv<float, NBR, BS>(o1, o2, mat, vec);                     \
+        glass::block::bdmv<float, NBR, BS>(o1, o2, mat, vec);                     \
     }
 
 DEFINE_BDMV(2, 3)

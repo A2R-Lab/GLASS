@@ -15,10 +15,10 @@
 
 // ─── nrm1_diff ────────────────────────────────────────────────────────────────
 __global__ void k_nrm1_lm(uint32_t n, const float* x, const float* y, float* out) {
-    glass::nrm1_diff_lowmem<float>(n, x, y, out);            // result in out[0]
+    glass::block::nrm1_diff_lowmem<float>(n, x, y, out);            // result in out[0]
 }
 __global__ void k_nrm1_hs(uint32_t n, const float* x, const float* y, float* out, float* scr) {
-    glass::nrm1_diff_fast<float>(n, x, y, out, scr);        // result in out[0]
+    glass::block::nrm1_diff_fast<float>(n, x, y, out, scr);        // result in out[0]
 }
 __global__ void k_nrm1_warp(uint32_t n, const float* x, const float* y, float* out) {
     float r = glass::warp::nrm1_diff<float>(n, x, y);
@@ -42,8 +42,8 @@ __global__ void k_rs(float alpha, const float* X, float* Y) {
         if constexpr (COPY) glass::warp::copy_strided<float, M, N, YRS, XRS>(alpha, X, Y);
         else                glass::warp::axpy_strided<float, M, N, YRS, XRS>(alpha, X, Y);
     } else {
-        if constexpr (COPY) glass::copy_strided<float, M, N, YRS, XRS>(alpha, X, Y);
-        else                glass::axpy_strided<float, M, N, YRS, XRS>(alpha, X, Y);
+        if constexpr (COPY) glass::block::copy_strided<float, M, N, YRS, XRS>(alpha, X, Y);
+        else                glass::block::axpy_strided<float, M, N, YRS, XRS>(alpha, X, Y);
     }
 }
 

@@ -57,12 +57,12 @@ static double elapsed_ms(struct timespec a, struct timespec b) {
 }
 
 // ─── BLOCK model: block b owns problem b ─────────────────────────────────────
-template<typename T,int N> __global__ void kb_dot (T* x, T* y) { int p=blockIdx.x; glass::dot<T,N>(x+p*N, y+p*N); }
-template<typename T,int N> __global__ void kb_gemv(T* A, T* x, T* y) { int p=blockIdx.x; glass::gemv<T,N,N>((T)1, A+(size_t)p*N*N, x+p*N, (T)0, y+p*N); }
-template<typename T,int N> __global__ void kb_gemm(T* A, T* B, T* C) { int p=blockIdx.x; glass::gemm<T,N,N,N>((T)1, A+(size_t)p*N*N, B+(size_t)p*N*N, (T)0, C+(size_t)p*N*N); }
-template<typename T,int N> __global__ void kb_chol(T* A) { int p=blockIdx.x; glass::potrf<T,N>(A+(size_t)p*N*N); }
-template<typename T,int N> __global__ void kb_trsv(T* A, T* x) { int p=blockIdx.x; glass::trsv<T,N>(A+(size_t)p*N*N, x+p*N); }
-template<typename T,int N> __global__ void kb_posv(T* A, T* b) { int p=blockIdx.x; glass::posv<T,N>(A+(size_t)p*N*N, b+p*N); }
+template<typename T,int N> __global__ void kb_dot (T* x, T* y) { int p=blockIdx.x; glass::block::dot<T,N>(x+p*N, y+p*N); }
+template<typename T,int N> __global__ void kb_gemv(T* A, T* x, T* y) { int p=blockIdx.x; glass::block::gemv<T,N,N>((T)1, A+(size_t)p*N*N, x+p*N, (T)0, y+p*N); }
+template<typename T,int N> __global__ void kb_gemm(T* A, T* B, T* C) { int p=blockIdx.x; glass::block::gemm<T,N,N,N>((T)1, A+(size_t)p*N*N, B+(size_t)p*N*N, (T)0, C+(size_t)p*N*N); }
+template<typename T,int N> __global__ void kb_chol(T* A) { int p=blockIdx.x; glass::block::potrf<T,N>(A+(size_t)p*N*N); }
+template<typename T,int N> __global__ void kb_trsv(T* A, T* x) { int p=blockIdx.x; glass::block::trsv<T,N>(A+(size_t)p*N*N, x+p*N); }
+template<typename T,int N> __global__ void kb_posv(T* A, T* b) { int p=blockIdx.x; glass::block::posv<T,N>(A+(size_t)p*N*N, b+p*N); }
 
 // ─── WARP model: warp (blockIdx.x*WPB + threadIdx.y) owns its problem ─────────
 template<typename T,int N> __global__ void kw_dot (T* x, T* y, int np) { int p=blockIdx.x*blockDim.y+threadIdx.y; if(p>=np)return; T r=glass::warp::dot<T,N>(x+p*N, y+p*N); if((threadIdx.x&31)==0) y[p*N]=r; }
@@ -197,7 +197,7 @@ static void launch_thread(Op op, int TPB, T* A, T* B, T* C, T* x, T* y) {
 // opt-in limit fits f64 gemm only to 64, f64 chol/posv to ~96; we define <=64).
 #if MEGA_NV_BLAS
 static const int NV_DOT_TB = 256;   // CUB BlockReduce thread count for nvidia::dot
-namespace glass { namespace nvidia {
+namespace glass { namespace nvidia { namespace block {
     // float gaps (shipped: gemm 16/24/32/64, gemv 4..64)
     DEFINE_NVIDIA_GEMM(4, 4, 4)  DEFINE_NVIDIA_GEMM(6, 6, 6)
     DEFINE_NVIDIA_GEMM(8, 8, 8)  DEFINE_NVIDIA_GEMM(12, 12, 12)
@@ -212,23 +212,23 @@ namespace glass { namespace nvidia {
     MEGA_GEMM_F64(16) MEGA_GEMM_F64(24) MEGA_GEMM_F64(32) MEGA_GEMM_F64(48) MEGA_GEMM_F64(64)
     MEGA_GEMV_F64(4) MEGA_GEMV_F64(6) MEGA_GEMV_F64(8) MEGA_GEMV_F64(12)
     MEGA_GEMV_F64(16) MEGA_GEMV_F64(24) MEGA_GEMV_F64(32) MEGA_GEMV_F64(48) MEGA_GEMV_F64(64)
-}}
+}}}
 template<typename T,int N> __global__ void kn_dot (T* x, T* y) {
     extern __shared__ char s[]; int p=blockIdx.x;
-    glass::nvidia::dot<T,N,NV_DOT_TB>(x+p*N, y+p*N, y+p*N, reinterpret_cast<T*>(s));
+    glass::nvidia::block::dot<T,N,NV_DOT_TB>(x+p*N, y+p*N, y+p*N, reinterpret_cast<T*>(s));
 }
 template<typename T,int N> __global__ void kn_gemv(T* A, T* x, T* y) {
     extern __shared__ char s[]; int p=blockIdx.x;
-    glass::nvidia::gemv<T,N,N>((T)1, A+(size_t)p*N*N, x+p*N, (T)0, y+p*N, s);
+    glass::nvidia::block::gemv<T,N,N>((T)1, A+(size_t)p*N*N, x+p*N, (T)0, y+p*N, s);
 }
 template<typename T,int N> __global__ void kn_gemm(T* A, T* B, T* C) {
     extern __shared__ char s[]; int p=blockIdx.x;
-    glass::nvidia::gemm<T,N,N,N>((T)1, A+(size_t)p*N*N, B+(size_t)p*N*N, (T)0, C+(size_t)p*N*N, s);
+    glass::nvidia::block::gemm<T,N,N,N>((T)1, A+(size_t)p*N*N, B+(size_t)p*N*N, (T)0, C+(size_t)p*N*N, s);
 }
 #endif
 #if MEGA_NV_LAPACK
 static const int NV_LP_TB = 256;    // cuSOLVERDx pinned block dim
-namespace glass { namespace nvidia {
+namespace glass { namespace nvidia { namespace block {
     #define MEGA_CHOL_DEF(N) DEFINE_NVIDIA_CHOL_BLOCKDIM(N, NV_LP_TB)
     #define MEGA_TRSM_DEF(N) DEFINE_NVIDIA_TRSM_BLOCKDIM(N, 1, NV_LP_TB)
     #define MEGA_POSV_DEF(N) DEFINE_NVIDIA_POSV_BLOCKDIM(N, 1, NV_LP_TB)
@@ -251,18 +251,18 @@ namespace glass { namespace nvidia {
     MEGA_TRSM_F64(16) MEGA_TRSM_F64(24) MEGA_TRSM_F64(32) MEGA_TRSM_F64(48) MEGA_TRSM_F64(64)
     MEGA_POSV_F64(4)  MEGA_POSV_F64(6)  MEGA_POSV_F64(8)  MEGA_POSV_F64(12)
     MEGA_POSV_F64(16) MEGA_POSV_F64(24) MEGA_POSV_F64(32) MEGA_POSV_F64(48) MEGA_POSV_F64(64)
-}}
+}}}
 template<typename T,int N> __global__ void kn_chol(T* A) {
     extern __shared__ char s[]; int p=blockIdx.x;
-    glass::nvidia::potrf<T,N,NV_LP_TB>(A+(size_t)p*N*N, s);
+    glass::nvidia::block::potrf<T,N,NV_LP_TB>(A+(size_t)p*N*N, s);
 }
 template<typename T,int N> __global__ void kn_trsv(T* A, T* x) {
     extern __shared__ char s[]; int p=blockIdx.x;
-    glass::nvidia::trsm<T,N,1,NV_LP_TB>((T)1, A+(size_t)p*N*N, x+p*N, s);
+    glass::nvidia::block::trsm<T,N,1,NV_LP_TB>((T)1, A+(size_t)p*N*N, x+p*N, s);
 }
 template<typename T,int N> __global__ void kn_posv(T* A, T* b) {
     extern __shared__ char s[]; int p=blockIdx.x;
-    glass::nvidia::posv<T,N,1,NV_LP_TB>(A+(size_t)p*N*N, b+p*N, s);
+    glass::nvidia::block::posv<T,N,1,NV_LP_TB>(A+(size_t)p*N*N, b+p*N, s);
 }
 #endif
 
@@ -326,17 +326,17 @@ static double nv_op_time(Op op, T* A, T* B, T* C, T* x, T* y, int reps) {
 #if MEGA_NV_BLAS
     if constexpr (nv_blas_ok<T,N>()) {
         if (op == DOT) {
-            size_t smem = glass::nvidia::reduce_scratch_bytes<T,NV_DOT_TB>();
+            size_t smem = glass::nvidia::block::reduce_scratch_bytes<T,NV_DOT_TB>();
             return nv_timed(kn_dot<T,N>, smem, [&]{ kn_dot<T,N><<<grid,NV_DOT_TB,smem>>>(x, y); }, reps);
         }
         if (op == GEMV) {
-            size_t smem = glass::nvidia::gemv_scratch_bytes<T,N,N>();
-            int tb = (int)glass::nvidia::gemv_threads<T,N,N>();
+            size_t smem = glass::nvidia::block::gemv_scratch_bytes<T,N,N>();
+            int tb = (int)glass::nvidia::block::gemv_threads<T,N,N>();
             return nv_timed(kn_gemv<T,N>, smem, [&]{ kn_gemv<T,N><<<grid,tb,smem>>>(A, x, y); }, reps);
         }
         if (op == GEMM) {
-            size_t smem = glass::nvidia::gemm_scratch_bytes<T,N,N,N>();
-            int tb = (int)glass::nvidia::gemm_threads<T,N,N,N>();
+            size_t smem = glass::nvidia::block::gemm_scratch_bytes<T,N,N,N>();
+            int tb = (int)glass::nvidia::block::gemm_threads<T,N,N,N>();
             return nv_timed(kn_gemm<T,N>, smem, [&]{ kn_gemm<T,N><<<grid,tb,smem>>>(A, B, C); }, reps);
         }
     }
@@ -344,15 +344,15 @@ static double nv_op_time(Op op, T* A, T* B, T* C, T* x, T* y, int reps) {
 #if MEGA_NV_LAPACK
     if constexpr (nv_lapack_ok<T,N>()) {
         if (op == CHOL) {
-            size_t smem = glass::nvidia::potrf_scratch_bytes<T,N,NV_LP_TB>();
+            size_t smem = glass::nvidia::block::potrf_scratch_bytes<T,N,NV_LP_TB>();
             return nv_timed(kn_chol<T,N>, smem, [&]{ kn_chol<T,N><<<grid,NV_LP_TB,smem>>>(A); }, reps);
         }
         if (op == TRSV) {
-            size_t smem = glass::nvidia::trsm_scratch_bytes<T,N,1,NV_LP_TB>();
+            size_t smem = glass::nvidia::block::trsm_scratch_bytes<T,N,1,NV_LP_TB>();
             return nv_timed(kn_trsv<T,N>, smem, [&]{ kn_trsv<T,N><<<grid,NV_LP_TB,smem>>>(A, x); }, reps);
         }
         if (op == POSV) {
-            size_t smem = glass::nvidia::posv_scratch_bytes<T,N,1,NV_LP_TB>();
+            size_t smem = glass::nvidia::block::posv_scratch_bytes<T,N,1,NV_LP_TB>();
             return nv_timed(kn_posv<T,N>, smem, [&]{ kn_posv<T,N><<<grid,NV_LP_TB,smem>>>(A, x); }, reps);
         }
     }

@@ -22,7 +22,7 @@ __global__ void k_nv_reduce(float* x, volatile float* sink, int iters) {
         // reload x into a temp inside scratch each iter (don't overwrite x[0])
         for (int i = threadIdx.x; i < N; i += blockDim.x) scratch[N + i] = x[i];
         __syncthreads();
-        glass::nvidia::reduce<float, N, THREADS>(scratch + N, scratch);
+        glass::nvidia::block::reduce<float, N, THREADS>(scratch + N, scratch);
         __syncthreads();
         if (threadIdx.x == 0) sink[rep & 0xFF] = scratch[N];
         __syncthreads();
@@ -34,7 +34,7 @@ __global__ void k_nv_dot(float* x, float* y, volatile float* sink, int iters) {
     extern __shared__ float scratch[];
     for (int rep = 0; rep < iters; rep++) {
         float out;
-        glass::nvidia::dot<float, N, THREADS>(x, y, &out, scratch);
+        glass::nvidia::block::dot<float, N, THREADS>(x, y, &out, scratch);
         __syncthreads();
         if (threadIdx.x == 0) sink[rep & 0xFF] = out;
         __syncthreads();
@@ -46,7 +46,7 @@ __global__ void k_nv_nrm2(float* x, volatile float* sink, int iters) {
     extern __shared__ float scratch[];
     for (int rep = 0; rep < iters; rep++) {
         float out;
-        glass::nvidia::nrm2<float, N, THREADS>(x, &out, scratch);
+        glass::nvidia::block::nrm2<float, N, THREADS>(x, &out, scratch);
         __syncthreads();
         if (threadIdx.x == 0) sink[rep & 0xFF] = out;
         __syncthreads();
@@ -64,7 +64,7 @@ __global__ void k_glass_reduce(float* x, int n, int iters) {
         // reload from global each iteration to avoid dead-code elimination
         for (int i = threadIdx.x; i < n; i += blockDim.x) smem[i] = x[i];
         __syncthreads();
-        glass::reduce_fast(n, smem, smem + n);
+        glass::block::reduce_fast(n, smem, smem + n);
         __syncthreads();
     }
     if (threadIdx.x == 0) x[0] = smem[0]; // prevent dead-code elimination
@@ -75,7 +75,7 @@ __global__ void k_glass_dot(float* x, float* y, int n, int iters) {
     for (int rep = 0; rep < iters; rep++) {
         for (int i = threadIdx.x; i < n; i += blockDim.x) smem[i] = x[i];
         __syncthreads();
-        glass::dot_fast(n, smem, y, smem + n, smem + n + 1);
+        glass::block::dot_fast(n, smem, y, smem + n, smem + n + 1);
         __syncthreads();
     }
     if (threadIdx.x == 0) x[0] = smem[0];
@@ -86,7 +86,7 @@ __global__ void k_glass_nrm2(float* x, int n, int iters) {
     for (int rep = 0; rep < iters; rep++) {
         for (int i = threadIdx.x; i < n; i += blockDim.x) smem[i] = x[i];
         __syncthreads();
-        glass::nrm2_fast(n, smem, smem + n);
+        glass::block::nrm2_fast(n, smem, smem + n);
         __syncthreads();
     }
     if (threadIdx.x == 0) x[0] = smem[0];
@@ -102,7 +102,7 @@ __global__ void k_glass_reduce_min(float* x, int n, int iters) {
     for (int rep = 0; rep < iters; rep++) {
         float partial = INFINITY;
         for (int i = rank; i < n; i += blockDim.x) partial = fminf(partial, x[i]);
-        float total = glass::reduce_fast_min(partial, smem);
+        float total = glass::block::reduce_fast_min(partial, smem);
         __syncthreads();
         if (rank == 0) x[0] = total;   // prevent dead-code elimination
     }
@@ -130,7 +130,7 @@ __global__ void k_cub_reduce(float* x, float* out, int n, int iters) {
             for (int rep = 0; rep < iters; rep++) {                                           \
                 for (int i = threadIdx.x; i < N; i += blockDim.x) smem[i] = x[i];           \
                 __syncthreads();                                                              \
-                glass::reduce_fast<float, N>(smem, smem + N);                         \
+                glass::block::reduce_fast<float, N>(smem, smem + N);                         \
                 __syncthreads();                                                              \
             }                                                                                 \
             if (threadIdx.x == 0) x[0] = smem[0];                                            \
@@ -140,7 +140,7 @@ __global__ void k_cub_reduce(float* x, float* out, int n, int iters) {
             for (int rep = 0; rep < iters; rep++) {                                           \
                 for (int i = threadIdx.x; i < N; i += blockDim.x) smem[i] = x[i];           \
                 __syncthreads();                                                              \
-                glass::dot_fast<float, N>(smem, y, smem + N, smem + N + 1);          \
+                glass::block::dot_fast<float, N>(smem, y, smem + N, smem + N + 1);          \
                 __syncthreads();                                                              \
             }                                                                                 \
             if (threadIdx.x == 0) x[0] = smem[0];                                            \
@@ -150,7 +150,7 @@ __global__ void k_cub_reduce(float* x, float* out, int n, int iters) {
             for (int rep = 0; rep < iters; rep++) {                                           \
                 for (int i = threadIdx.x; i < N; i += blockDim.x) smem[i] = x[i];           \
                 __syncthreads();                                                              \
-                glass::nrm2_fast<float, N>(smem, smem + N);                         \
+                glass::block::nrm2_fast<float, N>(smem, smem + N);                         \
                 __syncthreads();                                                              \
             }                                                                                 \
             if (threadIdx.x == 0) x[0] = smem[0];                                            \
@@ -304,7 +304,7 @@ int main(int argc, char** argv) {
     // ─── glass::nvidia (CUB-backed) — only for pre-instantiated sizes ────────
     float *dSink;
     cudaMalloc(&dSink, 256 * sizeof(float));
-    constexpr size_t nv_smem = glass::nvidia::reduce_scratch_bytes<float, THREADS>();
+    constexpr size_t nv_smem = glass::nvidia::block::reduce_scratch_bytes<float, THREADS>();
     #define MAYBE_NV_REDUCE_CT(N)                                                            \
         if (n == N) {                                                                         \
             constexpr size_t nv_smem_total = nv_smem + 2 * N * sizeof(float);                \

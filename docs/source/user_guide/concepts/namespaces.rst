@@ -8,20 +8,23 @@ Axis A — scope / backend (the namespace)
 ----------------------------------------
 
 The namespace says **who cooperates and how**, never *what* the operation is.
-There are **four primary interfaces** — Block (``glass::``), Warp
+There are **four primary interfaces** — Block (``glass::block::``), Warp
 (``glass::warp::``), Thread (``glass::thread::``), and Nvidia
-(``glass::nvidia::``) — plus ``glass::cgrps::``, a convenience alias of the
-Block interface. The ladder runs most→least problem packing: thread (1
-problem/thread, 32 per warp) → warp (1/warp) → block (1/block) → nvidia
-(1/block, vendor):
+(``glass::nvidia::block::`` / ``glass::nvidia::warp::``) — plus
+``glass::cgrps::``, a convenience alias of the Block interface, and the
+**bare** ``glass::`` face described below. The ladder runs most→least problem
+packing: thread (1 problem/thread, 32 per warp) → warp (1/warp) → block
+(1/block) → nvidia (1/block, vendor):
 
 ================================  ======  =================================================
 Namespace                         Scope   What it is
 ================================  ======  =================================================
-``glass::``                       block   **Block** — hand-rolled pure-SIMT (``threadIdx`` / ``blockDim``).
-``glass::warp::``                 warp    **Warp** — single-warp SIMT (``__shfl_*_sync``), warp-per-problem.
-``glass::thread::``               thread  **Thread** — sequential, thread-per-problem, for low-DOF packing (compile-time sizes; register-resident up to ``N≤7``). No barriers, no shuffles, no ``threadIdx`` read.
-``glass::nvidia::``               block   **Nvidia** — CUB / cuBLASDx / cuSOLVERDx, auto-dispatched by size.
+``glass::block::``                block   **Block** — hand-rolled pure-SIMT (``threadIdx`` / ``blockDim``). The **contract tier**: bit-exact, thread-count invariant, never re-dispatched.
+``glass::warp::``                 warp    **Warp** — single-warp SIMT (``__shfl_*_sync``), warp-per-problem. (Namespace alias of ``block::warp`` — the warp mirrors live inline in the base headers.)
+``glass::thread::``               thread  **Thread** — sequential, thread-per-problem, for low-DOF packing (compile-time sizes; register-resident up to ``N≤7``). No barriers, no shuffles, no ``threadIdx`` read. (Alias of ``block::thread``.)
+``glass::nvidia::block::``        block   **Nvidia** — CUB / cuBLASDx / cuSOLVERDx, auto-dispatched by size.
+``glass::nvidia::warp::``         warp    **Nvidia-warp** — CUB ``WarpReduce`` L1 reductions (``reduce`` / ``dot`` / ``nrm2``), one FULL 32-lane warp per problem; per-warp scratch sized by ``warp_reduce_scratch_bytes<T>()``; ``TRAILING_SYNC`` emits ``__syncwarp()``.
+``glass::`` *(bare)*              block   **Measured default** — block-scope calling contract, body chosen by ``glass::dispatch_body()``; see below. (Likewise bare ``glass::nvidia::``.)
 ``glass::cgrps::``                block   *Convenience alias* of Block via a cooperative-groups handle (same numerics; not a separately-tuned backend).
 ================================  ======  =================================================
 
@@ -35,6 +38,35 @@ diverges the whole warp. See the ``glass::thread::`` constraints block in
 
 The convention is **namespace = scope, function name = operation**. So a warp
 band-matvec is ``glass::warp::bdmv`` — never a ``glass::banded::`` namespace.
+
+Contract tier vs performance tier — the bare ``glass::`` face
+-------------------------------------------------------------
+
+The 2026-07-30 restructure splits each spelling along one more line:
+
+- **Explicit namespaces are the contract tier.** ``glass::block::gemm`` (and
+  likewise ``glass::warp::`` / ``glass::thread::`` / ``glass::nvidia::block::``
+  / ``glass::nvidia::warp::``) names a specific implementation: bit-exact,
+  thread-count invariant, never re-dispatched. Emit these from codegen and
+  anywhere determinism is load-bearing.
+- **Bare** ``glass::gemm`` (and bare ``glass::nvidia::gemm``) **is the
+  measured-default face**: the same block-scope *calling* contract — all block
+  threads enter, the result is valid after return — with the implementation
+  *body* chosen per (op, size, dtype) by ``glass::dispatch_body()`` in
+  ``glass-defaults.cuh``.
+
+**Phase 1 (today): the two faces are identical.** Every ``dispatch_body()``
+cell pins to the block body, so the bare names resolve to the *same entities*
+as ``glass::block::`` — re-exported by a ``using namespace block;`` directive
+in the umbrella headers, with function-pointer identity pinned by
+``test/cuda/test_defaults.cu``. All pre-restructure spellings still compile
+with identical meaning; Phase 1 is bit-identical by construction. A future
+measured **in-block body sweep** (a ``bench/tune.py`` leg) may move cells to a
+warp- or thread-body executed under the same block-scope contract — an
+attested, receipt-gated retune, never a silent change (see :doc:`tuning`).
+
+Rule of thumb: **explicit namespace = contract tier; bare namespace =
+performance tier.**
 
 Axis B — reduction strategy (function-name suffixes, vector reductions only)
 ---------------------------------------------------------------------------

@@ -70,6 +70,11 @@ if [[ ! -x "$ROBOT_BIN" || bench_robotics.cu -nt "$ROBOT_BIN" ]]; then
   nvcc -std=c++17 -arch="$ARCH" -O3 -I.. -I../src -DSMS="$SMS" \
        bench_robotics.cu -o "$ROBOT_BIN" || exit 1
 fi
+BODY_BIN="build/bench_body_dispatch_${ARCH}"
+if [[ ! -x "$BODY_BIN" || bench_body_dispatch.cu -nt "$BODY_BIN" ]]; then
+  nvcc -std=c++17 -arch="$ARCH" -O3 -I.. -I../src -DSMS="$SMS" \
+       bench_body_dispatch.cu -o "$BODY_BIN" || exit 1
+fi
 if [[ "$BUILD_ONLY" == 1 ]]; then
   log "build-only done — rerun without --build-only for the timed capture"
   exit 0
@@ -90,7 +95,7 @@ python3 tune.py --sm "$SMS" --allow-no-mathdx --legs ladder --dry-run || exit 1
 log "leg 2/3: hostblas + latency + fusion (paper_sweeps.py)"
 python3 paper_sweeps.py --arch "$ARCH" || exit 1
 
-log "leg 3/3: robotics micro-ops"
+log "leg 3/4: robotics micro-ops"
 ROBOTXT="robotics_sweep_${TS}.txt"
 {
   echo "# capture $ROBOTXT | $(hostname) | $ARCH jetson"
@@ -103,6 +108,19 @@ ROBOTXT="robotics_sweep_${TS}.txt"
 } > "$ROBOTXT" || exit 1
 grep -q '||' "$ROBOTXT" || { echo "FATAL: robotics capture parsed empty"; exit 1; }
 
+log "leg 4/4: in-block body dispatch (bare-face Phase-2 table data)"
+BODYTXT="body_dispatch_sweep_${TS}.txt"
+{
+  echo "# capture $BODYTXT | $(hostname) | $ARCH jetson"
+  for NPROB in 1024 4096 16384; do
+    for DT in f32 f64; do
+      echo; echo "== NPROB=$NPROB reps=250 dtype=$DT =="
+      "$BODY_BIN" "$NPROB" 250 "$DT" || exit 1
+    done
+  done
+} > "$BODYTXT" || exit 1
+grep -q '||' "$BODYTXT" || { echo "FATAL: body-dispatch capture parsed empty"; exit 1; }
+
 # ── 4. package ───────────────────────────────────────────────────────────────
 log "packaging"
 finish; trap - EXIT
@@ -110,6 +128,6 @@ for pat in mega_sweep_ paper_hostblas_ paper_fusion_; do
   latest=$(ls -t ${pat}*.txt 2>/dev/null | head -1)
   [[ -n "$latest" ]] && cp "$latest" "$OUT/" || echo "WARNING: no ${pat}*.txt capture found"
 done
-cp "$ROBOTXT" "$OUT/"
+cp "$ROBOTXT" "$BODYTXT" "$OUT/"
 tar czf "${OUT}.tar.gz" "$OUT"
 log "DONE -> bench/${OUT}.tar.gz  (send this file back)"

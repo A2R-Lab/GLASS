@@ -40,7 +40,8 @@ Interfaces
 ----------
 
 GLASS exposes **four primary interfaces**. Two are **block-scoped** (one block
-per problem) — ``glass::`` (the default) and the vendor-backed ``glass::nvidia::``
+per problem) — ``glass::block::`` (the default) and the vendor-backed
+``glass::nvidia::block::``
 — one is **warp-scoped**, ``glass::warp::`` (one warp per problem), for kernels
 that pack many small independent problems into a block, and one is
 **thread-scoped**, ``glass::thread::`` (one problem per *thread*, 32 packed per
@@ -55,9 +56,9 @@ idle:
      - Scope
      - What it is
      - Header
-   * - ``glass::`` (Block)
+   * - ``glass::block::`` (Block)
      - block
-     - Hand-rolled SIMT, ``threadIdx.{x,y,z}`` / ``blockDim.*`` (no dependencies)
+     - Hand-rolled SIMT, ``threadIdx.{x,y,z}`` / ``blockDim.*`` (no dependencies). The **contract tier** — bit-exact, thread-count invariant, never re-dispatched
      - ``glass.cuh``
    * - ``glass::warp::`` (Warp)
      - warp
@@ -67,10 +68,18 @@ idle:
      - thread
      - Sequential, thread-per-problem — compile-time sizes, register-resident up to ``N≤7``, branch-free ops only
      - inline in the base L1/L2/L3 headers
-   * - ``glass::nvidia::`` (Nvidia)
+   * - ``glass::nvidia::block::`` (Nvidia)
      - block
-     - CUB (L1) + cuBLASDx (L2/L3, batched) + cuSOLVERDx (LAPACK) — compile-time sizes only
+     - CUB (L1) + cuBLASDx (L2/L3, batched) + cuSOLVERDx (LAPACK) — compile-time sizes only; plus ``glass::nvidia::warp::`` CUB ``WarpReduce`` L1 reductions (one full 32-lane warp per problem)
      - ``glass-nvidia.cuh``
+
+**Bare** ``glass::op`` (and bare ``glass::nvidia::op``) is the
+**measured-default face**: the same block-scope calling contract, body chosen
+per (op, size, dtype) by ``glass::dispatch_body()`` (``glass-defaults.cuh``).
+Phase 1 pins every cell to the block body, so the bare names are today the
+same entities as ``glass::block::`` — old spellings compile unchanged. Pin
+``glass::block::`` where determinism is load-bearing; see
+:doc:`../concepts/namespaces`.
 
 The two block-scoped interfaces cover the full L1/L2/L3 surface and are
 interchangeable — switch by changing the namespace prefix when profiling shows

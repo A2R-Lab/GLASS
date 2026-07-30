@@ -23,7 +23,7 @@
 static constexpr int M = 5, N = 7, K = 3, A_RS = 8, B_RS = 6;  // A_RS>M, B_RS>K
 
 __global__ void run(const float* A, const float* B, float beta, float* C) {
-    glass::gemm_strided<float, M, N, K, A_RS, B_RS>(1.5f, const_cast<float*>(A), const_cast<float*>(B), beta, C);
+    glass::block::gemm_strided<float, M, N, K, A_RS, B_RS>(1.5f, const_cast<float*>(A), const_cast<float*>(B), beta, C);
 }
 
 int main() {

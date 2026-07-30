@@ -51,7 +51,7 @@ __global__ void k_simt_chol(const float* A_master, float* A, volatile float* sin
     for (int rep = 0; rep < iters; rep++) {
         for (uint32_t i = rank; i < N*N; i += size) smem[i] = A_master[i];
         __syncthreads();
-        glass::potrf<float, N>(smem);
+        glass::block::potrf<float, N>(smem);
         __syncthreads();
         if (threadIdx.x == 0) sink[rep & 0xFF] = smem[0];
         __syncthreads();
@@ -71,9 +71,9 @@ __global__ void k_simt_chol_trsm(const float* A_master, const float* b_master,
         for (uint32_t i = rank; i < N*N; i += size) s_A[i] = A_master[i];
         for (uint32_t i = rank; i < N;   i += size) s_b[i] = b_master[i];
         __syncthreads();
-        glass::potrf<float, N>(s_A);
+        glass::block::potrf<float, N>(s_A);
         __syncthreads();
-        glass::trsm<float, N, 1>(s_A, s_b);
+        glass::block::trsm<float, N, 1>(s_A, s_b);
         __syncthreads();
         if (threadIdx.x == 0) sink[rep & 0xFF] = s_b[0];
         __syncthreads();
@@ -148,7 +148,7 @@ static void run_thread_lapack(const float* dA_master, const float* db_master, in
 // ─── glass::nvidia (cuSOLVERDx-backed) variants ──────────────────────────────
 // Pre-instantiate sizes at TC=THREADS (256). NRHS=1 for solve operations.
 
-namespace glass { namespace nvidia {
+namespace glass { namespace nvidia { namespace block {
     DEFINE_NVIDIA_CHOL_BLOCKDIM(4,  THREADS)
     DEFINE_NVIDIA_CHOL_BLOCKDIM(6,  THREADS)
     DEFINE_NVIDIA_CHOL_BLOCKDIM(8,  THREADS)
@@ -172,7 +172,7 @@ namespace glass { namespace nvidia {
     DEFINE_NVIDIA_POSV_BLOCKDIM(14, 1, THREADS)
     DEFINE_NVIDIA_POSV_BLOCKDIM(24, 1, THREADS)
     DEFINE_NVIDIA_POSV_BLOCKDIM(64, 1, THREADS)
-}}
+}}}
 
 template<int N>
 __global__ void k_nv_chol(const float* A_master, float* A, volatile float* sink, int iters) {
@@ -185,7 +185,7 @@ __global__ void k_nv_chol(const float* A_master, float* A, volatile float* sink,
             for (uint32_t i = rank; i < N*N; i += size) A[i] = A_master[i];
         }
         __syncthreads();
-        glass::nvidia::potrf<float, N, THREADS>(A, nv_smem);
+        glass::nvidia::block::potrf<float, N, THREADS>(A, nv_smem);
         __syncthreads();
         if (threadIdx.x == 0) sink[rep & 0xFF] = A[0];
         __syncthreads();
@@ -202,9 +202,9 @@ __global__ void k_nv_chol_trsm(const float* A_master, const float* b_master,
         for (uint32_t i = rank; i < N*N; i += size) A[i] = A_master[i];
         for (uint32_t i = rank; i < N;   i += size) b[i] = b_master[i];
         __syncthreads();
-        glass::nvidia::potrf<float, N, THREADS>(A, nv_smem);
+        glass::nvidia::block::potrf<float, N, THREADS>(A, nv_smem);
         __syncthreads();
-        glass::nvidia::trsm<float, N, 1, THREADS>(1.f, A, b, nv_smem);
+        glass::nvidia::block::trsm<float, N, 1, THREADS>(1.f, A, b, nv_smem);
         __syncthreads();
         if (threadIdx.x == 0) sink[rep & 0xFF] = b[0];
         __syncthreads();
@@ -221,7 +221,7 @@ __global__ void k_nv_posv(const float* A_master, const float* b_master,
         for (uint32_t i = rank; i < N*N; i += size) A[i] = A_master[i];
         for (uint32_t i = rank; i < N;   i += size) b[i] = b_master[i];
         __syncthreads();
-        glass::nvidia::posv<float, N, 1, THREADS>(A, b, nv_smem);
+        glass::nvidia::block::posv<float, N, 1, THREADS>(A, b, nv_smem);
         __syncthreads();
         if (threadIdx.x == 0) sink[rep & 0xFF] = b[0];
         __syncthreads();
@@ -285,7 +285,7 @@ static void bench_size_ct(int iters) {
     if constexpr (N == 4 || N == 6) run_thread_lapack<N>(dA_master, db_master, iters);
 
     // glass::nvidia chol
-    constexpr size_t nv_chol_smem = glass::nvidia::potrf_scratch_bytes<float, N, THREADS>();
+    constexpr size_t nv_chol_smem = glass::nvidia::block::potrf_scratch_bytes<float, N, THREADS>();
     clock_gettime(CLOCK_MONOTONIC, &t0);
     k_nv_chol<N><<<1, THREADS, nv_chol_smem>>>(dA_master, dA, dSink, iters);
     cudaDeviceSynchronize();
@@ -294,7 +294,7 @@ static void bench_size_ct(int iters) {
            N, elapsed_us(t0, t1) / iters);
 
     // glass::nvidia chol+trsm
-    constexpr size_t nv_trsm_smem = glass::nvidia::trsm_scratch_bytes<float, N, 1, THREADS>();
+    constexpr size_t nv_trsm_smem = glass::nvidia::block::trsm_scratch_bytes<float, N, 1, THREADS>();
     constexpr size_t nv_chol_trsm_smem = nv_chol_smem > nv_trsm_smem ? nv_chol_smem : nv_trsm_smem;
     clock_gettime(CLOCK_MONOTONIC, &t0);
     k_nv_chol_trsm<N><<<1, THREADS, nv_chol_trsm_smem>>>(dA_master, db_master, dA, db, dSink, iters);
@@ -304,7 +304,7 @@ static void bench_size_ct(int iters) {
            N, elapsed_us(t0, t1) / iters);
 
     // glass::nvidia posv (fused)
-    constexpr size_t nv_posv_smem = glass::nvidia::posv_scratch_bytes<float, N, 1, THREADS>();
+    constexpr size_t nv_posv_smem = glass::nvidia::block::posv_scratch_bytes<float, N, 1, THREADS>();
     clock_gettime(CLOCK_MONOTONIC, &t0);
     k_nv_posv<N><<<1, THREADS, nv_posv_smem>>>(dA_master, db_master, dA, db, dSink, iters);
     cudaDeviceSynchronize();

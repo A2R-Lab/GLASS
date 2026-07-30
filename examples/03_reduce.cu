@@ -11,13 +11,13 @@
 #include <cuda_runtime.h>
 
 __global__ void reduce_kernel(float *x, int n) {
-    glass::reduce(static_cast<uint32_t>(n), x);   // x[0] = sum(x)
+    glass::block::reduce(static_cast<uint32_t>(n), x);   // x[0] = sum(x)
 }
 
 __global__ void reduce_hs_kernel(float *x, int n) {
     // Scratch: one float per warp = ceil(blockDim.x / 32) floats.
     extern __shared__ float scratch[];
-    glass::reduce_fast(static_cast<uint32_t>(n), x, scratch);   // x[0] = sum(x)
+    glass::block::reduce_fast(static_cast<uint32_t>(n), x, scratch);   // x[0] = sum(x)
 }
 
 int main() {

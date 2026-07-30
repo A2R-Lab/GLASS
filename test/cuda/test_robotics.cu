@@ -144,7 +144,7 @@ template <typename T> static void print_dev(const T* d, long n) {
 // M: 0 = block (glass::), 1 = warp (glass::warp::), 2 = thread (glass::thread::).
 #define TIER3(FN, ...)                                          \
     do {                                                        \
-        if constexpr (M == 0)      glass::FN<T>(__VA_ARGS__);   \
+        if constexpr (M == 0)      glass::block::FN<T>(__VA_ARGS__);   \
         else if constexpr (M == 1) glass::warp::FN<T>(__VA_ARGS__); \
         else                       glass::thread::FN<T>(__VA_ARGS__); \
     } while (0)
@@ -157,18 +157,18 @@ __device__ void dev_tier_op(int op, int flag0, int flag1,
         case OP_QUAT_MUL:
             if (flag0 == 0) { TIER3(quat_mul, a, b, out); }
             else {
-                if constexpr (M == 0)      glass::quat_mul<T, glass::QuatLayout::wxyz>(a, b, out);
-                else if constexpr (M == 1) glass::warp::quat_mul<T, glass::QuatLayout::wxyz>(a, b, out);
-                else                       glass::thread::quat_mul<T, glass::QuatLayout::wxyz>(a, b, out);
+                if constexpr (M == 0)      glass::block::quat_mul<T, glass::block::QuatLayout::wxyz>(a, b, out);
+                else if constexpr (M == 1) glass::warp::quat_mul<T, glass::block::QuatLayout::wxyz>(a, b, out);
+                else                       glass::thread::quat_mul<T, glass::block::QuatLayout::wxyz>(a, b, out);
             }
             break;
         case OP_QUAT_CONJ:      TIER3(quat_conj, a, out); break;
         case OP_QUAT_NORMALIZE:
             if (flag0 == 0) { TIER3(quat_normalize, a, out); }
             else {
-                if constexpr (M == 0)      glass::quat_normalize<T, glass::QuatLayout::xyzw, true>(a, out);
-                else if constexpr (M == 1) glass::warp::quat_normalize<T, glass::QuatLayout::xyzw, true>(a, out);
-                else                       glass::thread::quat_normalize<T, glass::QuatLayout::xyzw, true>(a, out);
+                if constexpr (M == 0)      glass::block::quat_normalize<T, glass::block::QuatLayout::xyzw, true>(a, out);
+                else if constexpr (M == 1) glass::warp::quat_normalize<T, glass::block::QuatLayout::xyzw, true>(a, out);
+                else                       glass::thread::quat_normalize<T, glass::block::QuatLayout::xyzw, true>(a, out);
             }
             break;
         case OP_QUAT_EXP:       TIER3(quat_exp, a, out); break;
@@ -189,12 +189,12 @@ __device__ void dev_tier_op(int op, int flag0, int flag1,
         case OP_SE3_JAC_Q:      TIER3(se3_retract_jacobian_q, a, b, out); break;
         case OP_SE3_JAC_V:      TIER3(se3_retract_jacobian_v, a, b, out); break;
         case OP_SE3_HESS_Q:
-            if constexpr (M == 0)      glass::se3_retract_hessian<T, true>(a, b, out);
+            if constexpr (M == 0)      glass::block::se3_retract_hessian<T, true>(a, b, out);
             else if constexpr (M == 1) glass::warp::se3_retract_hessian<T, true>(a, b, out);
             else                       glass::thread::se3_retract_hessian<T, true>(a, b, out);
             break;
         case OP_SE3_HESS_V:
-            if constexpr (M == 0)      glass::se3_retract_hessian<T, false>(a, b, out);
+            if constexpr (M == 0)      glass::block::se3_retract_hessian<T, false>(a, b, out);
             else if constexpr (M == 1) glass::warp::se3_retract_hessian<T, false>(a, b, out);
             else                       glass::thread::se3_retract_hessian<T, false>(a, b, out);
             break;
@@ -208,11 +208,11 @@ __device__ void dev_tier_op(int op, int flag0, int flag1,
             if constexpr (M == 0) __syncthreads(); else if constexpr (M == 1) __syncwarp();
             #define MCM_CASE(AX)                                                              \
                 if (flag1) {                                                                  \
-                    if constexpr (M == 0)      glass::motion_cross_mul<T, AX, true>(al, a, b, be, out);        \
+                    if constexpr (M == 0)      glass::block::motion_cross_mul<T, AX, true>(al, a, b, be, out);        \
                     else if constexpr (M == 1) glass::warp::motion_cross_mul<T, AX, true>(al, a, b, be, out);  \
                     else                       glass::thread::motion_cross_mul<T, AX, true>(al, a, b, be, out);\
                 } else {                                                                      \
-                    if constexpr (M == 0)      glass::motion_cross_mul<T, AX, false>(al, a, b, be, out);       \
+                    if constexpr (M == 0)      glass::block::motion_cross_mul<T, AX, false>(al, a, b, be, out);       \
                     else if constexpr (M == 1) glass::warp::motion_cross_mul<T, AX, false>(al, a, b, be, out); \
                     else                       glass::thread::motion_cross_mul<T, AX, false>(al, a, b, be, out);\
                 }
@@ -230,11 +230,11 @@ __device__ void dev_tier_op(int op, int flag0, int flag1,
             if (flag1 && writer) for (int i = 0; i < 6; i++) out[i] = c[i];
             if constexpr (M == 0) __syncthreads(); else if constexpr (M == 1) __syncwarp();
             if (flag1) {
-                if constexpr (M == 0)      glass::force_cross_mul<T, true>(al, a, b, be, out);
+                if constexpr (M == 0)      glass::block::force_cross_mul<T, true>(al, a, b, be, out);
                 else if constexpr (M == 1) glass::warp::force_cross_mul<T, true>(al, a, b, be, out);
                 else                       glass::thread::force_cross_mul<T, true>(al, a, b, be, out);
             } else {
-                if constexpr (M == 0)      glass::force_cross_mul<T, false>(al, a, b, be, out);
+                if constexpr (M == 0)      glass::block::force_cross_mul<T, false>(al, a, b, be, out);
                 else if constexpr (M == 1) glass::warp::force_cross_mul<T, false>(al, a, b, be, out);
                 else                       glass::thread::force_cross_mul<T, false>(al, a, b, be, out);
             }
@@ -242,12 +242,12 @@ __device__ void dev_tier_op(int op, int flag0, int flag1,
         }
         case OP_SOC_PROJECT:    TIER3(soc_project, a, out, (int32_t)nrt); break;
         case OP_SOFTMAX:
-            if constexpr (M == 0)      glass::softmax<T>(nrt, (T)SM_ALPHA, a, out, smem);
+            if constexpr (M == 0)      glass::block::softmax<T>(nrt, (T)SM_ALPHA, a, out, smem);
             else if constexpr (M == 1) glass::warp::softmax<T>(nrt, (T)SM_ALPHA, a, out);
             else                       glass::thread::softmax<T>(nrt, (T)SM_ALPHA, a, out);
             break;
         case OP_LOGSUMEXP:
-            if constexpr (M == 0)      glass::logsumexp<T>(nrt, (T)SM_ALPHA, a, out, smem);
+            if constexpr (M == 0)      glass::block::logsumexp<T>(nrt, (T)SM_ALPHA, a, out, smem);
             else if constexpr (M == 1) { T r = glass::warp::logsumexp<T>(nrt, (T)SM_ALPHA, a); if (writer) out[0] = r; }
             else                       { out[0] = glass::thread::logsumexp<T>(nrt, (T)SM_ALPHA, a); }
             break;
@@ -257,8 +257,8 @@ __device__ void dev_tier_op(int op, int flag0, int flag1,
             if constexpr (M == 0) {
                 __shared__ uint32_t s_idx[1];
                 __shared__ T s_val[1];
-                if (mn) glass::argmin<T>(nrt, a, s_idx, s_val, smem);
-                else    glass::argmax<T>(nrt, a, s_idx, s_val, smem);
+                if (mn) glass::block::argmin<T>(nrt, a, s_idx, s_val, smem);
+                else    glass::block::argmax<T>(nrt, a, s_idx, s_val, smem);
                 if (writer) { out[0] = (T)s_idx[0]; out[1] = s_val[0]; }
             } else if constexpr (M == 1) {
                 uint32_t i = mn ? glass::warp::argmin<T>(nrt, a) : glass::warp::argmax<T>(nrt, a);
@@ -278,7 +278,7 @@ __device__ void dev_tier_op(int op, int flag0, int flag1,
             if (flag1 && writer) for (int i = 0; i < 6; i++) out[i] = c[i];
             if constexpr (M == 0) __syncthreads(); else if constexpr (M == 1) __syncwarp();
             #define XFM_CASE(FN, INV, HB)                                                     \
-                if constexpr (M == 0)      glass::FN<T, INV, HB>(al, a, a + 9, b, be, out);        \
+                if constexpr (M == 0)      glass::block::FN<T, INV, HB>(al, a, a + 9, b, be, out);        \
                 else if constexpr (M == 1) glass::warp::FN<T, INV, HB>(al, a, a + 9, b, be, out);  \
                 else                       glass::thread::FN<T, INV, HB>(al, a, a + 9, b, be, out);
             #define XFM_DISPATCH(FN)                                                          \
@@ -298,11 +298,11 @@ __device__ void dev_tier_op(int op, int flag0, int flag1,
             if (flag1 && writer) for (int i = 0; i < 6; i++) out[i] = c[i];
             if constexpr (M == 0) __syncthreads(); else if constexpr (M == 1) __syncwarp();
             if (flag1) {
-                if constexpr (M == 0)      glass::spatial_inertia_mul<T, true>(al, a, b, be, out);
+                if constexpr (M == 0)      glass::block::spatial_inertia_mul<T, true>(al, a, b, be, out);
                 else if constexpr (M == 1) glass::warp::spatial_inertia_mul<T, true>(al, a, b, be, out);
                 else                       glass::thread::spatial_inertia_mul<T, true>(al, a, b, be, out);
             } else {
-                if constexpr (M == 0)      glass::spatial_inertia_mul<T, false>(al, a, b, be, out);
+                if constexpr (M == 0)      glass::block::spatial_inertia_mul<T, false>(al, a, b, be, out);
                 else if constexpr (M == 1) glass::warp::spatial_inertia_mul<T, false>(al, a, b, be, out);
                 else                       glass::thread::spatial_inertia_mul<T, false>(al, a, b, be, out);
             }
@@ -313,17 +313,17 @@ __device__ void dev_tier_op(int op, int flag0, int flag1,
             // flag0 = frame (0 LOCAL, 1 WORLD)
             if (flag0 == 0) { TIER3(quat_error, a, b, out); }
             else {
-                if constexpr (M == 0)      glass::quat_error<T, glass::QuatLayout::xyzw, glass::ErrorFrame::WORLD>(a, b, out);
-                else if constexpr (M == 1) glass::warp::quat_error<T, glass::QuatLayout::xyzw, glass::ErrorFrame::WORLD>(a, b, out);
-                else                       glass::thread::quat_error<T, glass::QuatLayout::xyzw, glass::ErrorFrame::WORLD>(a, b, out);
+                if constexpr (M == 0)      glass::block::quat_error<T, glass::block::QuatLayout::xyzw, glass::block::ErrorFrame::WORLD>(a, b, out);
+                else if constexpr (M == 1) glass::warp::quat_error<T, glass::block::QuatLayout::xyzw, glass::block::ErrorFrame::WORLD>(a, b, out);
+                else                       glass::thread::quat_error<T, glass::block::QuatLayout::xyzw, glass::block::ErrorFrame::WORLD>(a, b, out);
             }
             break;
         case OP_POSE_ERROR:
             if (flag0 == 0) { TIER3(pose_error, a, b, out); }
             else {
-                if constexpr (M == 0)      glass::pose_error<T, glass::QuatLayout::xyzw, glass::ErrorFrame::WORLD>(a, b, out);
-                else if constexpr (M == 1) glass::warp::pose_error<T, glass::QuatLayout::xyzw, glass::ErrorFrame::WORLD>(a, b, out);
-                else                       glass::thread::pose_error<T, glass::QuatLayout::xyzw, glass::ErrorFrame::WORLD>(a, b, out);
+                if constexpr (M == 0)      glass::block::pose_error<T, glass::block::QuatLayout::xyzw, glass::block::ErrorFrame::WORLD>(a, b, out);
+                else if constexpr (M == 1) glass::warp::pose_error<T, glass::block::QuatLayout::xyzw, glass::block::ErrorFrame::WORLD>(a, b, out);
+                else                       glass::thread::pose_error<T, glass::block::QuatLayout::xyzw, glass::block::ErrorFrame::WORLD>(a, b, out);
             }
             break;
         case OP_EIG3:        TIER3(eig3, a, out, out + 3); break;
@@ -338,8 +338,8 @@ __device__ void dev_tier_op(int op, int flag0, int flag1,
             if constexpr (M == 0) {
                 __shared__ uint32_t s_idx[1];
                 __shared__ T s_val[1];
-                if (mn) glass::argmin_fast<T>(nrt, a, s_idx, s_val, smem);
-                else    glass::argmax_fast<T>(nrt, a, s_idx, s_val, smem);
+                if (mn) glass::block::argmin_fast<T>(nrt, a, s_idx, s_val, smem);
+                else    glass::block::argmax_fast<T>(nrt, a, s_idx, s_val, smem);
                 if (writer) { out[0] = (T)s_idx[0]; out[1] = s_val[0]; }
             } else if constexpr (M == 1) {
                 uint32_t i = mn ? glass::warp::argmin<T>(nrt, a) : glass::warp::argmax<T>(nrt, a);
@@ -356,14 +356,14 @@ __device__ void dev_tier_op(int op, int flag0, int flag1,
             if (writer) for (int i = 4; i < 20; i++) out[i] = (T)(-7);
             if constexpr (M == 0) __syncthreads(); else if constexpr (M == 1) __syncwarp();
             if constexpr (M == 0) {
-                glass::rot_to_quat<T, glass::QuatLayout::xyzw, 4>(a, out);
-                glass::quat_to_rot<T, glass::QuatLayout::xyzw, 4>(out, out + 4);
+                glass::block::rot_to_quat<T, glass::block::QuatLayout::xyzw, 4>(a, out);
+                glass::block::quat_to_rot<T, glass::block::QuatLayout::xyzw, 4>(out, out + 4);
             } else if constexpr (M == 1) {
-                glass::warp::rot_to_quat<T, glass::QuatLayout::xyzw, 4>(a, out);
-                glass::warp::quat_to_rot<T, glass::QuatLayout::xyzw, 4>(out, out + 4);
+                glass::warp::rot_to_quat<T, glass::block::QuatLayout::xyzw, 4>(a, out);
+                glass::warp::quat_to_rot<T, glass::block::QuatLayout::xyzw, 4>(out, out + 4);
             } else {
-                glass::thread::rot_to_quat<T, glass::QuatLayout::xyzw, 4>(a, out);
-                glass::thread::quat_to_rot<T, glass::QuatLayout::xyzw, 4>(out, out + 4);
+                glass::thread::rot_to_quat<T, glass::block::QuatLayout::xyzw, 4>(a, out);
+                glass::thread::quat_to_rot<T, glass::block::QuatLayout::xyzw, 4>(out, out + 4);
             }
             break;
         }
@@ -431,58 +431,58 @@ __device__ void dev_scalar_op(int op, int flag0, const T* a, const T* b, const T
                               T* out, uint32_t m) {
     switch (op) {
         case OP_SOC_SCALARS:
-            out[0] = glass::soc_tail_norm<T>(a, (int32_t)m);
-            out[1] = glass::soc_violation<T>(a, (int32_t)m);
-            out[2] = glass::al_soc_value<T>(a, b, (T)SOC_RHO, (int32_t)m);
+            out[0] = glass::block::soc_tail_norm<T>(a, (int32_t)m);
+            out[1] = glass::block::soc_violation<T>(a, (int32_t)m);
+            out[2] = glass::block::al_soc_value<T>(a, b, (T)SOC_RHO, (int32_t)m);
             break;
         case OP_INTERVAL_SCALARS: {
             const T sg = flag0 ? (T)AL_SIGMA : (T)0;
-            out[0] = glass::interval_violation<T>(a[0], a[1], a[2]);
-            out[1] = glass::al_interval_value<T>(a[0], a[1], a[2], a[3], a[4], (T)AL_RHO, sg);
+            out[0] = glass::block::interval_violation<T>(a[0], a[1], a[2]);
+            out[1] = glass::block::al_interval_value<T>(a[0], a[1], a[2], a[3], a[4], (T)AL_RHO, sg);
             T gr, h;
-            glass::al_interval_grad_hess<T>(a[0], a[1], a[2], a[3], a[4], (T)AL_RHO, sg, gr, h);
+            glass::block::al_interval_grad_hess<T>(a[0], a[1], a[2], a[3], a[4], (T)AL_RHO, sg, gr, h);
             out[2] = gr; out[3] = h;
             break;
         }
         case OP_RBAR:
-            out[0] = glass::relaxed_barrier_interval_value<T>(a[0], a[1], a[2], (T)RB_MU, (T)RB_DELTA);
-            out[1] = glass::relaxed_barrier_interval_grad<T>(a[0], a[1], a[2], (T)RB_MU, (T)RB_DELTA);
-            out[2] = glass::relaxed_barrier_interval_hess<T>(a[0], a[1], a[2], (T)RB_MU, (T)RB_DELTA);
+            out[0] = glass::block::relaxed_barrier_interval_value<T>(a[0], a[1], a[2], (T)RB_MU, (T)RB_DELTA);
+            out[1] = glass::block::relaxed_barrier_interval_grad<T>(a[0], a[1], a[2], (T)RB_MU, (T)RB_DELTA);
+            out[2] = glass::block::relaxed_barrier_interval_hess<T>(a[0], a[1], a[2], (T)RB_MU, (T)RB_DELTA);
             break;
         case OP_SMOOTH_HINGE:
-            out[0] = glass::smooth_hinge<T>(a[0], (T)SH_ETA);
-            out[1] = glass::smooth_hinge_grad<T>(a[0], (T)SH_ETA);
+            out[0] = glass::block::smooth_hinge<T>(a[0], (T)SH_ETA);
+            out[1] = glass::block::smooth_hinge_grad<T>(a[0], (T)SH_ETA);
             break;
         case OP_ANGLE:
-            out[0] = glass::angle_wrap<T>(a[0]);
-            out[1] = glass::angle_diff<T>(a[0], a[1]);
-            out[2] = glass::angle_lerp<T>(a[0], a[1], a[2]);
-            out[3] = glass::clamp_unit<T>(a[0]);
+            out[0] = glass::block::angle_wrap<T>(a[0]);
+            out[1] = glass::block::angle_diff<T>(a[0], a[1]);
+            out[2] = glass::block::angle_lerp<T>(a[0], a[1], a[2]);
+            out[3] = glass::block::clamp_unit<T>(a[0]);
             break;
         case OP_SPHERE_SPHERE:
-            out[0] = glass::sphere_sphere_dist<T>(a, a[6], a + 3, a[7], out + 1);
+            out[0] = glass::block::sphere_sphere_dist<T>(a, a[6], a + 3, a[7], out + 1);
             break;
         case OP_SPHERE_BOX:
-            out[0] = glass::sphere_box_dist<T>(a, a[6], a + 3, out + 1);
+            out[0] = glass::block::sphere_box_dist<T>(a, a[6], a + 3, out + 1);
             break;
         case OP_TRANSFORM_SPHERE:
-            glass::transform_sphere<T>(a, b, c, out);
+            glass::block::transform_sphere<T>(a, b, c, out);
             break;
         case OP_FRAME:
-            glass::frame_from_vector<T>(a, out, out + 3);
+            glass::block::frame_from_vector<T>(a, out, out + 3);
             break;
         case OP_SEGMENT: {
             T s, t;
-            out[0] = glass::segment_segment_closest<T>(a, a + 3, a + 6, a + 9, s, t, out + 3, out + 6);
+            out[0] = glass::block::segment_segment_closest<T>(a, a + 3, a + 6, a + 9, s, t, out + 3, out + 6);
             out[1] = s; out[2] = t;
             break;
         }
         case OP_QUAT_ANGLE:
-            out[0] = glass::quat_angle<T>(a, b);
+            out[0] = glass::block::quat_angle<T>(a, b);
             break;
         case OP_LOG_COSH:
-            out[0] = glass::log_cosh<T>(a[0]);
-            out[1] = glass::log_cosh_grad<T>(a[0]);
+            out[0] = glass::block::log_cosh<T>(a[0]);
+            out[1] = glass::block::log_cosh_grad<T>(a[0]);
             break;
         default: break;
     }

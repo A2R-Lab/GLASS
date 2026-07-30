@@ -19,7 +19,7 @@ enum { SURF_BLOCK = 0, SURF_WARP = 1, SURF_CGRPS = 2 };
 template <int SURF, uint32_t N, uint32_t Kdim, bool ACC>
 __global__ void k_cong(float alpha, const float* X, const float* M, float beta, float* Q) {
     extern __shared__ float st[];
-    if (SURF == SURF_BLOCK)      glass::congruence_sym<float, N, Kdim, ACC>(alpha, X, M, beta, Q, st);
+    if (SURF == SURF_BLOCK)      glass::block::congruence_sym<float, N, Kdim, ACC>(alpha, X, M, beta, Q, st);
     else if (SURF == SURF_WARP)  glass::warp::congruence_sym<float, N, Kdim, ACC>(alpha, X, M, beta, Q, st);
     else                         glass::cgrps::congruence_sym<float, N, Kdim, ACC>(alpha, X, M, beta, Q, st);
 }
@@ -27,7 +27,7 @@ __global__ void k_cong(float alpha, const float* X, const float* M, float beta, 
 template <int SURF, uint32_t N, uint32_t P, uint32_t Qd, bool ACC>
 __global__ void k_bil(float alpha, const float* X, const float* M, const float* Y, float beta, float* R) {
     extern __shared__ float st[];
-    if (SURF == SURF_BLOCK)      glass::bilinear<float, N, P, Qd, ACC>(alpha, X, M, Y, beta, R, st);
+    if (SURF == SURF_BLOCK)      glass::block::bilinear<float, N, P, Qd, ACC>(alpha, X, M, Y, beta, R, st);
     else if (SURF == SURF_WARP)  glass::warp::bilinear<float, N, P, Qd, ACC>(alpha, X, M, Y, beta, R, st);
     else                         glass::cgrps::bilinear<float, N, P, Qd, ACC>(alpha, X, M, Y, beta, R, st);
 }
@@ -50,12 +50,12 @@ template <int SURF, uint32_t P, uint32_t Q, bool ACC>
 __global__ void k_cacc(float alpha, const float* G, const float* M, float beta, float* C) {
     extern __shared__ float st[];
     if (SURF == SURF_WARP) glass::warp::congruence_accum<float, P, Q, ACC>(alpha, G, M, beta, C, st);
-    else                   glass::congruence_accum<float, P, Q, ACC>(alpha, G, M, beta, C, st);
+    else                   glass::block::congruence_accum<float, P, Q, ACC>(alpha, G, M, beta, C, st);
 }
 
 template <uint32_t P, uint32_t Q>
 static void launch_cacc(int surf, int th, bool acc, float al, const float* dG, const float* dM, float be, float* dC) {
-    int sm = glass::congruence_accum_scratch_bytes<float,P,Q>();
+    int sm = glass::block::congruence_accum_scratch_bytes<float,P,Q>();
     if (acc) {
         if (surf==SURF_WARP) k_cacc<SURF_WARP,P,Q,true><<<1,th,sm>>>(al,dG,dM,be,dC);
         else                 k_cacc<SURF_BLOCK,P,Q,true><<<1,th,sm>>>(al,dG,dM,be,dC);

@@ -26,16 +26,16 @@ static constexpr int NZ = 2;   // zero-pivot demo matrix
 
 // Factor (checked, non-pivoted) then solve A x = b in place; x lands in b.
 __global__ void k_factor_solve(float* A, float* b, int* fail, int* inertia) {
-    __shared__ float s_scratch[glass::ldlt_scratch_bytes<float>(N) / sizeof(float)];
-    glass::ldlt<float, N, /*CHECK=*/true>(A, s_scratch, /*pivot=*/false, nullptr, fail, inertia);
-    glass::ldlt_solve<float, N>(A, b);
+    __shared__ float s_scratch[glass::block::ldlt_scratch_bytes<float>(N) / sizeof(float)];
+    glass::block::ldlt<float, N, /*CHECK=*/true>(A, s_scratch, /*pivot=*/false, nullptr, fail, inertia);
+    glass::block::ldlt_solve<float, N>(A, b);
 }
 
 // CHECK=true on a matrix whose FIRST pivot is exactly zero: D_0 = A_00 = 0.
 // The factor itself is garbage (division by zero) — the point is fail == 1.
 __global__ void k_factor_zero_pivot(float* A, int* fail) {
-    __shared__ float s_scratch[glass::ldlt_scratch_bytes<float>(NZ) / sizeof(float)];
-    glass::ldlt<float, NZ, /*CHECK=*/true>(A, s_scratch, /*pivot=*/false, nullptr, fail, nullptr);
+    __shared__ float s_scratch[glass::block::ldlt_scratch_bytes<float>(NZ) / sizeof(float)];
+    glass::block::ldlt<float, NZ, /*CHECK=*/true>(A, s_scratch, /*pivot=*/false, nullptr, fail, nullptr);
 }
 
 int main() {

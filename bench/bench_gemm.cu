@@ -43,7 +43,7 @@ static double elapsed_us(struct timespec a, struct timespec b) {
 // (global): reads A, B, C from global memory each call
 __global__ void k_glass_gemm_global(float* A, float* B, float* C, int m, int n, int k, int iters) {
     for (int rep = 0; rep < iters; rep++) {
-        glass::gemm<float>(m, n, k, 1.f, A, B, 1.f, C);
+        glass::block::gemm<float>(m, n, k, 1.f, A, B, 1.f, C);
     }
 }
 
@@ -58,7 +58,7 @@ __global__ void k_glass_gemm_shared(float* A, float* B, float* C, int m, int n, 
     for (int i = threadIdx.x; i < m * k; i += blockDim.x) s_C[i] = C[i];
     __syncthreads();
     for (int rep = 0; rep < iters; rep++) {
-        glass::gemm<float>(m, n, k, 1.f, s_A, s_B, 1.f, s_C);
+        glass::block::gemm<float>(m, n, k, 1.f, s_A, s_B, 1.f, s_C);
     }
     if (threadIdx.x == 0) C[0] = s_C[0]; // prevent DCE
 }
@@ -69,7 +69,7 @@ __global__ void k_glass_gemm_tiled(float* A, float* B, float* C, int m, int n, i
     float* s_A = smem;
     float* s_B = smem + m * TILE;
     for (int rep = 0; rep < iters; rep++) {
-        glass::gemm_tiled<float, TILE>(m, n, k, 1.f, A, B, 1.f, C, s_A, s_B);
+        glass::block::gemm_tiled<float, TILE>(m, n, k, 1.f, A, B, 1.f, C, s_A, s_B);
     }
 }
 
@@ -80,7 +80,7 @@ __global__ void k_glass_gemm_tiled(float* A, float* B, float* C, int m, int n, i
         static const int smem_size = (M*N + N*K + M*K) * sizeof(float);                     \
         __global__ void kernel_global(float* A, float* B, float* C, int iters) {             \
             for (int rep = 0; rep < iters; rep++)                                             \
-                glass::gemm<float, M, N, K>(1.f, A, B, 1.f, C);                             \
+                glass::block::gemm<float, M, N, K>(1.f, A, B, 1.f, C);                             \
         }                                                                                     \
         __global__ void kernel_smem(float* A, float* B, float* C, int iters) {               \
             extern __shared__ float smem[];                                                   \
@@ -92,7 +92,7 @@ __global__ void k_glass_gemm_tiled(float* A, float* B, float* C, int m, int n, i
             for (int i = threadIdx.x; i < M*K; i += blockDim.x) s_C[i] = C[i];             \
             __syncthreads();                                                                  \
             for (int rep = 0; rep < iters; rep++)                                             \
-                glass::gemm<float, M, N, K>(1.f, s_A, s_B, 1.f, s_C);                      \
+                glass::block::gemm<float, M, N, K>(1.f, s_A, s_B, 1.f, s_C);                      \
             if (threadIdx.x == 0) C[0] = s_C[0];                                            \
         }                                                                                     \
     }
@@ -276,7 +276,7 @@ DEFINE_CUBLASDX_GEMM(4,  4,  64)
 //
 // Both write to a volatile sink each iteration to defeat dead-store elimination.
 
-namespace glass { namespace nvidia {
+namespace glass { namespace nvidia { namespace block {
     // BlockDim<THREADS> variants for all sizes (default-block_dim variants for
     // the square sizes 4..64 are already pre-instantiated in glass-nvidia.cuh).
     DEFINE_NVIDIA_GEMM_BLOCKDIM(4,  4,  4,  THREADS)
@@ -296,13 +296,13 @@ namespace glass { namespace nvidia {
     DEFINE_NVIDIA_GEMM(4, 4, 32)
     DEFINE_NVIDIA_GEMM(4, 4, 48)
     DEFINE_NVIDIA_GEMM(4, 4, 64)
-}} // namespace glass::nvidia
+}}} // namespace glass::nvidia::block
 
 template<int M, int N, int K>
 __global__ void k_nv_gemm_default(float* A, float* B, float* C, volatile float* sink, int iters) {
     extern __shared__ __align__(16) char nv_smem[];
     for (int rep = 0; rep < iters; rep++) {
-        glass::nvidia::gemm<float, M, N, K>(1.f, A, B, 0.f, C, nv_smem);
+        glass::nvidia::block::gemm<float, M, N, K>(1.f, A, B, 0.f, C, nv_smem);
         __syncthreads();
         if (threadIdx.x == 0) sink[rep & 0xFF] = C[0];
         __syncthreads();
@@ -313,7 +313,7 @@ template<int M, int N, int K, int TC>
 __global__ void k_nv_gemm_blockdim(float* A, float* B, float* C, volatile float* sink, int iters) {
     extern __shared__ __align__(16) char nv_smem[];
     for (int rep = 0; rep < iters; rep++) {
-        glass::nvidia::gemm<float, M, N, K, TC>(1.f, A, B, 0.f, C, nv_smem);
+        glass::nvidia::block::gemm<float, M, N, K, TC>(1.f, A, B, 0.f, C, nv_smem);
         __syncthreads();
         if (threadIdx.x == 0) sink[rep & 0xFF] = C[0];
         __syncthreads();
@@ -322,8 +322,8 @@ __global__ void k_nv_gemm_blockdim(float* A, float* B, float* C, volatile float*
 
 #define RUN_NVIDIA_GEMM(M, N, K, dA, dB, dC, sink, iters, t0, t1)                            \
     {                                                                                         \
-        constexpr auto smem_def = glass::nvidia::gemm_scratch_bytes<float, M, N, K>();           \
-        constexpr auto thr_def  = glass::nvidia::gemm_threads<float, M, N, K>();             \
+        constexpr auto smem_def = glass::nvidia::block::gemm_scratch_bytes<float, M, N, K>();           \
+        constexpr auto thr_def  = glass::nvidia::block::gemm_threads<float, M, N, K>();             \
         cudaMemset(dC, 0, (size_t)M*K*sizeof(float));                                         \
         clock_gettime(CLOCK_MONOTONIC, &(t0));                                                 \
         k_nv_gemm_default<M, N, K><<<1, thr_def, smem_def>>>(dA, dB, dC, sink, iters);       \
@@ -331,7 +331,7 @@ __global__ void k_nv_gemm_blockdim(float* A, float* B, float* C, volatile float*
         clock_gettime(CLOCK_MONOTONIC, &(t1));                                                 \
         printf("glass::nvidia gemm (default) m=%2d n=%2d k=%2d  %.3f us/op\n",               \
                M, N, K, elapsed_us(t0, t1) / iters);                                          \
-        constexpr auto smem_bd = glass::nvidia::gemm_scratch_bytes<float, M, N, K, THREADS>();   \
+        constexpr auto smem_bd = glass::nvidia::block::gemm_scratch_bytes<float, M, N, K, THREADS>();   \
         cudaMemset(dC, 0, (size_t)M*K*sizeof(float));                                         \
         clock_gettime(CLOCK_MONOTONIC, &(t0));                                                 \
         k_nv_gemm_blockdim<M, N, K, THREADS><<<1, THREADS, smem_bd>>>(dA, dB, dC, sink, iters); \

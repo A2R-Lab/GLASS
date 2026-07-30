@@ -19,27 +19,27 @@
 
 template<typename T,int N,bool WARP> __global__ void k_dot(T* x, T* y) {
     if constexpr (WARP) { T r = glass::warp::dot<T,N>(x, y); if ((threadIdx.x&31)==0) y[0]=r; }
-    else glass::dot<T,N>(x, y);                                   // result -> y[0]
+    else glass::block::dot<T,N>(x, y);                                   // result -> y[0]
 }
 template<typename T,int N,bool WARP> __global__ void k_gemv(T* A, T* x, T* y) {
     if constexpr (WARP) glass::warp::gemv<T,N,N>((T)1, A, x, (T)0, y);
-    else                glass::gemv<T,N,N>((T)1, A, x, (T)0, y);
+    else                glass::block::gemv<T,N,N>((T)1, A, x, (T)0, y);
 }
 template<typename T,int N,bool WARP> __global__ void k_gemm(T* A, T* B, T* C) {
     if constexpr (WARP) glass::warp::gemm<T,N,N,N>((T)1, A, B, (T)0, C);
-    else                glass::gemm<T,N,N,N>((T)1, A, B, (T)0, C);
+    else                glass::block::gemm<T,N,N,N>((T)1, A, B, (T)0, C);
 }
 template<typename T,int N,bool WARP> __global__ void k_chol(T* A) {
     if constexpr (WARP) glass::warp::potrf<T,N>(A);   // A -> L (lower)
-    else                glass::potrf<T,N>(A);
+    else                glass::block::potrf<T,N>(A);
 }
 template<typename T,int N,bool WARP> __global__ void k_trsv(T* L, T* x) {
     if constexpr (WARP) glass::warp::trsv<T,N>(L, x);             // solve L x = b in place
-    else                glass::trsv<T,N>(L, x);
+    else                glass::block::trsv<T,N>(L, x);
 }
 template<typename T,int N,bool WARP> __global__ void k_posv(T* A, T* b) {
     if constexpr (WARP) glass::warp::posv<T,N>(A, b);            // b -> solution
-    else                glass::posv<T,N>(A, b);
+    else                glass::block::posv<T,N>(A, b);
 }
 
 using T = double;

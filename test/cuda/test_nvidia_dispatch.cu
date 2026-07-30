@@ -36,45 +36,45 @@ static float max_abs_diff(const std::vector<float>& a, const std::vector<float>&
 
 __global__ void k_gemm_6x6x6(float* A, float* B, float* C) {
     // 6x6x6 has no DEFINE_NVIDIA_GEMM → SIMT route via primary template.
-    glass::nvidia::gemm<float, 6, 6, 6>(1.f, A, B, 0.f, C, nullptr);
+    glass::nvidia::block::gemm<float, 6, 6, 6>(1.f, A, B, 0.f, C, nullptr);
 }
 
 __global__ void k_gemm_16x16x16_dx(float* A, float* B, float* C) {
     // 16x16x16 has DEFINE_NVIDIA_GEMM(16,16,16) in glass-nvidia.cuh; cuBLASDx.
     extern __shared__ __align__(16) char smem[];
-    glass::nvidia::gemm<float, 16, 16, 16>(1.f, A, B, 0.f, C, smem);
+    glass::nvidia::block::gemm<float, 16, 16, 16>(1.f, A, B, 0.f, C, smem);
 }
 
 __global__ void k_gemm_16x16x16_simt(float* A, float* B, float* C) {
     // SIMT direct call for bit-parity reference.
-    ::glass::gemm<float, 16, 16, 16>(1.f, A, B, 0.f, C);
+    ::glass::block::gemm<float, 16, 16, 16>(1.f, A, B, 0.f, C);
 }
 
 __global__ void k_gemm_6x6x6_transb(float* A, float* B, float* C) {
     // Gap D: LB=row_major maps to TRANSPOSE_B=true in the SIMT branch.
-    using L = glass::nvidia::layout;
-    glass::nvidia::gemm<float, 6, 6, 6, 0, L::col_major, L::row_major, L::col_major>(
+    using L = glass::nvidia::block::layout;
+    glass::nvidia::block::gemm<float, 6, 6, 6, 0, L::col_major, L::row_major, L::col_major>(
         1.f, A, B, 0.f, C, nullptr);
 }
 
 __global__ void k_gemm_6x6x6_transb_simt(float* A, float* B, float* C) {
-    ::glass::gemm<float, 6, 6, 6, /*TA=*/false, /*TRANSPOSE_B=*/true>(1.f, A, B, 0.f, C);
+    ::glass::block::gemm<float, 6, 6, 6, /*TA=*/false, /*TRANSPOSE_B=*/true>(1.f, A, B, 0.f, C);
 }
 
 __global__ void k_gemv_5x5(float* A, float* x, float* y) {
     // 5x5 gemv has no pre-instantiated DEFINE (those are 4,6,8,12,14,24,64).
     // Heuristic max<32 → SIMT.
-    glass::nvidia::gemv<float, 5, 5>(1.f, A, x, 0.f, y, nullptr);
+    glass::nvidia::block::gemv<float, 5, 5>(1.f, A, x, 0.f, y, nullptr);
 }
 
 __global__ void k_strided_gemv_5x5_rs8(float* A, float* x, float* y) {
     // Gap B: SIMT uses stride directly, no smem packing.
-    glass::nvidia::gemv_strided<float, 5, 5, 8>(1.f, A, x, 0.f, y, nullptr);
+    glass::nvidia::block::gemv_strided<float, 5, 5, 8>(1.f, A, x, 0.f, y, nullptr);
 }
 
 __global__ void k_strided_gemm_6x6x6_rs8(float* A, float* B, float* C) {
     // Gap C: SIMT uses A_RS=8, B_RS=8 directly.
-    glass::nvidia::gemm_strided<float, 6, 6, 6, 8, 8>(1.f, A, B, 0.f, C, nullptr);
+    glass::nvidia::block::gemm_strided<float, 6, 6, 6, 8, 8>(1.f, A, B, 0.f, C, nullptr);
 }
 
 // ─── ops ────────────────────────────────────────────────────────────────────
@@ -108,8 +108,8 @@ static int op_gemm_cublas() {
     for (int i = 0; i < M*N; i++) A[i] = 0.01f * (i+1);
     for (int i = 0; i < N*K; i++) B[i] = 0.02f * (i+1);
     float *dA,*dB,*dC,*dCref;
-    constexpr size_t smemsz = glass::nvidia::gemm_scratch_bytes<float, 16, 16, 16>();
-    constexpr uint32_t tc = glass::nvidia::gemm_threads<float, 16, 16, 16>();
+    constexpr size_t smemsz = glass::nvidia::block::gemm_scratch_bytes<float, 16, 16, 16>();
+    constexpr uint32_t tc = glass::nvidia::block::gemm_threads<float, 16, 16, 16>();
     CUDA_CHECK(cudaMalloc(&dA, M*N*4)); CUDA_CHECK(cudaMalloc(&dB, N*K*4));
     CUDA_CHECK(cudaMalloc(&dC, M*K*4)); CUDA_CHECK(cudaMalloc(&dCref, M*K*4));
     CUDA_CHECK(cudaMemcpy(dA, A.data(), M*N*4, cudaMemcpyHostToDevice));
@@ -234,8 +234,8 @@ static int op_beta0_poison() {
     for (int i = 0; i < M*K; i++) A[i] = 0.01f * (i+1);
     for (int i = 0; i < K*N; i++) B[i] = 0.02f * (i+1);
     float *dA,*dB,*dC,*dCref;
-    constexpr size_t smemsz = glass::nvidia::gemm_scratch_bytes<float, 16, 16, 16>();
-    constexpr uint32_t tc = glass::nvidia::gemm_threads<float, 16, 16, 16>();
+    constexpr size_t smemsz = glass::nvidia::block::gemm_scratch_bytes<float, 16, 16, 16>();
+    constexpr uint32_t tc = glass::nvidia::block::gemm_threads<float, 16, 16, 16>();
     CUDA_CHECK(cudaMalloc(&dA, M*K*4)); CUDA_CHECK(cudaMalloc(&dB, K*N*4));
     CUDA_CHECK(cudaMalloc(&dC, M*N*4)); CUDA_CHECK(cudaMalloc(&dCref, M*N*4));
     CUDA_CHECK(cudaMemcpy(dA, A.data(), M*K*4, cudaMemcpyHostToDevice));
@@ -259,10 +259,10 @@ static int op_beta0_poison() {
 
 static int op_dispatch_q() {
     // print_dispatch is host-callable per query_simt.cuh.
-    glass::nvidia::print_dispatch<float, 6, 6, 6>();
-    glass::nvidia::print_dispatch<float, 16, 16, 16>();
-    glass::nvidia::print_dispatch<float, 32, 32, 32>();
-    glass::nvidia::print_dispatch<float, 64, 64, 64>();
+    glass::nvidia::block::print_dispatch<float, 6, 6, 6>();
+    glass::nvidia::block::print_dispatch<float, 16, 16, 16>();
+    glass::nvidia::block::print_dispatch<float, 32, 32, 32>();
+    glass::nvidia::block::print_dispatch<float, 64, 64, 64>();
     std::printf("PASS\n");
     return 0;
 }

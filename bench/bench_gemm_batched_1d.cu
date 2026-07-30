@@ -37,7 +37,7 @@ __global__ void k_naive_loop_1d(float** A_ptrs, float** B_ptrs, float** C_ptrs,
                                 volatile float* sink, int iters) {
     for (int rep = 0; rep < iters; rep++) {
         for (int b = 0; b < BATCH; b++) {
-            glass::gemm<float, M, N, K>(1.f, A_ptrs[b], B_ptrs[b], 0.f, C_ptrs[b]);
+            glass::block::gemm<float, M, N, K>(1.f, A_ptrs[b], B_ptrs[b], 0.f, C_ptrs[b]);
             __syncthreads();
         }
         if (threadIdx.x == 0) sink[rep & 0xFF] = C_ptrs[0][0];
@@ -50,7 +50,7 @@ template<int BATCH>
 __global__ void k_batched_1d(float** A_ptrs, float** B_ptrs, float** C_ptrs,
                               volatile float* sink, int iters) {
     for (int rep = 0; rep < iters; rep++) {
-        glass::nvidia::gemm_batched_1d<float, M, N, K, BATCH, TC>(
+        glass::nvidia::block::gemm_batched_1d<float, M, N, K, BATCH, TC>(
             1.f, A_ptrs, B_ptrs, 0.f, C_ptrs);
         __syncthreads();
         if (threadIdx.x == 0) sink[rep & 0xFF] = C_ptrs[0][0];
@@ -63,7 +63,7 @@ template<int BATCH>
 __global__ void k_strided_1d(float* A_shared, float* B_base, float* C_base,
                               volatile float* sink, int iters) {
     for (int rep = 0; rep < iters; rep++) {
-        glass::nvidia::gemm_strided_batched_1d<float, M, N, K, BATCH, TC>(
+        glass::nvidia::block::gemm_strided_batched_1d<float, M, N, K, BATCH, TC>(
             1.f, A_shared, B_base, 0.f, C_base);
         __syncthreads();
         if (threadIdx.x == 0) sink[rep & 0xFF] = C_base[0];

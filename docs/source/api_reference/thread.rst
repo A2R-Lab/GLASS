@@ -18,7 +18,7 @@ from ``threadIdx``, so the functions are launch-shape-agnostic.
 
 Every op delegates to the same ``*_impl`` body its block-scoped sibling uses,
 collapsed through ``ThreadBarrier`` (rank 0, size 1, no-op sync) — the same
-algorithm and operand order as ``glass::`` on one thread, agreeing to within a
+algorithm and operand order as ``glass::block::`` on one thread, agreeing to within a
 few ULP (FMA contraction may differ between the two instantiations;
 ``test/test_thread.py`` pins the bound). They live in the same base headers as
 their block-scoped siblings (under ``namespace thread``), so their rendered

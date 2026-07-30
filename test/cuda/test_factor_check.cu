@@ -20,7 +20,7 @@ __global__ void k_cholchk_block(int n, float* A, int* fail) {
     extern __shared__ float s[];
     for (int i = threadIdx.x; i < n*n; i += blockDim.x) s[i] = A[i];
     __syncthreads();
-    glass::potrf<float, true>((uint32_t)n, s, fail);
+    glass::block::potrf<float, true>((uint32_t)n, s, fail);
     __syncthreads();
     for (int i = threadIdx.x; i < n*n; i += blockDim.x) A[i] = s[i];
 }
@@ -50,7 +50,7 @@ __global__ void k_ldltchk(int n, float* A, int* fail, int* inertia, int pivot, i
     float* sA = s; float* st = s + n*n;
     for (int i = threadIdx.x; i < n*n; i += blockDim.x) sA[i] = A[i];
     __syncthreads();
-    glass::ldlt<float, true>((uint32_t)n, sA, st, pivot != 0,
+    glass::block::ldlt<float, true>((uint32_t)n, sA, st, pivot != 0,
                              pivot != 0 ? piv : nullptr, fail, inertia);
     __syncthreads();
     for (int i = threadIdx.x; i < n*n; i += blockDim.x) A[i] = sA[i];

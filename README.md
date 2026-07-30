@@ -41,10 +41,18 @@ thread → warp → block → nvidia:
 
 | Interface | Scope | What it is / when to choose it | Header |
 |-----------|-------|--------------------------------|--------|
-| `glass::` (**Block**) | block | Hand-rolled SIMT, `threadIdx` / `blockDim` — no deps. The default; one moderate-to-large problem per block | `glass.cuh` |
+| `glass::block::` (**Block**) | block | Hand-rolled SIMT, `threadIdx` / `blockDim` — no deps. The default and the **contract tier** (bit-exact, thread-count invariant, never re-dispatched); one moderate-to-large problem per block | `glass.cuh` |
 | `glass::warp::` (**Warp**) | **warp** | Single-warp SIMT via `__shfl_*_sync` (*selected* L1/L2/L3 ops, no `__syncthreads`). Pack many small independent problems into one block | inline in the base headers (via `glass.cuh`) |
 | `glass::thread::` (**Thread**) | **thread** | Sequential, one problem per thread (compile-time sizes, register-resident up to `N≤7`; branch-free ops only). Pack 32 low-DOF problems into a warp where a warp-per-problem factor would leave most lanes idle | inline in the base headers (via `glass.cuh`) |
-| `glass::nvidia::` (**Nvidia**) | block | CUB + cuBLASDx + cuSOLVERDx, auto-dispatched against SIMT by size (compile-time sizes). When a vendor tensor-core kernel wins at your size | `glass-nvidia.cuh` |
+| `glass::nvidia::block::` (**Nvidia**) | block | CUB + cuBLASDx + cuSOLVERDx, auto-dispatched against SIMT by size (compile-time sizes). When a vendor tensor-core kernel wins at your size. Plus `glass::nvidia::warp::` — CUB `WarpReduce` L1 reductions, one full 32-lane warp per problem | `glass-nvidia.cuh` |
+
+**Bare `glass::op`** (and bare `glass::nvidia::op`) is the **measured-default face**: the
+same block-scope calling contract, with the implementation body chosen per (op, size,
+dtype) by `glass::dispatch_body()` (`glass-defaults.cuh`). Phase 1 pins every cell to the
+block body, so bare names are today the *same entities* as `glass::block::` — all old
+spellings compile unchanged, bit-identical. Pin `glass::block::` explicitly where
+determinism is load-bearing: **explicit namespace = contract tier, bare namespace =
+performance tier**.
 
 > **Note:** `glass::cgrps::` (header `glass-cgrps.cuh`) is a convenience cooperative-groups
 > *alias* of the Block interface — the same SIMT loop indexed via a

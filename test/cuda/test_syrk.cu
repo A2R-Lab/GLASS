@@ -21,29 +21,29 @@
 #include "../../glass.cuh"
 
 // ─── syrk kernel (runtime n,k; flags as template params) ─────────────────────
-template <glass::FillMode FILL, bool TRANSPOSE, bool ROW_MAJOR>
+template <glass::block::FillMode FILL, bool TRANSPOSE, bool ROW_MAJOR>
 __global__ void k_syrk(uint32_t n, uint32_t k, float alpha, float* A, float beta, float* C) {
-    glass::syrk<float, FILL, TRANSPOSE, ROW_MAJOR>(n, k, alpha, A, beta, C);
+    glass::block::syrk<float, FILL, TRANSPOSE, ROW_MAJOR>(n, k, alpha, A, beta, C);
 }
 
-template <glass::FillMode FILL, bool TRANSPOSE, bool ROW_MAJOR>
+template <glass::block::FillMode FILL, bool TRANSPOSE, bool ROW_MAJOR>
 __global__ void k_syr2k(uint32_t n, uint32_t k, float alpha, float* A, float* B, float beta, float* C) {
-    glass::syr2k<float, FILL, TRANSPOSE, ROW_MAJOR>(n, k, alpha, A, B, beta, C);
+    glass::block::syr2k<float, FILL, TRANSPOSE, ROW_MAJOR>(n, k, alpha, A, B, beta, C);
 }
 
 // ─── warp forms (compile-time N,K; one 32-lane warp) ─────────────────────────
-template <uint32_t N, uint32_t K, glass::FillMode FILL, bool TRANSPOSE, bool ROW_MAJOR>
+template <uint32_t N, uint32_t K, glass::block::FillMode FILL, bool TRANSPOSE, bool ROW_MAJOR>
 __global__ void k_syrk_warp(float alpha, float* A, float beta, float* C) {
     glass::warp::syrk<float, N, K, FILL, TRANSPOSE, ROW_MAJOR>(alpha, A, beta, C);
 }
-template <uint32_t N, uint32_t K, glass::FillMode FILL, bool TRANSPOSE, bool ROW_MAJOR>
+template <uint32_t N, uint32_t K, glass::block::FillMode FILL, bool TRANSPOSE, bool ROW_MAJOR>
 __global__ void k_syr2k_warp(float alpha, float* A, float* B, float beta, float* C) {
     glass::warp::syr2k<float, N, K, FILL, TRANSPOSE, ROW_MAJOR>(alpha, A, B, beta, C);
 }
 
 // ─── flag dispatch: select template instantiation from runtime ints ──────────
-static glass::FillMode fill_of(int f) {
-    return (f == 0) ? glass::FillMode::Lower : (f == 1) ? glass::FillMode::Upper : glass::FillMode::Full;
+static glass::block::FillMode fill_of(int f) {
+    return (f == 0) ? glass::block::FillMode::Lower : (f == 1) ? glass::block::FillMode::Upper : glass::block::FillMode::Full;
 }
 
 #define SYRK_CASE(FE, TR, RM)                                                       \
@@ -58,12 +58,12 @@ static glass::FillMode fill_of(int f) {
     }
 
 #define FOR_ALL_FLAGS(MACRO)                                                       \
-    MACRO(glass::FillMode::Lower, false, false) MACRO(glass::FillMode::Lower, false, true)        \
-    MACRO(glass::FillMode::Lower, true,  false) MACRO(glass::FillMode::Lower, true,  true)        \
-    MACRO(glass::FillMode::Upper, false, false) MACRO(glass::FillMode::Upper, false, true)        \
-    MACRO(glass::FillMode::Upper, true,  false) MACRO(glass::FillMode::Upper, true,  true)        \
-    MACRO(glass::FillMode::Full,  false, false) MACRO(glass::FillMode::Full,  false, true)        \
-    MACRO(glass::FillMode::Full,  true,  false) MACRO(glass::FillMode::Full,  true,  true)
+    MACRO(glass::block::FillMode::Lower, false, false) MACRO(glass::block::FillMode::Lower, false, true)        \
+    MACRO(glass::block::FillMode::Lower, true,  false) MACRO(glass::block::FillMode::Lower, true,  true)        \
+    MACRO(glass::block::FillMode::Upper, false, false) MACRO(glass::block::FillMode::Upper, false, true)        \
+    MACRO(glass::block::FillMode::Upper, true,  false) MACRO(glass::block::FillMode::Upper, true,  true)        \
+    MACRO(glass::block::FillMode::Full,  false, false) MACRO(glass::block::FillMode::Full,  false, true)        \
+    MACRO(glass::block::FillMode::Full,  true,  false) MACRO(glass::block::FillMode::Full,  true,  true)
 
 // warp dispatch: compile-time (N,K) from a fixed set, always one 32-lane warp.
 #define WSHAPES(KER, FE, TR, RM, ...)                                              \
@@ -87,7 +87,7 @@ int main(int argc, char** argv) {
     int THREADS    = atoi(argv[2]);
     uint32_t n     = (uint32_t)atoi(argv[3]);
     uint32_t k     = (uint32_t)atoi(argv[4]);
-    glass::FillMode fill  = fill_of(atoi(argv[5]));
+    glass::block::FillMode fill  = fill_of(atoi(argv[5]));
     bool trans     = atoi(argv[6]) != 0;
     bool rowmajor  = atoi(argv[7]) != 0;
     float alpha    = atof(argv[8]);

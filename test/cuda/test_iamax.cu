@@ -37,16 +37,16 @@ static void print_device_uint(uint32_t* d, int n) {
 
 // ─── kernel wrappers ─────────────────────────────────────────────────────────
 __global__ void k_iamax_simple(int n, float* x, uint32_t* out, float* s_temp) {
-    glass::iamax(static_cast<uint32_t>(n), x, out, s_temp);
+    glass::block::iamax(static_cast<uint32_t>(n), x, out, s_temp);
 }
 __global__ void k_iamax_lm(int n, float* x, uint32_t* out) {
-    glass::iamax_lowmem(static_cast<uint32_t>(n), x, out);
+    glass::block::iamax_lowmem(static_cast<uint32_t>(n), x, out);
 }
 __global__ void k_iamax_hs(int n, float* x, uint32_t* out, float* s_temp) {
-    glass::iamax_fast(static_cast<uint32_t>(n), x, out, s_temp);
+    glass::block::iamax_fast(static_cast<uint32_t>(n), x, out, s_temp);
 }
 __global__ void k_iamax_val(int n, float* x, uint32_t* out, float* out_val, float* s_temp) {
-    glass::iamax(static_cast<uint32_t>(n), x, out, out_val, s_temp);
+    glass::block::iamax(static_cast<uint32_t>(n), x, out, out_val, s_temp);
 }
 // Warp variant: WARPS independent vectors, one 32-lane warp (threadIdx.y) each.
 // Warp w owns x + w*n; the returned index (broadcast to all lanes) is written by

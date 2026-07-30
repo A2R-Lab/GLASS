@@ -42,9 +42,9 @@ __global__ void k_bench(const float* A, const float* B, float* C, int iters) {
             // TRAILING_SYNC=false: each output is owned by the same warp every
             // iteration, so back-to-back reps have no cross-warp hazard on sC —
             // matches the barrier-free serial gemm for a fair compute compare.
-            glass::gemm_reduced<float, M, N, K, false, false, false>(1.f, sA, sB, 1.f, sC);
+            glass::block::gemm_reduced<float, M, N, K, false, false, false>(1.f, sA, sB, 1.f, sC);
         else
-            glass::gemm<float, M, N, K>(1.f, sA, sB, 1.f, sC);
+            glass::block::gemm<float, M, N, K>(1.f, sA, sB, 1.f, sC);
     }
     __syncthreads();
     if (threadIdx.x == 0) C[0] = sC[0];   // anti-DCE

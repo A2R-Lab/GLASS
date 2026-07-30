@@ -5,7 +5,7 @@ Single-warp SIMT variants of selected primitives: one 32-lane warp cooperates
 using raw ``__shfl_*_sync`` intrinsics, with **no shared scratch, no inter-warp
 combine, and no** ``__syncthreads``. They target *warp-per-problem* kernels — a
 block that solves many independent problems, one per warp — where the
-block-scoped ``glass::`` surface would serialize across warps and the
+block-scoped ``glass::block::`` surface would serialize across warps and the
 cooperative-groups / vendor paths add overhead at these tiny sizes.
 
 Contract: the caller must run a full 32-lane warp (mask ``0xffffffff``);

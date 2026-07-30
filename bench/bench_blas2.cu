@@ -40,13 +40,13 @@ static double elapsed_ms(struct timespec a, struct timespec b) {
 }
 
 // ─── BLOCK model: block b owns problem b ─────────────────────────────────────
-template<typename T,int N> __global__ void kb_syrk (T* A, T* C) { int p=blockIdx.x; glass::syrk<T,N,N>((T)1, A+(size_t)p*N*N, (T)0, C+(size_t)p*N*N); }
-template<typename T,int N> __global__ void kb_syr2k(T* A, T* B, T* C) { int p=blockIdx.x; glass::syr2k<T,N,N>((T)1, A+(size_t)p*N*N, B+(size_t)p*N*N, (T)0, C+(size_t)p*N*N); }
-template<typename T,int N> __global__ void kb_ldlt (T* A) { __shared__ T s[N+1]; int p=blockIdx.x; glass::ldlt<T,N>(A+(size_t)p*N*N, s); }
-template<typename T,int N> __global__ void kb_ldltsv(T* A, T* x) { __shared__ T s[N+1]; int p=blockIdx.x; glass::ldlt<T,N>(A+(size_t)p*N*N, s); glass::ldlt_solve<T,N>(A+(size_t)p*N*N, x+p*N); }
-template<typename T,int N> __global__ void kb_inv  (T* G) { __shared__ T s[2*N+1]; int p=blockIdx.x; glass::inv<T,N>(G+(size_t)p*2*N*N, s); }
-template<typename T,int N> __global__ void kb_trmv (T* A, T* x, T* y) { int p=blockIdx.x; glass::trmv<T,N>(A+(size_t)p*N*N, x+p*N, y+p*N); }
-template<typename T,int N> __global__ void kb_ger  (T* A, T* x, T* y) { int p=blockIdx.x; glass::ger<T,N,N>((T)1, x+p*N, y+p*N, A+(size_t)p*N*N); }
+template<typename T,int N> __global__ void kb_syrk (T* A, T* C) { int p=blockIdx.x; glass::block::syrk<T,N,N>((T)1, A+(size_t)p*N*N, (T)0, C+(size_t)p*N*N); }
+template<typename T,int N> __global__ void kb_syr2k(T* A, T* B, T* C) { int p=blockIdx.x; glass::block::syr2k<T,N,N>((T)1, A+(size_t)p*N*N, B+(size_t)p*N*N, (T)0, C+(size_t)p*N*N); }
+template<typename T,int N> __global__ void kb_ldlt (T* A) { __shared__ T s[N+1]; int p=blockIdx.x; glass::block::ldlt<T,N>(A+(size_t)p*N*N, s); }
+template<typename T,int N> __global__ void kb_ldltsv(T* A, T* x) { __shared__ T s[N+1]; int p=blockIdx.x; glass::block::ldlt<T,N>(A+(size_t)p*N*N, s); glass::block::ldlt_solve<T,N>(A+(size_t)p*N*N, x+p*N); }
+template<typename T,int N> __global__ void kb_inv  (T* G) { __shared__ T s[2*N+1]; int p=blockIdx.x; glass::block::inv<T,N>(G+(size_t)p*2*N*N, s); }
+template<typename T,int N> __global__ void kb_trmv (T* A, T* x, T* y) { int p=blockIdx.x; glass::block::trmv<T,N>(A+(size_t)p*N*N, x+p*N, y+p*N); }
+template<typename T,int N> __global__ void kb_ger  (T* A, T* x, T* y) { int p=blockIdx.x; glass::block::ger<T,N,N>((T)1, x+p*N, y+p*N, A+(size_t)p*N*N); }
 
 // ─── WARP model: warp (blockIdx.x*WPB + threadIdx.y) owns its problem ─────────
 // Only syrk/syr2k/ldlt/ldltsv have glass::warp:: variants (inv/trmv/ger are block-only).

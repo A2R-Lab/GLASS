@@ -75,6 +75,7 @@ methodology). The script:
 | `paper_hostblas_*.txt` | Jetson columns for the hostblas + latency figures |
 | `paper_fusion_*.txt` | Jetson fusion curves |
 | `robotics_sweep_*.txt` | Jetson robotics tier panels |
+| `body_dispatch_sweep_*.txt` | the sm_87 in-block body-dispatch table (the bare `glass::` face's Phase-2 `dispatch_body()` cells for this arch — same sweep the desktop quiet window runs) |
 | `provenance/` | paper's exact hardware/software statement; AGX-vs-NX-vs-Nano scaling axis (SM count, clocks); energy/solve from `tegrastats_run.txt` |
 
 Troubleshooting:

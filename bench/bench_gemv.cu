@@ -41,7 +41,7 @@ static double elapsed_us(struct timespec a, struct timespec b) {
 // (global): reads A, x from global memory each call
 __global__ void k_glass_gemv_global(float* A, float* x, float* y, int m, int n, int iters) {
     for (int rep = 0; rep < iters; rep++) {
-        glass::gemv<float>(m, n, 1.f, A, x, 1.f, y);
+        glass::block::gemv<float>(m, n, 1.f, A, x, 1.f, y);
     }
 }
 
@@ -56,7 +56,7 @@ __global__ void k_glass_gemv_shared(float* A, float* x, float* y, int m, int n, 
     for (int i = threadIdx.x; i < m;     i += blockDim.x) s_y[i] = 0.f;
     __syncthreads();
     for (int rep = 0; rep < iters; rep++) {
-        glass::gemv<float>(m, n, 1.f, s_A, s_x, 1.f, s_y);
+        glass::block::gemv<float>(m, n, 1.f, s_A, s_x, 1.f, s_y);
     }
     if (threadIdx.x == 0) y[0] = s_y[0]; // prevent DCE
 }
@@ -68,7 +68,7 @@ __global__ void k_glass_gemv_shared(float* A, float* x, float* y, int m, int n, 
         static const int smem_size = (M*N + N + M) * sizeof(float);                         \
         __global__ void kernel_global(float* A, float* x, float* y, int iters) {             \
             for (int rep = 0; rep < iters; rep++)                                             \
-                glass::gemv<float, M, N>(1.f, A, x, 1.f, y);                                \
+                glass::block::gemv<float, M, N>(1.f, A, x, 1.f, y);                                \
         }                                                                                     \
         __global__ void kernel_smem(float* A, float* x, float* y, int iters) {               \
             extern __shared__ float smem[];                                                   \
@@ -80,7 +80,7 @@ __global__ void k_glass_gemv_shared(float* A, float* x, float* y, int m, int n, 
             for (int i = threadIdx.x; i < M;   i += blockDim.x) s_y[i] = 0.f;              \
             __syncthreads();                                                                  \
             for (int rep = 0; rep < iters; rep++)                                             \
-                glass::gemv<float, M, N>(1.f, s_A, s_x, 1.f, s_y);                         \
+                glass::block::gemv<float, M, N>(1.f, s_A, s_x, 1.f, s_y);                         \
             if (threadIdx.x == 0) y[0] = s_y[0];                                            \
         }                                                                                     \
     }
@@ -254,7 +254,7 @@ DEFINE_CUBLASDX_GEMV(64, 64)
 // Two variants: default block_dim, and BlockDim<THREADS> pinned.
 // Both write to a volatile sink each iteration to defeat dead-store elimination.
 
-namespace glass { namespace nvidia {
+namespace glass { namespace nvidia { namespace block {
     DEFINE_NVIDIA_GEMV_BLOCKDIM(4,  4,  THREADS)
     DEFINE_NVIDIA_GEMV_BLOCKDIM(6,  6,  THREADS)
     DEFINE_NVIDIA_GEMV_BLOCKDIM(8,  8,  THREADS)
@@ -262,13 +262,13 @@ namespace glass { namespace nvidia {
     DEFINE_NVIDIA_GEMV_BLOCKDIM(14, 14, THREADS)
     DEFINE_NVIDIA_GEMV_BLOCKDIM(24, 24, THREADS)
     DEFINE_NVIDIA_GEMV_BLOCKDIM(64, 64, THREADS)
-}} // namespace glass::nvidia
+}}} // namespace glass::nvidia::block
 
 template<int M, int N>
 __global__ void k_nv_gemv_default(float* A, float* x, float* y, volatile float* sink, int iters) {
     extern __shared__ __align__(16) char nv_smem[];
     for (int rep = 0; rep < iters; rep++) {
-        glass::nvidia::gemv<float, M, N>(1.f, A, x, 0.f, y, nv_smem);
+        glass::nvidia::block::gemv<float, M, N>(1.f, A, x, 0.f, y, nv_smem);
         __syncthreads();
         if (threadIdx.x == 0) sink[rep & 0xFF] = y[0];
         __syncthreads();
@@ -279,7 +279,7 @@ template<int M, int N, int TC>
 __global__ void k_nv_gemv_blockdim(float* A, float* x, float* y, volatile float* sink, int iters) {
     extern __shared__ __align__(16) char nv_smem[];
     for (int rep = 0; rep < iters; rep++) {
-        glass::nvidia::gemv<float, M, N, TC>(1.f, A, x, 0.f, y, nv_smem);
+        glass::nvidia::block::gemv<float, M, N, TC>(1.f, A, x, 0.f, y, nv_smem);
         __syncthreads();
         if (threadIdx.x == 0) sink[rep & 0xFF] = y[0];
         __syncthreads();
@@ -288,8 +288,8 @@ __global__ void k_nv_gemv_blockdim(float* A, float* x, float* y, volatile float*
 
 #define RUN_NVIDIA_GEMV(M, N, dA, dx, dy, sink, iters, t0, t1)                          \
     {                                                                                    \
-        constexpr auto smem_def = glass::nvidia::gemv_scratch_bytes<float, M, N>();         \
-        constexpr auto thr_def  = glass::nvidia::gemv_threads<float, M, N>();           \
+        constexpr auto smem_def = glass::nvidia::block::gemv_scratch_bytes<float, M, N>();         \
+        constexpr auto thr_def  = glass::nvidia::block::gemv_threads<float, M, N>();           \
         cudaMemset(dy, 0, (size_t)M*sizeof(float));                                      \
         clock_gettime(CLOCK_MONOTONIC, &(t0));                                            \
         k_nv_gemv_default<M, N><<<1, thr_def, smem_def>>>(dA, dx, dy, sink, iters);     \
@@ -297,7 +297,7 @@ __global__ void k_nv_gemv_blockdim(float* A, float* x, float* y, volatile float*
         clock_gettime(CLOCK_MONOTONIC, &(t1));                                            \
         printf("glass::nvidia gemv (default) m=%2d n=%2d  %.3f us/op\n",                \
                M, N, elapsed_us(t0, t1) / iters);                                        \
-        constexpr auto smem_bd = glass::nvidia::gemv_scratch_bytes<float, M, N, THREADS>(); \
+        constexpr auto smem_bd = glass::nvidia::block::gemv_scratch_bytes<float, M, N, THREADS>(); \
         cudaMemset(dy, 0, (size_t)M*sizeof(float));                                      \
         clock_gettime(CLOCK_MONOTONIC, &(t0));                                            \
         k_nv_gemv_blockdim<M, N, THREADS><<<1, THREADS, smem_bd>>>(dA, dx, dy, sink, iters); \

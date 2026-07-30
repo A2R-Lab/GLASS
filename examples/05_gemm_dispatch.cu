@@ -19,7 +19,7 @@ __global__ void dispatch_kernel(float *A, float *B, float *C,
     // TILE defaults to 8, so the B-tile starts m*8 floats past s_A.
     float *s_A = have_smem ? scratch          : nullptr;
     float *s_B = have_smem ? scratch + m * 8  : nullptr;
-    glass::gemm_dispatch(static_cast<uint32_t>(m), static_cast<uint32_t>(n),
+    glass::block::gemm_dispatch(static_cast<uint32_t>(m), static_cast<uint32_t>(n),
                          static_cast<uint32_t>(k), 1.f, A, B, 0.f, C, s_A, s_B);
 }
 

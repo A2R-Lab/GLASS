@@ -27,8 +27,8 @@ constexpr float LAMBDA = 3.0f;  // temperature
 
 __global__ void k_weights(const float* J, float* w, unsigned int* best) {
     extern __shared__ float scr[];
-    glass::softmax<float>(NROLL, -LAMBDA, J, w, scr);
-    glass::argmin<float>(NROLL, J, best, scr);
+    glass::block::softmax<float>(NROLL, -LAMBDA, J, w, scr);
+    glass::block::argmin<float>(NROLL, J, best, scr);
 }
 
 int main() {
@@ -43,8 +43,8 @@ int main() {
     cudaMalloc(&dbest, sizeof(unsigned int));
     cudaMemcpy(dJ, hJ, sizeof(hJ), cudaMemcpyHostToDevice);
 
-    size_t smem = glass::softmax_scratch_bytes<float>(NROLL);
-    size_t arg_smem = glass::argreduce_scratch_bytes<float>(256);
+    size_t smem = glass::block::softmax_scratch_bytes<float>(NROLL);
+    size_t arg_smem = glass::block::argreduce_scratch_bytes<float>(256);
     if (arg_smem > smem) smem = arg_smem;   // the kernel reuses one buffer for both ops
     k_weights<<<1, 64,  smem>>>(dJ, dw64,  dbest);
     k_weights<<<1, 256, smem>>>(dJ, dw256, dbest);

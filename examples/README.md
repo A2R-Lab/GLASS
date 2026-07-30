@@ -20,12 +20,12 @@ build. For the full API surface and the backend-choice guide, read that README.
 | [`11_rowmajor_is_transpose.cu`](11_rowmajor_is_transpose.cu) | **"row-major is just a transpose"** — a row-major operand read with `TRANSPOSE_*` gives bit-identical output (why per-operand `ROW_MAJOR` was pruned) | pure SIMT — no extra deps |
 | [`12_nrm2.cu`](12_nrm2.cu) | Euclidean norm `nrm2` (BLAS name; `np.linalg.norm` / Eigen `x.norm()`), block + warp forms | pure SIMT — no extra deps |
 | [`13_gemm_strided.cu`](13_gemm_strided.cu) | `gemm_strided` — GEMM on column-major sub-blocks with explicit leading dims, `alpha`/`beta` at the front | pure SIMT — no extra deps |
-| [`03_reduce.cu`](03_reduce.cu) | block reduction: `glass::reduce` and the warp-shuffle `glass::reduce_fast` (with scratch) | pure SIMT — no extra deps |
+| [`03_reduce.cu`](03_reduce.cu) | block reduction: `glass::block::reduce` and the warp-shuffle `glass::block::reduce_fast` (with scratch) | pure SIMT — no extra deps |
 | [`04_cgrps.cu`](04_cgrps.cu) | the **cooperative-groups** variant `glass::cgrps::gemm` (whole-block or warp-tile) | pure SIMT — no extra deps |
-| [`05_gemm_dispatch.cu`](05_gemm_dispatch.cu) | `glass::gemm_dispatch` + dynamic shared memory via the `glass_gemm_dispatch_smem` host helper (tiled path) | pure SIMT — no extra deps |
-| [`06_nvidia_gemm.cu`](06_nvidia_gemm.cu) | the cuBLASDx-backed `glass::nvidia::gemm` path | **requires NVIDIA MathDx** |
+| [`05_gemm_dispatch.cu`](05_gemm_dispatch.cu) | `glass::block::gemm_dispatch` + dynamic shared memory via the `glass_gemm_dispatch_smem` host helper (tiled path) | pure SIMT — no extra deps |
+| [`06_nvidia_gemm.cu`](06_nvidia_gemm.cu) | the cuBLASDx-backed `glass::nvidia::block::gemm` path | **requires NVIDIA MathDx** |
 | [`07_warp_ops.cu`](07_warp_ops.cu) | single-warp `glass::warp::` ops (`reduce`, 4×4 `gemm`, SPD `potrf`+`trsm`+`trsm_transpose`), launched `<<<1,32>>>` | pure SIMT — no extra deps |
-| [`08_pcg_solve.cu`](08_pcg_solve.cu) | block-tridiagonal PCG solve `glass::pcg` (`[L\|D\|R]` strips, padded vectors, block-Jacobi preconditioner) | pure SIMT — no extra deps |
+| [`08_pcg_solve.cu`](08_pcg_solve.cu) | block-tridiagonal PCG solve `glass::block::pcg` (`[L\|D\|R]` strips, padded vectors, block-Jacobi preconditioner) | pure SIMT — no extra deps |
 | [`09_backend_picker.cu`](09_backend_picker.cu) | choose a backend + launch config with `glass-defaults.cuh` (`suggested_backend` / `suggested_block_threads` / `suggested_warps_per_block`), then dispatch a real SPD solve to the picked launch | pure SIMT — no extra deps |
 | [`14_ldlt_solve.cu`](14_ldlt_solve.cu) | symmetric-**indefinite** solve `ldlt` + `ldlt_solve` (no Cholesky exists), plus the `CHECK=true` failure-flag + **inertia** reporting on a good and a zero-pivot matrix (`ldlt_scratch_bytes`) | pure SIMT — no extra deps |
 | [`15_riccati_gain.cu`](15_riccati_gain.cu) | LQR feedback gain `K = (R + BᵀPB)⁻¹(BᵀPA)` via `riccati_gain`, dynamic smem sized by `riccati_scratch_bytes<T,NX,NU>()`, verified against a plain-loop CPU reference | pure SIMT — no extra deps |

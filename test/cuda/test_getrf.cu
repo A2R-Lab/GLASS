@@ -53,39 +53,39 @@ static void print_device_uvec(const uint32_t* d, int n) {
 // ─── kernels ─────────────────────────────────────────────────────────────────
 
 __global__ void k_getrf(int n, float* A, uint32_t* piv) {
-    glass::getrf<float>(n, A, piv);
+    glass::block::getrf<float>(n, A, piv);
 }
 __global__ void k_getrf_check(int n, float* A, uint32_t* piv, int* fail) {
-    glass::getrf<float, true>(n, A, piv, fail);
+    glass::block::getrf<float, true>(n, A, piv, fail);
 }
 __global__ void k_getrs(int n, int nrhs, const float* LU, const uint32_t* piv, float* B) {
-    glass::getrs<float>(n, nrhs, LU, piv, B);
+    glass::block::getrs<float>(n, nrhs, LU, piv, B);
 }
 __global__ void k_getrs_t(int n, int nrhs, const float* LU, const uint32_t* piv, float* B) {
-    glass::getrs<float, /*TRANSPOSE=*/true>(n, nrhs, LU, piv, B);
+    glass::block::getrs<float, /*TRANSPOSE=*/true>(n, nrhs, LU, piv, B);
 }
 __global__ void k_gesv(int n, int nrhs, float* A, uint32_t* piv, float* B) {
-    glass::gesv<float>(n, nrhs, A, piv, B);
+    glass::block::gesv<float>(n, nrhs, A, piv, B);
 }
 // Compile-time overloads (N=4, NRHS=3): fused gesv, and split getrf + getrs.
 __global__ void k_gesv_ct_4_3(float* A, uint32_t* piv, float* B) {
-    glass::gesv<float, 4, 3>(A, piv, B);
+    glass::block::gesv<float, 4, 3>(A, piv, B);
 }
 __global__ void k_getrf_getrs_ct_4_3(float* A, uint32_t* piv, float* B) {
-    glass::getrf<float, 4>(A, piv);
-    glass::getrs<float, 4, 3>(A, piv, B);
+    glass::block::getrf<float, 4>(A, piv);
+    glass::block::getrs<float, 4, 3>(A, piv, B);
 }
 __global__ void k_laswp_vec(int n, const uint32_t* piv, float* x) {
-    glass::laswp<float>(piv, 0, n, x);
+    glass::block::laswp<float>(piv, 0, n, x);
 }
 __global__ void k_laswp_vec_rev(int n, const uint32_t* piv, float* x) {
-    glass::laswp<float, /*REVERSE=*/true>(piv, 0, n, x);
+    glass::block::laswp<float, /*REVERSE=*/true>(piv, 0, n, x);
 }
 __global__ void k_laswp_mat(int n, const uint32_t* piv, float* A) {
-    glass::laswp<float>(n, A, piv, 0, n);
+    glass::block::laswp<float>(n, A, piv, 0, n);
 }
 __global__ void k_laswp_mat_rev(int n, const uint32_t* piv, float* A) {
-    glass::laswp<float, /*REVERSE=*/true>(n, A, piv, 0, n);
+    glass::block::laswp<float, /*REVERSE=*/true>(n, A, piv, 0, n);
 }
 
 // ─── main ────────────────────────────────────────────────────────────────────

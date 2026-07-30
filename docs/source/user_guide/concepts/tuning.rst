@@ -120,6 +120,17 @@ tier as of the 2026-07-18 sweep — see the note in
 behind an SM dispatch; ``bench/tune.py --sm auto`` adds or refreshes your GPU's table
 (and the tables below) in-tree, leaving other arches' tables untouched.
 
+Note that ``suggested_backend<>`` advises **launch-level** packing — the caller
+changes the ``<<<grid, block>>>``. Distinct from it, ``glass::dispatch_body()``
+(also ``glass-defaults.cuh``) picks the **in-block body** behind the bare
+``glass::op`` face under a *fixed* block-scope calling contract — the launch
+does not change. Phase 1 pins every cell to the block body, so bare names are
+exactly ``glass::block::``; the Phase-2 hook is a measured in-block body sweep
+(a future ``tune.py`` leg) that regenerates the table and may move cells to a
+warp- or thread-body executed inside the block — a receipt-attested retune,
+never a silent change. Consumers that need bit-stability across retunes pin
+``glass::block::`` explicitly (see :doc:`namespaces`).
+
 Why bother?
 -----------
 

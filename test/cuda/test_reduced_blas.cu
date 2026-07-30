@@ -16,13 +16,13 @@ enum { BLOCK = 0, WARP = 1, CGRPS = 2 };
 
 template <int S, uint32_t M, uint32_t N, bool TR>
 __global__ void k_gemv(float al, const float* A, const float* x, float be, float* y) {
-    if (S == BLOCK)     glass::gemv_reduced<float, M, N, TR>(al, A, x, be, y);
+    if (S == BLOCK)     glass::block::gemv_reduced<float, M, N, TR>(al, A, x, be, y);
     else if (S == WARP) glass::warp::gemv_reduced<float, M, N, TR>(al, A, x, be, y);
     else                glass::cgrps::gemv_reduced<float, M, N, TR>(al, A, x, be, y);
 }
 template <int S, uint32_t R, uint32_t C, bool TR>
 __global__ void k_syrk(float al, const float* A, float be, float* Cm) {
-    if (S == BLOCK)     glass::syrk_reduced<float, R, C, TR>(al, A, be, Cm);
+    if (S == BLOCK)     glass::block::syrk_reduced<float, R, C, TR>(al, A, be, Cm);
     else if (S == WARP) glass::warp::syrk_reduced<float, R, C, TR>(al, A, be, Cm);
     else                glass::cgrps::syrk_reduced<float, R, C, TR>(al, A, be, Cm);
 }

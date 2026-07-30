@@ -15,21 +15,21 @@
 #include "../../glass.cuh"
 
 // bool → enum translators for the flag-templated test kernels
-__host__ __device__ constexpr glass::FillMode FM(bool lower) { return lower ? glass::FillMode::Lower : glass::FillMode::Upper; }
-__host__ __device__ constexpr glass::Diag     DG(bool unit)  { return unit ? glass::Diag::Unit : glass::Diag::NonUnit; }
+__host__ __device__ constexpr glass::block::FillMode FM(bool lower) { return lower ? glass::block::FillMode::Lower : glass::block::FillMode::Upper; }
+__host__ __device__ constexpr glass::block::Diag     DG(bool unit)  { return unit ? glass::block::Diag::Unit : glass::block::Diag::NonUnit; }
 
 
 // ── trsv kernels (templated over the 3 flags) ─────────────────────────────────
 template <bool LOWER, bool UNIT, bool TRANSPOSE>
 __global__ void k_trsv(uint32_t n, const float* A, float* x) {
-    glass::trsv<float, FM(LOWER), DG(UNIT), TRANSPOSE>(n, A, x);
+    glass::block::trsv<float, FM(LOWER), DG(UNIT), TRANSPOSE>(n, A, x);
 }
 
 // ── trmv in-place kernels (templated over the 3 flags) ────────────────────────
 template <bool LOWER, bool UNIT, bool TRANSPOSE>
 __global__ void k_trmv(uint32_t n, const float* A, float* x) {
     extern __shared__ float scratch[];
-    glass::trmv<float, FM(LOWER), DG(UNIT), TRANSPOSE>(n, A, x, scratch);
+    glass::block::trmv<float, FM(LOWER), DG(UNIT), TRANSPOSE>(n, A, x, scratch);
 }
 
 int main(int argc, char** argv) {

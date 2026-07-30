@@ -20,34 +20,34 @@
 enum { SURF_BLOCK = 0, SURF_WARP = 1, SURF_CGRPS = 2 };
 
 // ── tensor_vec_contract ──────────────────────────────────────────────────────
-template <int SURF, uint32_t K, uint32_t A, uint32_t B, glass::TensorAxis C,
+template <int SURF, uint32_t K, uint32_t A, uint32_t B, glass::block::TensorAxis C,
           bool SYM, bool ACC, bool RM>
 __global__ void k_tvc(const float* T, const float* v, float* M) {
-    if (SURF == SURF_BLOCK)      glass::tensor_vec_contract<float, K, A, B, C, SYM, ACC, RM>(T, v, M);
+    if (SURF == SURF_BLOCK)      glass::block::tensor_vec_contract<float, K, A, B, C, SYM, ACC, RM>(T, v, M);
     else if (SURF == SURF_WARP)  glass::warp::tensor_vec_contract<float, K, A, B, C, SYM, ACC, RM>(T, v, M);
     else                         glass::cgrps::tensor_vec_contract<float, K, A, B, C, SYM, ACC, RM>(T, v, M);
 }
 
-template <uint32_t K, uint32_t A, uint32_t B, glass::TensorAxis C, bool SYM, bool ACC, bool RM>
+template <uint32_t K, uint32_t A, uint32_t B, glass::block::TensorAxis C, bool SYM, bool ACC, bool RM>
 static void tvc_final(int surf, int th, const float* dT, const float* dv, float* dM) {
-    if constexpr (!SYM || (C == glass::TensorAxis::K && A == B)) {   // skip invalid SYMMETRIC combos
+    if constexpr (!SYM || (C == glass::block::TensorAxis::K && A == B)) {   // skip invalid SYMMETRIC combos
         if      (surf == SURF_BLOCK) k_tvc<SURF_BLOCK, K, A, B, C, SYM, ACC, RM><<<1, th>>>(dT, dv, dM);
         else if (surf == SURF_WARP)  k_tvc<SURF_WARP,  K, A, B, C, SYM, ACC, RM><<<1, th>>>(dT, dv, dM);
         else                         k_tvc<SURF_CGRPS, K, A, B, C, SYM, ACC, RM><<<1, th>>>(dT, dv, dM);
     }
 }
 
-template <uint32_t K, uint32_t A, uint32_t B, glass::TensorAxis C, bool SYM, bool ACC>
+template <uint32_t K, uint32_t A, uint32_t B, glass::block::TensorAxis C, bool SYM, bool ACC>
 static void tvc_rm(int surf, int th, bool rm, const float* dT, const float* dv, float* dM) {
     if (rm) tvc_final<K, A, B, C, SYM, ACC, true >(surf, th, dT, dv, dM);
     else    tvc_final<K, A, B, C, SYM, ACC, false>(surf, th, dT, dv, dM);
 }
-template <uint32_t K, uint32_t A, uint32_t B, glass::TensorAxis C, bool SYM>
+template <uint32_t K, uint32_t A, uint32_t B, glass::block::TensorAxis C, bool SYM>
 static void tvc_acc(int surf, int th, bool acc, bool rm, const float* dT, const float* dv, float* dM) {
     if (acc) tvc_rm<K, A, B, C, SYM, true >(surf, th, rm, dT, dv, dM);
     else     tvc_rm<K, A, B, C, SYM, false>(surf, th, rm, dT, dv, dM);
 }
-template <uint32_t K, uint32_t A, uint32_t B, glass::TensorAxis C>
+template <uint32_t K, uint32_t A, uint32_t B, glass::block::TensorAxis C>
 static void tvc_sym(int surf, int th, bool sym, bool acc, bool rm, const float* dT, const float* dv, float* dM) {
     if (sym) tvc_acc<K, A, B, C, true >(surf, th, acc, rm, dT, dv, dM);
     else     tvc_acc<K, A, B, C, false>(surf, th, acc, rm, dT, dv, dM);
@@ -55,15 +55,15 @@ static void tvc_sym(int surf, int th, bool sym, bool acc, bool rm, const float* 
 template <uint32_t K, uint32_t A, uint32_t B>
 static void tvc_contract(int surf, int th, int c, bool sym, bool acc, bool rm,
                          const float* dT, const float* dv, float* dM) {
-    if (c == 0)      tvc_sym<K, A, B, glass::TensorAxis::K>(surf, th, sym, acc, rm, dT, dv, dM);
-    else if (c == 1) tvc_sym<K, A, B, glass::TensorAxis::A>(surf, th, sym, acc, rm, dT, dv, dM);
-    else             tvc_sym<K, A, B, glass::TensorAxis::B>(surf, th, sym, acc, rm, dT, dv, dM);
+    if (c == 0)      tvc_sym<K, A, B, glass::block::TensorAxis::K>(surf, th, sym, acc, rm, dT, dv, dM);
+    else if (c == 1) tvc_sym<K, A, B, glass::block::TensorAxis::A>(surf, th, sym, acc, rm, dT, dv, dM);
+    else             tvc_sym<K, A, B, glass::block::TensorAxis::B>(surf, th, sym, acc, rm, dT, dv, dM);
 }
 
 // ── vec_tensor_vec ───────────────────────────────────────────────────────────
 template <int SURF, uint32_t K, uint32_t A, uint32_t B, bool ACC, bool RM>
 __global__ void k_vtv(const float* T, const float* u, const float* w, float* s) {
-    if (SURF == SURF_BLOCK)      glass::vec_tensor_vec<float, K, A, B, ACC, RM>(T, u, w, s);
+    if (SURF == SURF_BLOCK)      glass::block::vec_tensor_vec<float, K, A, B, ACC, RM>(T, u, w, s);
     else if (SURF == SURF_WARP)  glass::warp::vec_tensor_vec<float, K, A, B, ACC, RM>(T, u, w, s);
     else                         glass::cgrps::vec_tensor_vec<float, K, A, B, ACC, RM>(T, u, w, s);
 }

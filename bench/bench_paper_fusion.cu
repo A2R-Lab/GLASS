@@ -192,7 +192,7 @@ __global__ void k_fused_riccati(const T* gP, const T* gA, const T* gB, const T* 
     for (uint32_t i = rank; i < NU*NU; i += size)   sR[i] = gR[p*NU*NU + i];
     __syncthreads();
 
-    glass::riccati_gain<T, NX, NU>(sP, sA, sB, sR, sK, scr);
+    glass::block::riccati_gain<T, NX, NU>(sP, sA, sB, sR, sK, scr);
 
     for (uint32_t i = rank; i < NU*NX; i += size)   gK[p*NU*NX + i] = sK[i];
 }

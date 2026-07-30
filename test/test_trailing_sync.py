@@ -29,6 +29,8 @@ def _run(binary, op):
 
 @pytest.mark.parametrize("op", [
     "l1_dot",
+    "l1_warp_f32",      # glass::nvidia::warp:: CUB WarpReduce reduce/dot/nrm2
+    "l1_warp_f64",      # (correctness vs host ref + sync parity, 4 warps/block)
     "l3_simt_batched",
     "l3_simt_strided_batched",
 ])

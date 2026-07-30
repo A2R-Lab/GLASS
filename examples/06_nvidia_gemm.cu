@@ -28,12 +28,12 @@
 constexpr int M = 16, N = 16, K = 16;
 
 // Host-queryable, constexpr: the thread count + shared bytes cuBLASDx wants.
-constexpr auto SMEM    = glass::nvidia::gemm_scratch_bytes<float, M, N, K>();
-constexpr auto THREADS = glass::nvidia::gemm_threads<float, M, N, K>();
+constexpr auto SMEM    = glass::nvidia::block::gemm_scratch_bytes<float, M, N, K>();
+constexpr auto THREADS = glass::nvidia::block::gemm_threads<float, M, N, K>();
 
 __global__ void nvidia_gemm(float *A, float *B, float *C) {
     extern __shared__ __align__(16) char smem_buf[];
-    glass::nvidia::gemm<float, M, N, K>(1.f, A, B, 0.f, C, smem_buf);
+    glass::nvidia::block::gemm<float, M, N, K>(1.f, A, B, 0.f, C, smem_buf);
 }
 
 int main() {

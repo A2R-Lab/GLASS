@@ -1,10 +1,16 @@
 Using the NVIDIA Backend
 ========================
 
-The ``glass::nvidia::`` namespace routes to NVIDIA's device-side libraries —
-CUB (L1), cuBLASDx (L2/L3 GEMM/GEMV/batched), and cuSOLVERDx (LAPACK) — while
-preserving the same one-block ``__device__`` calling convention. These wrappers
-require **compile-time** matrix sizes.
+The ``glass::nvidia::block::`` interface routes to NVIDIA's device-side
+libraries — CUB (L1), cuBLASDx (L2/L3 GEMM/GEMV/batched), and cuSOLVERDx
+(LAPACK) — while preserving the same one-block ``__device__`` calling
+convention. These wrappers require **compile-time** matrix sizes. (Bare
+``glass::nvidia::`` spellings are the measured-default face and currently
+resolve to the same entities — see :doc:`../concepts/namespaces`. There is
+also ``glass::nvidia::warp::`` — CUB ``WarpReduce`` ``reduce`` / ``dot`` /
+``nrm2``, one FULL 32-lane warp per problem, per-warp scratch via
+``warp_reduce_scratch_bytes<T>()``, ``TRAILING_SYNC`` emitting
+``__syncwarp()``.)
 
 Make sure MathDx is installed and ``MATHDX_ROOT`` is set first — see
 :doc:`../getting_started/installation`.
@@ -50,8 +56,8 @@ differ by which level you use.
 ``SMS`` defaults to ``860`` and can be overridden with ``-DSMS=XXX`` so the
 dispatch heuristic and cuBLASDx code-gen target your arch.
 
-Calling ``glass::nvidia::`` — default form
-------------------------------------------
+Calling ``glass::nvidia::block::`` — default form
+-------------------------------------------------
 
 In the default form cuBLASDx picks the thread count; you query the required
 shared memory and thread count (both ``constexpr``) on the host and launch with
@@ -61,12 +67,12 @@ the **exact** thread count — a mismatch deadlocks.
 
    #include "glass-nvidia.cuh"
 
-   constexpr auto smem    = glass::nvidia::gemm_scratch_bytes<float, 6, 6, 6>();
-   constexpr auto threads = glass::nvidia::gemm_threads<float, 6, 6, 6>();
+   constexpr auto smem    = glass::nvidia::block::gemm_scratch_bytes<float, 6, 6, 6>();
+   constexpr auto threads = glass::nvidia::block::gemm_threads<float, 6, 6, 6>();
 
    __global__ void k(float* A, float* B, float* C) {
        extern __shared__ __align__(16) char smem_buf[];
-       glass::nvidia::gemm<float, 6, 6, 6>(1.f, A, B, 0.f, C, smem_buf);
+       glass::nvidia::block::gemm<float, 6, 6, 6>(1.f, A, B, 0.f, C, smem_buf);
    }
 
    // Launch with the EXACT thread count cuBLASDx wants.
@@ -81,24 +87,24 @@ idle inside the GEMM:
 
 .. code-block:: cpp
 
-   namespace glass { namespace nvidia {
+   namespace glass { namespace nvidia { namespace block {
        DEFINE_NVIDIA_GEMM_BLOCKDIM(6, 6, 6, 352)   // pin BlockDim<352,1,1>
-   }}
+   }}}
 
    __global__ void k(float* A, float* B, float* C) {
        extern __shared__ __align__(16) char smem_buf[];
-       glass::nvidia::gemm<float, 6, 6, 6, 352>(1.f, A, B, 0.f, C, smem_buf);
+       glass::nvidia::block::gemm<float, 6, 6, 6, 352>(1.f, A, B, 0.f, C, smem_buf);
    }
 
-   constexpr auto smem = glass::nvidia::gemm_scratch_bytes<float, 6, 6, 6, 352>();
+   constexpr auto smem = glass::nvidia::block::gemm_scratch_bytes<float, 6, 6, 6, 352>();
    k<<<1, 352, smem>>>(dA, dB, dC);
 
 Query the smallest valid ``TC`` for a ``(T, M, N, K, SM)`` tuple:
 
 .. code-block:: cpp
 
-   constexpr uint32_t MIN = glass::nvidia::gemm_min_block_threads<float, 6, 6, 6>();
-   static_assert(glass::nvidia::gemm_block_threads_valid<float, 6, 6, 6, 352>(),
+   constexpr uint32_t MIN = glass::nvidia::block::gemm_min_block_threads<float, 6, 6, 6>();
+   static_assert(glass::nvidia::block::gemm_block_threads_valid<float, 6, 6, 6, 352>(),
                  "352 threads should be enough for 6x6x6 on this SM");
 
 .. tip::
@@ -111,18 +117,18 @@ Query the smallest valid ``TC`` for a ``(T, M, N, K, SM)`` tuple:
 Layout / transpose
 ------------------
 
-``glass::nvidia::gemm`` accepts ``layout LA``, ``LB``, ``LC`` template
+``glass::nvidia::block::gemm`` accepts ``layout LA``, ``LB``, ``LC`` template
 parameters (mirroring cuBLASDx's ``Arrangement<>``) so you can express transpose
 / row-major storage without falling back to SIMT:
 
 .. code-block:: cpp
 
-   namespace glass { namespace nvidia {
+   namespace glass { namespace nvidia { namespace block {
        // A · Bᵀ  (B row-major); alias for LB=row_major
        DEFINE_NVIDIA_GEMM_BLOCKDIM_TRANSB(6, 6, 6, 352)
        // Or fully explicit (LA=row, LB=col, LC=col):
        DEFINE_NVIDIA_GEMM_BLOCKDIM_LAYOUT(6, 6, 6, 352, 1, 0, 0)
-   }}
+   }}}
 
 Layout arguments are integer literals: ``0`` = ``col_major``, ``1`` =
 ``row_major``.
@@ -131,18 +137,19 @@ Adding a custom size
 --------------------
 
 Pre-instantiated square GEMM/GEMV sizes are ``4, 6, 8, 12, 14, 24, 64``. For any
-other size, place the DEFINE macro inside ``namespace glass::nvidia`` in your
-``.cu`` file:
+other size, place the DEFINE macro inside ``namespace glass::nvidia::block`` in
+your ``.cu`` file (the specializations must live where the primary templates
+do — the ``block`` namespace):
 
 .. code-block:: cpp
 
    #include "glass-nvidia.cuh"
-   namespace glass { namespace nvidia {
+   namespace glass { namespace nvidia { namespace block {
        DEFINE_NVIDIA_GEMM(16, 16, 16)
        DEFINE_NVIDIA_GEMV(16, 16)
        DEFINE_NVIDIA_GEMM_BLOCKDIM(16, 16, 16, 256)
        DEFINE_NVIDIA_POSV_BLOCKDIM(16, 4, 256)   // SPD solve, 4 RHS
-   }}
+   }}}
 
 Every wrapper exposes the same macro family — substitute ``GEMM`` / ``GEMV`` /
 ``GEMM_BATCHED`` / ``CHOL`` / ``TRSM`` / ``POSV`` / ``POTRS`` / ``GETRF`` /
@@ -156,17 +163,17 @@ Linear solvers (cuSOLVERDx)
 
    #include "glass-nvidia.cuh"
 
-   namespace glass { namespace nvidia {
+   namespace glass { namespace nvidia { namespace block {
        DEFINE_NVIDIA_POSV_BLOCKDIM(7, 1, 256)   // 7×7 SPD, 1 RHS, BlockDim<256>
-   }}
+   }}}
 
    __global__ void k(float* A, float* b) {
        extern __shared__ __align__(16) char smem_buf[];
        // Solves A·x = b in place: A := L (lower Cholesky), b := x
-       glass::nvidia::posv<float, 7, 1, 256>(A, b, smem_buf);
+       glass::nvidia::block::posv<float, 7, 1, 256>(A, b, smem_buf);
    }
 
-   constexpr auto smem = glass::nvidia::posv_scratch_bytes<float, 7, 1, 256>();
+   constexpr auto smem = glass::nvidia::block::posv_scratch_bytes<float, 7, 1, 256>();
    k<<<1, 256, smem>>>(dA, db);
 
 Available cuSOLVERDx wrappers: ``potrf``, ``trsm``, ``posv``, ``potrs``,

@@ -37,12 +37,12 @@ __global__ void k_al_step(const float* g, const float* lam, float* proj,
     glass::thread::soc_project<float>(w, pr, M);
     for (int i = 0; i < M; i++) proj[M*p + i] = pr[i];
     // AL merit value for the cone row
-    val[p] = glass::al_soc_value<float>(g + M*p, lam + M*p, RHO, M);
+    val[p] = glass::block::al_soc_value<float>(g + M*p, lam + M*p, RHO, M);
     // m=1 cone == the g >= 0 hinge: the conic value must equal al_hinge_value
     // on the sign convention bridge (hinge feasible c <= 0 ⇔ cone g >= 0).
     float g1 = g[M*p], l1 = lam[M*p];
-    float conic = glass::al_soc_value<float>(&g1, &l1, RHO, 1);
-    float hinge = glass::al_hinge_value<float>(-g1, l1, RHO, 0.f);
+    float conic = glass::block::al_soc_value<float>(&g1, &l1, RHO, 1);
+    float hinge = glass::block::al_hinge_value<float>(-g1, l1, RHO, 0.f);
     hinge_gap[p] = fabsf(conic - hinge);
 }
 

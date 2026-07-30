@@ -25,16 +25,16 @@ static constexpr int N  = 3;   // well-behaved matrix
 static constexpr int NP = 2;   // zero-leading-pivot matrix
 
 __global__ void k_inv(float* Aaug) {
-    __shared__ float s_scratch[glass::inv_scratch_bytes<float>(N) / sizeof(float)];
-    glass::inv<float, N>(Aaug, s_scratch);
+    __shared__ float s_scratch[glass::block::inv_scratch_bytes<float>(N) / sizeof(float)];
+    glass::block::inv<float, N>(Aaug, s_scratch);
 }
 __global__ void k_inv_plain_np(float* Aaug) {                 // mishandles pivot 0
-    __shared__ float s_scratch[glass::inv_scratch_bytes<float>(NP) / sizeof(float)];
-    glass::inv<float, NP>(Aaug, s_scratch);
+    __shared__ float s_scratch[glass::block::inv_scratch_bytes<float>(NP) / sizeof(float)];
+    glass::block::inv<float, NP>(Aaug, s_scratch);
 }
 __global__ void k_inv_pivoted_np(float* Aaug) {               // robust
-    __shared__ float s_scratch[glass::inv_pivoted_scratch_bytes<float>(NP) / sizeof(float)];
-    glass::inv_pivoted<float, NP>(Aaug, s_scratch);
+    __shared__ float s_scratch[glass::block::inv_pivoted_scratch_bytes<float>(NP) / sizeof(float)];
+    glass::block::inv_pivoted<float, NP>(Aaug, s_scratch);
 }
 
 // Build the column-major dim x 2*dim augmented [A | I] buffer from A.

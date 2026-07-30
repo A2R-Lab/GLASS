@@ -11,8 +11,10 @@ The reference is organized by BLAS level and by backend:
 * **L1** — vector operations (axpy, copy, dot, reduce, norms, elementwise, …).
 * **L2** — matrix-vector operations (gemv, ger, trsv, trmv, strided/segmented gemv).
 * **L3** — matrix operations (gemm and variants, inverse, Cholesky, trsm, syrk/syr2k, ldlt, posv/potrs).
-* **NVIDIA backend** — the ``glass::nvidia::`` CUB / cuBLASDx / cuSOLVERDx paths
-  and their host-side query/size helpers.
+* **NVIDIA backend** — the ``glass::nvidia::block::`` CUB / cuBLASDx /
+  cuSOLVERDx paths and their host-side query/size helpers, plus the
+  ``glass::nvidia::warp::`` CUB ``WarpReduce`` reductions (one full 32-lane
+  warp per problem).
 * **Warp-scoped** — the ``glass::warp::`` single-warp SIMT variants for
   warp-per-problem kernels.
 * **Thread-scoped** — the ``glass::thread::`` sequential variants for
@@ -33,6 +35,15 @@ The reference is organized by BLAS level and by backend:
    compile-time-sized (``<T, N, ...>``), with and without a ``beta`` term, and
    pure-SIMT vs cooperative-groups (``glass::cgrps::``) variants. The pages
    below list them per header.
+
+.. note::
+
+   The block-scope SIMT entries on these pages are the ``glass::block::``
+   **contract tier** (bit-exact, thread-count invariant, never re-dispatched);
+   the bare ``glass::`` spellings are the **measured-default face** — in
+   Phase 1 the same entities, re-exported (likewise ``glass::nvidia::block::``
+   vs bare ``glass::nvidia::``). See
+   :doc:`../user_guide/concepts/namespaces`.
 
 .. toctree::
    :maxdepth: 2

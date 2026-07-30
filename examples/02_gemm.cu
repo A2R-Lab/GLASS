@@ -13,13 +13,13 @@
 
 // Runtime-size overload: sizes passed as args.
 __global__ void gemm_rt(float *A, float *B, float *C, int m, int n, int k) {
-    glass::gemm(static_cast<uint32_t>(m), static_cast<uint32_t>(n),
+    glass::block::gemm(static_cast<uint32_t>(m), static_cast<uint32_t>(n),
                 static_cast<uint32_t>(k), 1.f, A, B, 0.f, C);
 }
 
 // Compile-time-size overload: sizes baked in as template params (loop unrolling).
 __global__ void gemm_ct(float *A, float *B, float *C) {
-    glass::gemm<float, 2, 2, 2>(1.f, A, B, 0.f, C);
+    glass::block::gemm<float, 2, 2, 2>(1.f, A, B, 0.f, C);
 }
 
 int main() {

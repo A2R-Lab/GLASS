@@ -26,13 +26,13 @@
 #include "../../glass.cuh"
 
 __global__ void k_ldlt(uint32_t n, float* A, float* s_temp, int pivot, int32_t* piv) {
-    glass::ldlt<float>(n, A, s_temp, pivot != 0, pivot != 0 ? piv : nullptr);
+    glass::block::ldlt<float>(n, A, s_temp, pivot != 0, pivot != 0 ? piv : nullptr);
 }
 
 __global__ void k_ldlt_solve(uint32_t n, float* A, float* s_temp, float* b,
                              int pivot, int32_t* piv) {
-    glass::ldlt<float>(n, A, s_temp, pivot != 0, pivot != 0 ? piv : nullptr);
-    glass::ldlt_solve<float>(n, A, b, pivot != 0 ? piv : nullptr);
+    glass::block::ldlt<float>(n, A, s_temp, pivot != 0, pivot != 0 ? piv : nullptr);
+    glass::block::ldlt_solve<float>(n, A, b, pivot != 0 ? piv : nullptr);
 }
 
 // ─── warp forms (compile-time N, non-pivoted) ─────────────────────────────────

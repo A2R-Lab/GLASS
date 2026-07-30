@@ -31,8 +31,8 @@ enum { SURF_BLOCK = 0, SURF_WARP = 1, SURF_CGRPS = 2 };
 template <int SURF, uint32_t M, uint32_t N, uint32_t K, bool TA, bool TB>
 __global__ void k_reduced(float alpha, float* A, float* B, float beta, float* C, bool has_beta) {
     if (SURF == SURF_BLOCK) {
-        if (has_beta) glass::gemm_reduced<float, M, N, K, TA, TB>(alpha, A, B, beta, C);
-        else          glass::gemm_reduced<float, M, N, K, TA, TB>(alpha, A, B, C);
+        if (has_beta) glass::block::gemm_reduced<float, M, N, K, TA, TB>(alpha, A, B, beta, C);
+        else          glass::block::gemm_reduced<float, M, N, K, TA, TB>(alpha, A, B, C);
     } else if (SURF == SURF_WARP) {
         if (has_beta) glass::warp::gemm_reduced<float, M, N, K, TA, TB>(alpha, A, B, beta, C);
         else          glass::warp::gemm_reduced<float, M, N, K, TA, TB>(alpha, A, B, C);

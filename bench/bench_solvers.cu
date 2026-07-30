@@ -239,7 +239,7 @@ __global__ void k_bdsv(T* strips, T* vecs) {
     extern __shared__ double solvers_smem[];
     T* s = reinterpret_cast<T*>(solvers_smem);
     size_t p = blockIdx.x;
-    glass::bdsv<T, KP, BS>(strips + p * (size_t)KP*3*BS*BS,
+    glass::block::bdsv<T, KP, BS>(strips + p * (size_t)KP*3*BS*BS,
                            vecs   + p * (size_t)(KP + 2)*BS, s);
 }
 
@@ -249,7 +249,7 @@ __global__ void k_pcg(T* x, T* S, T* Pinv, T* b, uint32_t max_iters,
     extern __shared__ double solvers_smem[];
     T* s_mem = reinterpret_cast<T*>(solvers_smem);
     size_t p = blockIdx.x, band = (size_t)KP*3*BS*BS, vec = (size_t)(KP + 2)*BS;
-    glass::pcg<T, BS, KP>(x + p*vec, S + p*band, Pinv + p*band, b + p*vec,
+    glass::block::pcg<T, BS, KP>(x + p*vec, S + p*band, Pinv + p*band, b + p*vec,
                           s_mem, max_iters, rel_tol, abs_tol, iters + p);
 }
 
@@ -257,13 +257,13 @@ template<typename T, int N>
 __global__ void k_gesv(T* A, T* b) {
     __shared__ uint32_t piv[N];
     size_t p = blockIdx.x;
-    glass::gesv<T, N, 1>(A + p * (size_t)N*N, piv, b + p * (size_t)N);
+    glass::block::gesv<T, N, 1>(A + p * (size_t)N*N, piv, b + p * (size_t)N);
 }
 
 template<typename T, int N>
 __global__ void k_posv(T* A, T* b) {
     size_t p = blockIdx.x;
-    glass::posv<T, N>(A + p * (size_t)N*N, b + p * (size_t)N);
+    glass::block::posv<T, N>(A + p * (size_t)N*N, b + p * (size_t)N);
 }
 
 // glass::thread:: tier: one problem per THREAD (32 packed per warp), operands
@@ -290,8 +290,8 @@ __global__ void k_invsolve(T* G, T* b, T* y) {   // Gauss-Jordan inv on [A|I], t
     T* s = reinterpret_cast<T*>(solvers_smem);   // (2N+1) elems
     size_t p = blockIdx.x;
     T* Gp = G + p * (size_t)2*N*N;
-    glass::inv<T, N>(Gp, s);
-    glass::gemv<T, N, N>((T)1, Gp + (size_t)N*N, b + p * (size_t)N, (T)0, y + p * (size_t)N);
+    glass::block::inv<T, N>(Gp, s);
+    glass::block::gemv<T, N, N>((T)1, Gp + (size_t)N*N, b + p * (size_t)N, (T)0, y + p * (size_t)N);
 }
 
 template<typename T, int N>
@@ -299,14 +299,14 @@ __global__ void k_syev(const T* A, T* W, T* V) {
     extern __shared__ double solvers_smem[];
     T* s = reinterpret_cast<T*>(solvers_smem);
     size_t p = blockIdx.x;
-    glass::syev<T, N>(A + p * (size_t)N*N, W + p * (size_t)N, V + p * (size_t)N*N, s);
+    glass::block::syev<T, N>(A + p * (size_t)N*N, W + p * (size_t)N, V + p * (size_t)N*N, s);
 }
 
 template<typename T, int N>
 __global__ void k_eig_clamp(T* A) {
     extern __shared__ double solvers_smem[];
     T* s = reinterpret_cast<T*>(solvers_smem);
-    glass::eig_clamp<T, N>(A + (size_t)blockIdx.x*N*N, (T)1e-3, s);
+    glass::block::eig_clamp<T, N>(A + (size_t)blockIdx.x*N*N, (T)1e-3, s);
 }
 
 // ─── section A: bdsv vs pcg ───────────────────────────────────────────────────
@@ -341,14 +341,14 @@ static void bench_bdsv_pcg(int reps) {
     CK(cudaMemset(dX, 0, (size_t)NPROB*vec*sizeof(T)));
     uint32_t* dIters; CK(cudaMalloc(&dIters, (size_t)NPROB*sizeof(uint32_t)));
 
-    const size_t sm_bdsv = glass::bdsv_scratch_bytes<T, BS>();
+    const size_t sm_bdsv = glass::block::bdsv_scratch_bytes<T, BS>();
 
     // Correctness guard (problem 0, both solvers vs the CPU double reference).
     k_bdsv<T, BS, KP><<<1, 256, sm_bdsv>>>(dWork, dVecWork);
     CK(cudaDeviceSynchronize()); CK(cudaGetLastError());
     double md_bdsv = max_abs_diff_dev(dVecWork + BS, hRef, n);
     if (md_bdsv >= 1e-3) guard_fail("bdsv vs CPU chol", md_bdsv);
-    k_pcg<T, BS, KP><<<1, 256, glass::pcg_scratch_bytes<T, BS, KP>(256)>>>(
+    k_pcg<T, BS, KP><<<1, 256, glass::block::pcg_scratch_bytes<T, BS, KP>(256)>>>(
         dX, dPristine, dPinv, dVecPristine, PCG_MAX, REL, ABS, dIters);
     CK(cudaDeviceSynchronize()); CK(cudaGetLastError());
     double md_pcg = max_abs_diff_dev(dX + BS, hRef, n);
@@ -384,7 +384,7 @@ static void bench_bdsv_pcg(int reps) {
     printf("  | PCG");
     double best_p = 1e30; int tb_p = 0;
     for (int TB : {32, 256}) {
-        size_t sm_pcg = glass::pcg_scratch_bytes<T, BS, KP>((uint32_t)TB);
+        size_t sm_pcg = glass::block::pcg_scratch_bytes<T, BS, KP>((uint32_t)TB);
         double ns = time_restored_ns(
             [&] { k_pcg<T, BS, KP><<<NPROB, TB, sm_pcg>>>(dX, dPristine, dPinv,
                       dVecPristine, PCG_MAX, REL, ABS, dIters); },
@@ -546,8 +546,8 @@ static void bench_eig(int reps) {
     T* dW; CK(cudaMalloc(&dW, (size_t)NPROB*N*sizeof(T)));
     T* dV; CK(cudaMalloc(&dV, (size_t)NPROB*mm*sizeof(T)));
 
-    const size_t sm_syev  = glass::syev_scratch_bytes<T>(N);
-    const size_t sm_clamp = glass::eig_clamp_scratch_bytes<T>(N);
+    const size_t sm_syev  = glass::block::syev_scratch_bytes<T>(N);
+    const size_t sm_clamp = glass::block::eig_clamp_scratch_bytes<T>(N);
 
     printf("syev      N=%-3d | BLOCK", N);
     double best = 1e30; int tb = 0;

@@ -21,7 +21,7 @@ static constexpr int Ncompile = 8;
 __global__ void k_block(float* x, float* scratch) {
     // nrm2_fast<T, N> — compile-time length, warp-reduced, DESTRUCTIVE:
     // the result lands in x[0] (the block forms overwrite their input).
-    glass::nrm2_fast<float, Ncompile>(x, scratch);
+    glass::block::nrm2_fast<float, Ncompile>(x, scratch);
 }
 __global__ void k_warp(uint32_t n, const float* x, float* out) {
     float r = glass::warp::nrm2<float>(n, x);   // value-returning, non-destructive

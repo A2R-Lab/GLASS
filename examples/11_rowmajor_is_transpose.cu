@@ -21,10 +21,10 @@
 static constexpr int M = 3, N = 2, K = 4;
 
 __global__ void nn(const float* A, const float* B, float* C) {     // A col-major M×K
-    glass::gemm<float, M, N, K, /*TA=*/false, /*TB=*/false>(1.f, const_cast<float*>(A), const_cast<float*>(B), C);
+    glass::block::gemm<float, M, N, K, /*TA=*/false, /*TB=*/false>(1.f, const_cast<float*>(A), const_cast<float*>(B), C);
 }
 __global__ void ta(const float* A, const float* B, float* C) {     // A row-major M×K == col-major K×M
-    glass::gemm<float, M, N, K, /*TA=*/true,  /*TB=*/false>(1.f, const_cast<float*>(A), const_cast<float*>(B), C);
+    glass::block::gemm<float, M, N, K, /*TA=*/true,  /*TB=*/false>(1.f, const_cast<float*>(A), const_cast<float*>(B), C);
 }
 
 int main() {

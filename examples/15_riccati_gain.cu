@@ -24,7 +24,7 @@ static constexpr int NX = 4, NU = 2;
 __global__ void k_riccati(const float* P, const float* A, const float* B,
                           const float* R, float* Kgain, int* fail) {
     extern __shared__ float s_scratch[];
-    glass::riccati_gain<float, NX, NU>(P, A, B, R, Kgain, s_scratch, 0.f, fail);
+    glass::block::riccati_gain<float, NX, NU>(P, A, B, R, Kgain, s_scratch, 0.f, fail);
 }
 
 // CPU reference with plain loops (everything column-major, X[row + col*rows]).
@@ -84,7 +84,7 @@ int main() {
     cudaMemcpy(dB, B, sizeof(B), cudaMemcpyHostToDevice);
     cudaMemcpy(dR, R, sizeof(R), cudaMemcpyHostToDevice);
 
-    const size_t smem = glass::riccati_scratch_bytes<float, NX, NU>();   // BYTES
+    const size_t smem = glass::block::riccati_scratch_bytes<float, NX, NU>();   // BYTES
     k_riccati<<<1, 128, smem>>>(dP, dA, dB, dR, dK, dfail);
     cudaDeviceSynchronize();
 
