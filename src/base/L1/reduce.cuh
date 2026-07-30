@@ -405,6 +405,51 @@ namespace warp {
         for (int off = 16; off > 0; off >>= 1) val += __shfl_down_sync(0xffffffff, val, off);
         return __shfl_sync(0xffffffff, val, 0);
     }
+
+    /**
+     * @brief Warp-min of a per-lane register value: returns `min(partial)` on
+     *        every lane.
+     *
+     * The min twin of the register `warp::reduce` (same shuffle ladder +
+     * broadcast; no buffer, no scratch). Inactive/idle lanes must pass the
+     * identity (e.g. `+INFINITY` — there is no empty-lane sentinel here; use
+     * `argmin_pair` when a lane can be excluded by index). NaN candidates
+     * lose every compare, so a NaN lane never wins unless ALL lanes are NaN.
+     * Full 32-lane warp required.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param partial  This lane's contribution.
+     * @return The warp-wide minimum, identical on every lane.
+     */
+    template <typename T>
+    __device__ T reduce_min(T partial)
+    {
+        T val = partial;
+        for (int off = 16; off > 0; off >>= 1) {
+            T o = __shfl_down_sync(0xffffffff, val, off);
+            if (o < val) val = o;
+        }
+        return __shfl_sync(0xffffffff, val, 0);
+    }
+
+    /**
+     * @brief Warp-max of a per-lane register value: returns `max(partial)` on
+     *        every lane. See `reduce_min` (pass `-INFINITY` from idle lanes).
+     *
+     * @tparam T  Scalar type.
+     * @param partial  This lane's contribution.
+     * @return The warp-wide maximum, identical on every lane.
+     */
+    template <typename T>
+    __device__ T reduce_max(T partial)
+    {
+        T val = partial;
+        for (int off = 16; off > 0; off >>= 1) {
+            T o = __shfl_down_sync(0xffffffff, val, off);
+            if (o > val) val = o;
+        }
+        return __shfl_sync(0xffffffff, val, 0);
+    }
 }
 
 /**

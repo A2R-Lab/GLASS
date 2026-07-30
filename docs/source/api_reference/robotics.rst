@@ -82,6 +82,11 @@ Geometry distances
 
 .. doxygenfile:: src/base/est/svd3.cuh
 
+Fused Gauss-Newton / LM step
+----------------------------
+
+.. doxygenfile:: src/base/L3/gn_step.cuh
+
 Sampling reductions (L1)
 ------------------------
 

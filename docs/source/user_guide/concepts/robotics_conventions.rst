@@ -91,14 +91,29 @@ Matrices — column-major, GLASS-wide
    the SE(3) Hessian is six stacked column-major 6x6 slices
    (``J2[k*36 + c*6 + r]``).
 
-Pose errors — LOCAL (right) convention, shortest path
-   ``quat_error(q, q_des) = log(q_des⁻¹ ⊗ q)`` — the body-frame tangent that
-   retracts ``q_des`` onto ``q`` (GTSAM ``localCoordinates`` / manif
-   ``rminus``); swap the arguments to negate. The double cover is always
-   folded (``|e| ≤ π``). ``pose_error`` is the DECOUPLED R³ × SO(3) error
-   ``[p − p_des; quat_error]`` (what GPU goal costs minimize), not the coupled
-   SE(3) log. Exact tangent Jacobian: identity on translation,
-   ``Jr(e)⁻¹`` (``so3_right_jacobian_inv``) on rotation.
+Pose errors — compile-time ``ErrorFrame`` tag, shortest path
+   Both frames express the tangent step FROM ``q_des`` TO ``q``; only the
+   resolving frame differs (pinocchio ``ReferenceFrame`` precedent).
+   ``ErrorFrame::LOCAL`` (default): ``log(q_des⁻¹ ⊗ q)`` — body frame,
+   ``quat_retract(q_des, e) == q`` (GTSAM ``localCoordinates`` / manif
+   ``rminus``); pair with BODY-frame Jacobians. ``ErrorFrame::WORLD``:
+   ``log(q ⊗ q_des⁻¹) = R(q_des)·e_LOCAL`` — pair with WORLD-frame geometric
+   Jacobians (IK, visual servoing, task-space control). Swapping the
+   arguments negates the error in either frame (a residual written
+   ``log(q_des ⊗ q⁻¹)`` is the WORLD form with swapped arguments). The double
+   cover is always folded (``|e| ≤ π``); ``quat_angle`` is frame-invariant.
+   ``pose_error`` is the DECOUPLED R³ × SO(3) error ``[p − p_des; quat_error]``
+   (what GPU goal costs minimize), not the coupled SE(3) log. Exact tangent
+   Jacobian (LOCAL): identity on translation, ``Jr(e)⁻¹``
+   (``so3_right_jacobian_inv``) on rotation.
+
+Homogeneous 4x4 interop — the ``LDA`` tag
+   ``quat_to_rot`` / ``rot_to_quat`` carry a leading-dimension template
+   parameter (default 3). ``LDA = 4`` reads/writes the rotation block of a
+   column-major 4x4 homogeneous transform IN PLACE (only the nine rotation
+   entries are touched) — the ``gemv``/``gemm`` ``ROW_STRIDE`` pattern
+   extended to the Lie corner, eliminating the 9-element repack at
+   ``T[16*i]``-style call sites.
 
 Small-angle branches
    Every trigonometric map carries a Taylor head so it is smooth through

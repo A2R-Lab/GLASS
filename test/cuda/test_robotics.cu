@@ -45,6 +45,7 @@
 #define RB_DELTA  0.15  // relaxed-barrier delta
 #define SH_ETA    0.2   // smooth-hinge eta
 #define SM_ALPHA  (-0.75)  // softmax/logsumexp alpha
+#define GN_LAMBDA 0.05  // gn_step damping
 
 enum Op {
     OP_QUAT_MUL, OP_QUAT_CONJ, OP_QUAT_NORMALIZE, OP_QUAT_EXP, OP_QUAT_ROTATE,
@@ -64,6 +65,7 @@ enum Op {
     OP_QUAT_LOG, OP_QUAT_ERROR, OP_POSE_ERROR, OP_QUAT_ANGLE, OP_LOG_COSH,
     OP_EIG3, OP_SVD3, OP_CLOSEST_ROT,
     OP_ARGMAX_FAST, OP_ARGMIN_FAST,
+    OP_ARGPAIR, OP_WREDUCE, OP_ROT_LDA, OP_GN_STEP,
     OP_COUNT
 };
 
@@ -103,6 +105,12 @@ static const OpInfo OPS[OP_COUNT] = {
     {"eig3", 9, 0, 0, 12},             {"svd3", 9, 0, 0, 21},
     {"closest_rot", 9, 0, 0, 9},
     {"argmax_fast", -1, 0, 0, 2},      {"argmin_fast", -1, 0, 0, 2},
+    // HJCD wave: warp register argreductions (flag0=MINIMUM, flag1=active
+    // lanes, 0=all; warp/block models only), warp min/max register reduce,
+    // LDA=4 rot conversions, fused GN/LM step (flag0=zero-lambda rank-fail
+    // path, flag1=REG_DIAG; warp/block models only).
+    {"argpair", 32, 0, 0, 2},          {"wreduce", 32, 0, 0, 2},
+    {"rot_lda", 16, 0, 0, 20},         {"gn_step", 42, 6, 0, 8},
 };
 
 // ─── dtype-generic I/O ───────────────────────────────────────────────────────
@@ -301,8 +309,23 @@ __device__ void dev_tier_op(int op, int flag0, int flag1,
             break;
         }
         case OP_QUAT_LOG:    TIER3(quat_log, a, out); break;
-        case OP_QUAT_ERROR:  TIER3(quat_error, a, b, out); break;
-        case OP_POSE_ERROR:  TIER3(pose_error, a, b, out); break;
+        case OP_QUAT_ERROR:
+            // flag0 = frame (0 LOCAL, 1 WORLD)
+            if (flag0 == 0) { TIER3(quat_error, a, b, out); }
+            else {
+                if constexpr (M == 0)      glass::quat_error<T, glass::QuatLayout::xyzw, glass::ErrorFrame::WORLD>(a, b, out);
+                else if constexpr (M == 1) glass::warp::quat_error<T, glass::QuatLayout::xyzw, glass::ErrorFrame::WORLD>(a, b, out);
+                else                       glass::thread::quat_error<T, glass::QuatLayout::xyzw, glass::ErrorFrame::WORLD>(a, b, out);
+            }
+            break;
+        case OP_POSE_ERROR:
+            if (flag0 == 0) { TIER3(pose_error, a, b, out); }
+            else {
+                if constexpr (M == 0)      glass::pose_error<T, glass::QuatLayout::xyzw, glass::ErrorFrame::WORLD>(a, b, out);
+                else if constexpr (M == 1) glass::warp::pose_error<T, glass::QuatLayout::xyzw, glass::ErrorFrame::WORLD>(a, b, out);
+                else                       glass::thread::pose_error<T, glass::QuatLayout::xyzw, glass::ErrorFrame::WORLD>(a, b, out);
+            }
+            break;
         case OP_EIG3:        TIER3(eig3, a, out, out + 3); break;
         case OP_SVD3:        TIER3(svd3, a, out, out + 9, out + 12); break;
         case OP_CLOSEST_ROT: TIER3(closest_rotation, a, out); break;
@@ -324,6 +347,77 @@ __device__ void dev_tier_op(int op, int flag0, int flag1,
             } else {
                 uint32_t i = mn ? glass::thread::argmin<T>(nrt, a) : glass::thread::argmax<T>(nrt, a);
                 out[0] = (T)i; out[1] = a[i];
+            }
+            break;
+        }
+        case OP_ROT_LDA: {
+            // out[0..3] = rot_to_quat<LDA=4>(a); out[4..19] = quat_to_rot<LDA=4>
+            // into a sentinel-seeded 4x4 (untouched entries must stay -7).
+            if (writer) for (int i = 4; i < 20; i++) out[i] = (T)(-7);
+            if constexpr (M == 0) __syncthreads(); else if constexpr (M == 1) __syncwarp();
+            if constexpr (M == 0) {
+                glass::rot_to_quat<T, glass::QuatLayout::xyzw, 4>(a, out);
+                glass::quat_to_rot<T, glass::QuatLayout::xyzw, 4>(out, out + 4);
+            } else if constexpr (M == 1) {
+                glass::warp::rot_to_quat<T, glass::QuatLayout::xyzw, 4>(a, out);
+                glass::warp::quat_to_rot<T, glass::QuatLayout::xyzw, 4>(out, out + 4);
+            } else {
+                glass::thread::rot_to_quat<T, glass::QuatLayout::xyzw, 4>(a, out);
+                glass::thread::quat_to_rot<T, glass::QuatLayout::xyzw, 4>(out, out + 4);
+            }
+            break;
+        }
+        case OP_ARGPAIR: {
+            // warp/block models only (full-warp shuffle op). flag0 = MINIMUM,
+            // flag1 = active lanes (0 = all 32). Lane l's candidate:
+            // key = a[l], idx = 1000 + l; inactive lanes pass the empty
+            // sentinel. Sentinel result maps to -1.
+            if constexpr (M != 2) {
+                uint32_t lane;
+                if constexpr (M == 0) lane = threadIdx.x & 31;
+                else                  lane = (uint32_t)(threadIdx.x & 31);
+                const uint32_t act = (flag1 == 0) ? 32u : (uint32_t)flag1;
+                const T key = a[lane];
+                const uint32_t idx = (lane < act) ? (1000u + lane) : UINT32_MAX;
+                T win_key = (T)0;
+                uint32_t wi = flag0 ? glass::warp::argmin_pair<T>(key, idx, win_key)
+                                    : glass::warp::argmax_pair<T>(key, idx, win_key);
+                if (writer) {
+                    out[0] = (wi == UINT32_MAX) ? (T)(-1) : (T)wi;
+                    out[1] = win_key;
+                }
+            }
+            break;
+        }
+        case OP_WREDUCE: {
+            if constexpr (M != 2) {
+                uint32_t lane = threadIdx.x & 31;
+                T mn = glass::warp::reduce_min<T>(a[lane]);
+                T mx = glass::warp::reduce_max<T>(a[lane]);
+                if (writer) { out[0] = mn; out[1] = mx; }
+            }
+            break;
+        }
+        case OP_GN_STEP: {
+            // warp/block models only; block model restricts to warp 0 (the
+            // duplicate warps would race on the shared scratch). flag0 = 1
+            // selects lambda = 0 (the CHECK rank-fail path), flag1 = REG_DIAG.
+            if constexpr (M != 2) {
+                bool participate = true;
+                if constexpr (M == 0) participate = (threadIdx.x < 32);
+                if (participate) {
+                    __shared__ int s_fail[8];      // one slot per possible warp
+                    __shared__ T s_A_pool[8*49];   // per-warp 7x7 scratch
+                    int wslot = 0;
+                    if constexpr (M == 1) wslot = (int)((threadIdx.x >> 5) & 7);
+                    const T lam = flag0 ? (T)0 : (T)GN_LAMBDA;
+                    T* s_A = s_A_pool + wslot*49;
+                    if (flag1)
+                        glass::warp::gn_step<T, 6, 7, true, true, true>(a, b, lam, out, s_A, &s_fail[wslot]);
+                    else
+                        glass::warp::gn_step<T, 6, 7, true, true, false>(a, b, lam, out, s_A, &s_fail[wslot]);
+                    if (writer) out[7] = (T)s_fail[wslot];
+                }
             }
             break;
         }

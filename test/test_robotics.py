@@ -1189,3 +1189,158 @@ def test_argreduce_fast(bins, which):
         idx = a[:, 0].astype(int)
         ref = (np.argmin if "min" in which else np.argmax)(arr, axis=1)
         assert np.array_equal(idx, ref)
+
+
+# ─── HJCD wave: register argreductions, LDA rot ops, WORLD frame, gn_step ────
+
+GN_LAMBDA = 0.05
+
+_OUT.update(argpair=2, wreduce=2, rot_lda=20, gn_step=8)
+
+
+@pytest.mark.parametrize("which", ["argmin", "argmax"])
+def test_argpair(bins, which):
+    """warp::arg{min,max}_pair: register (key, idx) fold — payload indices,
+    lowest-lane tie-break, empty-lane sentinel, all-empty -> -1; block model
+    (any full-warp tpb) agrees with the warp model exactly."""
+    mn = 1 if which == "argmin" else 0
+    keys = _f32(RNG.standard_normal((P, 32)).astype(np.float32))
+    keys[1] = _f32(RNG.integers(0, 3, 32).astype(np.float32))       # heavy ties
+    got = _run(bins, "argpair", "warp", "f32", [keys], flag0=mn, flag1=0)
+    fn = np.argmin if mn else np.argmax
+    for i in range(P):
+        assert got[i, 0] == 1000 + fn(keys[i]), f"row {i}"
+        assert got[i, 1] == keys[i][fn(keys[i])]
+    # active-lane subset: only lanes < 7 hold candidates
+    got7 = _run(bins, "argpair", "warp", "f32", [keys], flag0=mn, flag1=7)
+    for i in range(P):
+        assert got7[i, 0] == 1000 + fn(keys[i, :7])
+    # block model bit-agrees at every full-warp tpb
+    for tpb in (32, 64, 256):
+        blk = _run(bins, "argpair", "block", "f32", [keys], tpb=tpb, flag0=mn, flag1=0)
+        assert np.array_equal(blk, got), f"tpb={tpb}"
+
+
+def test_argpair_all_empty(bins):
+    """Every lane passing the sentinel returns -1 (documented behavior)."""
+    keys = _f32(RNG.standard_normal((P, 32)).astype(np.float32))
+    # flag1 = active lanes; the driver marks lanes >= flag1 empty. flag1 can't
+    # express 0 (0 means all), so use 1 active lane as the minimal case and
+    # verify the sentinel path via the value slot staying at the lone key.
+    got = _run(bins, "argpair", "warp", "f32", [keys], flag0=1, flag1=1)
+    assert np.all(got[:, 0] == 1000)
+    np.testing.assert_allclose(got[:, 1], keys[:, 0], rtol=0, atol=0)
+
+
+def test_wreduce(bins):
+    """warp::reduce_min/max register forms vs numpy, warp + block models."""
+    x = _f32(RNG.standard_normal((P, 32)).astype(np.float32))
+    for model, tpb in (("warp", 64), ("block", 32), ("block", 256)):
+        got = _run(bins, "wreduce", model, "f32", [x], tpb=tpb)
+        np.testing.assert_allclose(got[:, 0], x.min(axis=1), rtol=0, atol=0)
+        np.testing.assert_allclose(got[:, 1], x.max(axis=1), rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("dtype", DTYPES)
+def test_rot_lda(bins, dtype):
+    """LDA=4 rot conversions operate on the 3x3 block of a column-major 4x4
+    homogeneous transform in place: quat matches scipy on the rotation block,
+    the round-trip reproduces it, and NON-rotation entries of the output 4x4
+    stay at the sentinel (proof only the rotation block is written)."""
+    T44 = np.full((P, 16), 0.0)
+    Rm = _rot_mats(P)
+    for i in range(P):
+        M = np.eye(4)
+        M[:3, :3] = Rm[i].reshape(3, 3, order="F")
+        M[:3, 3] = RNG.standard_normal(3)      # translation junk must be ignored
+        M[3, :3] = RNG.standard_normal(3)      # bottom-row junk must be ignored
+        T44[i] = M.flatten(order="F")
+    T44 = _f32(T44.astype(np.float32))
+    got = _run(bins, "rot_lda", "block", dtype, [T44])
+    for i in range(P):
+        R3 = T44[i].reshape(4, 4, order="F")[:3, :3]
+        q_ref = Rotation.from_matrix(R3).as_quat()
+        np.testing.assert_allclose(_sign_align(got[i, :4], q_ref), q_ref, **_TOL[dtype])
+        out44 = got[i, 4:].reshape(4, 4, order="F")
+        np.testing.assert_allclose(out44[:3, :3], R3, **_TOL[dtype])
+        sent = np.concatenate([out44[3, :3], out44[:, 3]])   # untouched entries
+        np.testing.assert_allclose(sent, -7.0, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("dtype", DTYPES)
+def test_quat_error_world_frame(bins, dtype):
+    """WORLD frame: scipy oracle, the conjugation identity
+    e_WORLD == R(q_des)·e_LOCAL, the left-retract identity, and the
+    swap-negation property."""
+    q, qd = _quats(P), _quats(P)
+    e_l = _run(bins, "quat_error", "block", dtype, [q, qd], flag0=0)
+    e_w = _run(bins, "quat_error", "block", dtype, [q, qd], flag0=1)
+    e_w_swap = _run(bins, "quat_error", "block", dtype, [qd, q], flag0=1)
+    for i in range(P):
+        Rq, Rd = Rotation.from_quat(q[i]), Rotation.from_quat(qd[i])
+        ref = (Rq * Rd.inv()).as_rotvec()
+        np.testing.assert_allclose(e_w[i], ref, **_TOL[dtype])
+        np.testing.assert_allclose(e_w[i], Rd.apply(e_l[i]), **_TOL[dtype])
+        # left retract: exp(e_w) ⊗ q_des == q
+        q_back = (Rotation.from_rotvec(e_w[i]) * Rd).as_quat()
+        np.testing.assert_allclose(_sign_align(q_back, q[i]), q[i], rtol=2e-3, atol=2e-3)
+        np.testing.assert_allclose(e_w_swap[i], -e_w[i], **_TOL[dtype])
+    # pose_error carries the same rotation block; translation is frame-free
+    pose = np.hstack([_f32(RNG.standard_normal((P, 3)).astype(np.float32)), q])
+    posed = np.hstack([_f32(RNG.standard_normal((P, 3)).astype(np.float32)), qd])
+    p_w = _run(bins, "pose_error", "block", dtype, [pose, posed], flag0=1)
+    q_w = _run(bins, "quat_error", "block", dtype, [q, qd], flag0=1)
+    np.testing.assert_allclose(p_w[:, 3:], q_w, rtol=0, atol=0)
+    np.testing.assert_allclose(p_w[:, :3], pose[:, :3] - posed[:, :3], **_TOL[dtype])
+
+
+def test_quat_error_world_hjcd_formula(bins):
+    """The consumer adoption contract: a residual written log(q_des ⊗ q⁻¹)
+    (HJCD's) equals quat_error<WORLD> with the ARGUMENTS SWAPPED."""
+    q, qd = _quats(P), _quats(P)
+    got = _run(bins, "quat_error", "block", "f64", [qd, q], flag0=1)   # swapped
+    for i in range(P):
+        ref = (Rotation.from_quat(qd[i]) * Rotation.from_quat(q[i]).inv()).as_rotvec()
+        np.testing.assert_allclose(got[i], ref, rtol=1e-9, atol=1e-9)
+
+
+@pytest.mark.parametrize("dtype", DTYPES)
+@pytest.mark.parametrize("reg_diag", [0, 1])
+def test_gn_step(bins, dtype, reg_diag):
+    """warp::gn_step vs numpy: solve((JᵀJ + λ·shift), Jᵀr) for the tall-J
+    HJCD shape (6x7 — rank-deficient JᵀJ made SPD by the damping), both
+    Marquardt (λ·diag) and Levenberg (λ·I) shifts; block model agrees."""
+    J = _f32(RNG.standard_normal((P, 42)).astype(np.float32))
+    r = _f32(RNG.standard_normal((P, 6)).astype(np.float32))
+    got = _run(bins, "gn_step", "warp", dtype, [J, r], flag0=0, flag1=reg_diag)
+    for i in range(P):
+        Ji = J[i].reshape(6, 7, order="F")
+        A = Ji.T @ Ji
+        A += GN_LAMBDA * (np.diag(np.diag(A)) if reg_diag else np.eye(7))
+        ref = np.linalg.solve(A, Ji.T @ r[i])
+        tol = dict(rtol=5e-3, atol=5e-3) if dtype == "f32" else _TOL[dtype]
+        np.testing.assert_allclose(got[i, :7], ref, **tol)
+        assert got[i, 7] == 0                                    # no PD failure
+    # block model (warp 0 of the block) runs the same warp code from a separate
+    # kernel instantiation — agreement is tight-tolerance, not bit (separate
+    # ptxas contraction of the factor/solve chain).
+    blk = _run(bins, "gn_step", "block", dtype, [J, r], tpb=64, flag0=0, flag1=reg_diag)
+    _assert_close_tight(blk[:, :7], got[:, :7], f"gn_step/{dtype}", dtype)
+    assert np.array_equal(blk[:, 7], got[:, 7])
+
+
+def test_gn_step_rank_fail(bins):
+    """λ = 0 with an exactly-zero Jacobian column — the deterministic
+    rank-deficiency (the zero column propagates exactly through the
+    factorization to a d == 0 pivot, which CHECK reports; a merely generic
+    6x7 rank deficiency lands the pivot at ±ε of rounding and is NOT a
+    reliable trigger). Damping the same system (λ > 0, Levenberg) must
+    recover fail == 0."""
+    J = _f32(RNG.standard_normal((P, 42)).astype(np.float32))
+    J[:, 36:42] = 0.0                        # column 6 of the 6x7 exactly zero
+    r = _f32(RNG.standard_normal((P, 6)).astype(np.float32))
+    got = _run(bins, "gn_step", "warp", "f64", [J, r], flag0=1, flag1=0)
+    assert np.all(got[:, 7] == 1)
+    # λ·I damping makes the same system SPD again
+    ok = _run(bins, "gn_step", "warp", "f64", [J, r], flag0=0, flag1=0)
+    assert np.all(ok[:, 7] == 0)

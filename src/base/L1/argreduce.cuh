@@ -292,8 +292,85 @@ namespace thread {
     { return argreduce_detail::argreduce_serial<T, true>(n, x); }
 }
 
+namespace argreduce_detail {
+// single-warp REGISTER-pair body: fold per-lane (key, idx) with the shuffle
+// ladder, broadcast the winning pair to every lane. The keyed twin of
+// `warp::reduce(T partial)` — no array walk, no scratch. Empty lanes pass
+// idx == UINT32_MAX (they can never win); if EVERY lane is empty the sentinel
+// itself is returned (there is no x[0] to fall back to, unlike the array form).
+template <typename T, bool MINIMUM>
+__device__ __forceinline__ uint32_t argreduce_pair(T key, uint32_t idx, T *win_key) {
+    for (int off = 16; off > 0; off >>= 1) {
+        T okey = __shfl_down_sync(0xffffffffu, key, off);
+        uint32_t oidx = __shfl_down_sync(0xffffffffu, idx, off);
+        combine<T, MINIMUM>(key, idx, okey, oidx);
+    }
+    idx = __shfl_sync(0xffffffffu, idx, 0);
+    if (win_key != nullptr) *win_key = __shfl_sync(0xffffffffu, key, 0);
+    return idx;
+}
+} // namespace argreduce_detail
+
 // ─── single-warp argreductions ───────────────────────────────────────────────
 namespace warp {
+    /**
+     * @brief Warp argmax over PER-LANE register (key, index) pairs; winning
+     *        index returned on every lane.
+     *
+     * The register entry point for "each lane evaluated its own candidate"
+     * patterns (warp-packed samplers, coarse-search sweeps, best-rollout
+     * picks): no array staging, no scratch — the pair folds through
+     * `__shfl_down_sync` with the SAME lower-index tie-break and NaN-skip
+     * combine as every other argreduction, so results are lane/order
+     * independent. Pass `idx = UINT32_MAX` from lanes with no candidate (they
+     * never win); if ALL lanes are empty the sentinel `UINT32_MAX` is
+     * returned. Full 32-lane warp required (mask `0xffffffff`).
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param key  This lane's candidate key.
+     * @param idx  This lane's candidate index (`UINT32_MAX` = empty lane).
+     * @return The winning index, identical on every lane.
+     */
+    template <typename T>
+    __device__ uint32_t argmax_pair(T key, uint32_t idx)
+    { return argreduce_detail::argreduce_pair<T, false>(key, idx, nullptr); }
+
+    /**
+     * @brief `argmax_pair` also returning the winning key on every lane.
+     *
+     * @tparam T  Scalar type.
+     * @param key,idx  See `argmax_pair`.
+     * @param win_key  Out: the winning key (valid on every lane; unspecified
+     *                 when all lanes are empty).
+     * @return The winning index, identical on every lane.
+     */
+    template <typename T>
+    __device__ uint32_t argmax_pair(T key, uint32_t idx, T &win_key)
+    { return argreduce_detail::argreduce_pair<T, false>(key, idx, &win_key); }
+
+    /**
+     * @brief Warp argmin over PER-LANE register (key, index) pairs. See
+     *        `argmax_pair` (same mechanism, minimum direction).
+     *
+     * @tparam T  Scalar type.
+     * @param key,idx  See `argmax_pair`.
+     * @return The winning index, identical on every lane.
+     */
+    template <typename T>
+    __device__ uint32_t argmin_pair(T key, uint32_t idx)
+    { return argreduce_detail::argreduce_pair<T, true>(key, idx, nullptr); }
+
+    /**
+     * @brief `argmin_pair` also returning the winning key on every lane.
+     *
+     * @tparam T  Scalar type.
+     * @param key,idx,win_key  See the value-returning `argmax_pair`.
+     * @return The winning index, identical on every lane.
+     */
+    template <typename T>
+    __device__ uint32_t argmin_pair(T key, uint32_t idx, T &win_key)
+    { return argreduce_detail::argreduce_pair<T, true>(key, idx, &win_key); }
+
     /**
      * @brief Single-warp argmax, index returned on every lane (register
      * broadcast, no scratch). Full 32 lanes required. See `glass::argmax` and

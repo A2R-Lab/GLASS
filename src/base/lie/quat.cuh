@@ -123,15 +123,16 @@ namespace quat_detail {
 
     // serial core: quaternion from a rotation matrix (Shepperd max-pivot: branch
     // on the largest of trace/diagonal so the divisor is never small). R is 3x3
-    // column-major; the result is unit up to the orthonormality of R, with the
-    // canonical w >= 0 sign.
-    template <typename T, QuatLayout L>
+    // column-major with leading dimension LDA (LDA=4 reads the rotation block of
+    // a column-major 4x4 homogeneous transform in place); the result is unit up
+    // to the orthonormality of R, with the canonical w >= 0 sign.
+    template <typename T, QuatLayout L, uint32_t LDA = 3>
     __device__ __forceinline__ void rot_to_quat_core(const T *R, T *q) {
         using QL = layout<L>;
-        // column-major reads: R(r,c) = R[c*3 + r]
-        const T r00 = R[0], r10 = R[1], r20 = R[2];
-        const T r01 = R[3], r11 = R[4], r21 = R[5];
-        const T r02 = R[6], r12 = R[7], r22 = R[8];
+        // column-major reads: R(r,c) = R[c*LDA + r]
+        const T r00 = R[0],       r10 = R[1],       r20 = R[2];
+        const T r01 = R[LDA],     r11 = R[LDA + 1], r21 = R[LDA + 2];
+        const T r02 = R[2*LDA],   r12 = R[2*LDA + 1], r22 = R[2*LDA + 2];
         const T tr = r00 + r11 + r22;
         T x, y, z, w;
         if (tr > static_cast<T>(0)) {
@@ -194,6 +195,17 @@ namespace quat_detail {
     __device__ __forceinline__ void copy_out(uint32_t rank, uint32_t size,
                                              const T *tmp, T *out) {
         for (uint32_t i = rank; i < N; i += size) out[i] = tmp[i];
+    }
+
+    // tier glue: strided copy-out of a contiguous 3x3 register tmp into a
+    // column-major destination with leading dimension LDA (only the nine
+    // rotation entries are written — LDA=4 targets the rotation block of a 4x4
+    // homogeneous transform without touching its translation row/column).
+    template <typename T, uint32_t LDA>
+    __device__ __forceinline__ void copy_out_mat3(uint32_t rank, uint32_t size,
+                                                  const T *tmp, T *out) {
+        for (uint32_t i = rank; i < 9; i += size)
+            out[(i/3)*LDA + (i%3)] = tmp[i];
     }
 } // namespace quat_detail
 
@@ -340,20 +352,25 @@ __device__ void quat_rotate(const T *q, const T *p, T *out)
 /**
  * @brief Rotation matrix (3x3 column-major) from a unit quaternion.
  *
- * NumPy equivalent (xyzw): `Rotation.from_quat(q).as_matrix()` (flatten
- * Fortran-order for the column-major array).
+ * `LDA` is the destination's leading dimension (row stride between columns;
+ * default 3 = contiguous). `LDA = 4` writes the rotation block of a
+ * column-major 4x4 homogeneous transform IN PLACE — only the nine rotation
+ * entries are touched (the `gemv`/`gemm` ROW_STRIDE pattern extended to the
+ * Lie corner). NumPy equivalent (xyzw): `Rotation.from_quat(q).as_matrix()`
+ * (flatten Fortran-order for the column-major array).
  *
  * @tparam T,L,TRAILING_SYNC  See `quat_mul`.
+ * @tparam LDA  Destination leading dimension (default 3).
  * @param q  Unit quaternion (4 elements).
- * @param R  Output 3x3 rotation matrix (9 elements, column-major; no aliasing).
+ * @param R  Output rotation (column-major, leading dimension LDA; no aliasing).
  */
-template <typename T, QuatLayout L = QuatLayout::xyzw, bool TRAILING_SYNC = true>
+template <typename T, QuatLayout L = QuatLayout::xyzw, uint32_t LDA = 3, bool TRAILING_SYNC = true>
 __device__ void quat_to_rot(const T *q, T *R)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
     T tmp[9]; quat_detail::quat_to_rot_core<T, L>(q, tmp);
-    quat_detail::copy_out<T, 9>(rank, size, tmp, R);
+    quat_detail::copy_out_mat3<T, LDA>(rank, size, tmp, R);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -362,20 +379,23 @@ __device__ void quat_to_rot(const T *q, T *R)
  *
  * Branches on the largest of the trace and the three diagonal entries so the
  * divisor is never small — numerically safe for every rotation including the
- * θ = π family. Result is canonicalized to `w >= 0`. `R` is 3x3 column-major.
- * NumPy equivalent (xyzw): `Rotation.from_matrix(R).as_quat()` (up to the
- * double-cover sign).
+ * θ = π family. Result is canonicalized to `w >= 0`. `R` is column-major with
+ * leading dimension `LDA` (default 3 = contiguous; `LDA = 4` reads the
+ * rotation block of a column-major 4x4 homogeneous transform in place — no
+ * repack). NumPy equivalent (xyzw): `Rotation.from_matrix(R).as_quat()` (up
+ * to the double-cover sign).
  *
  * @tparam T,L,TRAILING_SYNC  See `quat_mul`.
- * @param R  Input 3x3 rotation matrix (9 elements, column-major).
+ * @tparam LDA  Source leading dimension (default 3).
+ * @param R  Input rotation matrix (column-major, leading dimension LDA).
  * @param q  Output unit quaternion (4 elements; no aliasing at block/warp scope).
  */
-template <typename T, QuatLayout L = QuatLayout::xyzw, bool TRAILING_SYNC = true>
+template <typename T, QuatLayout L = QuatLayout::xyzw, uint32_t LDA = 3, bool TRAILING_SYNC = true>
 __device__ void rot_to_quat(const T *R, T *q)
 {
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    T tmp[4]; quat_detail::rot_to_quat_core<T, L>(R, tmp);
+    T tmp[4]; quat_detail::rot_to_quat_core<T, L, LDA>(R, tmp);
     quat_detail::copy_out<T, 4>(rank, size, tmp, q);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
@@ -485,18 +505,23 @@ namespace thread {
         out[0] = tmp[0]; out[1] = tmp[1]; out[2] = tmp[2];
     }
 
-    /** @brief Single-thread quaternion → column-major 3x3. See `glass::quat_to_rot`. */
-    template <typename T, QuatLayout L = QuatLayout::xyzw>
+    /** @brief Single-thread quaternion → column-major 3x3 (LDA-strided). See `glass::quat_to_rot`. */
+    template <typename T, QuatLayout L = QuatLayout::xyzw, uint32_t LDA = 3>
     __device__ void quat_to_rot(const T *q, T *R)
     {
-        quat_detail::quat_to_rot_core<T, L>(q, R);
+        if constexpr (LDA == 3) {
+            quat_detail::quat_to_rot_core<T, L>(q, R);
+        } else {
+            T tmp[9]; quat_detail::quat_to_rot_core<T, L>(q, tmp);
+            quat_detail::copy_out_mat3<T, LDA>(0u, 1u, tmp, R);
+        }
     }
 
-    /** @brief Single-thread column-major 3x3 → quaternion (Shepperd). See `glass::rot_to_quat`. */
-    template <typename T, QuatLayout L = QuatLayout::xyzw>
+    /** @brief Single-thread column-major 3x3 (LDA-strided) → quaternion (Shepperd). See `glass::rot_to_quat`. */
+    template <typename T, QuatLayout L = QuatLayout::xyzw, uint32_t LDA = 3>
     __device__ void rot_to_quat(const T *R, T *q)
     {
-        quat_detail::rot_to_quat_core<T, L>(R, q);
+        quat_detail::rot_to_quat_core<T, L, LDA>(R, q);
     }
 
     /** @brief Single-thread normalize + rotation columns. See `glass::quat_to_basis`. */
@@ -586,22 +611,22 @@ namespace warp {
         __syncwarp();
     }
 
-    /** @brief Single-warp quaternion → column-major 3x3. See `glass::quat_to_rot`. */
-    template <typename T, QuatLayout L = QuatLayout::xyzw>
+    /** @brief Single-warp quaternion → column-major 3x3 (LDA-strided). See `glass::quat_to_rot`. */
+    template <typename T, QuatLayout L = QuatLayout::xyzw, uint32_t LDA = 3>
     __device__ void quat_to_rot(const T *q, T *R)
     {
         uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
         T tmp[9]; quat_detail::quat_to_rot_core<T, L>(q, tmp);
-        quat_detail::copy_out<T, 9>(lane, 32u, tmp, R);
+        quat_detail::copy_out_mat3<T, LDA>(lane, 32u, tmp, R);
         __syncwarp();
     }
 
-    /** @brief Single-warp 3x3 → quaternion (Shepperd). See `glass::rot_to_quat`. */
-    template <typename T, QuatLayout L = QuatLayout::xyzw>
+    /** @brief Single-warp 3x3 (LDA-strided) → quaternion (Shepperd). See `glass::rot_to_quat`. */
+    template <typename T, QuatLayout L = QuatLayout::xyzw, uint32_t LDA = 3>
     __device__ void rot_to_quat(const T *R, T *q)
     {
         uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T tmp[4]; quat_detail::rot_to_quat_core<T, L>(R, tmp);
+        T tmp[4]; quat_detail::rot_to_quat_core<T, L, LDA>(R, tmp);
         quat_detail::copy_out<T, 4>(lane, 32u, tmp, q);
         __syncwarp();
     }

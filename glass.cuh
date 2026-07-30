@@ -78,6 +78,7 @@ namespace glass {
     #include "./src/base/L3/syev.cuh"
     #include "./src/base/L3/eigh.cuh"
     #include "./src/base/L3/riccati.cuh"
+    #include "./src/base/L3/gn_step.cuh"
 
     /*  block-tridiagonal: glass::bdmv (matvec), glass::bdsv (direct solve),
         glass::pcg (iterative solver)  */
