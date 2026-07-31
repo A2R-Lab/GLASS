@@ -19,8 +19,12 @@ int main() {
         std::printf("  compute_capability=%d.%d (sm_%d%d)\n",
                     p.major, p.minor, p.major, p.minor);
         std::printf("  multiprocessors=%d\n", p.multiProcessorCount);
-        std::printf("  clock_khz=%d mem_clock_khz=%d\n",
-                    p.clockRate, p.memoryClockRate);
+        // clockRate/memoryClockRate left cudaDeviceProp in CUDA 13; the
+        // attribute API spells them the same on CUDA 12 and 13.
+        int clk = 0, mclk = 0;
+        cudaDeviceGetAttribute(&clk, cudaDevAttrClockRate, d);
+        cudaDeviceGetAttribute(&mclk, cudaDevAttrMemoryClockRate, d);
+        std::printf("  clock_khz=%d mem_clock_khz=%d\n", clk, mclk);
         std::printf("  global_mem_mb=%zu\n", p.totalGlobalMem >> 20);
         std::printf("  shared_per_block_kb=%zu shared_per_sm_kb=%zu\n",
                     p.sharedMemPerBlock >> 10, p.sharedMemPerMultiprocessor >> 10);

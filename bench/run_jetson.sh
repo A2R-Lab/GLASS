@@ -8,15 +8,19 @@
 # Usage (on the Jetson, from the repo root or bench/):
 #     ./bench/run_jetson.sh                        # timed capture at the CURRENT power mode
 #     ./bench/run_jetson.sh --build-only           # compile only (safe anytime)
-#     ./bench/run_jetson.sh --power-modes all      # sweep EVERY nvpmodel mode (needs sudo -n)
-#     ./bench/run_jetson.sh --power-modes 0,3,2    # sweep specific mode IDs
+#     ./bench/run_jetson.sh --power-modes all      # sweep the STANDARD wattage modes (MAXN excluded)
+#     ./bench/run_jetson.sh --power-modes 3,2,1    # sweep specific mode IDs
+#
+# Policy: we do NOT run MAXN (unconstrained mode; owner's call to protect the
+# boards) — "all" enumerates only the named-wattage modes from nvpmodel.conf.
+# Pass a MAXN mode ID explicitly if you ever truly want it.
 #
 # Power-mode sweeps switch modes with nvpmodel + pin clocks with jetson_clocks,
 # which need passwordless sudo for JUST those tools (see bench/JETSON.md):
 #     echo "$USER ALL=(ALL) NOPASSWD: /usr/sbin/nvpmodel, /usr/bin/jetson_clocks" \
 #       | sudo tee /etc/sudoers.d/glass-bench
-# Single-mode runs (no --power-modes) never switch anything: they record the
-# mode that ran and warn if it is not MAXN.
+# Single-mode runs (no --power-modes) never switch anything: they just record
+# the mode that ran.
 set -uo pipefail
 cd "$(dirname "$0")"
 
@@ -57,8 +61,11 @@ if [[ -n "$POWER_MODES" ]]; then
     exit 1
   fi
   if [[ "$POWER_MODES" == "all" ]]; then
-    POWER_MODES=$(grep -oE 'POWER_MODEL ID=[0-9]+' /etc/nvpmodel.conf | grep -oE '[0-9]+' | paste -sd, -)
-    [[ -n "$POWER_MODES" ]] || { echo "FATAL: could not enumerate modes from /etc/nvpmodel.conf"; exit 1; }
+    # standard wattage modes only — skip MAXN variants by name (policy above)
+    POWER_MODES=$(grep -E 'POWER_MODEL ID=' /etc/nvpmodel.conf \
+      | grep -vi 'NAME=MAXN' \
+      | grep -oE 'ID=[0-9]+' | grep -oE '[0-9]+' | paste -sd, -)
+    [[ -n "$POWER_MODES" ]] || { echo "FATAL: no non-MAXN modes found in /etc/nvpmodel.conf"; exit 1; }
   fi
   ORIG_MODE=$(current_mode_id)
   echo "power-mode sweep: [$POWER_MODES] (restore -> $ORIG_MODE when done)"
@@ -79,16 +86,14 @@ log "provenance -> $PROV"
   echo "--- power modes ---";  grep -E 'POWER_MODEL ID' /etc/nvpmodel.conf 2>/dev/null || echo "n/a"
 } > "$PROV/system.txt"
 
-# power mode + clocks at launch: record, and warn if a single-mode timed run
-# is not at MAXN.
+# power mode + clocks at launch: record what this box is set to.
 nvpmodel -q > "$PROV/nvpmodel.txt" 2>&1 || echo "nvpmodel unavailable" > "$PROV/nvpmodel.txt"
 sudo -n jetson_clocks --show > "$PROV/jetson_clocks.txt" 2>&1 \
   || jetson_clocks --show > "$PROV/jetson_clocks.txt" 2>&1 \
   || echo "jetson_clocks unavailable (run 'sudo jetson_clocks' before timing)" > "$PROV/jetson_clocks.txt"
-if [[ -z "$POWER_MODES" ]] && ! grep -qi 'maxn' "$PROV/nvpmodel.txt"; then
-  echo "!!! WARNING: power mode is not MAXN — timing will understate the board."
-  echo "!!!          Fix with: sudo nvpmodel -m 0 && sudo jetson_clocks ; then rerun"
-  echo "!!!          (or use --power-modes all to sweep every mode)."
+if [[ -z "$POWER_MODES" ]]; then
+  echo "note: single-mode run — timing captured at: $(head -1 "$PROV/nvpmodel.txt")"
+  echo "      (use --power-modes all for the standard-wattage sweep; MAXN is never run)"
 fi
 
 log "device_info probe"

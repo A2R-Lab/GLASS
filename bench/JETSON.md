@@ -42,12 +42,15 @@ the AGX Orin dev kit mid-2026) — that's fine; newest available wins and the
 provenance bundle records it. Note `nvcc` often isn't on `PATH` on JetPack
 installs; `run_jetson.sh` auto-prepends `/usr/local/cuda/bin`.
 
-Then install the run deps and pin the clocks:
+Then install the run deps and pin the clocks. **Policy: we never run MAXN**
+(unconstrained power/thermals; owner's call to protect the boards) — timed
+captures use the standard wattage modes, with the highest wattage mode as the
+headline (AGX Orin: 3=50W):
 
 ```bash
 sudo apt install -y python3-numpy python3-matplotlib   # matplotlib optional
-sudo nvpmodel -m 0        # MAXN power mode (the script warns if you skip this)
-sudo jetson_clocks        # pin clocks for stable timing
+sudo nvpmodel -m 3        # highest STANDARD wattage mode (AGX: 50W; check nvpmodel -q)
+sudo jetson_clocks        # pin clocks (within the mode's budget) for stable timing
 ```
 
 **For power-mode sweeps (and for letting an agent drive the box over ssh),
@@ -64,14 +67,15 @@ echo "$USER ALL=(ALL) NOPASSWD: /usr/sbin/nvpmodel, /usr/bin/jetson_clocks" \
 git clone https://github.com/A2R-Lab/GLASS && cd GLASS
 ./bench/run_jetson.sh --build-only         # optional separate compile pass (safe anytime)
 ./bench/run_jetson.sh                      # full capture at the CURRENT power mode
-./bench/run_jetson.sh --power-modes all    # sweep EVERY nvpmodel power mode (needs the sudoers rule)
-./bench/run_jetson.sh --power-modes 0,3    # or a subset by mode ID (0=MAXN first is a good default)
+./bench/run_jetson.sh --power-modes all    # sweep the STANDARD wattage modes (needs the sudoers rule)
+./bench/run_jetson.sh --power-modes 3,2,1  # or a subset by mode ID (AGX: 3=50W, 2=30W, 1=15W)
 ```
 
 Edge deployments run at whatever power budget the platform allows, so the
-paper wants the timed legs at each `nvpmodel` mode, not just MAXN (AGX Orin:
-0=MAXN, 1=15W, 2=30W, 3=50W; NX/Nano have their own tables — `--power-modes
-all` enumerates them from `/etc/nvpmodel.conf`). The sweep compiles ONCE, then
+paper wants the timed legs at each standard `nvpmodel` wattage mode (AGX Orin:
+1=15W, 2=30W, 3=50W; NX/Nano have their own tables — `--power-modes all`
+enumerates the non-MAXN modes from `/etc/nvpmodel.conf`; MAXN is never run,
+per the policy above). The sweep compiles ONCE, then
 per mode: switches with `nvpmodel -m`, pins clocks with `jetson_clocks`,
 settles 10 s, records per-mode provenance (`nvpmodel -q`, clock readback,
 online-CPU count) and a per-mode `tegrastats` log (power rails → energy/solve
