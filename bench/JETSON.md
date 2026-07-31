@@ -54,14 +54,17 @@ sudo jetson_clocks        # pin clocks (within the mode's budget) for stable tim
 ```
 
 **One-time per-box account setup** (needs an interactive sudo once). The
-benchmark account must be in the `video` group — Tegra's GPU nodes
-(`/dev/nvmap`, `/dev/nvhost-*`) are `root:video`, and a user outside it gets
-`NvRmMemInitNvmap failed: Permission denied` / "no CUDA-capable device" from
-every CUDA binary. Power-mode sweeps (and agent-driven runs over ssh)
-additionally need passwordless sudo for exactly the two clock tools:
+benchmark account must be in BOTH the `video` and `render` groups — Tegra's
+classic GPU nodes (`/dev/nvmap`, `/dev/nvhost-*`) are `root:video` (outside it:
+`NvRmMemInitNvmap failed: Permission denied`), and the newer L4T releases
+(r39+, OOT nvgpu driver) additionally route CUDA init through the DRM render
+node `/dev/dri/renderD*` which is `root:render` (outside it: CUDA reports
+"no CUDA device: operation not supported" even with `video` fixed). Power-mode
+sweeps (and agent-driven runs over ssh) additionally need passwordless sudo
+for exactly the two clock tools:
 
 ```bash
-sudo usermod -aG video $USER     # then log out/in (new ssh sessions pick it up)
+sudo usermod -aG video,render $USER   # then log out/in (new ssh sessions pick it up)
 echo "$USER ALL=(ALL) NOPASSWD: /usr/sbin/nvpmodel, /usr/bin/jetson_clocks" \
   | sudo tee /etc/sudoers.d/glass-bench
 ```
