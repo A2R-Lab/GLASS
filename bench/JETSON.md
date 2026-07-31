@@ -42,6 +42,22 @@ the AGX Orin dev kit mid-2026) — that's fine; newest available wins and the
 provenance bundle records it. Note `nvcc` often isn't on `PATH` on JetPack
 installs; `run_jetson.sh` auto-prepends `/usr/local/cuda/bin`.
 
+**MathDx on Tegra (4-tier ladder).** NVIDIA doesn't distribute MathDx for
+Tegra, and the tarball's `libcusolverdx.a` is x86-64-only — but cuBLASDx is
+header-only and cuSOLVERDx also ships an **LTO-IR fatbin**
+(`lib/libcusolverdx.fatbin`) that is host-arch-independent: `tune.py` stages
+`-dc` → `-dlto -dlink <fatbin>` → host link on non-x86 hosts (verified on AGX
+Orin, sm_87 / CUDA 13.2). To enable, copy a MathDx tree from any machine and
+`run_jetson.sh` auto-detects it (or set `MATHDX_ROOT`):
+
+```bash
+rsync -a --exclude doc --exclude example --exclude '*.a' \
+  /opt/nvidia/mathdx/26.03 <jetson>:~/mathdx/
+```
+
+Without it the ladder falls back to the 3-tier SIMT sweep (still valid — the
+regenerated table just lacks the nvidia contender).
+
 Then install the run deps and pin the clocks. **Policy: we never run MAXN**
 (unconstrained power/thermals; owner's call to protect the boards) — timed
 captures use the standard wattage modes, with the highest wattage mode as the

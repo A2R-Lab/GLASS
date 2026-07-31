@@ -27,6 +27,18 @@ cd "$(dirname "$0")"
 # nvcc is often not on PATH on JetPack installs (lives in /usr/local/cuda/bin).
 command -v nvcc >/dev/null 2>&1 || export PATH="/usr/local/cuda/bin:$PATH"
 
+# MathDx: NVIDIA doesn't distribute it for Tegra, but the x86 tarball's
+# headers + LTO-IR fatbins work here (tune.py stages a fatbin device-link on
+# non-x86 hosts — verified on AGX Orin/CUDA 13.2). Auto-detect a copied tree
+# so the ladder runs 4-tier; without one it falls back to the 3-tier SIMT sweep.
+if [[ -z "${MATHDX_ROOT:-}" ]]; then
+  for d in "$HOME"/mathdx/*/; do
+    [[ -f "$d/include/cublasdx.hpp" ]] && export MATHDX_ROOT="${d%/}" && break
+  done
+fi
+[[ -n "${MATHDX_ROOT:-}" ]] && echo "MathDx: $MATHDX_ROOT (4-tier ladder)" \
+                            || echo "MathDx: absent (3-tier ladder)"
+
 BUILD_ONLY=0
 POWER_MODES=""            # empty = current mode only, no switching
 while [[ $# -gt 0 ]]; do

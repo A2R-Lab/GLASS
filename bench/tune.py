@@ -47,8 +47,10 @@ confirm a re-run only moves dispatch inside the tie band before committing.
 import argparse
 import glob
 import hashlib
+import math
 import os
 import pathlib
+import platform
 import re
 import subprocess
 import sys
@@ -60,6 +62,7 @@ from autotune import lib_digest  # shared library-content hash for cache keys
 BENCH_DIR = pathlib.Path(__file__).parent.resolve()
 GLASS_DIR = BENCH_DIR.parent
 DEFAULTS  = GLASS_DIR / "glass-defaults.cuh"
+DISPATCH_HDR = GLASS_DIR / "glass-dispatch.cuh"
 STATIC    = GLASS_DIR / "docs" / "source" / "_static"
 REDUCED_MD = BENCH_DIR / "REDUCED_SWEEP_RESULTS.md"
 BLAS2_MD   = BENCH_DIR / "BLAS2_SWEEP_RESULTS.md"
@@ -67,7 +70,8 @@ RECT_MD    = BENCH_DIR / "RECT_SWEEP_RESULTS.md"
 SOLVERS_MD = BENCH_DIR / "SOLVERS_SWEEP_RESULTS.md"
 CACHE_ROOT = BENCH_DIR / ".tune_cache"
 
-ALL_LEGS = ("ladder", "shapes", "reduced", "blas2", "rect", "solvers", "figures")
+ALL_LEGS = ("ladder", "body", "shapes", "reduced", "blas2", "rect", "solvers",
+            "figures")
 
 
 def cache_dir(sms):
@@ -133,12 +137,46 @@ _FULL_SCHED  = [("64", "1000"), ("1024", "500"), ("8192", "250")]
 _QUICK_SCHED = [("8192", "300")]
 
 
+def _fatbin_build_mega(sms, mdx):
+    """4-tier build for hosts where libcusolverdx.a is foreign (the MathDx
+    tarball ships x86-64 objects only — e.g. Jetson/aarch64). cuSOLVERDx also
+    ships an LTO-IR `libcusolverdx.fatbin`, which is host-arch-independent but
+    only legal as a DEVICE-LINK input, so the build is staged:
+    -dc (LTO) -> -dlto -dlink with the fatbin -> final host link.
+    Verified on AGX Orin (sm_87, CUDA 13.2) 2026-07-31."""
+    common = ["-std=c++17", f"-arch=sm_{sms // 10}", "-O3",
+              "--expt-relaxed-constexpr", "-Xptxas", "-O1", "-I..", "-I../src",
+              f"-I{mdx/'include'}", f"-I{mdx/'external'/'cutlass'/'include'}",
+              "-DGLASS_BENCH_CUBLASDX", "-DGLASS_BENCH_CUSOLVERDX", f"-DSMS={sms}",
+              "-DCUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT"]
+    src = (BENCH_DIR / "bench_mega_sweep.cu").read_bytes()
+    key = hashlib.sha256(src + lib_digest().encode()
+                         + " ".join(common + ["fatbin"]).encode()).hexdigest()[:12]
+    binp = cache_dir(sms) / f"mega_sweep_fatbin_{key}"
+    if binp.exists():
+        return binp, "cached"
+    obj, dlk = str(binp) + ".o", str(binp) + "_dlink.o"
+    steps = [
+        ["nvcc"] + common + ["-rdc=true", "-dlto", "-dc",
+                             "bench_mega_sweep.cu", "-o", obj],
+        ["nvcc", f"-arch=sm_{sms // 10}", "-dlto", "-dlink", obj,
+         str(mdx / "lib" / "libcusolverdx.fatbin"), "-o", dlk],
+        ["nvcc", f"-arch=sm_{sms // 10}", obj, dlk,
+         "-lcublas", "-lcusolver", "-lcudart", "-o", str(binp)],
+    ]
+    for cmd in steps:
+        if run(cmd, cwd=BENCH_DIR).returncode != 0:
+            return None, "fail"
+    return binp, "built"
+
+
 def build_mega_sweep(sms, mdx, allow_no_mathdx=False):
     if mdx is None and not allow_no_mathdx:
         sys.exit("ERROR: ladder leg needs MATHDX_ROOT (the nvidia contender). "
-                 "Set it, run with --legs reduced (no MathDx) / --from-ladder, "
-                 "or pass --allow-no-mathdx for a 3-tier SIMT-only ladder "
-                 "(the only option on Tegra, where MathDx does not ship).")
+                 "Set it (works on Tegra too — see the fatbin note in "
+                 "bench/JETSON.md), run with --legs reduced (no MathDx) / "
+                 "--from-ladder, or pass --allow-no-mathdx for a 3-tier "
+                 "SIMT-only ladder.")
     if mdx is None:
         # 3-tier ladder: bench_mega_sweep.cu compiles out its vendor legs when
         # the GLASS_BENCH_CUBLASDX/CUSOLVERDX macros are absent, so the sweep
@@ -149,6 +187,10 @@ def build_mega_sweep(sms, mdx, allow_no_mathdx=False):
                  f"-DSMS={sms}", "bench_mega_sweep.cu"]
         binp, status = cached_build("mega_sweep_simt", "bench_mega_sweep.cu",
                                     flags, sms)
+    elif platform.machine() != "x86_64":
+        # The tarball's libcusolverdx.a is x86-64-only; use the fatbin path.
+        print("  bench_mega_sweep: non-x86 host -> 4-tier via cusolverdx FATBIN")
+        binp, status = _fatbin_build_mega(sms, mdx)
     else:
         flags = ["nvcc", "-std=c++17", f"-arch=sm_{sms // 10}", "-O3",
                  "--expt-relaxed-constexpr", "-Xptxas", "-O1", "-I..", "-I../src",
@@ -282,6 +324,187 @@ def regen_ladder(sweep_text, margin, src_name, sms):
     _, _, post = rest.partition(_DIS_END)
     text = pre + _DIS_BEGIN + "\n" + cases + "        " + _DIS_END + post
     return text, len(winners)
+
+
+# ─── body leg: bench_body_dispatch → dispatch_body() for the bare face ───────
+#
+# The bare `glass::op` face keeps a BLOCK-SCOPE calling contract; this leg only
+# picks the implementation BODY per (op, N, dtype): full-block SIMT, warp 0
+# only, or thread 0 only (each followed by a block sync). Because the caller's
+# launch shape is fixed, a body may only take a cell if it is robust across
+# every thread count the caller might launch with:
+#
+#   RULE: a candidate body wins a cell iff (a) it is never slower than the
+#   block body by more than the margin at ANY measured (NPROB, TB) point, and
+#   (b) it beats the block body by more than the margin at >=1 TB in the
+#   NPROB=8192 throughput section. Ties/instability stay block (the
+#   launchable-everywhere Phase-1 identity). Unmeasured N interpolate like the
+#   ladder tables (each verdict extends up to the next measured N).
+
+_BODY_SM_BEGIN = "// === BEGIN tune.py body sm_{a} ==="
+_BODY_SM_END   = "// === END tune.py body sm_{a} ==="
+_BODY_SM_RE    = re.compile(r"// === BEGIN tune\.py body sm_(\d+) ===")
+_BODY_DIS_BEGIN = "// === BEGIN tune.py body dispatch ==="
+_BODY_DIS_END   = "// === END tune.py body dispatch ==="
+BODY_OPS = ("dot", "gemv", "gemm", "chol", "trsv", "posv", "eig3", "softmax")
+_BODY_HDR_RE = re.compile(r"NPROB=(\d+)\s+reps=\d+\s+dtype=(f32|f64)")
+_BODY_SEG_RE = re.compile(r"(BLOCKBODY|WARPBODY|THREADBODY)((?:\s+tb\d+=[0-9.]+)+)")
+_BODY_NAME = {"BLOCKBODY": "block", "WARPBODY": "warp_in_block",
+              "THREADBODY": "thread_in_block"}
+
+
+def build_body(sms):
+    flags = ["nvcc", "-std=c++17", f"-arch=sm_{sms//10}", "-O3", "-I..", "-I../src",
+             f"-DSMS={sms}", "bench_body_dispatch.cu"]
+    binp, status = cached_build("body_dispatch", "bench_body_dispatch.cu", flags, sms)
+    if status == "fail":
+        sys.exit("ERROR: bench_body_dispatch compile failed.")
+    print(f"  bench_body_dispatch: {status} ({binp.name})")
+    return binp
+
+
+def parse_body_sweep(text):
+    """-> {(dtype, op, N): {body_name: {(nprob, tb): ns}}} (FAIL rows dropped)."""
+    cells, nprob, dt = {}, None, None
+    for line in text.splitlines():
+        hdr = _BODY_HDR_RE.search(line)
+        if hdr and "|" not in line:
+            nprob, dt = int(hdr.group(1)), hdr.group(2)
+            continue
+        if "||" not in line or nprob is None or "FAIL" in line:
+            continue
+        m = re.match(r"\s*(\w+?)_n(\d+)\s*\|", line)
+        if not m or m.group(1) not in BODY_OPS:
+            continue
+        key = (dt, m.group(1), int(m.group(2)))
+        for bname, tbs in _BODY_SEG_RE.findall(line.split("||")[0]):
+            pts = cells.setdefault(key, {}).setdefault(_BODY_NAME[bname], {})
+            for tb, ns in re.findall(r"tb(\d+)=([0-9.]+)", tbs):
+                pts[(nprob, int(tb))] = float(ns)
+    return cells
+
+
+def body_picks(cells, margin, top_nprob=8192):
+    """(dtype, op) -> {N: body_name} for EVERY measured cell (block included)."""
+    picks = {}
+    for (dtc, opn, N), bodies in sorted(cells.items()):
+        blk = bodies.get("block")
+        if not blk or not any(pt[0] == top_nprob for pt in blk):
+            continue
+        best = None  # (geomean ratio over top-NPROB points, body_name)
+        for cand in ("warp_in_block", "thread_in_block"):
+            times = bodies.get(cand)
+            if not times:
+                continue
+            common = [pt for pt in blk if pt in times]
+            if len(common) != len(blk):          # partial coverage: not trusted
+                continue
+            if any(times[pt] > blk[pt] * (1 + margin) for pt in common):
+                continue                          # (a) regression somewhere
+            top = [pt for pt in common if pt[0] == top_nprob]
+            if not any(times[pt] < blk[pt] * (1 - margin) for pt in top):
+                continue                          # (b) no real win where it counts
+            gm = math.exp(sum(math.log(times[pt] / blk[pt]) for pt in top) / len(top))
+            if best is None or gm < best[0]:
+                best = (gm, cand)
+        picks.setdefault((dtc, opn), {})[N] = best[1] if best else "block"
+    return picks
+
+
+def _body_expr(picks, dtype, opn):
+    """Collapse {N: body} into a bounded C++ conditional. Unlike the ladder
+    tables (which extrapolate their last run to all larger N), the bare face
+    NEVER extrapolates a partial-scope body past the largest measured N —
+    running an unmeasured huge problem on one warp/thread would be
+    catastrophic, while block is merely default. Beyond max-measured N: block."""
+    ps = picks.get((dtype, opn))
+    if not ps:
+        return None
+    runs = []  # (hi_N, body)
+    for N in sorted(ps):
+        b = ps[N]
+        if runs and runs[-1][1] == b:
+            runs[-1] = (N, b)
+        else:
+            runs.append((N, b))
+    if runs[-1][1] == "block":
+        runs[-1] = (None, "block")       # trailing block run: unbounded default
+    else:
+        runs.append((None, "block"))     # bound the last non-block run
+    if len(runs) == 1:
+        return "body::block"
+    parts = [f"N <= {hi}u ? body::{b}" for hi, b in runs[:-1]]
+    return " : ".join(parts) + f" : body::{runs[-1][1]}"
+
+
+def emit_body_fn(picks, fname):
+    lines = [f"GLASS_DISPATCH_HD constexpr body {fname}(op o, uint32_t N, bool f64) {{",
+             "    switch (o) {"]
+    for opn in BODY_OPS:
+        f32 = _body_expr(picks, "f32", opn)
+        f64 = _body_expr(picks, "f64", opn)
+        if f32 is None and f64 is None:
+            continue
+        f32 = f32 or "body::block"
+        f64 = f64 or f32
+        if f32 == f64:
+            lines.append(f"        case op::{opn}: return {f32};")
+        else:
+            lines.append(f"        case op::{opn}:")
+            lines.append(f"            if (!f64) return {f32};")
+            lines.append(f"            else      return {f64};")
+    lines += ["        default: break;", "    }", "    return body::block;", "}"]
+    return "\n".join(lines)
+
+
+def regen_body(sweep_text, margin, src_name, sms):
+    """Insert/replace this arch's body_sm* block and rebuild dispatch_body()
+    from every body table present. Mirrors regen_ladder's marker discipline;
+    the dispatch block always exists (Phase-1 stub or a prior regen)."""
+    arch = sms // 10
+    cells = parse_body_sweep(sweep_text)
+    picks = body_picks(cells, margin)
+    if not picks:
+        sys.exit("ERROR: no NPROB=8192 body verdicts parsed from the sweep.")
+    moved = sum(1 for ps in picks.values() for b in ps.values() if b != "block")
+    begin, end = _BODY_SM_BEGIN.format(a=arch), _BODY_SM_END.format(a=arch)
+    region = "\n".join([
+        begin,
+        f"// Source sweep: {src_name}   margin: ±{margin*100:.0f}%",
+        "// RULE: never slower than block by >margin at ANY measured (NPROB, TB);",
+        "// faster by >margin at >=1 TB in the NPROB=8192 section. Else block.",
+        "// Verdicts are BOUNDED: N beyond the largest measured point stays block.",
+        emit_body_fn(picks, f"body_sm{arch}"),
+        end])
+    text = DISPATCH_HDR.read_text()
+    if _BODY_DIS_BEGIN not in text or _BODY_DIS_END not in text:
+        sys.exit(f"ERROR: body dispatch markers missing from {DISPATCH_HDR.name}.")
+    if begin in text:
+        pre, _, rest = text.partition(begin)
+        _, _, post = rest.partition(end)
+        text = pre + region + post
+    else:
+        pre, _, rest = text.partition(_BODY_DIS_BEGIN)
+        text = pre + region + "\n\n" + _BODY_DIS_BEGIN + rest
+    arches = sorted(int(a) for a in _BODY_SM_RE.findall(text))
+    cases = "".join(f"        case {a * 10}u: return body_sm{a}(o, N, f64);\n"
+                    for a in arches)
+    dispatch = "\n".join([
+        _BODY_DIS_BEGIN,
+        "// Bodies for the bare block-scope face; unmeasured arches stay block.",
+        "GLASS_DISPATCH_HD constexpr body dispatch_body(op o, uint32_t N, bool f64,",
+        "                                               uint32_t sm = GLASS_DEFAULTS_SM) {",
+        "    switch (sm) {",
+        cases.rstrip("\n"),
+        "        default: break;",
+        "    }",
+        "    return body::block;",
+        "}",
+        _BODY_DIS_END])
+    pre, _, rest = text.partition(_BODY_DIS_BEGIN)
+    _, _, post = rest.partition(_BODY_DIS_END)
+    text = pre + dispatch + post
+    return text, moved
 
 
 # ─── reduced leg: bench_reduced → validate suggested_use_reduced<> ────────────
@@ -656,6 +879,9 @@ def main():
                    help="regenerate + diff against in-tree tables, write nothing")
     p.add_argument("--from-ladder", metavar="TXT",
                    help="skip ladder build/run; regenerate from this mega_sweep .txt")
+    p.add_argument("--from-body", metavar="TXT",
+                   help="skip body build/run; regenerate dispatch_body() from "
+                        "this body_dispatch_sweep .txt")
     p.add_argument("--from-reduced", metavar="TXT",
                    help="skip reduced build/run; analyze from this bench_reduced .txt")
     p.add_argument("--from-blas2", metavar="TXT",
@@ -670,7 +896,7 @@ def main():
     bad = [l for l in legs if l not in ALL_LEGS]
     if bad:
         sys.exit(f"unknown leg(s) {bad}; choose from {ALL_LEGS}")
-    offline = bool(args.from_ladder or args.from_reduced
+    offline = bool(args.from_ladder or args.from_body or args.from_reduced
                    or args.from_blas2 or args.from_rect or args.from_solvers)
     sms = None if (args.sm == "auto" and offline) else (
         detect_sm() if args.sm == "auto" else int(args.sm))
@@ -691,6 +917,9 @@ def main():
         if "ladder" in legs:
             print("── prebuild: ladder ──────────────────────────────────────")
             build_mega_sweep(sms, mdx, args.allow_no_mathdx)
+        if "body" in legs:
+            print("── prebuild: body ────────────────────────────────────────")
+            build_body(sms)
         if "shapes" in legs:
             print("── prebuild: shapes (cuBLASDx microbenches) ──────────────")
             if mdx is None:
@@ -740,6 +969,35 @@ def main():
         else:
             DEFAULTS.write_text(new_defaults)
             print(f"  wrote {DEFAULTS.relative_to(GLASS_DIR)}")
+
+    # ── body (in-block body dispatch for the bare face) ──
+    if "body" in legs:
+        print("── body (bare-face in-block body dispatch) ───────────────")
+        if args.from_body:
+            if sms is None:
+                sys.exit("ERROR: --from-body needs an explicit --sm (the arch "
+                         "the sweep was MEASURED on — see --from-ladder).")
+            body_path = pathlib.Path(args.from_body)
+            body_text = body_path.read_text()
+        elif sms is None:
+            print("  [skip] body needs a GPU or --from-body.")
+            body_text = None
+        else:
+            binp = build_body(sms)
+            body_path = run_mega_sweep(binp, args.quick,
+                                       prefix="body_dispatch_sweep")
+            body_text = body_path.read_text()
+        if body_text is not None:
+            new_defaults, moved = regen_body(body_text, args.margin,
+                                             body_path.name, sms)
+            print(f"  regenerated body_sm{sms // 10}: {moved} cells moved off "
+                  "the block body")
+            if args.dry_run:
+                changed["body"] = show_diff(DISPATCH_HDR, new_defaults,
+                                            "glass-dispatch.cuh")
+            else:
+                DISPATCH_HDR.write_text(new_defaults)
+                print(f"  wrote {DISPATCH_HDR.relative_to(GLASS_DIR)}")
 
     # ── shapes (delegate to the mature per-shape engine; shares tune_pick) ──
     if "shapes" in legs:
