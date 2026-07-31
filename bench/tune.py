@@ -858,6 +858,10 @@ def main():
                         "beats the simplest impl by more than this (default 0.05)")
     p.add_argument("--legs", default=",".join(ALL_LEGS),
                    help=f"comma list of legs to run. default all: {','.join(ALL_LEGS)}")
+    p.add_argument("--sched", default=None, metavar="N:R[,N:R...]",
+                   help="override the ladder/body NPROB:reps schedule, e.g. "
+                        "'64:200,1024:100,8192:50' — the Tegra profile; keep "
+                        "an 8192 section, the regenerated tables read it")
     p.add_argument("--quick", action="store_true",
                    help="ladder: throughput point only (NPROB=8192), fewer reps")
     p.add_argument("--prebuild", action="store_true",
@@ -891,6 +895,14 @@ def main():
     p.add_argument("--from-solvers", metavar="TXT",
                    help="skip solvers build/run; report from this bench_solvers sweep .txt")
     args = p.parse_args()
+    user_sched = None
+    if args.sched:
+        try:
+            user_sched = [tuple(c.split(":")) for c in args.sched.split(",")]
+            assert all(len(t) == 2 and t[0].isdigit() and t[1].isdigit()
+                       for t in user_sched)
+        except (AssertionError, ValueError):
+            sys.exit(f"ERROR: bad --sched {args.sched!r}; want 'N:R,N:R,...'")
 
     legs = [l.strip() for l in args.legs.split(",") if l.strip()]
     bad = [l for l in legs if l not in ALL_LEGS]
@@ -960,7 +972,7 @@ def main():
             sweep_text = sweep_path.read_text()
         else:
             binp = build_mega_sweep(sms, mdx, args.allow_no_mathdx)
-            sweep_path = run_mega_sweep(binp, args.quick)
+            sweep_path = run_mega_sweep(binp, args.quick, sched=user_sched)
             sweep_text = sweep_path.read_text()
         new_defaults, n = regen_ladder(sweep_text, args.margin, sweep_path.name, sms)
         print(f"  regenerated ideal_sm{sms // 10} from {n} (dtype,op) groups")
@@ -985,7 +997,8 @@ def main():
         else:
             binp = build_body(sms)
             body_path = run_mega_sweep(binp, args.quick,
-                                       prefix="body_dispatch_sweep")
+                                       prefix="body_dispatch_sweep",
+                                       sched=user_sched)
             body_text = body_path.read_text()
         if body_text is not None:
             new_defaults, moved = regen_body(body_text, args.margin,

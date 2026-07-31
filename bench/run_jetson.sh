@@ -26,6 +26,7 @@ cd "$(dirname "$0")"
 
 # nvcc is often not on PATH on JetPack installs (lives in /usr/local/cuda/bin).
 command -v nvcc >/dev/null 2>&1 || export PATH="/usr/local/cuda/bin:$PATH"
+export PYTHONUNBUFFERED=1   # stream leg progress into nohup logs (Orin legs are LONG)
 
 # MathDx: NVIDIA doesn't distribute it for Tegra, but the x86 tarball's
 # headers + LTO-IR fatbins work here (tune.py stages a fatbin device-link on
@@ -154,20 +155,25 @@ run_timed_legs() {
   local DEST="$1"; mkdir -p "$DEST"
   touch "$DEST/.legs_start"   # freshness sentinel: never package pre-existing captures
 
-  log "leg 1/4: 3-tier ladder (tune.py, dry-run regen; table splice done off-box)"
-  python3 tune.py --sm "$SMS" --allow-no-mathdx --legs ladder --dry-run || return 1
+  log "leg 1/4: ladder (tune.py, dry-run regen; table splice done off-box)"
+  # Tegra profile: the desktop-parity schedule measures 8-16 h/mode on a 16-SM
+  # Orin (2026-07-31 calibration). Reduced reps keep the min-of ranking stable;
+  # the 8192 section MUST stay (regenerated tables read it).
+  python3 tune.py --sm "$SMS" --allow-no-mathdx --legs ladder --dry-run \
+      --sched 64:200,1024:100,8192:50 || return 1
 
   log "leg 2/4: hostblas + latency + fusion (paper_sweeps.py)"
-  python3 paper_sweeps.py --arch "$ARCH" || return 1
+  python3 paper_sweeps.py --arch "$ARCH" --reps 15 || return 1
 
   log "leg 3/4: robotics micro-ops"
   local ROBOTXT="$DEST/robotics_sweep_${TS}.txt"
   {
     echo "# capture $(basename "$ROBOTXT") | $(hostname) | $ARCH jetson"
-    for NPROB in 256 1024 4096 16384 32768; do
+    for NR in 1024:100 4096:100 16384:50; do
+      NPROB="${NR%:*}"; REPS="${NR#*:}"
       for DT in f32 f64; do
-        echo; echo "== NPROB=$NPROB reps=500 dtype=$DT =="
-        "$ROBOT_BIN" "$NPROB" 500 "$DT" || return 1
+        echo; echo "== NPROB=$NPROB reps=$REPS dtype=$DT =="
+        "$ROBOT_BIN" "$NPROB" "$REPS" "$DT" || return 1
       done
     done
   } > "$ROBOTXT" || return 1
@@ -177,10 +183,12 @@ run_timed_legs() {
   local BODYTXT="$DEST/body_dispatch_sweep_${TS}.txt"
   {
     echo "# capture $(basename "$BODYTXT") | $(hostname) | $ARCH jetson"
-    for NPROB in 1024 4096 16384; do
+    # 8192 REQUIRED: tune.py --from-body reads it as the throughput regime.
+    for NR in 64:200 1024:100 8192:50; do
+      NPROB="${NR%:*}"; REPS="${NR#*:}"
       for DT in f32 f64; do
-        echo; echo "== NPROB=$NPROB reps=250 dtype=$DT =="
-        "$BODY_BIN" "$NPROB" 250 "$DT" || return 1
+        echo; echo "== NPROB=$NPROB reps=$REPS dtype=$DT =="
+        "$BODY_BIN" "$NPROB" "$REPS" "$DT" || return 1
       done
     done
   } > "$BODYTXT" || return 1
