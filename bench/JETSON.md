@@ -37,6 +37,11 @@ apt-source migration documented by NVIDIA (edit
 not practical, benchmarking on 5.x is an acceptable fallback: CUDA 11.4
 compiles `sm_87` fine, and the provenance bundle records exactly what ran.
 
+Newer boards may already be past JetPack 6 (e.g. L4T r39 / CUDA 13.x, seen on
+the AGX Orin dev kit mid-2026) — that's fine; newest available wins and the
+provenance bundle records it. Note `nvcc` often isn't on `PATH` on JetPack
+installs; `run_jetson.sh` auto-prepends `/usr/local/cuda/bin`.
+
 Then install the run deps and pin the clocks:
 
 ```bash
@@ -45,13 +50,33 @@ sudo nvpmodel -m 0        # MAXN power mode (the script warns if you skip this)
 sudo jetson_clocks        # pin clocks for stable timing
 ```
 
+**For power-mode sweeps (and for letting an agent drive the box over ssh),
+grant passwordless sudo for exactly the two clock tools** (one-time, per box):
+
+```bash
+echo "$USER ALL=(ALL) NOPASSWD: /usr/sbin/nvpmodel, /usr/bin/jetson_clocks" \
+  | sudo tee /etc/sudoers.d/glass-bench
+```
+
 ## 1. Run
 
 ```bash
 git clone https://github.com/A2R-Lab/GLASS && cd GLASS
-./bench/run_jetson.sh --build-only    # optional separate compile pass (safe anytime)
-./bench/run_jetson.sh                 # full capture: 1–3 h (Nano slowest), GPU otherwise idle
+./bench/run_jetson.sh --build-only         # optional separate compile pass (safe anytime)
+./bench/run_jetson.sh                      # full capture at the CURRENT power mode
+./bench/run_jetson.sh --power-modes all    # sweep EVERY nvpmodel power mode (needs the sudoers rule)
+./bench/run_jetson.sh --power-modes 0,3    # or a subset by mode ID (0=MAXN first is a good default)
 ```
+
+Edge deployments run at whatever power budget the platform allows, so the
+paper wants the timed legs at each `nvpmodel` mode, not just MAXN (AGX Orin:
+0=MAXN, 1=15W, 2=30W, 3=50W; NX/Nano have their own tables — `--power-modes
+all` enumerates them from `/etc/nvpmodel.conf`). The sweep compiles ONCE, then
+per mode: switches with `nvpmodel -m`, pins clocks with `jetson_clocks`,
+settles 10 s, records per-mode provenance (`nvpmodel -q`, clock readback,
+online-CPU count) and a per-mode `tegrastats` log (power rails → energy/solve
+and perf-per-watt), and re-runs all four timed legs into
+`mode_<id>_<name>/` subdirs. The original power mode is restored on exit.
 
 Nothing else should use the GPU or heavy CPU while it runs (timing
 methodology). The script:
@@ -77,6 +102,7 @@ methodology). The script:
 | `robotics_sweep_*.txt` | Jetson robotics tier panels |
 | `body_dispatch_sweep_*.txt` | the sm_87 in-block body-dispatch table (the bare `glass::` face's Phase-2 `dispatch_body()` cells for this arch — same sweep the desktop quiet window runs) |
 | `provenance/` | paper's exact hardware/software statement; AGX-vs-NX-vs-Nano scaling axis (SM count, clocks); energy/solve from `tegrastats_run.txt` |
+| `mode_<id>_<name>/` (power sweeps) | one full capture set per power mode + `mode_provenance.txt` + per-mode `tegrastats` → the latency-vs-power-budget and perf-per-watt story |
 
 Troubleshooting:
 - `could not detect GPU arch` from `paper_sweeps.py`: the script pins
