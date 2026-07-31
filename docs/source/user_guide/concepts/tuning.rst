@@ -122,14 +122,20 @@ behind an SM dispatch; ``bench/tune.py --sm auto`` adds or refreshes your GPU's 
 
 Note that ``suggested_backend<>`` advises **launch-level** packing — the caller
 changes the ``<<<grid, block>>>``. Distinct from it, ``glass::dispatch_body()``
-(also ``glass-defaults.cuh``) picks the **in-block body** behind the bare
+(``glass-dispatch.cuh``) picks the **in-block body** behind the bare
 ``glass::op`` face under a *fixed* block-scope calling contract — the launch
-does not change. Phase 1 pins every cell to the block body, so bare names are
-exactly ``glass::block::``; the Phase-2 hook is a measured in-block body sweep
-(a future ``tune.py`` leg) that regenerates the table and may move cells to a
-warp- or thread-body executed inside the block — a receipt-attested retune,
-never a silent change. Consumers that need bit-stability across retunes pin
-``glass::block::`` explicitly (see :doc:`namespaces`).
+does not change. The ``body`` leg (``tune.py --legs body``, harness
+``bench_body_dispatch.cu``) measures three bodies per (op, N, dtype) cell —
+full-block SIMT / warp 0 / thread 0, each + block sync — across block widths
+32–256 and regenerates the per-arch table under a deliberately stricter rule
+than the ladder's: a body takes a cell only if it is never worse than block by
+more than the margin at *any* measured (batch, width) point AND better by more
+than the margin at ≥1 width in the throughput regime; verdicts are bounded at
+the largest measured N and unmeasured arches stay block. A moved cell matches
+block to reduction-order tolerance, not bit-exactly — the retune is a
+receipt-attested event, never a silent change. Consumers that need
+bit-stability across retunes pin ``glass::block::`` explicitly (see
+:doc:`namespaces`).
 
 Why bother?
 -----------

@@ -50,19 +50,32 @@ static_assert(gd::ideal(op::posv, 64, true,  1200u) == gd::ideal_sm120(op::posv,
 static_assert(gd::ideal(op::gemm, 32, false, 0u) == gd::ideal_generic(op::gemm, 32, false), "unmeasured SM falls to generic");
 static_assert(gd::ideal(op::chol, 24, false, 1u) == gd::ideal_generic(op::chol, 24, false), "unmeasured SM falls to generic");
 
-// ── bare-namespace face (2026-07-30 restructure): Phase-1 pins ──
-// Every dispatch_body cell is the block body, and the bare glass:: names are
-// the SAME entities as glass::block:: (using-directive re-export) — pinned by
-// function-pointer identity. When a Phase-2 sweep moves cells, tune.py must
-// regenerate the table AND add shadowing wrappers; these asserts then update
-// as part of that attested retune.
-static_assert(glass::dispatch_body(op::gemm, 8,  false) == glass::body::block, "phase-1: all cells block");
-static_assert(glass::dispatch_body(op::chol, 64, true)  == glass::body::block, "phase-1: all cells block");
-static_assert(glass::dispatch_body(op::dot,  4,  false) == glass::body::block, "phase-1: all cells block");
-// (one op suffices: the re-export is a single using-directive, so it covers
-//  every name identically — heavily-overloaded names like gemv/potrf can't be
-//  address-compared without a disambiguating cast, but resolve the same way)
-static_assert(&glass::dot<float, 8, true>  == &glass::block::dot<float, 8, true>,  "bare dot IS block::dot");
+// ── bare-namespace face: Phase-2 pins (2026-07-30 body sweep, sm_120) ──
+// dispatch_body() now carries the measured body_sm120 table
+// (bench/body_dispatch_sweep_20260730_2041.txt; rule = never worse than block
+// by >5% at any measured (NPROB, TB), >5% faster at >=1 TB @ NPROB=8192,
+// bounded at the largest measured N). Spot-pin the moved cells + the rule's
+// conservative refusals:
+using glass::body;
+static_assert(glass::dispatch_body(op::dot,   8, false) == body::warp_in_block,   "dot8 f32 -> warp body");
+static_assert(glass::dispatch_body(op::dot,  32, false) == body::thread_in_block, "dot32 f32 -> thread body");
+static_assert(glass::dispatch_body(op::dot, 128, false) == body::block,           "dot128 f32 BOUNDED -> block");
+static_assert(glass::dispatch_body(op::trsv, 16, false) == body::warp_in_block,   "trsv16 f32 -> warp body");
+static_assert(glass::dispatch_body(op::trsv, 64, false) == body::block,           "trsv64 f32 stays block");
+static_assert(glass::dispatch_body(op::posv,  4, false) == body::thread_in_block, "posv4 f32 -> thread body");
+static_assert(glass::dispatch_body(op::posv, 16, true)  == body::block,           "posv f64 all block");
+static_assert(glass::dispatch_body(op::eig3,  3, true)  == body::thread_in_block, "eig3 f64 -> thread body");
+static_assert(glass::dispatch_body(op::eig3,  3, false) == body::block,           "eig3 f32 TB-unstable -> block");
+static_assert(glass::dispatch_body(op::softmax, 16, false) == body::warp_in_block, "softmax16 f32 -> warp body");
+static_assert(glass::dispatch_body(op::softmax, 4096, false) == body::block,      "softmax large-n BOUNDED -> block");
+static_assert(glass::dispatch_body(op::gemm, 16, false) == body::block,           "gemm never moves");
+// unmeasured arch: every cell stays the block body
+static_assert(glass::dispatch_body(op::dot, 32, false, 0u) == body::block, "unmeasured SM -> block body");
+// bare == block identity is pinned through an op with NO moved cells (the
+// moved names are now distinct wrapper entities; unmoved names must remain
+// the very same block:: functions via the using-directive).
+static_assert(&glass::symmetrize<float, 8, true> == &glass::block::symmetrize<float, 8, true>,
+              "bare (unmoved) IS block");
 // tier aliases: glass::warp/thread are namespace aliases of block::warp/thread
 static_assert(&glass::warp::dot<float, 8>  == &glass::block::warp::dot<float, 8>,  "warp alias");
 static_assert(&glass::thread::dot<float, 8> == &glass::block::thread::dot<float, 8>, "thread alias");

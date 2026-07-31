@@ -9,6 +9,13 @@ The pick **cannot** be a device function: the tiers need different
 ``<<<grid, block>>>`` launches, so the decision happens host-side / at codegen time. See
 :doc:`../user_guide/concepts/tuning` for the underlying numbers.
 
+Distinct from this launch-level advisor, the tiny ``glass-dispatch.cuh``
+header (included by both ``glass.cuh`` and this one; shared ``glass::op``
+enum) carries ``glass::dispatch_body()`` — the measured **in-block body**
+table behind the bare ``glass::op`` face, applied automatically by the
+wrappers in ``src/base/dispatch.cuh`` under a *fixed* launch. See
+:doc:`../user_guide/concepts/namespaces`.
+
 .. note::
 
    ``backend::thread`` is **measured and shipped for sm_120** (2026-07-18 quiet-GPU

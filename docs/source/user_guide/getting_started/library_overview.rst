@@ -75,7 +75,7 @@ idle:
 
 **Bare** ``glass::op`` (and bare ``glass::nvidia::op``) is the
 **measured-default face**: the same block-scope calling contract, body chosen
-per (op, size, dtype) by ``glass::dispatch_body()`` (``glass-defaults.cuh``).
+per (op, size, dtype) by ``glass::dispatch_body()`` (``glass-dispatch.cuh``).
 Phase 1 pins every cell to the block body, so the bare names are today the
 same entities as ``glass::block::`` — old spellings compile unchanged. Pin
 ``glass::block::`` where determinism is load-bearing; see

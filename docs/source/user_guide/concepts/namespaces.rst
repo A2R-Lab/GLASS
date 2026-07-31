@@ -51,19 +51,30 @@ The 2026-07-30 restructure splits each spelling along one more line:
   anywhere determinism is load-bearing.
 - **Bare** ``glass::gemm`` (and bare ``glass::nvidia::gemm``) **is the
   measured-default face**: the same block-scope *calling* contract — all block
-  threads enter, the result is valid after return — with the implementation
-  *body* chosen per (op, size, dtype) by ``glass::dispatch_body()`` in
-  ``glass-defaults.cuh``.
+  threads enter, any thread count, the result is valid after return — with the
+  implementation *body* chosen per (op, size, dtype) by
+  ``glass::dispatch_body()`` in ``glass-dispatch.cuh``.
 
-**Phase 1 (today): the two faces are identical.** Every ``dispatch_body()``
-cell pins to the block body, so the bare names resolve to the *same entities*
-as ``glass::block::`` — re-exported by a ``using namespace block;`` directive
-in the umbrella headers, with function-pointer identity pinned by
-``test/cuda/test_defaults.cu``. All pre-restructure spellings still compile
-with identical meaning; Phase 1 is bit-identical by construction. A future
-measured **in-block body sweep** (a ``bench/tune.py`` leg) may move cells to a
-warp- or thread-body executed under the same block-scope contract — an
-attested, receipt-gated retune, never a silent change (see :doc:`tuning`).
+**Phase 2 (2026-07-30): measured cells dispatch.** The in-block body sweep
+(``bench/tune.py --legs body``, driving ``bench/bench_body_dispatch.cu``)
+measured three bodies per cell under the fixed one-problem-per-block contract —
+full-block SIMT, *warp 0 only*, *thread 0 only* (each followed by a block-wide
+sync) — across block widths 32–256 and three batch sizes. A body takes a cell
+only if it is **never worse than the block body by more than the noise margin
+at any measured point and better by more than the margin at ≥1 width** in the
+throughput regime; verdicts are **bounded** at the largest measured size
+(anything larger stays block), and unmeasured architectures stay block
+everywhere. On sm_120 this moved 22 cells (small ``dot``/``trsv``/``posv``
+factor-solve cells, ``softmax``, and f64 ``eig3`` — up to ~7× at wide blocks,
+where every extra lane otherwise re-runs a serial core redundantly). Ops with
+a moved cell are shadowed by thin wrappers (``src/base/dispatch.cuh``) that
+route each cell; every other name still resolves to the *same entity* as
+``glass::block::`` (function-pointer identity pinned by
+``test/cuda/test_defaults.cu``; bare-vs-block agreement across thread counts
+tested by ``test/test_dispatch.py``). All pre-restructure spellings still
+compile. A moved cell matches the block tier to reduction-order tolerance,
+**not bit-exactly** — the retune is an attested, receipt-gated event, never a
+silent change (see :doc:`tuning`).
 
 Rule of thumb: **explicit namespace = contract tier; bare namespace =
 performance tier.**

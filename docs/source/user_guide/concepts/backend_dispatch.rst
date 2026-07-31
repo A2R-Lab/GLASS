@@ -19,7 +19,7 @@ clean compile-time message when it is missing.
    ``glass::suggested_backend<>`` (:doc:`tuning`) is a *host-side* ladder that
    advises **launch-level packing** — which tier (thread / warp / block /
    nvidia) to launch, i.e. the shape of ``<<<grid, block>>>``. Newest, and
-   different from both: ``glass::dispatch_body()`` (``glass-defaults.cuh``)
+   different from both: ``glass::dispatch_body()`` (``glass-dispatch.cuh``)
    picks the **in-block body** behind the bare ``glass::op`` /
    ``glass::nvidia::op`` face, under a *fixed* block-scope calling contract —
    the launch does not change. Phase 1 pins every cell to the block body (bare

@@ -249,6 +249,7 @@ def bins(tmp_path_factory):
         "reduced_blas": compile_binary("test_reduced_blas", build_dir, CUDA_ARCH),
         "base_f64": compile_binary("test_base_f64", build_dir, CUDA_ARCH),
         "defaults": compile_binary("test_defaults", build_dir, CUDA_ARCH),
+        "dispatch": compile_binary("test_dispatch", build_dir, CUDA_ARCH),
         "l1_round2": compile_binary("test_l1_round2", build_dir, CUDA_ARCH),
         "block_access": compile_binary("test_block_access", build_dir, CUDA_ARCH),
         "symmetrize": compile_binary("test_symmetrize", build_dir, CUDA_ARCH),
@@ -375,6 +376,12 @@ def bin_base_f64(bins):
 def bin_defaults(bins):
     """Compile-time backend-defaults helpers (static_asserts validate at compile)."""
     return bins["defaults"]
+
+
+@pytest.fixture(scope="session")
+def bin_dispatch(bins):
+    """Bare-face body-dispatch functional tests (bare glass::op vs glass::block::)."""
+    return bins["dispatch"]
 
 
 # ─── run_op helper ────────────────────────────────────────────────────────────

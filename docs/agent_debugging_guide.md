@@ -484,3 +484,24 @@ NOT. Rules:
 | `posv<T,N>(A,b)` suddenly ambiguous after adding a flag | Flagged both posv overloads — flag only multi-RHS (§7) |
 | `std::size_t` undefined / `glass::std` error in a base header | `std` nested by an in-namespace include — return `uint32_t` (§7) |
 | `*_reduced` op far slower than serial | Expected on sm_120 — use `suggested_use_reduced<>()`, prefer serial (§7) |
+
+## Bare-face body dispatch (2026-07-30, Phase 2)
+
+Three bug classes introduced/dodged by the dispatch wrappers (`src/base/dispatch.cuh`):
+
+1. **Name shadowing is per-NAME, not per-overload.** A single declaration of
+   `dot` directly in `namespace glass` hides the ENTIRE `block::dot` overload
+   set from the bare face (qualified lookup stops before using-directives).
+   Every public block overload of a shadowed op must be restated (dispatched
+   or forwarded) — a new block:: overload on dot/gemv/potrf/trsv/posv/eig3/
+   softmax that isn't restated silently vanishes from `glass::`.
+2. **Partial-scope bodies need a full first warp + a block-wide sync.** The
+   warp body is only valid when `blockDim.x >= 32` (x-major first warp is a
+   real hardware warp); narrower launches must fall back to the block body.
+   The trailing `__syncthreads()` after `if (tid<32) warp::op(...)` is the
+   publish barrier — dropping it is the classic write-then-read race, invisible
+   at 32 threads, racy at 64+. `test_dispatch.cu` runs TB=16 deliberately.
+3. **Never extrapolate a single-point sweep verdict.** softmax was measured at
+   n=16 only; an unbounded table entry would have routed n=4096 onto one warp.
+   tune.py's `_body_expr` bounds every verdict at the largest measured N
+   (beyond it -> block) — keep that property if you touch the emitter.
