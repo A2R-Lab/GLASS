@@ -53,10 +53,15 @@ sudo nvpmodel -m 3        # highest STANDARD wattage mode (AGX: 50W; check nvpmo
 sudo jetson_clocks        # pin clocks (within the mode's budget) for stable timing
 ```
 
-**For power-mode sweeps (and for letting an agent drive the box over ssh),
-grant passwordless sudo for exactly the two clock tools** (one-time, per box):
+**One-time per-box account setup** (needs an interactive sudo once). The
+benchmark account must be in the `video` group — Tegra's GPU nodes
+(`/dev/nvmap`, `/dev/nvhost-*`) are `root:video`, and a user outside it gets
+`NvRmMemInitNvmap failed: Permission denied` / "no CUDA-capable device" from
+every CUDA binary. Power-mode sweeps (and agent-driven runs over ssh)
+additionally need passwordless sudo for exactly the two clock tools:
 
 ```bash
+sudo usermod -aG video $USER     # then log out/in (new ssh sessions pick it up)
 echo "$USER ALL=(ALL) NOPASSWD: /usr/sbin/nvpmodel, /usr/bin/jetson_clocks" \
   | sudo tee /etc/sudoers.d/glass-bench
 ```
