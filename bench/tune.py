@@ -213,25 +213,31 @@ def run_mega_sweep(binp, quick, prefix="mega_sweep", sched=None):
     leg times per-launch with restores, so its reps budget is much smaller)."""
     if sched is None:
         sched = _QUICK_SCHED if quick else _FULL_SCHED
-    out = [f"# {prefix}  {time.strftime('%c')}  (bench/tune.py)"]
+    # INCREMENTAL PERSIST: the file is created up front and appended after
+    # EVERY section, so a killed run (power cut, reboot, orchestrator bail)
+    # keeps all completed sections — hours of Orin data died to the old
+    # write-at-the-end behavior (2026-07-31).
+    path = BENCH_DIR / f"{prefix}_{time.strftime('%Y%m%d_%H%M')}.txt"
+    hdr = [f"# {prefix}  {time.strftime('%c')}  (bench/tune.py)"]
     try:
         smi = subprocess.check_output(
             ["nvidia-smi", "--query-gpu=name,clocks.max.sm,clocks.sm,temperature.gpu",
              "--format=csv,noheader"], text=True).strip()
-        out.append(smi)
+        hdr.append(smi)
     except Exception:
         pass
-    out.append("")
+    hdr.append("")
+    path.write_text("\n".join(hdr) + "\n")
     for nprob, reps in sched:
         for dt in ("f32", "f64"):
             print(f"  -> {prefix} NPROB={nprob} reps={reps} {dt}")
-            out.append(f"################ NPROB={nprob}  reps={reps}  dtype={dt} ################")
             r = subprocess.run([str(binp), nprob, reps, dt], text=True,
                                capture_output=True, cwd=BENCH_DIR)
-            out.append(r.stdout)
-            out.append("")
-    path = BENCH_DIR / f"{prefix}_{time.strftime('%Y%m%d_%H%M')}.txt"
-    path.write_text("\n".join(out))
+            with open(path, "a") as f:
+                f.write(f"################ NPROB={nprob}  reps={reps}  dtype={dt} ################\n")
+                f.write(r.stdout)
+                f.write("\n")
+            print(f"     section saved -> {path.name}")
     print(f"==> wrote {path.relative_to(GLASS_DIR)}")
     return path
 
