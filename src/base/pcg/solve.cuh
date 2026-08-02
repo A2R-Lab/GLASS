@@ -102,6 +102,7 @@ __device__ void pcg(T *x, T *S, T *Pinv, T *b, T *s_mem,
         __syncthreads();
         return;
     }
+    __syncthreads();  // scalar-bank reads above complete before rank 0 writes s_rho_init
     if (rank == 0) s_rho_init = arho;
     __syncthreads();
 
@@ -129,6 +130,7 @@ __device__ void pcg(T *x, T *S, T *Pinv, T *b, T *s_mem,
 
         T arho_new = (s_rho_new < static_cast<T>(0)) ? -s_rho_new : s_rho_new;
         if (arho_new < abs_tol + rel_tol * s_rho_init) break;
+        __syncthreads();  // scalar-bank reads above complete before rank 0 rewrites s_beta/s_rho
 
         if (rank == 0) { s_beta = s_rho_new / s_rho; s_rho = s_rho_new; }
         __syncthreads();
