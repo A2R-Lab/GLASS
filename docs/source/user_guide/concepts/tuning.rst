@@ -177,6 +177,22 @@ Two practical notes from the Orin bring-up:
   also the most efficient: 50 W is 1.31× faster than 30 W for 1.20× the power,
   i.e. **0.91× the energy per problem**. Race to idle.
 
+**How reproducible is a retune?** Two independent 50 W captures of the same
+board (different sessions, hours apart) crown the same winner in 391 of 396
+cells (98.7 %), and generate tables differing in exactly one line: ``gemm``
+f64 near N=48, where the block and warp tiers land within 1 % of each other.
+
+That single flip exposes a rough edge worth knowing about. The ±5 % tie rule
+governs whether a *dependency* tier (cuBLASDx/cuSOLVERDx) may take a cell from
+the no-dependency SIMT tiers — but **between two SIMT tiers the generator takes
+the raw minimum**, so sub-1 % run-to-run noise can change an emitted line
+without anything real having changed. If you regenerate and see a one-line
+diff in a near-tie band, that is what you are looking at, not a hardware
+finding. (Applying a margin between SIMT tiers as well — preferring the
+simpler tier on a tie — would make the tables reproducible across
+re-measurements; it is not done today because it would perturb every shipped
+table and so wants its own attested regeneration.)
+
 Raw captures, provenance bundles and the analysis scripts behind these numbers
 live in the paper repository (``data/jetson/``), not here — this repo ships the
 generated tables and the harnesses, not the measurement archive.
