@@ -1,2 +1,0 @@
-NV Power Mode: MODE_30W
-2

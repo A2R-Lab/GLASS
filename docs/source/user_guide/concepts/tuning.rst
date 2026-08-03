@@ -137,6 +137,50 @@ receipt-attested event, never a silent change. Consumers that need
 bit-stability across retunes pin ``glass::block::`` explicitly (see
 :doc:`namespaces`).
 
+.. _tuning-per-arch-results:
+
+What a retune actually changes (sm_120 vs sm_87)
+------------------------------------------------
+
+GLASS ships two measured architectures today: ``sm_120`` (RTX 5090, 170 SMs)
+and ``sm_87`` (Jetson AGX Orin, 16 SMs, integrated memory). Comparing them is
+the clearest answer to "do I need to retune?".
+
+**Yes, per architecture.** Of the 396 (op, N, precision, batch) cells measured
+on both, **125 (32 %) crown a different tier** — and systematically toward more
+problem packing on the smaller part: 34 cells move warp → thread, 27 block →
+warp, 17 nvidia → thread. The thread tier's share nearly doubles (64 → 118
+cells). With far fewer SMs to fill, packing more problems per warp beats
+spreading one problem across more lanes. No library source differs between the
+two machines; a third of the dispatch decisions do.
+
+**No, per power mode.** The same Orin measured at 15 W, 30 W and 50 W (the
+standard ``nvpmodel`` modes) changes only **4 of 330** cells between 30 W and
+15 W, all near-tie boundaries, even though everything slows by a median
+1.49× (P10–P90 1.46–1.51×). Regenerating the table from the 30 W capture
+instead of the 50 W one changes two lines of emitted code out of twelve
+(operation, precision) groups. **A dispatch table is a property of the
+silicon, not of the power budget** — retune once per architecture and every
+deployment power mode is covered.
+
+Two practical notes from the Orin bring-up:
+
+* NVIDIA ships no MathDx for Tegra, but the cuSOLVERDx **LTO-IR fatbins are
+  architecture-neutral**: ``tune.py`` detects a non-x86 host and stages a
+  separate-compilation device link against the fatbin, so Jetson runs the full
+  four-tier ladder. It is worth having — the vendor tier wins 118 of 396 cells
+  on sm_87 (Cholesky up to 3.7× over the best SIMT tier at small N).
+* The ``nvpmodel`` labels are ceilings, not draws. Sampling the board rails at
+  1 Hz with the GPU ≥98.7 % busy, the whole ladder pulls 13.4 W in the 30 W
+  mode and 16.0 W in the 50 W mode. Small block-resident linear algebra is
+  clock-bound long before it is power-bound, so the fastest standard mode is
+  also the most efficient: 50 W is 1.31× faster than 30 W for 1.20× the power,
+  i.e. **0.91× the energy per problem**. Race to idle.
+
+Raw captures, provenance bundles and the analysis scripts behind these numbers
+live in the paper repository (``data/jetson/``), not here — this repo ships the
+generated tables and the harnesses, not the measurement archive.
+
 Why bother?
 -----------
 
