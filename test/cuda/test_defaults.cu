@@ -42,9 +42,25 @@ static_assert(gd::ideal_sm120(op::gemm, 64, true) == backend::block,  "gemm64 f6
 static_assert(gd::ideal_sm120(op::posv, 12, true) == backend::thread, "posv12 f64");
 static_assert(gd::ideal_sm120(op::posv, 64, true) == backend::nvidia, "posv64 f64");
 
+// ── sm_87 (Jetson AGX Orin, 50W standard mode; mega_sweep_50W_merged.txt) ──
+// The integrated-memory Orin keeps the thread tier winning further out than
+// sm_120 does, and the vendor tier (reachable on Tegra only via the cuSOLVERDx
+// LTO-IR fatbin device link) takes the small-N factor/solve band outright.
+static_assert(gd::ideal_sm87(op::dot,   8,  false) == backend::thread, "dot8 f32");
+static_assert(gd::ideal_sm87(op::dot,   128, false) == backend::warp,  "dot128 f32");
+static_assert(gd::ideal_sm87(op::chol,  8,  false) == backend::thread, "chol8 f32");
+static_assert(gd::ideal_sm87(op::chol,  48, false) == backend::nvidia, "chol48 f32 -> vendor");
+static_assert(gd::ideal_sm87(op::posv,  32, false) == backend::nvidia, "posv32 f32 -> vendor");
+static_assert(gd::ideal_sm87(op::posv,  16, false) == backend::thread, "posv16 f32");
+static_assert(gd::ideal_sm87(op::gemm,  64, false) == backend::nvidia, "gemm64 f32 -> vendor");
+static_assert(gd::ideal_sm87(op::gemm,  64, true)  == backend::block,  "gemm64 f64");
+static_assert(gd::ideal_sm87(op::chol,  24, true)  == backend::thread, "chol24 f64 (thread reaches further than sm_120)");
+
 // ── per-arch dispatch: a measured SM hits its table, an unmeasured SM falls to generic ──
 static_assert(gd::ideal(op::gemm, 32, false, 1200u) == gd::ideal_sm120(op::gemm, 32, false), "sm_120 dispatches to its table");
 static_assert(gd::ideal(op::posv, 64, true,  1200u) == gd::ideal_sm120(op::posv, 64, true),  "sm_120 dispatches to its table (f64)");
+static_assert(gd::ideal(op::chol, 48, false, 870u)  == gd::ideal_sm87(op::chol, 48, false),  "sm_87 dispatches to its table");
+static_assert(gd::ideal(op::posv, 64, true,  870u)  == gd::ideal_sm87(op::posv, 64, true),   "sm_87 dispatches to its table (f64)");
 // (sentinel SMs no sweep will ever produce — a real new arch, e.g. sm_87 on Jetson,
 //  gets its own table + dispatch case from tune.py and must NOT be asserted generic here)
 static_assert(gd::ideal(op::gemm, 32, false, 0u) == gd::ideal_generic(op::gemm, 32, false), "unmeasured SM falls to generic");
@@ -69,6 +85,14 @@ static_assert(glass::dispatch_body(op::eig3,  3, false) == body::block,         
 static_assert(glass::dispatch_body(op::softmax, 16, false) == body::warp_in_block, "softmax16 f32 -> warp body");
 static_assert(glass::dispatch_body(op::softmax, 4096, false) == body::block,      "softmax large-n BOUNDED -> block");
 static_assert(glass::dispatch_body(op::gemm, 16, false) == body::block,           "gemm never moves");
+// sm_87 body table (body_dispatch_sweep_20260803_0936.txt, 50W): the same rule
+// moves 23 cells there; softmax/eig3 land identically, dot's warp band runs wider.
+static_assert(glass::dispatch_body(op::dot,   8, false, 870u) == body::thread_in_block, "sm_87 dot8 -> thread body");
+static_assert(glass::dispatch_body(op::dot,  32, false, 870u) == body::warp_in_block,   "sm_87 dot32 -> warp body");
+static_assert(glass::dispatch_body(op::dot, 128, false, 870u) == body::block,           "sm_87 dot128 BOUNDED -> block");
+static_assert(glass::dispatch_body(op::chol, 16, false, 870u) == body::block,           "sm_87 chol never moves");
+static_assert(glass::dispatch_body(op::eig3,  3, true,  870u) == body::thread_in_block, "sm_87 eig3 f64 -> thread body");
+static_assert(glass::dispatch_body(op::softmax, 16, false, 870u) == body::warp_in_block, "sm_87 softmax16 -> warp body");
 // unmeasured arch: every cell stays the block body
 static_assert(glass::dispatch_body(op::dot, 32, false, 0u) == body::block, "unmeasured SM -> block body");
 // bare == block identity is pinned through an op with NO moved cells (the

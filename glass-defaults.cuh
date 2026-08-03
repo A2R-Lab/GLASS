@@ -102,6 +102,34 @@ constexpr backend ideal_sm120(op o, uint32_t N, bool f64) {
 }
 // === END tune.py ladder sm_120 ===
 
+// === BEGIN tune.py ladder sm_87 ===
+// Source sweep: mega_sweep_50W_merged.txt   tie margin: ±5% (nvidia must clear it)
+// Returns the *ideal* tier assuming nvidia is linked; nv_available() filters after.
+constexpr backend ideal_sm87(op o, uint32_t N, bool f64) {
+    switch (o) {
+        case op::dot:
+            if (!f64) return N <= 24u ? backend::thread : backend::warp;
+            else      return N <= 64u ? backend::thread : backend::warp;
+        case op::gemv:
+            if (!f64) return N <= 6u ? backend::thread : N <= 32u ? backend::warp : N <= 48u ? backend::nvidia : N <= 64u ? backend::warp : backend::block;
+            else      return N <= 12u ? backend::thread : N <= 32u ? backend::warp : backend::block;
+        case op::gemm:
+            if (!f64) return N <= 16u ? backend::warp : N <= 96u ? backend::nvidia : backend::block;
+            else      return N <= 16u ? backend::warp : backend::block;
+        case op::chol:
+            if (!f64) return N <= 12u ? backend::thread : backend::nvidia;
+            else      return N <= 48u ? backend::thread : N <= 64u ? backend::nvidia : backend::block;
+        case op::trsv:
+            if (!f64) return N <= 16u ? backend::thread : N <= 32u ? backend::nvidia : backend::warp;
+            else      return N <= 16u ? backend::thread : N <= 32u ? backend::nvidia : N <= 64u ? backend::thread : N <= 96u ? backend::warp : backend::block;
+        case op::posv:
+            if (!f64) return N <= 16u ? backend::thread : backend::nvidia;
+            else      return N <= 64u ? backend::thread : backend::block;
+    }
+    return backend::block;
+}
+// === END tune.py ladder sm_87 ===
+
 // Coarse fallback for unmeasured SMs: warp tiny, block large, nvidia mid for the
 // parallel/factor ops when linked. Mirrors the sm_120 *shape*.
 constexpr backend ideal_generic(op o, uint32_t N, bool /*f64*/) {
@@ -142,6 +170,7 @@ constexpr backend ideal(op o, uint32_t N, bool f64, uint32_t sm) {
 #else
     switch (sm) {
         // === BEGIN tune.py ladder dispatch ===
+        case 870u: return ideal_sm87(o, N, f64);
         case 1200u: return ideal_sm120(o, N, f64);
         // === END tune.py ladder dispatch ===
         default:    return ideal_generic(o, N, f64);

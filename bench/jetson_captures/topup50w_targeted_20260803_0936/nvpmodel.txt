@@ -1,0 +1,2 @@
+NV Power Mode: MODE_50W
+3

@@ -1,0 +1,8 @@
+# Raw tegrastats logs are ~13 MB per run (1 Hz over 7-9 h); ship the condensed
+# tegrastats_summary_*.txt instead (see summarize_tegrastats.py).
+**/tegrastats_run.txt
+tegrastats_*_topup.txt
+# tarballs are redundant with the extracted directories next to them
+*.tar.gz
+# orchestrator scratch
+resume_topup.log

@@ -1,0 +1,9 @@
+# tegrastats summary | AGX Orin MODE_50W (post-zombie window only) | window 11:20..end | tegrastats_run.txt
+# samples: 23942 (~6.7 h at 1 Hz); GPU-busy (>=50%) samples: 23874
+GPU busy      mean  98.7 %   median  99.0 %
+VDD_GPU_SOC   mean   8.88 W   peak  22.79 W   (GPU-busy samples)
+VDD_CPU_CV    mean   0.80 W   peak   1.60 W   (GPU-busy samples)
+VIN_SYS_5V0   mean   6.33 W   peak  11.61 W   (GPU-busy samples)
+BOARD TOTAL   mean  16.02 W   (sum of rails, GPU-busy samples)
+tj            mean  52.6 C   peak  61.0 C
+gpu temp      mean  48.7 C   peak  58.2 C

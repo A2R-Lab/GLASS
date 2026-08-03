@@ -1,0 +1,1721 @@
+# bench_paper_hostblas — Orin, reps=15, dtype=both, section=all
+CHECK op=gemm dtype=f32 N=4 impl=block maxerr=7.297e-08
+CHECK op=gemm dtype=f32 N=4 impl=warp maxerr=7.297e-08
+CHECK op=gemm dtype=f32 N=4 impl=vendor maxerr=7.297e-08
+CHECK op=gemm dtype=f32 N=4 impl=vendor_tf32 maxerr=7.297e-08
+CHECK op=potrf dtype=f32 N=4 impl=block maxerr=1.043e-07
+CHECK op=potrf dtype=f32 N=4 impl=warp maxerr=1.043e-07
+CHECK op=potrf dtype=f32 N=4 impl=vendor maxerr=1.043e-07
+CHECK op=posv dtype=f32 N=4 impl=block maxerr=2.058e-08
+CHECK op=posv dtype=f32 N=4 impl=vendor maxerr=2.058e-08
+RESULT section=thru op=gemm dtype=f32 N=4 B=1 impl=block32 ns=9856.00
+RESULT section=thru op=gemm dtype=f32 N=4 B=1 impl=block128 ns=9768.53
+RESULT section=thru op=gemm dtype=f32 N=4 B=1 impl=warp8 ns=9849.60
+RESULT section=thru op=gemm dtype=f32 N=4 B=1 impl=vendor ns=25405.87
+RESULT section=thru op=potrf dtype=f32 N=4 B=1 impl=block32 ns=11758.93
+RESULT section=thru op=potrf dtype=f32 N=4 B=1 impl=block128 ns=12021.33
+RESULT section=thru op=potrf dtype=f32 N=4 B=1 impl=warp8 ns=11656.53
+RESULT section=thru op=potrf dtype=f32 N=4 B=1 impl=vendor ns=24044.80
+RESULT section=thru op=posv dtype=f32 N=4 B=1 impl=block32 ns=14777.60
+RESULT section=thru op=posv dtype=f32 N=4 B=1 impl=block128 ns=14707.20
+RESULT section=thru op=posv dtype=f32 N=4 B=1 impl=vendor ns=54649.60
+RESULT section=thru op=gemm dtype=f32 N=4 B=1 impl=vendor_tf32 ns=21186.13
+RESULT section=thru op=gemm dtype=f32 N=4 B=4 impl=block32 ns=2508.27
+RESULT section=thru op=gemm dtype=f32 N=4 B=4 impl=block128 ns=2548.80
+RESULT section=thru op=gemm dtype=f32 N=4 B=4 impl=warp8 ns=2363.73
+RESULT section=thru op=gemm dtype=f32 N=4 B=4 impl=vendor ns=5723.73
+RESULT section=thru op=potrf dtype=f32 N=4 B=4 impl=block32 ns=2775.47
+RESULT section=thru op=potrf dtype=f32 N=4 B=4 impl=block128 ns=2777.60
+RESULT section=thru op=potrf dtype=f32 N=4 B=4 impl=warp8 ns=2594.67
+RESULT section=thru op=potrf dtype=f32 N=4 B=4 impl=vendor ns=5766.40
+RESULT section=thru op=posv dtype=f32 N=4 B=4 impl=block32 ns=3613.87
+RESULT section=thru op=posv dtype=f32 N=4 B=4 impl=block128 ns=3625.07
+RESULT section=thru op=posv dtype=f32 N=4 B=4 impl=vendor ns=13995.73
+RESULT section=thru op=gemm dtype=f32 N=4 B=4 impl=vendor_tf32 ns=5876.80
+RESULT section=thru op=gemm dtype=f32 N=4 B=16 impl=block32 ns=626.40
+RESULT section=thru op=gemm dtype=f32 N=4 B=16 impl=block128 ns=631.47
+RESULT section=thru op=gemm dtype=f32 N=4 B=16 impl=warp8 ns=615.87
+RESULT section=thru op=gemm dtype=f32 N=4 B=16 impl=vendor ns=1456.00
+RESULT section=thru op=potrf dtype=f32 N=4 B=16 impl=block32 ns=704.53
+RESULT section=thru op=potrf dtype=f32 N=4 B=16 impl=block128 ns=696.80
+RESULT section=thru op=potrf dtype=f32 N=4 B=16 impl=warp8 ns=748.53
+RESULT section=thru op=potrf dtype=f32 N=4 B=16 impl=vendor ns=1443.73
+RESULT section=thru op=posv dtype=f32 N=4 B=16 impl=block32 ns=923.20
+RESULT section=thru op=posv dtype=f32 N=4 B=16 impl=block128 ns=929.47
+RESULT section=thru op=posv dtype=f32 N=4 B=16 impl=vendor ns=3588.53
+RESULT section=thru op=gemm dtype=f32 N=4 B=16 impl=vendor_tf32 ns=1430.13
+RESULT section=thru op=gemm dtype=f32 N=4 B=64 impl=block32 ns=160.33
+RESULT section=thru op=gemm dtype=f32 N=4 B=64 impl=block128 ns=163.10
+RESULT section=thru op=gemm dtype=f32 N=4 B=64 impl=warp8 ns=155.43
+RESULT section=thru op=gemm dtype=f32 N=4 B=64 impl=vendor ns=386.77
+RESULT section=thru op=potrf dtype=f32 N=4 B=64 impl=block32 ns=170.37
+RESULT section=thru op=potrf dtype=f32 N=4 B=64 impl=block128 ns=193.50
+RESULT section=thru op=potrf dtype=f32 N=4 B=64 impl=warp8 ns=181.67
+RESULT section=thru op=potrf dtype=f32 N=4 B=64 impl=vendor ns=353.23
+RESULT section=thru op=posv dtype=f32 N=4 B=64 impl=block32 ns=247.20
+RESULT section=thru op=posv dtype=f32 N=4 B=64 impl=block128 ns=254.53
+RESULT section=thru op=posv dtype=f32 N=4 B=64 impl=vendor ns=975.33
+RESULT section=thru op=gemm dtype=f32 N=4 B=64 impl=vendor_tf32 ns=393.67
+RESULT section=thru op=gemm dtype=f32 N=4 B=256 impl=block32 ns=44.20
+RESULT section=thru op=gemm dtype=f32 N=4 B=256 impl=block128 ns=45.03
+RESULT section=thru op=gemm dtype=f32 N=4 B=256 impl=warp8 ns=40.46
+RESULT section=thru op=gemm dtype=f32 N=4 B=256 impl=vendor ns=120.92
+RESULT section=thru op=potrf dtype=f32 N=4 B=256 impl=block32 ns=51.39
+RESULT section=thru op=potrf dtype=f32 N=4 B=256 impl=block128 ns=65.31
+RESULT section=thru op=potrf dtype=f32 N=4 B=256 impl=warp8 ns=49.62
+RESULT section=thru op=potrf dtype=f32 N=4 B=256 impl=vendor ns=128.09
+RESULT section=thru op=posv dtype=f32 N=4 B=256 impl=block32 ns=70.89
+RESULT section=thru op=posv dtype=f32 N=4 B=256 impl=block128 ns=105.64
+RESULT section=thru op=posv dtype=f32 N=4 B=256 impl=vendor ns=373.92
+RESULT section=thru op=gemm dtype=f32 N=4 B=256 impl=vendor_tf32 ns=126.25
+RESULT section=thru op=gemm dtype=f32 N=4 B=1024 impl=block32 ns=16.41
+RESULT section=thru op=gemm dtype=f32 N=4 B=1024 impl=block128 ns=15.78
+RESULT section=thru op=gemm dtype=f32 N=4 B=1024 impl=warp8 ns=11.57
+RESULT section=thru op=gemm dtype=f32 N=4 B=1024 impl=vendor ns=55.07
+RESULT section=thru op=potrf dtype=f32 N=4 B=1024 impl=block32 ns=28.70
+RESULT section=thru op=potrf dtype=f32 N=4 B=1024 impl=block128 ns=36.68
+RESULT section=thru op=potrf dtype=f32 N=4 B=1024 impl=warp8 ns=21.32
+RESULT section=thru op=potrf dtype=f32 N=4 B=1024 impl=vendor ns=73.54
+RESULT section=thru op=posv dtype=f32 N=4 B=1024 impl=block32 ns=49.91
+RESULT section=thru op=posv dtype=f32 N=4 B=1024 impl=block128 ns=65.41
+RESULT section=thru op=posv dtype=f32 N=4 B=1024 impl=vendor ns=235.01
+RESULT section=thru op=gemm dtype=f32 N=4 B=1024 impl=vendor_tf32 ns=55.26
+RESULT section=thru op=gemm dtype=f32 N=4 B=8192 impl=block32 ns=8.44
+RESULT section=thru op=gemm dtype=f32 N=4 B=8192 impl=block128 ns=7.06
+RESULT section=thru op=gemm dtype=f32 N=4 B=8192 impl=warp8 ns=3.09
+RESULT section=thru op=gemm dtype=f32 N=4 B=8192 impl=vendor ns=35.05
+RESULT section=thru op=potrf dtype=f32 N=4 B=8192 impl=block32 ns=20.31
+RESULT section=thru op=potrf dtype=f32 N=4 B=8192 impl=block128 ns=28.48
+RESULT section=thru op=potrf dtype=f32 N=4 B=8192 impl=warp8 ns=12.34
+RESULT section=thru op=potrf dtype=f32 N=4 B=8192 impl=vendor ns=55.15
+RESULT section=thru op=posv dtype=f32 N=4 B=8192 impl=block32 ns=38.56
+RESULT section=thru op=posv dtype=f32 N=4 B=8192 impl=block128 ns=53.96
+RESULT section=thru op=posv dtype=f32 N=4 B=8192 impl=vendor ns=193.93
+RESULT section=thru op=gemm dtype=f32 N=4 B=8192 impl=vendor_tf32 ns=35.13
+RESULT section=lat op=gemm dtype=f32 N=4 impl=block us=26.802
+RESULT section=lat op=gemm dtype=f32 N=4 impl=vendor us=53.066
+RESULT section=lat op=potrf dtype=f32 N=4 impl=block us=29.175
+RESULT section=lat op=potrf dtype=f32 N=4 impl=vendor us=61.006
+RESULT section=lat op=posv dtype=f32 N=4 impl=block us=32.896
+RESULT section=lat op=posv dtype=f32 N=4 impl=vendor us=106.780
+RESULT section=lat op=gemm dtype=f32 N=4 impl=vendor_tf32 us=53.519
+CHECK op=gemm dtype=f32 N=6 impl=block maxerr=8.844e-08
+CHECK op=gemm dtype=f32 N=6 impl=warp maxerr=8.844e-08
+CHECK op=gemm dtype=f32 N=6 impl=vendor maxerr=8.844e-08
+CHECK op=gemm dtype=f32 N=6 impl=vendor_tf32 maxerr=8.844e-08
+CHECK op=potrf dtype=f32 N=6 impl=block maxerr=2.076e-07
+CHECK op=potrf dtype=f32 N=6 impl=warp maxerr=2.076e-07
+CHECK op=potrf dtype=f32 N=6 impl=vendor maxerr=2.368e-07
+CHECK op=posv dtype=f32 N=6 impl=block maxerr=8.130e-09
+CHECK op=posv dtype=f32 N=6 impl=vendor maxerr=1.458e-08
+RESULT section=thru op=gemm dtype=f32 N=6 B=1 impl=block32 ns=9783.47
+RESULT section=thru op=gemm dtype=f32 N=6 B=1 impl=block128 ns=9235.20
+RESULT section=thru op=gemm dtype=f32 N=6 B=1 impl=warp8 ns=9794.13
+RESULT section=thru op=gemm dtype=f32 N=6 B=1 impl=vendor ns=23050.67
+RESULT section=thru op=potrf dtype=f32 N=6 B=1 impl=block32 ns=13478.40
+RESULT section=thru op=potrf dtype=f32 N=6 B=1 impl=block128 ns=13644.80
+RESULT section=thru op=potrf dtype=f32 N=6 B=1 impl=warp8 ns=13147.73
+RESULT section=thru op=potrf dtype=f32 N=6 B=1 impl=vendor ns=23771.73
+RESULT section=thru op=posv dtype=f32 N=6 B=1 impl=block32 ns=18700.80
+RESULT section=thru op=posv dtype=f32 N=6 B=1 impl=block128 ns=18662.40
+RESULT section=thru op=posv dtype=f32 N=6 B=1 impl=vendor ns=60392.53
+RESULT section=thru op=gemm dtype=f32 N=6 B=1 impl=vendor_tf32 ns=23140.27
+RESULT section=thru op=gemm dtype=f32 N=6 B=4 impl=block32 ns=2591.47
+RESULT section=thru op=gemm dtype=f32 N=6 B=4 impl=block128 ns=2564.80
+RESULT section=thru op=gemm dtype=f32 N=6 B=4 impl=warp8 ns=2449.07
+RESULT section=thru op=gemm dtype=f32 N=6 B=4 impl=vendor ns=6126.40
+RESULT section=thru op=potrf dtype=f32 N=6 B=4 impl=block32 ns=3544.00
+RESULT section=thru op=potrf dtype=f32 N=6 B=4 impl=block128 ns=3588.80
+RESULT section=thru op=potrf dtype=f32 N=6 B=4 impl=warp8 ns=3454.93
+RESULT section=thru op=potrf dtype=f32 N=6 B=4 impl=vendor ns=6114.67
+RESULT section=thru op=posv dtype=f32 N=6 B=4 impl=block32 ns=4952.00
+RESULT section=thru op=posv dtype=f32 N=6 B=4 impl=block128 ns=4945.60
+RESULT section=thru op=posv dtype=f32 N=6 B=4 impl=vendor ns=15568.00
+RESULT section=thru op=gemm dtype=f32 N=6 B=4 impl=vendor_tf32 ns=5803.73
+RESULT section=thru op=gemm dtype=f32 N=6 B=16 impl=block32 ns=665.87
+RESULT section=thru op=gemm dtype=f32 N=6 B=16 impl=block128 ns=647.60
+RESULT section=thru op=gemm dtype=f32 N=6 B=16 impl=warp8 ns=679.73
+RESULT section=thru op=gemm dtype=f32 N=6 B=16 impl=vendor ns=1459.60
+RESULT section=thru op=potrf dtype=f32 N=6 B=16 impl=block32 ns=856.13
+RESULT section=thru op=potrf dtype=f32 N=6 B=16 impl=block128 ns=854.40
+RESULT section=thru op=potrf dtype=f32 N=6 B=16 impl=warp8 ns=960.93
+RESULT section=thru op=potrf dtype=f32 N=6 B=16 impl=vendor ns=1454.40
+RESULT section=thru op=posv dtype=f32 N=6 B=16 impl=block32 ns=1205.20
+RESULT section=thru op=posv dtype=f32 N=6 B=16 impl=block128 ns=1208.13
+RESULT section=thru op=posv dtype=f32 N=6 B=16 impl=vendor ns=3899.87
+RESULT section=thru op=gemm dtype=f32 N=6 B=16 impl=vendor_tf32 ns=1526.13
+RESULT section=thru op=gemm dtype=f32 N=6 B=64 impl=block32 ns=168.73
+RESULT section=thru op=gemm dtype=f32 N=6 B=64 impl=block128 ns=167.47
+RESULT section=thru op=gemm dtype=f32 N=6 B=64 impl=warp8 ns=169.60
+RESULT section=thru op=gemm dtype=f32 N=6 B=64 impl=vendor ns=444.67
+RESULT section=thru op=potrf dtype=f32 N=6 B=64 impl=block32 ns=216.63
+RESULT section=thru op=potrf dtype=f32 N=6 B=64 impl=block128 ns=220.83
+RESULT section=thru op=potrf dtype=f32 N=6 B=64 impl=warp8 ns=242.93
+RESULT section=thru op=potrf dtype=f32 N=6 B=64 impl=vendor ns=377.80
+RESULT section=thru op=posv dtype=f32 N=6 B=64 impl=block32 ns=326.97
+RESULT section=thru op=posv dtype=f32 N=6 B=64 impl=block128 ns=333.80
+RESULT section=thru op=posv dtype=f32 N=6 B=64 impl=vendor ns=1091.60
+RESULT section=thru op=gemm dtype=f32 N=6 B=64 impl=vendor_tf32 ns=430.07
+RESULT section=thru op=gemm dtype=f32 N=6 B=256 impl=block32 ns=46.39
+RESULT section=thru op=gemm dtype=f32 N=6 B=256 impl=block128 ns=47.99
+RESULT section=thru op=gemm dtype=f32 N=6 B=256 impl=warp8 ns=44.27
+RESULT section=thru op=gemm dtype=f32 N=6 B=256 impl=vendor ns=163.79
+RESULT section=thru op=potrf dtype=f32 N=6 B=256 impl=block32 ns=62.09
+RESULT section=thru op=potrf dtype=f32 N=6 B=256 impl=block128 ns=91.07
+RESULT section=thru op=potrf dtype=f32 N=6 B=256 impl=warp8 ns=65.13
+RESULT section=thru op=potrf dtype=f32 N=6 B=256 impl=vendor ns=150.81
+RESULT section=thru op=posv dtype=f32 N=6 B=256 impl=block32 ns=94.70
+RESULT section=thru op=posv dtype=f32 N=6 B=256 impl=block128 ns=149.61
+RESULT section=thru op=posv dtype=f32 N=6 B=256 impl=vendor ns=417.69
+RESULT section=thru op=gemm dtype=f32 N=6 B=256 impl=vendor_tf32 ns=167.49
+RESULT section=thru op=gemm dtype=f32 N=6 B=1024 impl=block32 ns=19.08
+RESULT section=thru op=gemm dtype=f32 N=6 B=1024 impl=block128 ns=17.76
+RESULT section=thru op=gemm dtype=f32 N=6 B=1024 impl=warp8 ns=16.38
+RESULT section=thru op=gemm dtype=f32 N=6 B=1024 impl=vendor ns=94.16
+RESULT section=thru op=potrf dtype=f32 N=6 B=1024 impl=block32 ns=43.03
+RESULT section=thru op=potrf dtype=f32 N=6 B=1024 impl=block128 ns=57.43
+RESULT section=thru op=potrf dtype=f32 N=6 B=1024 impl=warp8 ns=34.32
+RESULT section=thru op=potrf dtype=f32 N=6 B=1024 impl=vendor ns=93.21
+RESULT section=thru op=posv dtype=f32 N=6 B=1024 impl=block32 ns=75.08
+RESULT section=thru op=posv dtype=f32 N=6 B=1024 impl=block128 ns=99.10
+RESULT section=thru op=posv dtype=f32 N=6 B=1024 impl=vendor ns=272.96
+RESULT section=thru op=gemm dtype=f32 N=6 B=1024 impl=vendor_tf32 ns=93.64
+RESULT section=thru op=gemm dtype=f32 N=6 B=8192 impl=block32 ns=10.55
+RESULT section=thru op=gemm dtype=f32 N=6 B=8192 impl=block128 ns=8.78
+RESULT section=thru op=gemm dtype=f32 N=6 B=8192 impl=warp8 ns=7.46
+RESULT section=thru op=gemm dtype=f32 N=6 B=8192 impl=vendor ns=76.10
+RESULT section=thru op=potrf dtype=f32 N=6 B=8192 impl=block32 ns=35.03
+RESULT section=thru op=potrf dtype=f32 N=6 B=8192 impl=block128 ns=48.08
+RESULT section=thru op=potrf dtype=f32 N=6 B=8192 impl=warp8 ns=25.85
+RESULT section=thru op=potrf dtype=f32 N=6 B=8192 impl=vendor ns=74.69
+RESULT section=thru op=posv dtype=f32 N=6 B=8192 impl=block32 ns=62.33
+RESULT section=thru op=posv dtype=f32 N=6 B=8192 impl=block128 ns=86.23
+RESULT section=thru op=posv dtype=f32 N=6 B=8192 impl=vendor ns=229.55
+RESULT section=thru op=gemm dtype=f32 N=6 B=8192 impl=vendor_tf32 ns=75.81
+RESULT section=lat op=gemm dtype=f32 N=6 impl=block us=27.341
+RESULT section=lat op=gemm dtype=f32 N=6 impl=vendor us=54.206
+RESULT section=lat op=potrf dtype=f32 N=6 impl=block us=32.328
+RESULT section=lat op=potrf dtype=f32 N=6 impl=vendor us=54.556
+RESULT section=lat op=posv dtype=f32 N=6 impl=block us=37.911
+RESULT section=lat op=posv dtype=f32 N=6 impl=vendor us=109.610
+RESULT section=lat op=gemm dtype=f32 N=6 impl=vendor_tf32 us=54.038
+CHECK op=gemm dtype=f32 N=8 impl=block maxerr=8.225e-08
+CHECK op=gemm dtype=f32 N=8 impl=warp maxerr=8.225e-08
+CHECK op=gemm dtype=f32 N=8 impl=vendor maxerr=7.422e-08
+CHECK op=gemm dtype=f32 N=8 impl=vendor_tf32 maxerr=7.422e-08
+CHECK op=potrf dtype=f32 N=8 impl=block maxerr=1.826e-07
+CHECK op=potrf dtype=f32 N=8 impl=warp maxerr=1.826e-07
+CHECK op=potrf dtype=f32 N=8 impl=vendor maxerr=1.826e-07
+CHECK op=posv dtype=f32 N=8 impl=block maxerr=7.199e-09
+CHECK op=posv dtype=f32 N=8 impl=vendor maxerr=1.097e-08
+RESULT section=thru op=gemm dtype=f32 N=8 B=1 impl=block32 ns=9664.00
+RESULT section=thru op=gemm dtype=f32 N=8 B=1 impl=block128 ns=9454.93
+RESULT section=thru op=gemm dtype=f32 N=8 B=1 impl=warp8 ns=9448.53
+RESULT section=thru op=gemm dtype=f32 N=8 B=1 impl=vendor ns=24586.67
+RESULT section=thru op=potrf dtype=f32 N=8 B=1 impl=block32 ns=15895.47
+RESULT section=thru op=potrf dtype=f32 N=8 B=1 impl=block128 ns=16085.33
+RESULT section=thru op=potrf dtype=f32 N=8 B=1 impl=warp8 ns=15584.00
+RESULT section=thru op=potrf dtype=f32 N=8 B=1 impl=vendor ns=25606.40
+RESULT section=thru op=posv dtype=f32 N=8 B=1 impl=block32 ns=23530.67
+RESULT section=thru op=posv dtype=f32 N=8 B=1 impl=block128 ns=23443.20
+RESULT section=thru op=posv dtype=f32 N=8 B=1 impl=vendor ns=67688.53
+RESULT section=thru op=gemm dtype=f32 N=8 B=1 impl=vendor_tf32 ns=22982.40
+RESULT section=thru op=gemm dtype=f32 N=8 B=4 impl=block32 ns=2680.00
+RESULT section=thru op=gemm dtype=f32 N=8 B=4 impl=block128 ns=2600.53
+RESULT section=thru op=gemm dtype=f32 N=8 B=4 impl=warp8 ns=2456.00
+RESULT section=thru op=gemm dtype=f32 N=8 B=4 impl=vendor ns=5836.80
+RESULT section=thru op=potrf dtype=f32 N=8 B=4 impl=block32 ns=4158.93
+RESULT section=thru op=potrf dtype=f32 N=8 B=4 impl=block128 ns=4136.00
+RESULT section=thru op=potrf dtype=f32 N=8 B=4 impl=warp8 ns=3872.53
+RESULT section=thru op=potrf dtype=f32 N=8 B=4 impl=vendor ns=6536.53
+RESULT section=thru op=posv dtype=f32 N=8 B=4 impl=block32 ns=6004.80
+RESULT section=thru op=posv dtype=f32 N=8 B=4 impl=block128 ns=6069.87
+RESULT section=thru op=posv dtype=f32 N=8 B=4 impl=vendor ns=17334.40
+RESULT section=thru op=gemm dtype=f32 N=8 B=4 impl=vendor_tf32 ns=6086.93
+RESULT section=thru op=gemm dtype=f32 N=8 B=16 impl=block32 ns=666.53
+RESULT section=thru op=gemm dtype=f32 N=8 B=16 impl=block128 ns=632.00
+RESULT section=thru op=gemm dtype=f32 N=8 B=16 impl=warp8 ns=646.13
+RESULT section=thru op=gemm dtype=f32 N=8 B=16 impl=vendor ns=1417.60
+RESULT section=thru op=potrf dtype=f32 N=8 B=16 impl=block32 ns=1019.73
+RESULT section=thru op=potrf dtype=f32 N=8 B=16 impl=block128 ns=1021.07
+RESULT section=thru op=potrf dtype=f32 N=8 B=16 impl=warp8 ns=1015.73
+RESULT section=thru op=potrf dtype=f32 N=8 B=16 impl=vendor ns=1551.07
+RESULT section=thru op=posv dtype=f32 N=8 B=16 impl=block32 ns=1485.33
+RESULT section=thru op=posv dtype=f32 N=8 B=16 impl=block128 ns=1485.47
+RESULT section=thru op=posv dtype=f32 N=8 B=16 impl=vendor ns=4326.67
+RESULT section=thru op=gemm dtype=f32 N=8 B=16 impl=vendor_tf32 ns=1359.33
+RESULT section=thru op=gemm dtype=f32 N=8 B=64 impl=block32 ns=170.60
+RESULT section=thru op=gemm dtype=f32 N=8 B=64 impl=block128 ns=163.97
+RESULT section=thru op=gemm dtype=f32 N=8 B=64 impl=warp8 ns=163.90
+RESULT section=thru op=gemm dtype=f32 N=8 B=64 impl=vendor ns=450.00
+RESULT section=thru op=potrf dtype=f32 N=8 B=64 impl=block32 ns=259.30
+RESULT section=thru op=potrf dtype=f32 N=8 B=64 impl=block128 ns=263.80
+RESULT section=thru op=potrf dtype=f32 N=8 B=64 impl=warp8 ns=253.47
+RESULT section=thru op=potrf dtype=f32 N=8 B=64 impl=vendor ns=400.40
+RESULT section=thru op=posv dtype=f32 N=8 B=64 impl=block32 ns=393.53
+RESULT section=thru op=posv dtype=f32 N=8 B=64 impl=block128 ns=410.10
+RESULT section=thru op=posv dtype=f32 N=8 B=64 impl=vendor ns=1180.27
+RESULT section=thru op=gemm dtype=f32 N=8 B=64 impl=vendor_tf32 ns=410.43
+RESULT section=thru op=gemm dtype=f32 N=8 B=256 impl=block32 ns=47.26
+RESULT section=thru op=gemm dtype=f32 N=8 B=256 impl=block128 ns=46.25
+RESULT section=thru op=gemm dtype=f32 N=8 B=256 impl=warp8 ns=44.52
+RESULT section=thru op=gemm dtype=f32 N=8 B=256 impl=vendor ns=150.44
+RESULT section=thru op=potrf dtype=f32 N=8 B=256 impl=block32 ns=78.53
+RESULT section=thru op=potrf dtype=f32 N=8 B=256 impl=block128 ns=116.87
+RESULT section=thru op=potrf dtype=f32 N=8 B=256 impl=warp8 ns=73.14
+RESULT section=thru op=potrf dtype=f32 N=8 B=256 impl=vendor ns=167.76
+RESULT section=thru op=posv dtype=f32 N=8 B=256 impl=block32 ns=123.01
+RESULT section=thru op=posv dtype=f32 N=8 B=256 impl=block128 ns=193.34
+RESULT section=thru op=posv dtype=f32 N=8 B=256 impl=vendor ns=460.47
+RESULT section=thru op=gemm dtype=f32 N=8 B=256 impl=vendor_tf32 ns=160.82
+RESULT section=thru op=gemm dtype=f32 N=8 B=1024 impl=block32 ns=19.18
+RESULT section=thru op=gemm dtype=f32 N=8 B=1024 impl=block128 ns=17.07
+RESULT section=thru op=gemm dtype=f32 N=8 B=1024 impl=warp8 ns=15.07
+RESULT section=thru op=gemm dtype=f32 N=8 B=1024 impl=vendor ns=88.88
+RESULT section=thru op=potrf dtype=f32 N=8 B=1024 impl=block32 ns=58.83
+RESULT section=thru op=potrf dtype=f32 N=8 B=1024 impl=block128 ns=78.69
+RESULT section=thru op=potrf dtype=f32 N=8 B=1024 impl=warp8 ns=43.09
+RESULT section=thru op=potrf dtype=f32 N=8 B=1024 impl=vendor ns=110.97
+RESULT section=thru op=posv dtype=f32 N=8 B=1024 impl=block32 ns=99.62
+RESULT section=thru op=posv dtype=f32 N=8 B=1024 impl=block128 ns=133.71
+RESULT section=thru op=posv dtype=f32 N=8 B=1024 impl=vendor ns=304.95
+RESULT section=thru op=gemm dtype=f32 N=8 B=1024 impl=vendor_tf32 ns=88.82
+RESULT section=thru op=gemm dtype=f32 N=8 B=8192 impl=block32 ns=12.84
+RESULT section=thru op=gemm dtype=f32 N=8 B=8192 impl=block128 ns=11.30
+RESULT section=thru op=gemm dtype=f32 N=8 B=8192 impl=warp8 ns=8.14
+RESULT section=thru op=gemm dtype=f32 N=8 B=8192 impl=vendor ns=95.64
+RESULT section=thru op=potrf dtype=f32 N=8 B=8192 impl=block32 ns=51.26
+RESULT section=thru op=potrf dtype=f32 N=8 B=8192 impl=block128 ns=69.18
+RESULT section=thru op=potrf dtype=f32 N=8 B=8192 impl=warp8 ns=34.82
+RESULT section=thru op=potrf dtype=f32 N=8 B=8192 impl=vendor ns=97.15
+RESULT section=thru op=posv dtype=f32 N=8 B=8192 impl=block32 ns=86.29
+RESULT section=thru op=posv dtype=f32 N=8 B=8192 impl=block128 ns=119.05
+RESULT section=thru op=posv dtype=f32 N=8 B=8192 impl=vendor ns=263.61
+RESULT section=thru op=gemm dtype=f32 N=8 B=8192 impl=vendor_tf32 ns=95.50
+RESULT section=lat op=gemm dtype=f32 N=8 impl=block us=27.137
+RESULT section=lat op=gemm dtype=f32 N=8 impl=vendor us=53.952
+RESULT section=lat op=potrf dtype=f32 N=8 impl=block us=35.181
+RESULT section=lat op=potrf dtype=f32 N=8 impl=vendor us=61.650
+RESULT section=lat op=posv dtype=f32 N=8 impl=block us=43.288
+RESULT section=lat op=posv dtype=f32 N=8 impl=vendor us=110.940
+RESULT section=lat op=gemm dtype=f32 N=8 impl=vendor_tf32 us=54.749
+CHECK op=gemm dtype=f32 N=12 impl=block maxerr=8.417e-08
+CHECK op=gemm dtype=f32 N=12 impl=warp maxerr=8.417e-08
+CHECK op=gemm dtype=f32 N=12 impl=vendor maxerr=7.608e-08
+CHECK op=gemm dtype=f32 N=12 impl=vendor_tf32 maxerr=7.608e-08
+CHECK op=potrf dtype=f32 N=12 impl=block maxerr=3.778e-07
+CHECK op=potrf dtype=f32 N=12 impl=warp maxerr=3.778e-07
+CHECK op=potrf dtype=f32 N=12 impl=vendor maxerr=4.696e-07
+CHECK op=posv dtype=f32 N=12 impl=block maxerr=1.070e-08
+CHECK op=posv dtype=f32 N=12 impl=vendor maxerr=2.175e-08
+RESULT section=thru op=gemm dtype=f32 N=12 B=1 impl=block32 ns=11492.27
+RESULT section=thru op=gemm dtype=f32 N=12 B=1 impl=block128 ns=10766.93
+RESULT section=thru op=gemm dtype=f32 N=12 B=1 impl=warp8 ns=11451.73
+RESULT section=thru op=gemm dtype=f32 N=12 B=1 impl=vendor ns=22176.00
+RESULT section=thru op=potrf dtype=f32 N=12 B=1 impl=block32 ns=24682.67
+RESULT section=thru op=potrf dtype=f32 N=12 B=1 impl=block128 ns=24949.33
+RESULT section=thru op=potrf dtype=f32 N=12 B=1 impl=warp8 ns=24584.53
+RESULT section=thru op=potrf dtype=f32 N=12 B=1 impl=vendor ns=28556.80
+RESULT section=thru op=posv dtype=f32 N=12 B=1 impl=block32 ns=38137.60
+RESULT section=thru op=posv dtype=f32 N=12 B=1 impl=block128 ns=38086.40
+RESULT section=thru op=posv dtype=f32 N=12 B=1 impl=vendor ns=81265.07
+RESULT section=thru op=gemm dtype=f32 N=12 B=1 impl=vendor_tf32 ns=23417.60
+RESULT section=thru op=gemm dtype=f32 N=12 B=4 impl=block32 ns=3086.93
+RESULT section=thru op=gemm dtype=f32 N=12 B=4 impl=block128 ns=2876.80
+RESULT section=thru op=gemm dtype=f32 N=12 B=4 impl=warp8 ns=2932.80
+RESULT section=thru op=gemm dtype=f32 N=12 B=4 impl=vendor ns=5988.80
+RESULT section=thru op=potrf dtype=f32 N=12 B=4 impl=block32 ns=6181.33
+RESULT section=thru op=potrf dtype=f32 N=12 B=4 impl=block128 ns=6176.53
+RESULT section=thru op=potrf dtype=f32 N=12 B=4 impl=warp8 ns=6022.93
+RESULT section=thru op=potrf dtype=f32 N=12 B=4 impl=vendor ns=7068.80
+RESULT section=thru op=posv dtype=f32 N=12 B=4 impl=block32 ns=9622.40
+RESULT section=thru op=posv dtype=f32 N=12 B=4 impl=block128 ns=9608.53
+RESULT section=thru op=posv dtype=f32 N=12 B=4 impl=vendor ns=20530.13
+RESULT section=thru op=gemm dtype=f32 N=12 B=4 impl=vendor_tf32 ns=5732.80
+RESULT section=thru op=gemm dtype=f32 N=12 B=16 impl=block32 ns=752.80
+RESULT section=thru op=gemm dtype=f32 N=12 B=16 impl=block128 ns=728.00
+RESULT section=thru op=gemm dtype=f32 N=12 B=16 impl=warp8 ns=784.67
+RESULT section=thru op=gemm dtype=f32 N=12 B=16 impl=vendor ns=1617.07
+RESULT section=thru op=potrf dtype=f32 N=12 B=16 impl=block32 ns=1556.80
+RESULT section=thru op=potrf dtype=f32 N=12 B=16 impl=block128 ns=1553.20
+RESULT section=thru op=potrf dtype=f32 N=12 B=16 impl=warp8 ns=1702.40
+RESULT section=thru op=potrf dtype=f32 N=12 B=16 impl=vendor ns=1778.67
+RESULT section=thru op=posv dtype=f32 N=12 B=16 impl=block32 ns=2407.87
+RESULT section=thru op=posv dtype=f32 N=12 B=16 impl=block128 ns=2406.80
+RESULT section=thru op=posv dtype=f32 N=12 B=16 impl=vendor ns=5222.13
+RESULT section=thru op=gemm dtype=f32 N=12 B=16 impl=vendor_tf32 ns=1519.20
+RESULT section=thru op=gemm dtype=f32 N=12 B=64 impl=block32 ns=198.77
+RESULT section=thru op=gemm dtype=f32 N=12 B=64 impl=block128 ns=184.50
+RESULT section=thru op=gemm dtype=f32 N=12 B=64 impl=warp8 ns=204.40
+RESULT section=thru op=gemm dtype=f32 N=12 B=64 impl=vendor ns=479.37
+RESULT section=thru op=potrf dtype=f32 N=12 B=64 impl=block32 ns=393.30
+RESULT section=thru op=potrf dtype=f32 N=12 B=64 impl=block128 ns=401.23
+RESULT section=thru op=potrf dtype=f32 N=12 B=64 impl=warp8 ns=426.30
+RESULT section=thru op=potrf dtype=f32 N=12 B=64 impl=vendor ns=455.53
+RESULT section=thru op=posv dtype=f32 N=12 B=64 impl=block32 ns=639.37
+RESULT section=thru op=posv dtype=f32 N=12 B=64 impl=block128 ns=657.33
+RESULT section=thru op=posv dtype=f32 N=12 B=64 impl=vendor ns=1413.50
+RESULT section=thru op=gemm dtype=f32 N=12 B=64 impl=vendor_tf32 ns=453.67
+RESULT section=thru op=gemm dtype=f32 N=12 B=256 impl=block32 ns=58.28
+RESULT section=thru op=gemm dtype=f32 N=12 B=256 impl=block128 ns=61.67
+RESULT section=thru op=gemm dtype=f32 N=12 B=256 impl=warp8 ns=57.81
+RESULT section=thru op=gemm dtype=f32 N=12 B=256 impl=vendor ns=205.17
+RESULT section=thru op=potrf dtype=f32 N=12 B=256 impl=block32 ns=131.13
+RESULT section=thru op=potrf dtype=f32 N=12 B=256 impl=block128 ns=195.53
+RESULT section=thru op=potrf dtype=f32 N=12 B=256 impl=warp8 ns=136.26
+RESULT section=thru op=potrf dtype=f32 N=12 B=256 impl=vendor ns=207.81
+RESULT section=thru op=posv dtype=f32 N=12 B=256 impl=block32 ns=205.53
+RESULT section=thru op=posv dtype=f32 N=12 B=256 impl=block128 ns=340.82
+RESULT section=thru op=posv dtype=f32 N=12 B=256 impl=vendor ns=548.32
+RESULT section=thru op=gemm dtype=f32 N=12 B=256 impl=vendor_tf32 ns=203.34
+RESULT section=thru op=gemm dtype=f32 N=12 B=1024 impl=block32 ns=29.56
+RESULT section=thru op=gemm dtype=f32 N=12 B=1024 impl=block128 ns=30.55
+RESULT section=thru op=gemm dtype=f32 N=12 B=1024 impl=warp8 ns=27.45
+RESULT section=thru op=gemm dtype=f32 N=12 B=1024 impl=vendor ns=137.68
+RESULT section=thru op=potrf dtype=f32 N=12 B=1024 impl=block32 ns=109.15
+RESULT section=thru op=potrf dtype=f32 N=12 B=1024 impl=block128 ns=142.45
+RESULT section=thru op=potrf dtype=f32 N=12 B=1024 impl=warp8 ns=95.73
+RESULT section=thru op=potrf dtype=f32 N=12 B=1024 impl=vendor ns=148.87
+RESULT section=thru op=posv dtype=f32 N=12 B=1024 impl=block32 ns=180.19
+RESULT section=thru op=posv dtype=f32 N=12 B=1024 impl=block128 ns=249.09
+RESULT section=thru op=posv dtype=f32 N=12 B=1024 impl=vendor ns=368.49
+RESULT section=thru op=gemm dtype=f32 N=12 B=1024 impl=vendor_tf32 ns=137.33
+RESULT section=thru op=gemm dtype=f32 N=12 B=8192 impl=block32 ns=28.68
+RESULT section=thru op=gemm dtype=f32 N=12 B=8192 impl=block128 ns=32.22
+RESULT section=thru op=gemm dtype=f32 N=12 B=8192 impl=warp8 ns=21.51
+RESULT section=thru op=gemm dtype=f32 N=12 B=8192 impl=vendor ns=179.89
+RESULT section=thru op=potrf dtype=f32 N=12 B=8192 impl=block32 ns=118.12
+RESULT section=thru op=potrf dtype=f32 N=12 B=8192 impl=block128 ns=154.55
+RESULT section=thru op=potrf dtype=f32 N=12 B=8192 impl=warp8 ns=86.40
+RESULT section=thru op=potrf dtype=f32 N=12 B=8192 impl=vendor ns=140.47
+RESULT section=thru op=posv dtype=f32 N=12 B=8192 impl=block32 ns=186.13
+RESULT section=thru op=posv dtype=f32 N=12 B=8192 impl=block128 ns=253.30
+RESULT section=thru op=posv dtype=f32 N=12 B=8192 impl=vendor ns=401.90
+RESULT section=thru op=gemm dtype=f32 N=12 B=8192 impl=vendor_tf32 ns=180.73
+RESULT section=lat op=gemm dtype=f32 N=12 impl=block us=26.950
+RESULT section=lat op=gemm dtype=f32 N=12 impl=vendor us=54.289
+RESULT section=lat op=potrf dtype=f32 N=12 impl=block us=43.488
+RESULT section=lat op=potrf dtype=f32 N=12 impl=vendor us=58.827
+RESULT section=lat op=posv dtype=f32 N=12 impl=block us=57.262
+RESULT section=lat op=posv dtype=f32 N=12 impl=vendor us=111.062
+RESULT section=lat op=gemm dtype=f32 N=12 impl=vendor_tf32 us=53.893
+CHECK op=gemm dtype=f32 N=16 impl=block maxerr=5.745e-08
+CHECK op=gemm dtype=f32 N=16 impl=warp maxerr=5.745e-08
+CHECK op=gemm dtype=f32 N=16 impl=vendor maxerr=5.497e-08
+CHECK op=gemm dtype=f32 N=16 impl=vendor_tf32 maxerr=5.497e-08
+CHECK op=potrf dtype=f32 N=16 impl=block maxerr=2.811e-07
+CHECK op=potrf dtype=f32 N=16 impl=warp maxerr=2.811e-07
+CHECK op=potrf dtype=f32 N=16 impl=vendor maxerr=5.944e-07
+CHECK op=posv dtype=f32 N=16 impl=block maxerr=1.973e-08
+CHECK op=posv dtype=f32 N=16 impl=vendor maxerr=1.315e-08
+RESULT section=thru op=gemm dtype=f32 N=16 B=1 impl=block32 ns=11874.13
+RESULT section=thru op=gemm dtype=f32 N=16 B=1 impl=block128 ns=10850.13
+RESULT section=thru op=gemm dtype=f32 N=16 B=1 impl=warp8 ns=11257.60
+RESULT section=thru op=gemm dtype=f32 N=16 B=1 impl=vendor ns=25047.47
+RESULT section=thru op=potrf dtype=f32 N=16 B=1 impl=block32 ns=34278.40
+RESULT section=thru op=potrf dtype=f32 N=16 B=1 impl=block128 ns=33864.53
+RESULT section=thru op=potrf dtype=f32 N=16 B=1 impl=warp8 ns=31814.40
+RESULT section=thru op=potrf dtype=f32 N=16 B=1 impl=vendor ns=31987.20
+RESULT section=thru op=posv dtype=f32 N=16 B=1 impl=block32 ns=52224.00
+RESULT section=thru op=posv dtype=f32 N=16 B=1 impl=block128 ns=52093.87
+RESULT section=thru op=posv dtype=f32 N=16 B=1 impl=vendor ns=95993.60
+RESULT section=thru op=gemm dtype=f32 N=16 B=1 impl=vendor_tf32 ns=27995.73
+RESULT section=thru op=gemm dtype=f32 N=16 B=4 impl=block32 ns=3136.00
+RESULT section=thru op=gemm dtype=f32 N=16 B=4 impl=block128 ns=2824.53
+RESULT section=thru op=gemm dtype=f32 N=16 B=4 impl=warp8 ns=3001.07
+RESULT section=thru op=gemm dtype=f32 N=16 B=4 impl=vendor ns=5664.00
+RESULT section=thru op=potrf dtype=f32 N=16 B=4 impl=block32 ns=8531.20
+RESULT section=thru op=potrf dtype=f32 N=16 B=4 impl=block128 ns=8483.20
+RESULT section=thru op=potrf dtype=f32 N=16 B=4 impl=warp8 ns=7790.40
+RESULT section=thru op=potrf dtype=f32 N=16 B=4 impl=vendor ns=7923.73
+RESULT section=thru op=posv dtype=f32 N=16 B=4 impl=block32 ns=13104.53
+RESULT section=thru op=posv dtype=f32 N=16 B=4 impl=block128 ns=13119.47
+RESULT section=thru op=posv dtype=f32 N=16 B=4 impl=vendor ns=23965.87
+RESULT section=thru op=gemm dtype=f32 N=16 B=4 impl=vendor_tf32 ns=5926.93
+RESULT section=thru op=gemm dtype=f32 N=16 B=16 impl=block32 ns=778.13
+RESULT section=thru op=gemm dtype=f32 N=16 B=16 impl=block128 ns=702.67
+RESULT section=thru op=gemm dtype=f32 N=16 B=16 impl=warp8 ns=880.93
+RESULT section=thru op=gemm dtype=f32 N=16 B=16 impl=vendor ns=1583.47
+RESULT section=thru op=potrf dtype=f32 N=16 B=16 impl=block32 ns=2121.87
+RESULT section=thru op=potrf dtype=f32 N=16 B=16 impl=block128 ns=2145.60
+RESULT section=thru op=potrf dtype=f32 N=16 B=16 impl=warp8 ns=2166.40
+RESULT section=thru op=potrf dtype=f32 N=16 B=16 impl=vendor ns=1964.67
+RESULT section=thru op=posv dtype=f32 N=16 B=16 impl=block32 ns=3280.67
+RESULT section=thru op=posv dtype=f32 N=16 B=16 impl=block128 ns=3281.07
+RESULT section=thru op=posv dtype=f32 N=16 B=16 impl=vendor ns=6088.00
+RESULT section=thru op=gemm dtype=f32 N=16 B=16 impl=vendor_tf32 ns=1559.87
+RESULT section=thru op=gemm dtype=f32 N=16 B=64 impl=block32 ns=208.33
+RESULT section=thru op=gemm dtype=f32 N=16 B=64 impl=block128 ns=192.97
+RESULT section=thru op=gemm dtype=f32 N=16 B=64 impl=warp8 ns=221.77
+RESULT section=thru op=gemm dtype=f32 N=16 B=64 impl=vendor ns=509.67
+RESULT section=thru op=potrf dtype=f32 N=16 B=64 impl=block32 ns=531.57
+RESULT section=thru op=potrf dtype=f32 N=16 B=64 impl=block128 ns=543.17
+RESULT section=thru op=potrf dtype=f32 N=16 B=64 impl=warp8 ns=543.33
+RESULT section=thru op=potrf dtype=f32 N=16 B=64 impl=vendor ns=502.03
+RESULT section=thru op=posv dtype=f32 N=16 B=64 impl=block32 ns=830.83
+RESULT section=thru op=posv dtype=f32 N=16 B=64 impl=block128 ns=867.10
+RESULT section=thru op=posv dtype=f32 N=16 B=64 impl=vendor ns=1639.97
+RESULT section=thru op=gemm dtype=f32 N=16 B=64 impl=vendor_tf32 ns=487.37
+RESULT section=thru op=gemm dtype=f32 N=16 B=256 impl=block32 ns=74.69
+RESULT section=thru op=gemm dtype=f32 N=16 B=256 impl=block128 ns=75.41
+RESULT section=thru op=gemm dtype=f32 N=16 B=256 impl=warp8 ns=72.22
+RESULT section=thru op=gemm dtype=f32 N=16 B=256 impl=vendor ns=228.98
+RESULT section=thru op=potrf dtype=f32 N=16 B=256 impl=block32 ns=190.77
+RESULT section=thru op=potrf dtype=f32 N=16 B=256 impl=block128 ns=279.01
+RESULT section=thru op=potrf dtype=f32 N=16 B=256 impl=warp8 ns=173.44
+RESULT section=thru op=potrf dtype=f32 N=16 B=256 impl=vendor ns=248.78
+RESULT section=thru op=posv dtype=f32 N=16 B=256 impl=block32 ns=291.68
+RESULT section=thru op=posv dtype=f32 N=16 B=256 impl=block128 ns=468.45
+RESULT section=thru op=posv dtype=f32 N=16 B=256 impl=vendor ns=638.42
+RESULT section=thru op=gemm dtype=f32 N=16 B=256 impl=vendor_tf32 ns=229.48
+RESULT section=thru op=gemm dtype=f32 N=16 B=1024 impl=block32 ns=44.15
+RESULT section=thru op=gemm dtype=f32 N=16 B=1024 impl=block128 ns=44.98
+RESULT section=thru op=gemm dtype=f32 N=16 B=1024 impl=warp8 ns=41.87
+RESULT section=thru op=gemm dtype=f32 N=16 B=1024 impl=vendor ns=159.09
+RESULT section=thru op=potrf dtype=f32 N=16 B=1024 impl=block32 ns=167.42
+RESULT section=thru op=potrf dtype=f32 N=16 B=1024 impl=block128 ns=213.55
+RESULT section=thru op=potrf dtype=f32 N=16 B=1024 impl=warp8 ns=125.79
+RESULT section=thru op=potrf dtype=f32 N=16 B=1024 impl=vendor ns=185.94
+RESULT section=thru op=posv dtype=f32 N=16 B=1024 impl=block32 ns=261.61
+RESULT section=thru op=posv dtype=f32 N=16 B=1024 impl=block128 ns=354.95
+RESULT section=thru op=posv dtype=f32 N=16 B=1024 impl=vendor ns=435.17
+RESULT section=thru op=gemm dtype=f32 N=16 B=1024 impl=vendor_tf32 ns=160.00
+RESULT section=thru op=gemm dtype=f32 N=16 B=8192 impl=block32 ns=39.83
+RESULT section=thru op=gemm dtype=f32 N=16 B=8192 impl=block128 ns=36.39
+RESULT section=thru op=gemm dtype=f32 N=16 B=8192 impl=warp8 ns=34.73
+RESULT section=thru op=gemm dtype=f32 N=16 B=8192 impl=vendor ns=192.22
+RESULT section=thru op=potrf dtype=f32 N=16 B=8192 impl=block32 ns=177.59
+RESULT section=thru op=potrf dtype=f32 N=16 B=8192 impl=block128 ns=229.22
+RESULT section=thru op=potrf dtype=f32 N=16 B=8192 impl=warp8 ns=114.83
+RESULT section=thru op=potrf dtype=f32 N=16 B=8192 impl=vendor ns=177.64
+RESULT section=thru op=posv dtype=f32 N=16 B=8192 impl=block32 ns=271.40
+RESULT section=thru op=posv dtype=f32 N=16 B=8192 impl=block128 ns=364.58
+RESULT section=thru op=posv dtype=f32 N=16 B=8192 impl=vendor ns=469.01
+RESULT section=thru op=gemm dtype=f32 N=16 B=8192 impl=vendor_tf32 ns=191.75
+RESULT section=lat op=gemm dtype=f32 N=16 impl=block us=26.857
+RESULT section=lat op=gemm dtype=f32 N=16 impl=vendor us=51.831
+RESULT section=lat op=potrf dtype=f32 N=16 impl=block us=52.891
+RESULT section=lat op=potrf dtype=f32 N=16 impl=vendor us=60.084
+RESULT section=lat op=posv dtype=f32 N=16 impl=block us=70.845
+RESULT section=lat op=posv dtype=f32 N=16 impl=vendor us=113.246
+RESULT section=lat op=gemm dtype=f32 N=16 impl=vendor_tf32 us=56.813
+CHECK op=gemm dtype=f32 N=24 impl=block maxerr=1.190e-07
+CHECK op=gemm dtype=f32 N=24 impl=warp maxerr=1.190e-07
+CHECK op=gemm dtype=f32 N=24 impl=vendor maxerr=1.190e-07
+CHECK op=gemm dtype=f32 N=24 impl=vendor_tf32 maxerr=2.400e-04
+CHECK op=potrf dtype=f32 N=24 impl=block maxerr=3.753e-07
+CHECK op=potrf dtype=f32 N=24 impl=warp maxerr=3.753e-07
+CHECK op=potrf dtype=f32 N=24 impl=vendor maxerr=6.561e-07
+CHECK op=posv dtype=f32 N=24 impl=block maxerr=2.408e-08
+CHECK op=posv dtype=f32 N=24 impl=vendor maxerr=1.853e-08
+RESULT section=thru op=gemm dtype=f32 N=24 B=1 impl=block32 ns=16044.80
+RESULT section=thru op=gemm dtype=f32 N=24 B=1 impl=block128 ns=12345.60
+RESULT section=thru op=gemm dtype=f32 N=24 B=1 impl=warp8 ns=16981.33
+RESULT section=thru op=gemm dtype=f32 N=24 B=1 impl=vendor ns=29141.33
+RESULT section=thru op=potrf dtype=f32 N=24 B=1 impl=block32 ns=57188.27
+RESULT section=thru op=potrf dtype=f32 N=24 B=1 impl=block128 ns=57105.07
+RESULT section=thru op=potrf dtype=f32 N=24 B=1 impl=warp8 ns=57847.47
+RESULT section=thru op=potrf dtype=f32 N=24 B=1 impl=vendor ns=57764.27
+RESULT section=thru op=posv dtype=f32 N=24 B=1 impl=block32 ns=84217.60
+RESULT section=thru op=posv dtype=f32 N=24 B=1 impl=block128 ns=84258.13
+RESULT section=thru op=posv dtype=f32 N=24 B=1 impl=vendor ns=143754.67
+RESULT section=thru op=gemm dtype=f32 N=24 B=1 impl=vendor_tf32 ns=26993.07
+RESULT section=thru op=gemm dtype=f32 N=24 B=4 impl=block32 ns=4186.13
+RESULT section=thru op=gemm dtype=f32 N=24 B=4 impl=block128 ns=3251.73
+RESULT section=thru op=gemm dtype=f32 N=24 B=4 impl=warp8 ns=4443.20
+RESULT section=thru op=gemm dtype=f32 N=24 B=4 impl=vendor ns=9288.00
+RESULT section=thru op=potrf dtype=f32 N=24 B=4 impl=block32 ns=14500.80
+RESULT section=thru op=potrf dtype=f32 N=24 B=4 impl=block128 ns=14463.47
+RESULT section=thru op=potrf dtype=f32 N=24 B=4 impl=warp8 ns=14491.20
+RESULT section=thru op=potrf dtype=f32 N=24 B=4 impl=vendor ns=15299.73
+RESULT section=thru op=posv dtype=f32 N=24 B=4 impl=block32 ns=21247.47
+RESULT section=thru op=posv dtype=f32 N=24 B=4 impl=block128 ns=21296.53
+RESULT section=thru op=posv dtype=f32 N=24 B=4 impl=vendor ns=36608.53
+RESULT section=thru op=gemm dtype=f32 N=24 B=4 impl=vendor_tf32 ns=7076.27
+RESULT section=thru op=gemm dtype=f32 N=24 B=16 impl=block32 ns=1037.07
+RESULT section=thru op=gemm dtype=f32 N=24 B=16 impl=block128 ns=822.40
+RESULT section=thru op=gemm dtype=f32 N=24 B=16 impl=warp8 ns=1380.27
+RESULT section=thru op=gemm dtype=f32 N=24 B=16 impl=vendor ns=2444.00
+RESULT section=thru op=potrf dtype=f32 N=24 B=16 impl=block32 ns=3624.27
+RESULT section=thru op=potrf dtype=f32 N=24 B=16 impl=block128 ns=3631.47
+RESULT section=thru op=potrf dtype=f32 N=24 B=16 impl=warp8 ns=4370.27
+RESULT section=thru op=potrf dtype=f32 N=24 B=16 impl=vendor ns=3811.60
+RESULT section=thru op=posv dtype=f32 N=24 B=16 impl=block32 ns=5317.60
+RESULT section=thru op=posv dtype=f32 N=24 B=16 impl=block128 ns=5326.93
+RESULT section=thru op=posv dtype=f32 N=24 B=16 impl=vendor ns=9283.07
+RESULT section=thru op=gemm dtype=f32 N=24 B=16 impl=vendor_tf32 ns=1659.07
+RESULT section=thru op=gemm dtype=f32 N=24 B=64 impl=block32 ns=284.03
+RESULT section=thru op=gemm dtype=f32 N=24 B=64 impl=block128 ns=262.53
+RESULT section=thru op=gemm dtype=f32 N=24 B=64 impl=warp8 ns=346.13
+RESULT section=thru op=gemm dtype=f32 N=24 B=64 impl=vendor ns=1148.13
+RESULT section=thru op=potrf dtype=f32 N=24 B=64 impl=block32 ns=909.23
+RESULT section=thru op=potrf dtype=f32 N=24 B=64 impl=block128 ns=923.97
+RESULT section=thru op=potrf dtype=f32 N=24 B=64 impl=warp8 ns=1097.40
+RESULT section=thru op=potrf dtype=f32 N=24 B=64 impl=vendor ns=1025.70
+RESULT section=thru op=posv dtype=f32 N=24 B=64 impl=block32 ns=1346.57
+RESULT section=thru op=posv dtype=f32 N=24 B=64 impl=block128 ns=1401.63
+RESULT section=thru op=posv dtype=f32 N=24 B=64 impl=vendor ns=2522.97
+RESULT section=thru op=gemm dtype=f32 N=24 B=64 impl=vendor_tf32 ns=594.07
+RESULT section=thru op=gemm dtype=f32 N=24 B=256 impl=block32 ns=132.76
+RESULT section=thru op=gemm dtype=f32 N=24 B=256 impl=block128 ns=137.22
+RESULT section=thru op=gemm dtype=f32 N=24 B=256 impl=warp8 ns=134.63
+RESULT section=thru op=gemm dtype=f32 N=24 B=256 impl=vendor ns=883.85
+RESULT section=thru op=potrf dtype=f32 N=24 B=256 impl=block32 ns=363.21
+RESULT section=thru op=potrf dtype=f32 N=24 B=256 impl=block128 ns=511.08
+RESULT section=thru op=potrf dtype=f32 N=24 B=256 impl=warp8 ns=385.68
+RESULT section=thru op=potrf dtype=f32 N=24 B=256 impl=vendor ns=552.60
+RESULT section=thru op=posv dtype=f32 N=24 B=256 impl=block32 ns=506.34
+RESULT section=thru op=posv dtype=f32 N=24 B=256 impl=block128 ns=770.75
+RESULT section=thru op=posv dtype=f32 N=24 B=256 impl=vendor ns=1035.13
+RESULT section=thru op=gemm dtype=f32 N=24 B=256 impl=vendor_tf32 ns=269.04
+RESULT section=thru op=gemm dtype=f32 N=24 B=1024 impl=block32 ns=112.47
+RESULT section=thru op=gemm dtype=f32 N=24 B=1024 impl=block128 ns=112.59
+RESULT section=thru op=gemm dtype=f32 N=24 B=1024 impl=warp8 ns=112.60
+RESULT section=thru op=gemm dtype=f32 N=24 B=1024 impl=vendor ns=815.70
+RESULT section=thru op=potrf dtype=f32 N=24 B=1024 impl=block32 ns=337.72
+RESULT section=thru op=potrf dtype=f32 N=24 B=1024 impl=block128 ns=413.62
+RESULT section=thru op=potrf dtype=f32 N=24 B=1024 impl=warp8 ns=323.45
+RESULT section=thru op=potrf dtype=f32 N=24 B=1024 impl=vendor ns=430.85
+RESULT section=thru op=posv dtype=f32 N=24 B=1024 impl=block32 ns=474.36
+RESULT section=thru op=posv dtype=f32 N=24 B=1024 impl=block128 ns=624.01
+RESULT section=thru op=posv dtype=f32 N=24 B=1024 impl=vendor ns=737.21
+RESULT section=thru op=gemm dtype=f32 N=24 B=1024 impl=vendor_tf32 ns=191.25
+RESULT section=thru op=gemm dtype=f32 N=24 B=8192 impl=block32 ns=92.34
+RESULT section=thru op=gemm dtype=f32 N=24 B=8192 impl=block128 ns=93.71
+RESULT section=thru op=gemm dtype=f32 N=24 B=8192 impl=warp8 ns=93.53
+RESULT section=thru op=gemm dtype=f32 N=24 B=8192 impl=vendor ns=790.40
+RESULT section=thru op=potrf dtype=f32 N=24 B=8192 impl=block32 ns=344.32
+RESULT section=thru op=potrf dtype=f32 N=24 B=8192 impl=block128 ns=428.83
+RESULT section=thru op=potrf dtype=f32 N=24 B=8192 impl=warp8 ns=308.06
+RESULT section=thru op=potrf dtype=f32 N=24 B=8192 impl=vendor ns=450.72
+RESULT section=thru op=posv dtype=f32 N=24 B=8192 impl=block32 ns=479.87
+RESULT section=thru op=posv dtype=f32 N=24 B=8192 impl=block128 ns=632.63
+RESULT section=thru op=posv dtype=f32 N=24 B=8192 impl=vendor ns=806.51
+RESULT section=thru op=gemm dtype=f32 N=24 B=8192 impl=vendor_tf32 ns=166.20
+RESULT section=lat op=gemm dtype=f32 N=24 impl=block us=31.018
+RESULT section=lat op=gemm dtype=f32 N=24 impl=vendor us=57.209
+RESULT section=lat op=potrf dtype=f32 N=24 impl=block us=76.630
+RESULT section=lat op=potrf dtype=f32 N=24 impl=vendor us=64.250
+RESULT section=lat op=posv dtype=f32 N=24 impl=block us=104.736
+RESULT section=lat op=posv dtype=f32 N=24 impl=vendor us=123.407
+RESULT section=lat op=gemm dtype=f32 N=24 impl=vendor_tf32 us=56.988
+CHECK op=gemm dtype=f32 N=32 impl=block maxerr=9.845e-08
+CHECK op=gemm dtype=f32 N=32 impl=warp maxerr=9.845e-08
+CHECK op=gemm dtype=f32 N=32 impl=vendor maxerr=9.845e-08
+CHECK op=gemm dtype=f32 N=32 impl=vendor_tf32 maxerr=2.188e-04
+CHECK op=potrf dtype=f32 N=32 impl=block maxerr=4.761e-07
+CHECK op=potrf dtype=f32 N=32 impl=warp maxerr=3.470e-07
+CHECK op=potrf dtype=f32 N=32 impl=vendor maxerr=8.810e-07
+CHECK op=posv dtype=f32 N=32 impl=block maxerr=6.097e-09
+CHECK op=posv dtype=f32 N=32 impl=vendor maxerr=7.543e-09
+RESULT section=thru op=gemm dtype=f32 N=32 B=1 impl=block32 ns=23735.47
+RESULT section=thru op=gemm dtype=f32 N=32 B=1 impl=block128 ns=13868.80
+RESULT section=thru op=gemm dtype=f32 N=32 B=1 impl=warp8 ns=24006.40
+RESULT section=thru op=gemm dtype=f32 N=32 B=1 impl=vendor ns=28945.07
+RESULT section=thru op=potrf dtype=f32 N=32 B=1 impl=block32 ns=86161.07
+RESULT section=thru op=potrf dtype=f32 N=32 B=1 impl=block128 ns=86344.53
+RESULT section=thru op=potrf dtype=f32 N=32 B=1 impl=warp8 ns=80343.47
+RESULT section=thru op=potrf dtype=f32 N=32 B=1 impl=vendor ns=64290.13
+RESULT section=thru op=posv dtype=f32 N=32 B=1 impl=block32 ns=124793.60
+RESULT section=thru op=posv dtype=f32 N=32 B=1 impl=block128 ns=125009.07
+RESULT section=thru op=posv dtype=f32 N=32 B=1 impl=vendor ns=171705.60
+RESULT section=thru op=gemm dtype=f32 N=32 B=1 impl=vendor_tf32 ns=29990.40
+RESULT section=thru op=gemm dtype=f32 N=32 B=4 impl=block32 ns=6004.27
+RESULT section=thru op=gemm dtype=f32 N=32 B=4 impl=block128 ns=3682.67
+RESULT section=thru op=gemm dtype=f32 N=32 B=4 impl=warp8 ns=6471.47
+RESULT section=thru op=gemm dtype=f32 N=32 B=4 impl=vendor ns=10243.73
+RESULT section=thru op=potrf dtype=f32 N=32 B=4 impl=block32 ns=21782.93
+RESULT section=thru op=potrf dtype=f32 N=32 B=4 impl=block128 ns=21754.13
+RESULT section=thru op=potrf dtype=f32 N=32 B=4 impl=warp8 ns=20085.87
+RESULT section=thru op=potrf dtype=f32 N=32 B=4 impl=vendor ns=16540.27
+RESULT section=thru op=posv dtype=f32 N=32 B=4 impl=block32 ns=31366.40
+RESULT section=thru op=posv dtype=f32 N=32 B=4 impl=block128 ns=31458.13
+RESULT section=thru op=posv dtype=f32 N=32 B=4 impl=vendor ns=43728.53
+RESULT section=thru op=gemm dtype=f32 N=32 B=4 impl=vendor_tf32 ns=7292.80
+RESULT section=thru op=gemm dtype=f32 N=32 B=16 impl=block32 ns=1554.67
+RESULT section=thru op=gemm dtype=f32 N=32 B=16 impl=block128 ns=928.27
+RESULT section=thru op=gemm dtype=f32 N=32 B=16 impl=warp8 ns=2504.00
+RESULT section=thru op=gemm dtype=f32 N=32 B=16 impl=vendor ns=2612.13
+RESULT section=thru op=potrf dtype=f32 N=32 B=16 impl=block32 ns=5442.27
+RESULT section=thru op=potrf dtype=f32 N=32 B=16 impl=block128 ns=5445.73
+RESULT section=thru op=potrf dtype=f32 N=32 B=16 impl=warp8 ns=5877.33
+RESULT section=thru op=potrf dtype=f32 N=32 B=16 impl=vendor ns=4208.13
+RESULT section=thru op=posv dtype=f32 N=32 B=16 impl=block32 ns=7845.07
+RESULT section=thru op=posv dtype=f32 N=32 B=16 impl=block128 ns=7865.60
+RESULT section=thru op=posv dtype=f32 N=32 B=16 impl=vendor ns=11084.13
+RESULT section=thru op=gemm dtype=f32 N=32 B=16 impl=vendor_tf32 ns=1810.93
+RESULT section=thru op=gemm dtype=f32 N=32 B=64 impl=block32 ns=414.03
+RESULT section=thru op=gemm dtype=f32 N=32 B=64 impl=block128 ns=402.67
+RESULT section=thru op=gemm dtype=f32 N=32 B=64 impl=warp8 ns=633.17
+RESULT section=thru op=gemm dtype=f32 N=32 B=64 impl=vendor ns=1304.70
+RESULT section=thru op=potrf dtype=f32 N=32 B=64 impl=block32 ns=1363.13
+RESULT section=thru op=potrf dtype=f32 N=32 B=64 impl=block128 ns=1386.37
+RESULT section=thru op=potrf dtype=f32 N=32 B=64 impl=warp8 ns=1468.30
+RESULT section=thru op=potrf dtype=f32 N=32 B=64 impl=vendor ns=1134.03
+RESULT section=thru op=posv dtype=f32 N=32 B=64 impl=block32 ns=1971.97
+RESULT section=thru op=posv dtype=f32 N=32 B=64 impl=block128 ns=2027.33
+RESULT section=thru op=posv dtype=f32 N=32 B=64 impl=vendor ns=2987.40
+RESULT section=thru op=gemm dtype=f32 N=32 B=64 impl=vendor_tf32 ns=577.80
+RESULT section=thru op=gemm dtype=f32 N=32 B=256 impl=block32 ns=278.52
+RESULT section=thru op=gemm dtype=f32 N=32 B=256 impl=block128 ns=280.08
+RESULT section=thru op=gemm dtype=f32 N=32 B=256 impl=warp8 ns=275.41
+RESULT section=thru op=gemm dtype=f32 N=32 B=256 impl=vendor ns=1034.55
+RESULT section=thru op=potrf dtype=f32 N=32 B=256 impl=block32 ns=576.87
+RESULT section=thru op=potrf dtype=f32 N=32 B=256 impl=block128 ns=797.00
+RESULT section=thru op=potrf dtype=f32 N=32 B=256 impl=warp8 ns=512.97
+RESULT section=thru op=potrf dtype=f32 N=32 B=256 impl=vendor ns=637.00
+RESULT section=thru op=posv dtype=f32 N=32 B=256 impl=block32 ns=817.07
+RESULT section=thru op=posv dtype=f32 N=32 B=256 impl=block128 ns=1162.69
+RESULT section=thru op=posv dtype=f32 N=32 B=256 impl=vendor ns=1221.78
+RESULT section=thru op=gemm dtype=f32 N=32 B=256 impl=vendor_tf32 ns=268.35
+RESULT section=thru op=gemm dtype=f32 N=32 B=1024 impl=block32 ns=256.59
+RESULT section=thru op=gemm dtype=f32 N=32 B=1024 impl=block128 ns=252.57
+RESULT section=thru op=gemm dtype=f32 N=32 B=1024 impl=warp8 ns=254.70
+RESULT section=thru op=gemm dtype=f32 N=32 B=1024 impl=vendor ns=964.86
+RESULT section=thru op=potrf dtype=f32 N=32 B=1024 impl=block32 ns=577.25
+RESULT section=thru op=potrf dtype=f32 N=32 B=1024 impl=block128 ns=717.25
+RESULT section=thru op=potrf dtype=f32 N=32 B=1024 impl=warp8 ns=435.74
+RESULT section=thru op=potrf dtype=f32 N=32 B=1024 impl=vendor ns=543.96
+RESULT section=thru op=posv dtype=f32 N=32 B=1024 impl=block32 ns=800.91
+RESULT section=thru op=posv dtype=f32 N=32 B=1024 impl=block128 ns=1021.22
+RESULT section=thru op=posv dtype=f32 N=32 B=1024 impl=vendor ns=962.05
+RESULT section=thru op=gemm dtype=f32 N=32 B=1024 impl=vendor_tf32 ns=194.02
+RESULT section=thru op=gemm dtype=f32 N=32 B=8192 impl=block32 ns=235.26
+RESULT section=thru op=gemm dtype=f32 N=32 B=8192 impl=block128 ns=235.36
+RESULT section=thru op=gemm dtype=f32 N=32 B=8192 impl=warp8 ns=237.41
+RESULT section=thru op=gemm dtype=f32 N=32 B=8192 impl=vendor ns=937.92
+RESULT section=thru op=potrf dtype=f32 N=32 B=8192 impl=block32 ns=552.81
+RESULT section=thru op=potrf dtype=f32 N=32 B=8192 impl=block128 ns=674.81
+RESULT section=thru op=potrf dtype=f32 N=32 B=8192 impl=warp8 ns=410.82
+RESULT section=thru op=potrf dtype=f32 N=32 B=8192 impl=vendor ns=528.41
+RESULT section=thru op=posv dtype=f32 N=32 B=8192 impl=block32 ns=745.91
+RESULT section=thru op=posv dtype=f32 N=32 B=8192 impl=block128 ns=958.42
+RESULT section=thru op=posv dtype=f32 N=32 B=8192 impl=vendor ns=952.57
+RESULT section=thru op=gemm dtype=f32 N=32 B=8192 impl=vendor_tf32 ns=167.78
+RESULT section=lat op=gemm dtype=f32 N=32 impl=block us=35.349
+RESULT section=lat op=gemm dtype=f32 N=32 impl=vendor us=57.416
+RESULT section=lat op=potrf dtype=f32 N=32 impl=block us=105.730
+RESULT section=lat op=potrf dtype=f32 N=32 impl=vendor us=66.006
+RESULT section=lat op=posv dtype=f32 N=32 impl=block us=144.389
+RESULT section=lat op=posv dtype=f32 N=32 impl=vendor us=121.179
+RESULT section=lat op=gemm dtype=f32 N=32 impl=vendor_tf32 us=56.455
+CHECK op=gemm dtype=f32 N=48 impl=block maxerr=1.230e-07
+CHECK op=gemm dtype=f32 N=48 impl=warp maxerr=1.230e-07
+CHECK op=gemm dtype=f32 N=48 impl=vendor maxerr=1.230e-07
+CHECK op=gemm dtype=f32 N=48 impl=vendor_tf32 maxerr=1.652e-04
+CHECK op=potrf dtype=f32 N=48 impl=block maxerr=5.908e-07
+CHECK op=potrf dtype=f32 N=48 impl=warp maxerr=8.274e-07
+CHECK op=potrf dtype=f32 N=48 impl=vendor maxerr=1.177e-06
+CHECK op=posv dtype=f32 N=48 impl=block maxerr=5.655e-09
+CHECK op=posv dtype=f32 N=48 impl=vendor maxerr=5.966e-09
+RESULT section=thru op=gemm dtype=f32 N=48 B=1 impl=block32 ns=57629.87
+RESULT section=thru op=gemm dtype=f32 N=48 B=1 impl=block128 ns=24814.93
+RESULT section=thru op=gemm dtype=f32 N=48 B=1 impl=warp8 ns=54728.53
+RESULT section=thru op=gemm dtype=f32 N=48 B=1 impl=vendor ns=29218.13
+RESULT section=thru op=potrf dtype=f32 N=48 B=1 impl=block32 ns=179406.93
+RESULT section=thru op=potrf dtype=f32 N=48 B=1 impl=block128 ns=165962.67
+RESULT section=thru op=potrf dtype=f32 N=48 B=1 impl=warp8 ns=182980.27
+RESULT section=thru op=potrf dtype=f32 N=48 B=1 impl=vendor ns=98387.20
+RESULT section=thru op=posv dtype=f32 N=48 B=1 impl=block32 ns=238357.33
+RESULT section=thru op=posv dtype=f32 N=48 B=1 impl=block128 ns=220121.60
+RESULT section=thru op=posv dtype=f32 N=48 B=1 impl=vendor ns=260125.87
+RESULT section=thru op=gemm dtype=f32 N=48 B=1 impl=vendor_tf32 ns=31054.93
+RESULT section=thru op=gemm dtype=f32 N=48 B=4 impl=block32 ns=14524.80
+RESULT section=thru op=gemm dtype=f32 N=48 B=4 impl=block128 ns=6317.33
+RESULT section=thru op=gemm dtype=f32 N=48 B=4 impl=warp8 ns=16174.93
+RESULT section=thru op=gemm dtype=f32 N=48 B=4 impl=vendor ns=11129.07
+RESULT section=thru op=potrf dtype=f32 N=48 B=4 impl=block32 ns=44937.07
+RESULT section=thru op=potrf dtype=f32 N=48 B=4 impl=block128 ns=41557.87
+RESULT section=thru op=potrf dtype=f32 N=48 B=4 impl=warp8 ns=45721.07
+RESULT section=thru op=potrf dtype=f32 N=48 B=4 impl=vendor ns=25570.67
+RESULT section=thru op=posv dtype=f32 N=48 B=4 impl=block32 ns=59747.20
+RESULT section=thru op=posv dtype=f32 N=48 B=4 impl=block128 ns=55453.87
+RESULT section=thru op=posv dtype=f32 N=48 B=4 impl=vendor ns=66518.93
+RESULT section=thru op=gemm dtype=f32 N=48 B=4 impl=vendor_tf32 ns=7493.87
+RESULT section=thru op=gemm dtype=f32 N=48 B=16 impl=block32 ns=3677.60
+RESULT section=thru op=gemm dtype=f32 N=48 B=16 impl=block128 ns=1647.87
+RESULT section=thru op=gemm dtype=f32 N=48 B=16 impl=warp8 ns=6429.47
+RESULT section=thru op=gemm dtype=f32 N=48 B=16 impl=vendor ns=2842.40
+RESULT section=thru op=potrf dtype=f32 N=48 B=16 impl=block32 ns=11245.87
+RESULT section=thru op=potrf dtype=f32 N=48 B=16 impl=block128 ns=10396.13
+RESULT section=thru op=potrf dtype=f32 N=48 B=16 impl=warp8 ns=15113.73
+RESULT section=thru op=potrf dtype=f32 N=48 B=16 impl=vendor ns=6444.67
+RESULT section=thru op=posv dtype=f32 N=48 B=16 impl=block32 ns=14939.73
+RESULT section=thru op=posv dtype=f32 N=48 B=16 impl=block128 ns=13873.73
+RESULT section=thru op=posv dtype=f32 N=48 B=16 impl=vendor ns=16807.73
+RESULT section=thru op=gemm dtype=f32 N=48 B=16 impl=vendor_tf32 ns=1817.33
+RESULT section=thru op=gemm dtype=f32 N=48 B=64 impl=block32 ns=1060.00
+RESULT section=thru op=gemm dtype=f32 N=48 B=64 impl=block128 ns=932.30
+RESULT section=thru op=gemm dtype=f32 N=48 B=64 impl=warp8 ns=1637.77
+RESULT section=thru op=gemm dtype=f32 N=48 B=64 impl=vendor ns=1641.07
+RESULT section=thru op=potrf dtype=f32 N=48 B=64 impl=block32 ns=2815.50
+RESULT section=thru op=potrf dtype=f32 N=48 B=64 impl=block128 ns=2700.17
+RESULT section=thru op=potrf dtype=f32 N=48 B=64 impl=warp8 ns=3775.80
+RESULT section=thru op=potrf dtype=f32 N=48 B=64 impl=vendor ns=1876.07
+RESULT section=thru op=posv dtype=f32 N=48 B=64 impl=block32 ns=3828.73
+RESULT section=thru op=posv dtype=f32 N=48 B=64 impl=block128 ns=3649.80
+RESULT section=thru op=posv dtype=f32 N=48 B=64 impl=vendor ns=4675.07
+RESULT section=thru op=gemm dtype=f32 N=48 B=64 impl=vendor_tf32 ns=644.13
+RESULT section=thru op=gemm dtype=f32 N=48 B=256 impl=block32 ns=866.39
+RESULT section=thru op=gemm dtype=f32 N=48 B=256 impl=block128 ns=796.02
+RESULT section=thru op=gemm dtype=f32 N=48 B=256 impl=warp8 ns=847.12
+RESULT section=thru op=gemm dtype=f32 N=48 B=256 impl=vendor ns=1338.71
+RESULT section=thru op=potrf dtype=f32 N=48 B=256 impl=block32 ns=1315.70
+RESULT section=thru op=potrf dtype=f32 N=48 B=256 impl=block128 ns=1819.65
+RESULT section=thru op=potrf dtype=f32 N=48 B=256 impl=warp8 ns=1390.25
+RESULT section=thru op=potrf dtype=f32 N=48 B=256 impl=vendor ns=1142.40
+RESULT section=thru op=posv dtype=f32 N=48 B=256 impl=block32 ns=1670.74
+RESULT section=thru op=posv dtype=f32 N=48 B=256 impl=block128 ns=2383.83
+RESULT section=thru op=posv dtype=f32 N=48 B=256 impl=vendor ns=2079.83
+RESULT section=thru op=gemm dtype=f32 N=48 B=256 impl=vendor_tf32 ns=352.82
+RESULT section=thru op=gemm dtype=f32 N=48 B=1024 impl=block32 ns=803.75
+RESULT section=thru op=gemm dtype=f32 N=48 B=1024 impl=block128 ns=743.46
+RESULT section=thru op=gemm dtype=f32 N=48 B=1024 impl=warp8 ns=1375.28
+RESULT section=thru op=gemm dtype=f32 N=48 B=1024 impl=vendor ns=1256.92
+RESULT section=thru op=potrf dtype=f32 N=48 B=1024 impl=block32 ns=1326.39
+RESULT section=thru op=potrf dtype=f32 N=48 B=1024 impl=block128 ns=1502.94
+RESULT section=thru op=potrf dtype=f32 N=48 B=1024 impl=warp8 ns=1272.24
+RESULT section=thru op=potrf dtype=f32 N=48 B=1024 impl=vendor ns=1053.47
+RESULT section=thru op=posv dtype=f32 N=48 B=1024 impl=block32 ns=1644.40
+RESULT section=thru op=posv dtype=f32 N=48 B=1024 impl=block128 ns=1934.74
+RESULT section=thru op=posv dtype=f32 N=48 B=1024 impl=vendor ns=1963.17
+RESULT section=thru op=gemm dtype=f32 N=48 B=1024 impl=vendor_tf32 ns=253.41
+RESULT section=thru op=gemm dtype=f32 N=48 B=8192 impl=block32 ns=767.69
+RESULT section=thru op=gemm dtype=f32 N=48 B=8192 impl=block128 ns=728.32
+RESULT section=thru op=gemm dtype=f32 N=48 B=8192 impl=warp8 ns=1309.48
+RESULT section=thru op=gemm dtype=f32 N=48 B=8192 impl=vendor ns=1229.44
+RESULT section=thru op=potrf dtype=f32 N=48 B=8192 impl=block32 ns=1266.92
+RESULT section=thru op=potrf dtype=f32 N=48 B=8192 impl=block128 ns=1428.62
+RESULT section=thru op=potrf dtype=f32 N=48 B=8192 impl=warp8 ns=1221.38
+RESULT section=thru op=potrf dtype=f32 N=48 B=8192 impl=vendor ns=1002.63
+RESULT section=thru op=posv dtype=f32 N=48 B=8192 impl=block32 ns=1546.69
+RESULT section=thru op=posv dtype=f32 N=48 B=8192 impl=block128 ns=1844.67
+RESULT section=thru op=posv dtype=f32 N=48 B=8192 impl=vendor ns=1766.20
+RESULT section=thru op=gemm dtype=f32 N=48 B=8192 impl=vendor_tf32 ns=225.32
+RESULT section=lat op=gemm dtype=f32 N=48 impl=block us=71.813
+RESULT section=lat op=gemm dtype=f32 N=48 impl=vendor us=61.710
+RESULT section=lat op=potrf dtype=f32 N=48 impl=block us=198.594
+RESULT section=lat op=potrf dtype=f32 N=48 impl=vendor us=82.785
+RESULT section=lat op=posv dtype=f32 N=48 impl=block us=259.642
+RESULT section=lat op=posv dtype=f32 N=48 impl=vendor us=163.183
+RESULT section=lat op=gemm dtype=f32 N=48 impl=vendor_tf32 us=62.152
+CHECK op=gemm dtype=f32 N=64 impl=block maxerr=1.281e-07
+CHECK op=gemm dtype=f32 N=64 impl=warp maxerr=1.281e-07
+CHECK op=gemm dtype=f32 N=64 impl=vendor maxerr=1.281e-07
+CHECK op=gemm dtype=f32 N=64 impl=vendor_tf32 maxerr=1.398e-04
+CHECK op=potrf dtype=f32 N=64 impl=block maxerr=8.214e-07
+CHECK op=potrf dtype=f32 N=64 impl=warp maxerr=8.214e-07
+CHECK op=potrf dtype=f32 N=64 impl=vendor maxerr=8.755e-07
+CHECK op=posv dtype=f32 N=64 impl=block maxerr=1.409e-08
+CHECK op=posv dtype=f32 N=64 impl=vendor maxerr=1.595e-08
+RESULT section=thru op=gemm dtype=f32 N=64 B=1 impl=block32 ns=130521.60
+RESULT section=thru op=gemm dtype=f32 N=64 B=1 impl=block128 ns=40708.27
+RESULT section=thru op=gemm dtype=f32 N=64 B=1 impl=warp8 ns=125738.67
+RESULT section=thru op=gemm dtype=f32 N=64 B=1 impl=vendor ns=30726.40
+RESULT section=thru op=potrf dtype=f32 N=64 B=1 impl=block32 ns=307795.20
+RESULT section=thru op=potrf dtype=f32 N=64 B=1 impl=block128 ns=264753.07
+RESULT section=thru op=potrf dtype=f32 N=64 B=1 impl=warp8 ns=281574.40
+RESULT section=thru op=potrf dtype=f32 N=64 B=1 impl=vendor ns=132328.53
+RESULT section=thru op=posv dtype=f32 N=64 B=1 impl=block32 ns=397267.20
+RESULT section=thru op=posv dtype=f32 N=64 B=1 impl=block128 ns=343549.87
+RESULT section=thru op=posv dtype=f32 N=64 B=1 impl=vendor ns=351443.20
+RESULT section=thru op=gemm dtype=f32 N=64 B=1 impl=vendor_tf32 ns=32285.87
+RESULT section=thru op=gemm dtype=f32 N=64 B=4 impl=block32 ns=32864.00
+RESULT section=thru op=gemm dtype=f32 N=64 B=4 impl=block128 ns=10370.67
+RESULT section=thru op=gemm dtype=f32 N=64 B=4 impl=warp8 ns=32305.60
+RESULT section=thru op=gemm dtype=f32 N=64 B=4 impl=vendor ns=12474.13
+RESULT section=thru op=potrf dtype=f32 N=64 B=4 impl=block32 ns=77137.07
+RESULT section=thru op=potrf dtype=f32 N=64 B=4 impl=block128 ns=66296.00
+RESULT section=thru op=potrf dtype=f32 N=64 B=4 impl=warp8 ns=70427.20
+RESULT section=thru op=potrf dtype=f32 N=64 B=4 impl=vendor ns=34756.80
+RESULT section=thru op=posv dtype=f32 N=64 B=4 impl=block32 ns=99426.13
+RESULT section=thru op=posv dtype=f32 N=64 B=4 impl=block128 ns=86810.67
+RESULT section=thru op=posv dtype=f32 N=64 B=4 impl=vendor ns=89494.93
+RESULT section=thru op=gemm dtype=f32 N=64 B=4 impl=vendor_tf32 ns=7967.47
+RESULT section=thru op=gemm dtype=f32 N=64 B=16 impl=block32 ns=8314.53
+RESULT section=thru op=gemm dtype=f32 N=64 B=16 impl=block128 ns=2685.33
+RESULT section=thru op=gemm dtype=f32 N=64 B=16 impl=warp8 ns=11871.73
+RESULT section=thru op=gemm dtype=f32 N=64 B=16 impl=vendor ns=3225.87
+RESULT section=thru op=potrf dtype=f32 N=64 B=16 impl=block32 ns=19283.47
+RESULT section=thru op=potrf dtype=f32 N=64 B=16 impl=block128 ns=16585.60
+RESULT section=thru op=potrf dtype=f32 N=64 B=16 impl=warp8 ns=21487.73
+RESULT section=thru op=potrf dtype=f32 N=64 B=16 impl=vendor ns=8966.27
+RESULT section=thru op=posv dtype=f32 N=64 B=16 impl=block32 ns=24884.53
+RESULT section=thru op=posv dtype=f32 N=64 B=16 impl=block128 ns=21718.00
+RESULT section=thru op=posv dtype=f32 N=64 B=16 impl=vendor ns=22800.40
+RESULT section=thru op=gemm dtype=f32 N=64 B=16 impl=vendor_tf32 ns=1937.20
+RESULT section=thru op=gemm dtype=f32 N=64 B=64 impl=block32 ns=2145.17
+RESULT section=thru op=gemm dtype=f32 N=64 B=64 impl=block128 ns=1583.13
+RESULT section=thru op=gemm dtype=f32 N=64 B=64 impl=warp8 ns=3026.30
+RESULT section=thru op=gemm dtype=f32 N=64 B=64 impl=vendor ns=1941.80
+RESULT section=thru op=potrf dtype=f32 N=64 B=64 impl=block32 ns=4835.93
+RESULT section=thru op=potrf dtype=f32 N=64 B=64 impl=block128 ns=4433.70
+RESULT section=thru op=potrf dtype=f32 N=64 B=64 impl=warp8 ns=5382.93
+RESULT section=thru op=potrf dtype=f32 N=64 B=64 impl=vendor ns=2758.63
+RESULT section=thru op=posv dtype=f32 N=64 B=64 impl=block32 ns=6263.53
+RESULT section=thru op=posv dtype=f32 N=64 B=64 impl=block128 ns=5928.70
+RESULT section=thru op=posv dtype=f32 N=64 B=64 impl=vendor ns=6452.87
+RESULT section=thru op=gemm dtype=f32 N=64 B=64 impl=vendor_tf32 ns=661.80
+RESULT section=thru op=gemm dtype=f32 N=64 B=256 impl=block32 ns=2658.07
+RESULT section=thru op=gemm dtype=f32 N=64 B=256 impl=block128 ns=1447.27
+RESULT section=thru op=gemm dtype=f32 N=64 B=256 impl=warp8 ns=2611.41
+RESULT section=thru op=gemm dtype=f32 N=64 B=256 impl=vendor ns=1649.07
+RESULT section=thru op=potrf dtype=f32 N=64 B=256 impl=block32 ns=2398.27
+RESULT section=thru op=potrf dtype=f32 N=64 B=256 impl=block128 ns=2898.73
+RESULT section=thru op=potrf dtype=f32 N=64 B=256 impl=warp8 ns=2102.33
+RESULT section=thru op=potrf dtype=f32 N=64 B=256 impl=vendor ns=1809.34
+RESULT section=thru op=posv dtype=f32 N=64 B=256 impl=block32 ns=3092.12
+RESULT section=thru op=posv dtype=f32 N=64 B=256 impl=block128 ns=3731.87
+RESULT section=thru op=posv dtype=f32 N=64 B=256 impl=vendor ns=3470.87
+RESULT section=thru op=gemm dtype=f32 N=64 B=256 impl=vendor_tf32 ns=498.81
+RESULT section=thru op=gemm dtype=f32 N=64 B=1024 impl=block32 ns=2408.69
+RESULT section=thru op=gemm dtype=f32 N=64 B=1024 impl=block128 ns=1384.43
+RESULT section=thru op=gemm dtype=f32 N=64 B=1024 impl=warp8 ns=3941.62
+RESULT section=thru op=gemm dtype=f32 N=64 B=1024 impl=vendor ns=1558.43
+RESULT section=thru op=potrf dtype=f32 N=64 B=1024 impl=block32 ns=2372.48
+RESULT section=thru op=potrf dtype=f32 N=64 B=1024 impl=block128 ns=2567.69
+RESULT section=thru op=potrf dtype=f32 N=64 B=1024 impl=warp8 ns=1863.10
+RESULT section=thru op=potrf dtype=f32 N=64 B=1024 impl=vendor ns=1707.05
+RESULT section=thru op=posv dtype=f32 N=64 B=1024 impl=block32 ns=2913.59
+RESULT section=thru op=posv dtype=f32 N=64 B=1024 impl=block128 ns=3242.71
+RESULT section=thru op=posv dtype=f32 N=64 B=1024 impl=vendor ns=2884.71
+RESULT section=thru op=gemm dtype=f32 N=64 B=1024 impl=vendor_tf32 ns=412.58
+RESULT section=thru op=gemm dtype=f32 N=64 B=8192 impl=block32 ns=2350.35
+RESULT section=thru op=gemm dtype=f32 N=64 B=8192 impl=block128 ns=1360.37
+RESULT section=thru op=gemm dtype=f32 N=64 B=8192 impl=warp8 ns=4411.85
+RESULT section=thru op=gemm dtype=f32 N=64 B=8192 impl=vendor ns=1526.47
+RESULT section=thru op=potrf dtype=f32 N=64 B=8192 impl=block32 ns=2275.44
+RESULT section=thru op=potrf dtype=f32 N=64 B=8192 impl=block128 ns=2472.90
+RESULT section=thru op=potrf dtype=f32 N=64 B=8192 impl=warp8 ns=1782.87
+RESULT section=thru op=potrf dtype=f32 N=64 B=8192 impl=vendor ns=1677.57
+RESULT section=thru op=posv dtype=f32 N=64 B=8192 impl=block32 ns=2732.28
+RESULT section=thru op=posv dtype=f32 N=64 B=8192 impl=block128 ns=3093.12
+RESULT section=thru op=posv dtype=f32 N=64 B=8192 impl=vendor ns=2631.10
+RESULT section=thru op=gemm dtype=f32 N=64 B=8192 impl=vendor_tf32 ns=394.40
+RESULT section=lat op=gemm dtype=f32 N=64 impl=block us=157.864
+RESULT section=lat op=gemm dtype=f32 N=64 impl=vendor us=65.295
+RESULT section=lat op=potrf dtype=f32 N=64 impl=block us=353.509
+RESULT section=lat op=potrf dtype=f32 N=64 impl=vendor us=87.123
+RESULT section=lat op=posv dtype=f32 N=64 impl=block us=443.959
+RESULT section=lat op=posv dtype=f32 N=64 impl=vendor us=166.190
+RESULT section=lat op=gemm dtype=f32 N=64 impl=vendor_tf32 us=60.189
+CHECK op=gemm dtype=f64 N=4 impl=block maxerr=0.000e+00
+CHECK op=gemm dtype=f64 N=4 impl=warp maxerr=0.000e+00
+CHECK op=gemm dtype=f64 N=4 impl=vendor maxerr=2.220e-16
+CHECK op=potrf dtype=f64 N=4 impl=block maxerr=5.551e-17
+CHECK op=potrf dtype=f64 N=4 impl=warp maxerr=0.000e+00
+CHECK op=potrf dtype=f64 N=4 impl=vendor maxerr=5.551e-17
+CHECK op=posv dtype=f64 N=4 impl=block maxerr=3.469e-18
+CHECK op=posv dtype=f64 N=4 impl=vendor maxerr=3.469e-18
+RESULT section=thru op=gemm dtype=f64 N=4 B=1 impl=block32 ns=9937.07
+RESULT section=thru op=gemm dtype=f64 N=4 B=1 impl=block128 ns=9969.07
+RESULT section=thru op=gemm dtype=f64 N=4 B=1 impl=warp8 ns=9934.93
+RESULT section=thru op=gemm dtype=f64 N=4 B=1 impl=vendor ns=48266.67
+RESULT section=thru op=potrf dtype=f64 N=4 B=1 impl=block32 ns=15765.33
+RESULT section=thru op=potrf dtype=f64 N=4 B=1 impl=block128 ns=15701.33
+RESULT section=thru op=potrf dtype=f64 N=4 B=1 impl=warp8 ns=16211.20
+RESULT section=thru op=potrf dtype=f64 N=4 B=1 impl=vendor ns=27686.40
+RESULT section=thru op=posv dtype=f64 N=4 B=1 impl=block32 ns=24328.53
+RESULT section=thru op=posv dtype=f64 N=4 B=1 impl=block128 ns=24315.73
+RESULT section=thru op=posv dtype=f64 N=4 B=1 impl=vendor ns=66282.67
+RESULT section=thru op=gemm dtype=f64 N=4 B=4 impl=block32 ns=2635.20
+RESULT section=thru op=gemm dtype=f64 N=4 B=4 impl=block128 ns=2665.60
+RESULT section=thru op=gemm dtype=f64 N=4 B=4 impl=warp8 ns=2496.00
+RESULT section=thru op=gemm dtype=f64 N=4 B=4 impl=vendor ns=7253.87
+RESULT section=thru op=potrf dtype=f64 N=4 B=4 impl=block32 ns=4014.40
+RESULT section=thru op=potrf dtype=f64 N=4 B=4 impl=block128 ns=4045.33
+RESULT section=thru op=potrf dtype=f64 N=4 B=4 impl=warp8 ns=4497.60
+RESULT section=thru op=potrf dtype=f64 N=4 B=4 impl=vendor ns=7000.53
+RESULT section=thru op=posv dtype=f64 N=4 B=4 impl=block32 ns=6202.13
+RESULT section=thru op=posv dtype=f64 N=4 B=4 impl=block128 ns=6301.87
+RESULT section=thru op=posv dtype=f64 N=4 B=4 impl=vendor ns=17154.67
+RESULT section=thru op=gemm dtype=f64 N=4 B=16 impl=block32 ns=655.73
+RESULT section=thru op=gemm dtype=f64 N=4 B=16 impl=block128 ns=646.00
+RESULT section=thru op=gemm dtype=f64 N=4 B=16 impl=warp8 ns=687.87
+RESULT section=thru op=gemm dtype=f64 N=4 B=16 impl=vendor ns=1749.20
+RESULT section=thru op=potrf dtype=f64 N=4 B=16 impl=block32 ns=937.20
+RESULT section=thru op=potrf dtype=f64 N=4 B=16 impl=block128 ns=940.00
+RESULT section=thru op=potrf dtype=f64 N=4 B=16 impl=warp8 ns=1545.60
+RESULT section=thru op=potrf dtype=f64 N=4 B=16 impl=vendor ns=1683.60
+RESULT section=thru op=posv dtype=f64 N=4 B=16 impl=block32 ns=1533.07
+RESULT section=thru op=posv dtype=f64 N=4 B=16 impl=block128 ns=1536.67
+RESULT section=thru op=posv dtype=f64 N=4 B=16 impl=vendor ns=4299.60
+RESULT section=thru op=gemm dtype=f64 N=4 B=64 impl=block32 ns=168.77
+RESULT section=thru op=gemm dtype=f64 N=4 B=64 impl=block128 ns=168.13
+RESULT section=thru op=gemm dtype=f64 N=4 B=64 impl=warp8 ns=172.50
+RESULT section=thru op=gemm dtype=f64 N=4 B=64 impl=vendor ns=472.70
+RESULT section=thru op=potrf dtype=f64 N=4 B=64 impl=block32 ns=275.20
+RESULT section=thru op=potrf dtype=f64 N=4 B=64 impl=block128 ns=273.20
+RESULT section=thru op=potrf dtype=f64 N=4 B=64 impl=warp8 ns=386.57
+RESULT section=thru op=potrf dtype=f64 N=4 B=64 impl=vendor ns=479.87
+RESULT section=thru op=posv dtype=f64 N=4 B=64 impl=block32 ns=440.43
+RESULT section=thru op=posv dtype=f64 N=4 B=64 impl=block128 ns=442.93
+RESULT section=thru op=posv dtype=f64 N=4 B=64 impl=vendor ns=1232.43
+RESULT section=thru op=gemm dtype=f64 N=4 B=256 impl=block32 ns=49.33
+RESULT section=thru op=gemm dtype=f64 N=4 B=256 impl=block128 ns=50.34
+RESULT section=thru op=gemm dtype=f64 N=4 B=256 impl=warp8 ns=47.14
+RESULT section=thru op=gemm dtype=f64 N=4 B=256 impl=vendor ns=202.77
+RESULT section=thru op=potrf dtype=f64 N=4 B=256 impl=block32 ns=151.61
+RESULT section=thru op=potrf dtype=f64 N=4 B=256 impl=block128 ns=167.74
+RESULT section=thru op=potrf dtype=f64 N=4 B=256 impl=warp8 ns=163.84
+RESULT section=thru op=potrf dtype=f64 N=4 B=256 impl=vendor ns=254.49
+RESULT section=thru op=posv dtype=f64 N=4 B=256 impl=block32 ns=275.39
+RESULT section=thru op=posv dtype=f64 N=4 B=256 impl=block128 ns=306.06
+RESULT section=thru op=posv dtype=f64 N=4 B=256 impl=vendor ns=610.59
+RESULT section=thru op=gemm dtype=f64 N=4 B=1024 impl=block32 ns=20.16
+RESULT section=thru op=gemm dtype=f64 N=4 B=1024 impl=block128 ns=18.74
+RESULT section=thru op=gemm dtype=f64 N=4 B=1024 impl=warp8 ns=17.27
+RESULT section=thru op=gemm dtype=f64 N=4 B=1024 impl=vendor ns=134.36
+RESULT section=thru op=potrf dtype=f64 N=4 B=1024 impl=block32 ns=129.31
+RESULT section=thru op=potrf dtype=f64 N=4 B=1024 impl=block128 ns=132.90
+RESULT section=thru op=potrf dtype=f64 N=4 B=1024 impl=warp8 ns=142.04
+RESULT section=thru op=potrf dtype=f64 N=4 B=1024 impl=vendor ns=193.74
+RESULT section=thru op=posv dtype=f64 N=4 B=1024 impl=block32 ns=253.59
+RESULT section=thru op=posv dtype=f64 N=4 B=1024 impl=block128 ns=261.69
+RESULT section=thru op=posv dtype=f64 N=4 B=1024 impl=vendor ns=472.04
+RESULT section=thru op=gemm dtype=f64 N=4 B=8192 impl=block32 ns=9.83
+RESULT section=thru op=gemm dtype=f64 N=4 B=8192 impl=block128 ns=9.31
+RESULT section=thru op=gemm dtype=f64 N=4 B=8192 impl=warp8 ns=8.63
+RESULT section=thru op=gemm dtype=f64 N=4 B=8192 impl=vendor ns=112.98
+RESULT section=thru op=potrf dtype=f64 N=4 B=8192 impl=block32 ns=122.96
+RESULT section=thru op=potrf dtype=f64 N=4 B=8192 impl=block128 ns=123.55
+RESULT section=thru op=potrf dtype=f64 N=4 B=8192 impl=warp8 ns=135.32
+RESULT section=thru op=potrf dtype=f64 N=4 B=8192 impl=vendor ns=173.39
+RESULT section=thru op=posv dtype=f64 N=4 B=8192 impl=block32 ns=247.07
+RESULT section=thru op=posv dtype=f64 N=4 B=8192 impl=block128 ns=247.22
+RESULT section=thru op=posv dtype=f64 N=4 B=8192 impl=vendor ns=421.82
+RESULT section=lat op=gemm dtype=f64 N=4 impl=block us=26.352
+RESULT section=lat op=gemm dtype=f64 N=4 impl=vendor us=70.750
+RESULT section=lat op=potrf dtype=f64 N=4 impl=block us=33.436
+RESULT section=lat op=potrf dtype=f64 N=4 impl=vendor us=267.924
+RESULT section=lat op=posv dtype=f64 N=4 impl=block us=43.148
+RESULT section=lat op=posv dtype=f64 N=4 impl=vendor us=349.775
+CHECK op=gemm dtype=f64 N=6 impl=block maxerr=0.000e+00
+CHECK op=gemm dtype=f64 N=6 impl=warp maxerr=0.000e+00
+CHECK op=gemm dtype=f64 N=6 impl=vendor maxerr=2.220e-16
+CHECK op=potrf dtype=f64 N=6 impl=block maxerr=4.441e-16
+CHECK op=potrf dtype=f64 N=6 impl=warp maxerr=4.441e-16
+CHECK op=potrf dtype=f64 N=6 impl=vendor maxerr=1.110e-16
+CHECK op=posv dtype=f64 N=6 impl=block maxerr=1.388e-17
+CHECK op=posv dtype=f64 N=6 impl=vendor maxerr=1.388e-17
+RESULT section=thru op=gemm dtype=f64 N=6 B=1 impl=block32 ns=10828.80
+RESULT section=thru op=gemm dtype=f64 N=6 B=1 impl=block128 ns=10129.07
+RESULT section=thru op=gemm dtype=f64 N=6 B=1 impl=warp8 ns=10594.13
+RESULT section=thru op=gemm dtype=f64 N=6 B=1 impl=vendor ns=46568.53
+RESULT section=thru op=potrf dtype=f64 N=6 B=1 impl=block32 ns=21474.13
+RESULT section=thru op=potrf dtype=f64 N=6 B=1 impl=block128 ns=21209.60
+RESULT section=thru op=potrf dtype=f64 N=6 B=1 impl=warp8 ns=21661.87
+RESULT section=thru op=potrf dtype=f64 N=6 B=1 impl=vendor ns=31304.53
+RESULT section=thru op=posv dtype=f64 N=6 B=1 impl=block32 ns=35767.47
+RESULT section=thru op=posv dtype=f64 N=6 B=1 impl=block128 ns=35763.20
+RESULT section=thru op=posv dtype=f64 N=6 B=1 impl=vendor ns=78837.33
+RESULT section=thru op=gemm dtype=f64 N=6 B=4 impl=block32 ns=2844.27
+RESULT section=thru op=gemm dtype=f64 N=6 B=4 impl=block128 ns=2699.20
+RESULT section=thru op=gemm dtype=f64 N=6 B=4 impl=warp8 ns=2697.60
+RESULT section=thru op=gemm dtype=f64 N=6 B=4 impl=vendor ns=7049.07
+RESULT section=thru op=potrf dtype=f64 N=6 B=4 impl=block32 ns=5317.87
+RESULT section=thru op=potrf dtype=f64 N=6 B=4 impl=block128 ns=5316.80
+RESULT section=thru op=potrf dtype=f64 N=6 B=4 impl=warp8 ns=6167.47
+RESULT section=thru op=potrf dtype=f64 N=6 B=4 impl=vendor ns=7686.40
+RESULT section=thru op=posv dtype=f64 N=6 B=4 impl=block32 ns=9027.73
+RESULT section=thru op=posv dtype=f64 N=6 B=4 impl=block128 ns=9018.67
+RESULT section=thru op=posv dtype=f64 N=6 B=4 impl=vendor ns=20368.00
+RESULT section=thru op=gemm dtype=f64 N=6 B=16 impl=block32 ns=723.87
+RESULT section=thru op=gemm dtype=f64 N=6 B=16 impl=block128 ns=679.60
+RESULT section=thru op=gemm dtype=f64 N=6 B=16 impl=warp8 ns=803.87
+RESULT section=thru op=gemm dtype=f64 N=6 B=16 impl=vendor ns=1989.87
+RESULT section=thru op=potrf dtype=f64 N=6 B=16 impl=block32 ns=1332.67
+RESULT section=thru op=potrf dtype=f64 N=6 B=16 impl=block128 ns=1334.27
+RESULT section=thru op=potrf dtype=f64 N=6 B=16 impl=warp8 ns=2306.93
+RESULT section=thru op=potrf dtype=f64 N=6 B=16 impl=vendor ns=1919.73
+RESULT section=thru op=posv dtype=f64 N=6 B=16 impl=block32 ns=2264.27
+RESULT section=thru op=posv dtype=f64 N=6 B=16 impl=block128 ns=2270.67
+RESULT section=thru op=posv dtype=f64 N=6 B=16 impl=vendor ns=5157.73
+RESULT section=thru op=gemm dtype=f64 N=6 B=64 impl=block32 ns=188.83
+RESULT section=thru op=gemm dtype=f64 N=6 B=64 impl=block128 ns=185.30
+RESULT section=thru op=gemm dtype=f64 N=6 B=64 impl=warp8 ns=206.93
+RESULT section=thru op=gemm dtype=f64 N=6 B=64 impl=vendor ns=579.10
+RESULT section=thru op=potrf dtype=f64 N=6 B=64 impl=block32 ns=388.40
+RESULT section=thru op=potrf dtype=f64 N=6 B=64 impl=block128 ns=393.47
+RESULT section=thru op=potrf dtype=f64 N=6 B=64 impl=warp8 ns=576.53
+RESULT section=thru op=potrf dtype=f64 N=6 B=64 impl=vendor ns=572.00
+RESULT section=thru op=posv dtype=f64 N=6 B=64 impl=block32 ns=647.47
+RESULT section=thru op=posv dtype=f64 N=6 B=64 impl=block128 ns=651.30
+RESULT section=thru op=posv dtype=f64 N=6 B=64 impl=vendor ns=1468.70
+RESULT section=thru op=gemm dtype=f64 N=6 B=256 impl=block32 ns=63.83
+RESULT section=thru op=gemm dtype=f64 N=6 B=256 impl=block128 ns=62.43
+RESULT section=thru op=gemm dtype=f64 N=6 B=256 impl=warp8 ns=61.59
+RESULT section=thru op=gemm dtype=f64 N=6 B=256 impl=vendor ns=285.90
+RESULT section=thru op=potrf dtype=f64 N=6 B=256 impl=block32 ns=238.27
+RESULT section=thru op=potrf dtype=f64 N=6 B=256 impl=block128 ns=265.07
+RESULT section=thru op=potrf dtype=f64 N=6 B=256 impl=warp8 ns=258.10
+RESULT section=thru op=potrf dtype=f64 N=6 B=256 impl=vendor ns=340.12
+RESULT section=thru op=posv dtype=f64 N=6 B=256 impl=block32 ns=426.22
+RESULT section=thru op=posv dtype=f64 N=6 B=256 impl=block128 ns=483.40
+RESULT section=thru op=posv dtype=f64 N=6 B=256 impl=vendor ns=771.12
+RESULT section=thru op=gemm dtype=f64 N=6 B=1024 impl=block32 ns=33.53
+RESULT section=thru op=gemm dtype=f64 N=6 B=1024 impl=block128 ns=32.76
+RESULT section=thru op=gemm dtype=f64 N=6 B=1024 impl=warp8 ns=32.07
+RESULT section=thru op=gemm dtype=f64 N=6 B=1024 impl=vendor ns=206.84
+RESULT section=thru op=potrf dtype=f64 N=6 B=1024 impl=block32 ns=215.41
+RESULT section=thru op=potrf dtype=f64 N=6 B=1024 impl=block128 ns=222.79
+RESULT section=thru op=potrf dtype=f64 N=6 B=1024 impl=warp8 ns=235.24
+RESULT section=thru op=potrf dtype=f64 N=6 B=1024 impl=vendor ns=278.95
+RESULT section=thru op=posv dtype=f64 N=6 B=1024 impl=block32 ns=403.99
+RESULT section=thru op=posv dtype=f64 N=6 B=1024 impl=block128 ns=416.97
+RESULT section=thru op=posv dtype=f64 N=6 B=1024 impl=vendor ns=628.75
+RESULT section=thru op=gemm dtype=f64 N=6 B=8192 impl=block32 ns=23.94
+RESULT section=thru op=gemm dtype=f64 N=6 B=8192 impl=block128 ns=24.28
+RESULT section=thru op=gemm dtype=f64 N=6 B=8192 impl=warp8 ns=23.57
+RESULT section=thru op=gemm dtype=f64 N=6 B=8192 impl=vendor ns=236.72
+RESULT section=thru op=potrf dtype=f64 N=6 B=8192 impl=block32 ns=209.06
+RESULT section=thru op=potrf dtype=f64 N=6 B=8192 impl=block128 ns=209.94
+RESULT section=thru op=potrf dtype=f64 N=6 B=8192 impl=warp8 ns=228.75
+RESULT section=thru op=potrf dtype=f64 N=6 B=8192 impl=vendor ns=259.70
+RESULT section=thru op=posv dtype=f64 N=6 B=8192 impl=block32 ns=397.50
+RESULT section=thru op=posv dtype=f64 N=6 B=8192 impl=block128 ns=397.45
+RESULT section=thru op=posv dtype=f64 N=6 B=8192 impl=vendor ns=575.25
+RESULT section=lat op=gemm dtype=f64 N=6 impl=block us=28.436
+RESULT section=lat op=gemm dtype=f64 N=6 impl=vendor us=70.629
+RESULT section=lat op=potrf dtype=f64 N=6 impl=block us=41.040
+RESULT section=lat op=potrf dtype=f64 N=6 impl=vendor us=274.289
+RESULT section=lat op=posv dtype=f64 N=6 impl=block us=56.581
+RESULT section=lat op=posv dtype=f64 N=6 impl=vendor us=358.343
+CHECK op=gemm dtype=f64 N=8 impl=block maxerr=0.000e+00
+CHECK op=gemm dtype=f64 N=8 impl=warp maxerr=0.000e+00
+CHECK op=gemm dtype=f64 N=8 impl=vendor maxerr=1.110e-16
+CHECK op=potrf dtype=f64 N=8 impl=block maxerr=4.441e-16
+CHECK op=potrf dtype=f64 N=8 impl=warp maxerr=4.441e-16
+CHECK op=potrf dtype=f64 N=8 impl=vendor maxerr=0.000e+00
+CHECK op=posv dtype=f64 N=8 impl=block maxerr=2.776e-17
+CHECK op=posv dtype=f64 N=8 impl=vendor maxerr=6.939e-18
+RESULT section=thru op=gemm dtype=f64 N=8 B=1 impl=block32 ns=11114.67
+RESULT section=thru op=gemm dtype=f64 N=8 B=1 impl=block128 ns=10139.73
+RESULT section=thru op=gemm dtype=f64 N=8 B=1 impl=warp8 ns=10894.93
+RESULT section=thru op=gemm dtype=f64 N=8 B=1 impl=vendor ns=46440.53
+RESULT section=thru op=potrf dtype=f64 N=8 B=1 impl=block32 ns=28356.27
+RESULT section=thru op=potrf dtype=f64 N=8 B=1 impl=block128 ns=28066.13
+RESULT section=thru op=potrf dtype=f64 N=8 B=1 impl=warp8 ns=28136.53
+RESULT section=thru op=potrf dtype=f64 N=8 B=1 impl=vendor ns=34909.87
+RESULT section=thru op=posv dtype=f64 N=8 B=1 impl=block32 ns=47897.60
+RESULT section=thru op=posv dtype=f64 N=8 B=1 impl=block128 ns=47925.33
+RESULT section=thru op=posv dtype=f64 N=8 B=1 impl=vendor ns=90570.67
+RESULT section=thru op=gemm dtype=f64 N=8 B=4 impl=block32 ns=2947.20
+RESULT section=thru op=gemm dtype=f64 N=8 B=4 impl=block128 ns=2686.40
+RESULT section=thru op=gemm dtype=f64 N=8 B=4 impl=warp8 ns=2843.20
+RESULT section=thru op=gemm dtype=f64 N=8 B=4 impl=vendor ns=7297.07
+RESULT section=thru op=potrf dtype=f64 N=8 B=4 impl=block32 ns=7067.20
+RESULT section=thru op=potrf dtype=f64 N=8 B=4 impl=block128 ns=7096.00
+RESULT section=thru op=potrf dtype=f64 N=8 B=4 impl=warp8 ns=8251.20
+RESULT section=thru op=potrf dtype=f64 N=8 B=4 impl=vendor ns=8702.93
+RESULT section=thru op=posv dtype=f64 N=8 B=4 impl=block32 ns=12041.07
+RESULT section=thru op=posv dtype=f64 N=8 B=4 impl=block128 ns=12041.60
+RESULT section=thru op=posv dtype=f64 N=8 B=4 impl=vendor ns=23489.60
+RESULT section=thru op=gemm dtype=f64 N=8 B=16 impl=block32 ns=759.47
+RESULT section=thru op=gemm dtype=f64 N=8 B=16 impl=block128 ns=677.60
+RESULT section=thru op=gemm dtype=f64 N=8 B=16 impl=warp8 ns=861.87
+RESULT section=thru op=gemm dtype=f64 N=8 B=16 impl=vendor ns=1873.87
+RESULT section=thru op=potrf dtype=f64 N=8 B=16 impl=block32 ns=1770.00
+RESULT section=thru op=potrf dtype=f64 N=8 B=16 impl=block128 ns=1771.73
+RESULT section=thru op=potrf dtype=f64 N=8 B=16 impl=warp8 ns=3177.87
+RESULT section=thru op=potrf dtype=f64 N=8 B=16 impl=vendor ns=2142.53
+RESULT section=thru op=posv dtype=f64 N=8 B=16 impl=block32 ns=3018.40
+RESULT section=thru op=posv dtype=f64 N=8 B=16 impl=block128 ns=3013.60
+RESULT section=thru op=posv dtype=f64 N=8 B=16 impl=vendor ns=5958.53
+RESULT section=thru op=gemm dtype=f64 N=8 B=64 impl=block32 ns=194.53
+RESULT section=thru op=gemm dtype=f64 N=8 B=64 impl=block128 ns=188.80
+RESULT section=thru op=gemm dtype=f64 N=8 B=64 impl=warp8 ns=214.43
+RESULT section=thru op=gemm dtype=f64 N=8 B=64 impl=vendor ns=682.97
+RESULT section=thru op=potrf dtype=f64 N=8 B=64 impl=block32 ns=520.37
+RESULT section=thru op=potrf dtype=f64 N=8 B=64 impl=block128 ns=521.77
+RESULT section=thru op=potrf dtype=f64 N=8 B=64 impl=warp8 ns=799.43
+RESULT section=thru op=potrf dtype=f64 N=8 B=64 impl=vendor ns=665.27
+RESULT section=thru op=posv dtype=f64 N=8 B=64 impl=block32 ns=863.37
+RESULT section=thru op=posv dtype=f64 N=8 B=64 impl=block128 ns=869.13
+RESULT section=thru op=posv dtype=f64 N=8 B=64 impl=vendor ns=1702.60
+RESULT section=thru op=gemm dtype=f64 N=8 B=256 impl=block32 ns=69.70
+RESULT section=thru op=gemm dtype=f64 N=8 B=256 impl=block128 ns=69.33
+RESULT section=thru op=gemm dtype=f64 N=8 B=256 impl=warp8 ns=68.15
+RESULT section=thru op=gemm dtype=f64 N=8 B=256 impl=vendor ns=367.51
+RESULT section=thru op=potrf dtype=f64 N=8 B=256 impl=block32 ns=342.48
+RESULT section=thru op=potrf dtype=f64 N=8 B=256 impl=block128 ns=383.60
+RESULT section=thru op=potrf dtype=f64 N=8 B=256 impl=warp8 ns=369.41
+RESULT section=thru op=potrf dtype=f64 N=8 B=256 impl=vendor ns=423.92
+RESULT section=thru op=posv dtype=f64 N=8 B=256 impl=block32 ns=594.37
+RESULT section=thru op=posv dtype=f64 N=8 B=256 impl=block128 ns=672.05
+RESULT section=thru op=posv dtype=f64 N=8 B=256 impl=vendor ns=928.68
+RESULT section=thru op=gemm dtype=f64 N=8 B=1024 impl=block32 ns=39.61
+RESULT section=thru op=gemm dtype=f64 N=8 B=1024 impl=block128 ns=39.89
+RESULT section=thru op=gemm dtype=f64 N=8 B=1024 impl=warp8 ns=38.12
+RESULT section=thru op=gemm dtype=f64 N=8 B=1024 impl=vendor ns=278.96
+RESULT section=thru op=potrf dtype=f64 N=8 B=1024 impl=block32 ns=319.21
+RESULT section=thru op=potrf dtype=f64 N=8 B=1024 impl=block128 ns=329.76
+RESULT section=thru op=potrf dtype=f64 N=8 B=1024 impl=warp8 ns=345.95
+RESULT section=thru op=potrf dtype=f64 N=8 B=1024 impl=vendor ns=366.10
+RESULT section=thru op=posv dtype=f64 N=8 B=1024 impl=block32 ns=571.87
+RESULT section=thru op=posv dtype=f64 N=8 B=1024 impl=block128 ns=589.09
+RESULT section=thru op=posv dtype=f64 N=8 B=1024 impl=vendor ns=785.14
+RESULT section=thru op=gemm dtype=f64 N=8 B=8192 impl=block32 ns=30.59
+RESULT section=thru op=gemm dtype=f64 N=8 B=8192 impl=block128 ns=30.75
+RESULT section=thru op=gemm dtype=f64 N=8 B=8192 impl=warp8 ns=29.70
+RESULT section=thru op=gemm dtype=f64 N=8 B=8192 impl=vendor ns=288.01
+RESULT section=thru op=potrf dtype=f64 N=8 B=8192 impl=block32 ns=312.83
+RESULT section=thru op=potrf dtype=f64 N=8 B=8192 impl=block128 ns=314.57
+RESULT section=thru op=potrf dtype=f64 N=8 B=8192 impl=warp8 ns=339.26
+RESULT section=thru op=potrf dtype=f64 N=8 B=8192 impl=vendor ns=346.98
+RESULT section=thru op=posv dtype=f64 N=8 B=8192 impl=block32 ns=565.08
+RESULT section=thru op=posv dtype=f64 N=8 B=8192 impl=block128 ns=565.60
+RESULT section=thru op=posv dtype=f64 N=8 B=8192 impl=vendor ns=761.85
+RESULT section=lat op=gemm dtype=f64 N=8 impl=block us=27.799
+RESULT section=lat op=gemm dtype=f64 N=8 impl=vendor us=73.072
+RESULT section=lat op=potrf dtype=f64 N=8 impl=block us=48.808
+RESULT section=lat op=potrf dtype=f64 N=8 impl=vendor us=281.667
+RESULT section=lat op=posv dtype=f64 N=8 impl=block us=68.556
+RESULT section=lat op=posv dtype=f64 N=8 impl=vendor us=365.432
+CHECK op=gemm dtype=f64 N=12 impl=block maxerr=0.000e+00
+CHECK op=gemm dtype=f64 N=12 impl=warp maxerr=0.000e+00
+CHECK op=gemm dtype=f64 N=12 impl=vendor maxerr=2.220e-16
+CHECK op=potrf dtype=f64 N=12 impl=block maxerr=8.882e-16
+CHECK op=potrf dtype=f64 N=12 impl=warp maxerr=8.882e-16
+CHECK op=potrf dtype=f64 N=12 impl=vendor maxerr=2.776e-16
+CHECK op=posv dtype=f64 N=12 impl=block maxerr=2.082e-17
+CHECK op=posv dtype=f64 N=12 impl=vendor maxerr=2.776e-17
+RESULT section=thru op=gemm dtype=f64 N=12 B=1 impl=block32 ns=14624.00
+RESULT section=thru op=gemm dtype=f64 N=12 B=1 impl=block128 ns=12697.60
+RESULT section=thru op=gemm dtype=f64 N=12 B=1 impl=warp8 ns=14600.53
+RESULT section=thru op=gemm dtype=f64 N=12 B=1 impl=vendor ns=45700.27
+RESULT section=thru op=potrf dtype=f64 N=12 B=1 impl=block32 ns=44354.13
+RESULT section=thru op=potrf dtype=f64 N=12 B=1 impl=block128 ns=44386.13
+RESULT section=thru op=potrf dtype=f64 N=12 B=1 impl=warp8 ns=45154.13
+RESULT section=thru op=potrf dtype=f64 N=12 B=1 impl=vendor ns=41401.60
+RESULT section=thru op=posv dtype=f64 N=12 B=1 impl=block32 ns=76198.40
+RESULT section=thru op=posv dtype=f64 N=12 B=1 impl=block128 ns=76279.47
+RESULT section=thru op=posv dtype=f64 N=12 B=1 impl=vendor ns=114609.07
+RESULT section=thru op=gemm dtype=f64 N=12 B=4 impl=block32 ns=3802.13
+RESULT section=thru op=gemm dtype=f64 N=12 B=4 impl=block128 ns=3326.93
+RESULT section=thru op=gemm dtype=f64 N=12 B=4 impl=warp8 ns=5035.20
+RESULT section=thru op=gemm dtype=f64 N=12 B=4 impl=vendor ns=7969.07
+RESULT section=thru op=potrf dtype=f64 N=12 B=4 impl=block32 ns=11241.60
+RESULT section=thru op=potrf dtype=f64 N=12 B=4 impl=block128 ns=11209.60
+RESULT section=thru op=potrf dtype=f64 N=12 B=4 impl=warp8 ns=13207.47
+RESULT section=thru op=potrf dtype=f64 N=12 B=4 impl=vendor ns=10578.13
+RESULT section=thru op=posv dtype=f64 N=12 B=4 impl=block32 ns=19240.53
+RESULT section=thru op=posv dtype=f64 N=12 B=4 impl=block128 ns=19230.40
+RESULT section=thru op=posv dtype=f64 N=12 B=4 impl=vendor ns=29985.07
+RESULT section=thru op=gemm dtype=f64 N=12 B=16 impl=block32 ns=958.00
+RESULT section=thru op=gemm dtype=f64 N=12 B=16 impl=block128 ns=850.67
+RESULT section=thru op=gemm dtype=f64 N=12 B=16 impl=warp8 ns=1946.13
+RESULT section=thru op=gemm dtype=f64 N=12 B=16 impl=vendor ns=2017.87
+RESULT section=thru op=potrf dtype=f64 N=12 B=16 impl=block32 ns=2814.13
+RESULT section=thru op=potrf dtype=f64 N=12 B=16 impl=block128 ns=2816.80
+RESULT section=thru op=potrf dtype=f64 N=12 B=16 impl=warp8 ns=5269.07
+RESULT section=thru op=potrf dtype=f64 N=12 B=16 impl=vendor ns=2628.27
+RESULT section=thru op=posv dtype=f64 N=12 B=16 impl=block32 ns=4804.67
+RESULT section=thru op=posv dtype=f64 N=12 B=16 impl=block128 ns=4805.87
+RESULT section=thru op=posv dtype=f64 N=12 B=16 impl=vendor ns=7602.80
+RESULT section=thru op=gemm dtype=f64 N=12 B=64 impl=block32 ns=344.90
+RESULT section=thru op=gemm dtype=f64 N=12 B=64 impl=block128 ns=333.13
+RESULT section=thru op=gemm dtype=f64 N=12 B=64 impl=warp8 ns=493.27
+RESULT section=thru op=gemm dtype=f64 N=12 B=64 impl=vendor ns=1545.17
+RESULT section=thru op=potrf dtype=f64 N=12 B=64 impl=block32 ns=825.00
+RESULT section=thru op=potrf dtype=f64 N=12 B=64 impl=block128 ns=830.93
+RESULT section=thru op=potrf dtype=f64 N=12 B=64 impl=warp8 ns=1317.40
+RESULT section=thru op=potrf dtype=f64 N=12 B=64 impl=vendor ns=841.83
+RESULT section=thru op=posv dtype=f64 N=12 B=64 impl=block32 ns=1384.67
+RESULT section=thru op=posv dtype=f64 N=12 B=64 impl=block128 ns=1402.10
+RESULT section=thru op=posv dtype=f64 N=12 B=64 impl=vendor ns=2189.97
+RESULT section=thru op=gemm dtype=f64 N=12 B=256 impl=block32 ns=208.88
+RESULT section=thru op=gemm dtype=f64 N=12 B=256 impl=block128 ns=216.85
+RESULT section=thru op=gemm dtype=f64 N=12 B=256 impl=warp8 ns=214.73
+RESULT section=thru op=gemm dtype=f64 N=12 B=256 impl=vendor ns=1180.75
+RESULT section=thru op=potrf dtype=f64 N=12 B=256 impl=block32 ns=587.25
+RESULT section=thru op=potrf dtype=f64 N=12 B=256 impl=block128 ns=650.82
+RESULT section=thru op=potrf dtype=f64 N=12 B=256 impl=warp8 ns=630.52
+RESULT section=thru op=potrf dtype=f64 N=12 B=256 impl=vendor ns=600.58
+RESULT section=thru op=posv dtype=f64 N=12 B=256 impl=block32 ns=968.15
+RESULT section=thru op=posv dtype=f64 N=12 B=256 impl=block128 ns=1094.44
+RESULT section=thru op=posv dtype=f64 N=12 B=256 impl=vendor ns=1236.98
+RESULT section=thru op=gemm dtype=f64 N=12 B=1024 impl=block32 ns=177.30
+RESULT section=thru op=gemm dtype=f64 N=12 B=1024 impl=block128 ns=179.24
+RESULT section=thru op=gemm dtype=f64 N=12 B=1024 impl=warp8 ns=177.41
+RESULT section=thru op=gemm dtype=f64 N=12 B=1024 impl=vendor ns=1082.87
+RESULT section=thru op=potrf dtype=f64 N=12 B=1024 impl=block32 ns=564.49
+RESULT section=thru op=potrf dtype=f64 N=12 B=1024 impl=block128 ns=582.10
+RESULT section=thru op=potrf dtype=f64 N=12 B=1024 impl=warp8 ns=605.89
+RESULT section=thru op=potrf dtype=f64 N=12 B=1024 impl=vendor ns=541.13
+RESULT section=thru op=posv dtype=f64 N=12 B=1024 impl=block32 ns=945.15
+RESULT section=thru op=posv dtype=f64 N=12 B=1024 impl=block128 ns=975.23
+RESULT section=thru op=posv dtype=f64 N=12 B=1024 impl=vendor ns=1087.93
+RESULT section=thru op=gemm dtype=f64 N=12 B=8192 impl=block32 ns=169.20
+RESULT section=thru op=gemm dtype=f64 N=12 B=8192 impl=block128 ns=169.26
+RESULT section=thru op=gemm dtype=f64 N=12 B=8192 impl=warp8 ns=167.87
+RESULT section=thru op=gemm dtype=f64 N=12 B=8192 impl=vendor ns=1055.37
+RESULT section=thru op=potrf dtype=f64 N=12 B=8192 impl=block32 ns=558.02
+RESULT section=thru op=potrf dtype=f64 N=12 B=8192 impl=block128 ns=559.84
+RESULT section=thru op=potrf dtype=f64 N=12 B=8192 impl=warp8 ns=598.88
+RESULT section=thru op=potrf dtype=f64 N=12 B=8192 impl=vendor ns=520.32
+RESULT section=thru op=posv dtype=f64 N=12 B=8192 impl=block32 ns=937.69
+RESULT section=thru op=posv dtype=f64 N=12 B=8192 impl=block128 ns=941.18
+RESULT section=thru op=posv dtype=f64 N=12 B=8192 impl=vendor ns=1090.69
+RESULT section=lat op=gemm dtype=f64 N=12 impl=block us=31.064
+RESULT section=lat op=gemm dtype=f64 N=12 impl=vendor us=71.495
+RESULT section=lat op=potrf dtype=f64 N=12 impl=block us=64.174
+RESULT section=lat op=potrf dtype=f64 N=12 impl=vendor us=296.402
+RESULT section=lat op=posv dtype=f64 N=12 impl=block us=95.773
+RESULT section=lat op=posv dtype=f64 N=12 impl=vendor us=380.197
+CHECK op=gemm dtype=f64 N=16 impl=block maxerr=0.000e+00
+CHECK op=gemm dtype=f64 N=16 impl=warp maxerr=0.000e+00
+CHECK op=gemm dtype=f64 N=16 impl=vendor maxerr=1.110e-16
+CHECK op=potrf dtype=f64 N=16 impl=block maxerr=8.882e-16
+CHECK op=potrf dtype=f64 N=16 impl=warp maxerr=8.882e-16
+CHECK op=potrf dtype=f64 N=16 impl=vendor maxerr=8.882e-16
+CHECK op=posv dtype=f64 N=16 impl=block maxerr=4.163e-17
+CHECK op=posv dtype=f64 N=16 impl=vendor maxerr=4.163e-17
+RESULT section=thru op=gemm dtype=f64 N=16 B=1 impl=block32 ns=15763.20
+RESULT section=thru op=gemm dtype=f64 N=16 B=1 impl=block128 ns=13350.40
+RESULT section=thru op=gemm dtype=f64 N=16 B=1 impl=warp8 ns=15219.20
+RESULT section=thru op=gemm dtype=f64 N=16 B=1 impl=vendor ns=45312.00
+RESULT section=thru op=potrf dtype=f64 N=16 B=1 impl=block32 ns=64403.20
+RESULT section=thru op=potrf dtype=f64 N=16 B=1 impl=block128 ns=64377.60
+RESULT section=thru op=potrf dtype=f64 N=16 B=1 impl=warp8 ns=62717.87
+RESULT section=thru op=potrf dtype=f64 N=16 B=1 impl=vendor ns=48891.73
+RESULT section=thru op=posv dtype=f64 N=16 B=1 impl=block32 ns=107219.20
+RESULT section=thru op=posv dtype=f64 N=16 B=1 impl=block128 ns=107415.47
+RESULT section=thru op=posv dtype=f64 N=16 B=1 impl=vendor ns=139682.13
+RESULT section=thru op=gemm dtype=f64 N=16 B=4 impl=block32 ns=4149.33
+RESULT section=thru op=gemm dtype=f64 N=16 B=4 impl=block128 ns=3520.00
+RESULT section=thru op=gemm dtype=f64 N=16 B=4 impl=warp8 ns=5984.53
+RESULT section=thru op=gemm dtype=f64 N=16 B=4 impl=vendor ns=6932.27
+RESULT section=thru op=potrf dtype=f64 N=16 B=4 impl=block32 ns=16270.40
+RESULT section=thru op=potrf dtype=f64 N=16 B=4 impl=block128 ns=16239.47
+RESULT section=thru op=potrf dtype=f64 N=16 B=4 impl=warp8 ns=18818.67
+RESULT section=thru op=potrf dtype=f64 N=16 B=4 impl=vendor ns=12485.87
+RESULT section=thru op=posv dtype=f64 N=16 B=4 impl=block32 ns=27024.53
+RESULT section=thru op=posv dtype=f64 N=16 B=4 impl=block128 ns=27006.93
+RESULT section=thru op=posv dtype=f64 N=16 B=4 impl=vendor ns=36563.73
+RESULT section=thru op=gemm dtype=f64 N=16 B=16 impl=block32 ns=1043.87
+RESULT section=thru op=gemm dtype=f64 N=16 B=16 impl=block128 ns=903.20
+RESULT section=thru op=gemm dtype=f64 N=16 B=16 impl=warp8 ns=2396.67
+RESULT section=thru op=gemm dtype=f64 N=16 B=16 impl=vendor ns=2324.53
+RESULT section=thru op=potrf dtype=f64 N=16 B=16 impl=block32 ns=4058.67
+RESULT section=thru op=potrf dtype=f64 N=16 B=16 impl=block128 ns=4066.40
+RESULT section=thru op=potrf dtype=f64 N=16 B=16 impl=warp8 ns=7799.47
+RESULT section=thru op=potrf dtype=f64 N=16 B=16 impl=vendor ns=3102.67
+RESULT section=thru op=posv dtype=f64 N=16 B=16 impl=block32 ns=6747.07
+RESULT section=thru op=posv dtype=f64 N=16 B=16 impl=block128 ns=6752.53
+RESULT section=thru op=posv dtype=f64 N=16 B=16 impl=vendor ns=9248.67
+RESULT section=thru op=gemm dtype=f64 N=16 B=64 impl=block32 ns=401.67
+RESULT section=thru op=gemm dtype=f64 N=16 B=64 impl=block128 ns=388.60
+RESULT section=thru op=gemm dtype=f64 N=16 B=64 impl=warp8 ns=599.37
+RESULT section=thru op=gemm dtype=f64 N=16 B=64 impl=vendor ns=1540.27
+RESULT section=thru op=potrf dtype=f64 N=16 B=64 impl=block32 ns=1189.07
+RESULT section=thru op=potrf dtype=f64 N=16 B=64 impl=block128 ns=1193.27
+RESULT section=thru op=potrf dtype=f64 N=16 B=64 impl=warp8 ns=1951.60
+RESULT section=thru op=potrf dtype=f64 N=16 B=64 impl=vendor ns=1031.27
+RESULT section=thru op=posv dtype=f64 N=16 B=64 impl=block32 ns=1949.70
+RESULT section=thru op=posv dtype=f64 N=16 B=64 impl=block128 ns=1965.63
+RESULT section=thru op=posv dtype=f64 N=16 B=64 impl=vendor ns=2680.47
+RESULT section=thru op=gemm dtype=f64 N=16 B=256 impl=block32 ns=264.33
+RESULT section=thru op=gemm dtype=f64 N=16 B=256 impl=block128 ns=277.45
+RESULT section=thru op=gemm dtype=f64 N=16 B=256 impl=warp8 ns=264.94
+RESULT section=thru op=gemm dtype=f64 N=16 B=256 impl=vendor ns=1172.59
+RESULT section=thru op=potrf dtype=f64 N=16 B=256 impl=block32 ns=888.18
+RESULT section=thru op=potrf dtype=f64 N=16 B=256 impl=block128 ns=981.78
+RESULT section=thru op=potrf dtype=f64 N=16 B=256 impl=warp8 ns=948.11
+RESULT section=thru op=potrf dtype=f64 N=16 B=256 impl=vendor ns=774.45
+RESULT section=thru op=posv dtype=f64 N=16 B=256 impl=block32 ns=1396.93
+RESULT section=thru op=posv dtype=f64 N=16 B=256 impl=block128 ns=1573.52
+RESULT section=thru op=posv dtype=f64 N=16 B=256 impl=vendor ns=1552.85
+RESULT section=thru op=gemm dtype=f64 N=16 B=1024 impl=block32 ns=234.34
+RESULT section=thru op=gemm dtype=f64 N=16 B=1024 impl=block128 ns=238.52
+RESULT section=thru op=gemm dtype=f64 N=16 B=1024 impl=warp8 ns=233.07
+RESULT section=thru op=gemm dtype=f64 N=16 B=1024 impl=vendor ns=1084.62
+RESULT section=thru op=potrf dtype=f64 N=16 B=1024 impl=block32 ns=865.44
+RESULT section=thru op=potrf dtype=f64 N=16 B=1024 impl=block128 ns=888.85
+RESULT section=thru op=potrf dtype=f64 N=16 B=1024 impl=warp8 ns=922.15
+RESULT section=thru op=potrf dtype=f64 N=16 B=1024 impl=vendor ns=720.46
+RESULT section=thru op=posv dtype=f64 N=16 B=1024 impl=block32 ns=1373.74
+RESULT section=thru op=posv dtype=f64 N=16 B=1024 impl=block128 ns=1413.36
+RESULT section=thru op=posv dtype=f64 N=16 B=1024 impl=vendor ns=1400.52
+RESULT section=thru op=gemm dtype=f64 N=16 B=8192 impl=block32 ns=223.99
+RESULT section=thru op=gemm dtype=f64 N=16 B=8192 impl=block128 ns=224.10
+RESULT section=thru op=gemm dtype=f64 N=16 B=8192 impl=warp8 ns=221.21
+RESULT section=thru op=gemm dtype=f64 N=16 B=8192 impl=vendor ns=1055.51
+RESULT section=thru op=potrf dtype=f64 N=16 B=8192 impl=block32 ns=858.27
+RESULT section=thru op=potrf dtype=f64 N=16 B=8192 impl=block128 ns=860.82
+RESULT section=thru op=potrf dtype=f64 N=16 B=8192 impl=warp8 ns=915.02
+RESULT section=thru op=potrf dtype=f64 N=16 B=8192 impl=vendor ns=691.38
+RESULT section=thru op=posv dtype=f64 N=16 B=8192 impl=block32 ns=1365.99
+RESULT section=thru op=posv dtype=f64 N=16 B=8192 impl=block128 ns=1370.42
+RESULT section=thru op=posv dtype=f64 N=16 B=8192 impl=vendor ns=1395.38
+RESULT section=lat op=gemm dtype=f64 N=16 impl=block us=30.170
+RESULT section=lat op=gemm dtype=f64 N=16 impl=vendor us=70.135
+RESULT section=lat op=potrf dtype=f64 N=16 impl=block us=83.825
+RESULT section=lat op=potrf dtype=f64 N=16 impl=vendor us=305.486
+RESULT section=lat op=posv dtype=f64 N=16 impl=block us=127.032
+RESULT section=lat op=posv dtype=f64 N=16 impl=vendor us=394.629
+CHECK op=gemm dtype=f64 N=24 impl=block maxerr=0.000e+00
+CHECK op=gemm dtype=f64 N=24 impl=warp maxerr=0.000e+00
+CHECK op=gemm dtype=f64 N=24 impl=vendor maxerr=0.000e+00
+CHECK op=potrf dtype=f64 N=24 impl=block maxerr=1.776e-15
+CHECK op=potrf dtype=f64 N=24 impl=warp maxerr=8.882e-16
+CHECK op=potrf dtype=f64 N=24 impl=vendor maxerr=8.882e-16
+CHECK op=posv dtype=f64 N=24 impl=block maxerr=4.163e-17
+CHECK op=posv dtype=f64 N=24 impl=vendor maxerr=4.163e-17
+RESULT section=thru op=gemm dtype=f64 N=24 B=1 impl=block32 ns=30745.60
+RESULT section=thru op=gemm dtype=f64 N=24 B=1 impl=block128 ns=24403.20
+RESULT section=thru op=gemm dtype=f64 N=24 B=1 impl=warp8 ns=33911.47
+RESULT section=thru op=gemm dtype=f64 N=24 B=1 impl=vendor ns=62613.33
+RESULT section=thru op=potrf dtype=f64 N=24 B=1 impl=block32 ns=114862.93
+RESULT section=thru op=potrf dtype=f64 N=24 B=1 impl=block128 ns=114705.07
+RESULT section=thru op=potrf dtype=f64 N=24 B=1 impl=warp8 ns=117105.07
+RESULT section=thru op=potrf dtype=f64 N=24 B=1 impl=vendor ns=97772.80
+RESULT section=thru op=posv dtype=f64 N=24 B=1 impl=block32 ns=179462.40
+RESULT section=thru op=posv dtype=f64 N=24 B=1 impl=block128 ns=179445.33
+RESULT section=thru op=posv dtype=f64 N=24 B=1 impl=vendor ns=222624.00
+RESULT section=thru op=gemm dtype=f64 N=24 B=4 impl=block32 ns=7864.00
+RESULT section=thru op=gemm dtype=f64 N=24 B=4 impl=block128 ns=6196.80
+RESULT section=thru op=gemm dtype=f64 N=24 B=4 impl=warp8 ns=15542.93
+RESULT section=thru op=gemm dtype=f64 N=24 B=4 impl=vendor ns=16067.20
+RESULT section=thru op=potrf dtype=f64 N=24 B=4 impl=block32 ns=28816.53
+RESULT section=thru op=potrf dtype=f64 N=24 B=4 impl=block128 ns=28784.53
+RESULT section=thru op=potrf dtype=f64 N=24 B=4 impl=warp8 ns=34238.40
+RESULT section=thru op=potrf dtype=f64 N=24 B=4 impl=vendor ns=24987.73
+RESULT section=thru op=posv dtype=f64 N=24 B=4 impl=block32 ns=44994.67
+RESULT section=thru op=posv dtype=f64 N=24 B=4 impl=block128 ns=45037.33
+RESULT section=thru op=posv dtype=f64 N=24 B=4 impl=vendor ns=58132.80
+RESULT section=thru op=gemm dtype=f64 N=24 B=16 impl=block32 ns=1945.87
+RESULT section=thru op=gemm dtype=f64 N=24 B=16 impl=block128 ns=1619.87
+RESULT section=thru op=gemm dtype=f64 N=24 B=16 impl=warp8 ns=7192.93
+RESULT section=thru op=gemm dtype=f64 N=24 B=16 impl=vendor ns=3922.67
+RESULT section=thru op=potrf dtype=f64 N=24 B=16 impl=block32 ns=7199.07
+RESULT section=thru op=potrf dtype=f64 N=24 B=16 impl=block128 ns=7198.00
+RESULT section=thru op=potrf dtype=f64 N=24 B=16 impl=warp8 ns=14184.00
+RESULT section=thru op=potrf dtype=f64 N=24 B=16 impl=vendor ns=6238.40
+RESULT section=thru op=posv dtype=f64 N=24 B=16 impl=block32 ns=11251.33
+RESULT section=thru op=posv dtype=f64 N=24 B=16 impl=block128 ns=11254.13
+RESULT section=thru op=posv dtype=f64 N=24 B=16 impl=vendor ns=14692.67
+RESULT section=thru op=gemm dtype=f64 N=24 B=64 impl=block32 ns=1048.10
+RESULT section=thru op=gemm dtype=f64 N=24 B=64 impl=block128 ns=990.00
+RESULT section=thru op=gemm dtype=f64 N=24 B=64 impl=warp8 ns=1809.57
+RESULT section=thru op=gemm dtype=f64 N=24 B=64 impl=vendor ns=2505.53
+RESULT section=thru op=potrf dtype=f64 N=24 B=64 impl=block32 ns=2090.30
+RESULT section=thru op=potrf dtype=f64 N=24 B=64 impl=block128 ns=2095.60
+RESULT section=thru op=potrf dtype=f64 N=24 B=64 impl=warp8 ns=3546.13
+RESULT section=thru op=potrf dtype=f64 N=24 B=64 impl=vendor ns=2599.57
+RESULT section=thru op=posv dtype=f64 N=24 B=64 impl=block32 ns=3232.13
+RESULT section=thru op=posv dtype=f64 N=24 B=64 impl=block128 ns=3254.67
+RESULT section=thru op=posv dtype=f64 N=24 B=64 impl=vendor ns=4830.20
+RESULT section=thru op=gemm dtype=f64 N=24 B=256 impl=block32 ns=882.66
+RESULT section=thru op=gemm dtype=f64 N=24 B=256 impl=block128 ns=875.71
+RESULT section=thru op=gemm dtype=f64 N=24 B=256 impl=warp8 ns=873.25
+RESULT section=thru op=gemm dtype=f64 N=24 B=256 impl=vendor ns=2151.66
+RESULT section=thru op=potrf dtype=f64 N=24 B=256 impl=block32 ns=1657.81
+RESULT section=thru op=potrf dtype=f64 N=24 B=256 impl=block128 ns=1839.55
+RESULT section=thru op=potrf dtype=f64 N=24 B=256 impl=warp8 ns=1744.12
+RESULT section=thru op=potrf dtype=f64 N=24 B=256 impl=vendor ns=2025.71
+RESULT section=thru op=posv dtype=f64 N=24 B=256 impl=block32 ns=2421.88
+RESULT section=thru op=posv dtype=f64 N=24 B=256 impl=block128 ns=2720.36
+RESULT section=thru op=posv dtype=f64 N=24 B=256 impl=vendor ns=3064.16
+RESULT section=thru op=gemm dtype=f64 N=24 B=1024 impl=block32 ns=845.51
+RESULT section=thru op=gemm dtype=f64 N=24 B=1024 impl=block128 ns=843.36
+RESULT section=thru op=gemm dtype=f64 N=24 B=1024 impl=warp8 ns=842.54
+RESULT section=thru op=gemm dtype=f64 N=24 B=1024 impl=vendor ns=2063.62
+RESULT section=thru op=potrf dtype=f64 N=24 B=1024 impl=block32 ns=1634.80
+RESULT section=thru op=potrf dtype=f64 N=24 B=1024 impl=block128 ns=1689.68
+RESULT section=thru op=potrf dtype=f64 N=24 B=1024 impl=warp8 ns=1716.42
+RESULT section=thru op=potrf dtype=f64 N=24 B=1024 impl=vendor ns=1904.83
+RESULT section=thru op=posv dtype=f64 N=24 B=1024 impl=block32 ns=2397.69
+RESULT section=thru op=posv dtype=f64 N=24 B=1024 impl=block128 ns=2472.93
+RESULT section=thru op=posv dtype=f64 N=24 B=1024 impl=vendor ns=2960.65
+RESULT section=thru op=gemm dtype=f64 N=24 B=8192 impl=block32 ns=834.48
+RESULT section=thru op=gemm dtype=f64 N=24 B=8192 impl=block128 ns=833.04
+RESULT section=thru op=gemm dtype=f64 N=24 B=8192 impl=warp8 ns=832.10
+RESULT section=thru op=gemm dtype=f64 N=24 B=8192 impl=vendor ns=2033.56
+RESULT section=thru op=potrf dtype=f64 N=24 B=8192 impl=block32 ns=1626.05
+RESULT section=thru op=potrf dtype=f64 N=24 B=8192 impl=block128 ns=1631.46
+RESULT section=thru op=potrf dtype=f64 N=24 B=8192 impl=warp8 ns=1708.21
+RESULT section=thru op=potrf dtype=f64 N=24 B=8192 impl=vendor ns=1854.63
+RESULT section=thru op=posv dtype=f64 N=24 B=8192 impl=block32 ns=2388.44
+RESULT section=thru op=posv dtype=f64 N=24 B=8192 impl=block128 ns=2397.98
+RESULT section=thru op=posv dtype=f64 N=24 B=8192 impl=vendor ns=2833.37
+RESULT section=lat op=gemm dtype=f64 N=24 impl=block us=43.989
+RESULT section=lat op=gemm dtype=f64 N=24 impl=vendor us=87.141
+RESULT section=lat op=potrf dtype=f64 N=24 impl=block us=134.459
+RESULT section=lat op=potrf dtype=f64 N=24 impl=vendor us=329.439
+RESULT section=lat op=posv dtype=f64 N=24 impl=block us=199.092
+RESULT section=lat op=posv dtype=f64 N=24 impl=vendor us=428.994
+CHECK op=gemm dtype=f64 N=32 impl=block maxerr=0.000e+00
+CHECK op=gemm dtype=f64 N=32 impl=warp maxerr=0.000e+00
+CHECK op=gemm dtype=f64 N=32 impl=vendor maxerr=0.000e+00
+CHECK op=potrf dtype=f64 N=32 impl=block maxerr=1.776e-15
+CHECK op=potrf dtype=f64 N=32 impl=warp maxerr=1.776e-15
+CHECK op=potrf dtype=f64 N=32 impl=vendor maxerr=1.776e-15
+CHECK op=posv dtype=f64 N=32 impl=block maxerr=1.388e-17
+CHECK op=posv dtype=f64 N=32 impl=vendor maxerr=1.735e-17
+RESULT section=thru op=gemm dtype=f64 N=32 B=1 impl=block32 ns=60977.07
+RESULT section=thru op=gemm dtype=f64 N=32 B=1 impl=block128 ns=37809.07
+RESULT section=thru op=gemm dtype=f64 N=32 B=1 impl=warp8 ns=60755.20
+RESULT section=thru op=gemm dtype=f64 N=32 B=1 impl=vendor ns=62679.47
+RESULT section=thru op=potrf dtype=f64 N=32 B=1 impl=block32 ns=178425.60
+RESULT section=thru op=potrf dtype=f64 N=32 B=1 impl=block128 ns=178365.87
+RESULT section=thru op=potrf dtype=f64 N=32 B=1 impl=warp8 ns=175106.13
+RESULT section=thru op=potrf dtype=f64 N=32 B=1 impl=vendor ns=112757.33
+RESULT section=thru op=posv dtype=f64 N=32 B=1 impl=block32 ns=266007.47
+RESULT section=thru op=posv dtype=f64 N=32 B=1 impl=block128 ns=266050.13
+RESULT section=thru op=posv dtype=f64 N=32 B=1 impl=vendor ns=273188.26
+RESULT section=thru op=gemm dtype=f64 N=32 B=4 impl=block32 ns=15260.80
+RESULT section=thru op=gemm dtype=f64 N=32 B=4 impl=block128 ns=9692.27
+RESULT section=thru op=gemm dtype=f64 N=32 B=4 impl=warp8 ns=30186.13
+RESULT section=thru op=gemm dtype=f64 N=32 B=4 impl=vendor ns=15821.33
+RESULT section=thru op=potrf dtype=f64 N=32 B=4 impl=block32 ns=44759.47
+RESULT section=thru op=potrf dtype=f64 N=32 B=4 impl=block128 ns=44796.80
+RESULT section=thru op=potrf dtype=f64 N=32 B=4 impl=warp8 ns=51387.73
+RESULT section=thru op=potrf dtype=f64 N=32 B=4 impl=vendor ns=28794.13
+RESULT section=thru op=posv dtype=f64 N=32 B=4 impl=block32 ns=66717.87
+RESULT section=thru op=posv dtype=f64 N=32 B=4 impl=block128 ns=66755.20
+RESULT section=thru op=posv dtype=f64 N=32 B=4 impl=vendor ns=71115.20
+RESULT section=thru op=gemm dtype=f64 N=32 B=16 impl=block32 ns=3825.20
+RESULT section=thru op=gemm dtype=f64 N=32 B=16 impl=block128 ns=2458.67
+RESULT section=thru op=gemm dtype=f64 N=32 B=16 impl=warp8 ns=14612.53
+RESULT section=thru op=gemm dtype=f64 N=32 B=16 impl=vendor ns=3945.87
+RESULT section=thru op=potrf dtype=f64 N=32 B=16 impl=block32 ns=11191.33
+RESULT section=thru op=potrf dtype=f64 N=32 B=16 impl=block128 ns=11199.47
+RESULT section=thru op=potrf dtype=f64 N=32 B=16 impl=warp8 ns=22295.33
+RESULT section=thru op=potrf dtype=f64 N=32 B=16 impl=vendor ns=7186.67
+RESULT section=thru op=posv dtype=f64 N=32 B=16 impl=block32 ns=16666.67
+RESULT section=thru op=posv dtype=f64 N=32 B=16 impl=block128 ns=16672.93
+RESULT section=thru op=posv dtype=f64 N=32 B=16 impl=vendor ns=17940.93
+RESULT section=thru op=gemm dtype=f64 N=32 B=64 impl=block32 ns=1930.73
+RESULT section=thru op=gemm dtype=f64 N=32 B=64 impl=block128 ns=1912.27
+RESULT section=thru op=gemm dtype=f64 N=32 B=64 impl=warp8 ns=3654.90
+RESULT section=thru op=gemm dtype=f64 N=32 B=64 impl=vendor ns=2532.40
+RESULT section=thru op=potrf dtype=f64 N=32 B=64 impl=block32 ns=3227.43
+RESULT section=thru op=potrf dtype=f64 N=32 B=64 impl=block128 ns=3237.57
+RESULT section=thru op=potrf dtype=f64 N=32 B=64 impl=warp8 ns=5574.10
+RESULT section=thru op=potrf dtype=f64 N=32 B=64 impl=vendor ns=2970.30
+RESULT section=thru op=posv dtype=f64 N=32 B=64 impl=block32 ns=4757.60
+RESULT section=thru op=posv dtype=f64 N=32 B=64 impl=block128 ns=4789.17
+RESULT section=thru op=posv dtype=f64 N=32 B=64 impl=vendor ns=5783.47
+RESULT section=thru op=gemm dtype=f64 N=32 B=256 impl=block32 ns=1832.03
+RESULT section=thru op=gemm dtype=f64 N=32 B=256 impl=block128 ns=1848.72
+RESULT section=thru op=gemm dtype=f64 N=32 B=256 impl=warp8 ns=1828.11
+RESULT section=thru op=gemm dtype=f64 N=32 B=256 impl=vendor ns=2169.87
+RESULT section=thru op=potrf dtype=f64 N=32 B=256 impl=block32 ns=2656.58
+RESULT section=thru op=potrf dtype=f64 N=32 B=256 impl=block128 ns=2947.84
+RESULT section=thru op=potrf dtype=f64 N=32 B=256 impl=warp8 ns=2765.90
+RESULT section=thru op=potrf dtype=f64 N=32 B=256 impl=vendor ns=2391.23
+RESULT section=thru op=posv dtype=f64 N=32 B=256 impl=block32 ns=3677.29
+RESULT section=thru op=posv dtype=f64 N=32 B=256 impl=block128 ns=4167.08
+RESULT section=thru op=posv dtype=f64 N=32 B=256 impl=vendor ns=3699.03
+RESULT section=thru op=gemm dtype=f64 N=32 B=1024 impl=block32 ns=1776.87
+RESULT section=thru op=gemm dtype=f64 N=32 B=1024 impl=block128 ns=1776.35
+RESULT section=thru op=gemm dtype=f64 N=32 B=1024 impl=warp8 ns=1781.30
+RESULT section=thru op=gemm dtype=f64 N=32 B=1024 impl=vendor ns=2062.12
+RESULT section=thru op=potrf dtype=f64 N=32 B=1024 impl=block32 ns=2628.57
+RESULT section=thru op=potrf dtype=f64 N=32 B=1024 impl=block128 ns=2703.65
+RESULT section=thru op=potrf dtype=f64 N=32 B=1024 impl=warp8 ns=2733.66
+RESULT section=thru op=potrf dtype=f64 N=32 B=1024 impl=vendor ns=2271.22
+RESULT section=thru op=posv dtype=f64 N=32 B=1024 impl=block32 ns=3651.13
+RESULT section=thru op=posv dtype=f64 N=32 B=1024 impl=block128 ns=3765.57
+RESULT section=thru op=posv dtype=f64 N=32 B=1024 impl=vendor ns=3572.49
+RESULT section=thru op=gemm dtype=f64 N=32 B=8192 impl=block32 ns=1767.86
+RESULT section=thru op=gemm dtype=f64 N=32 B=8192 impl=block128 ns=1762.60
+RESULT section=thru op=gemm dtype=f64 N=32 B=8192 impl=warp8 ns=1772.13
+RESULT section=thru op=gemm dtype=f64 N=32 B=8192 impl=vendor ns=2030.54
+RESULT section=thru op=potrf dtype=f64 N=32 B=8192 impl=block32 ns=2616.92
+RESULT section=thru op=potrf dtype=f64 N=32 B=8192 impl=block128 ns=2623.18
+RESULT section=thru op=potrf dtype=f64 N=32 B=8192 impl=warp8 ns=2722.50
+RESULT section=thru op=potrf dtype=f64 N=32 B=8192 impl=vendor ns=2199.33
+RESULT section=thru op=posv dtype=f64 N=32 B=8192 impl=block32 ns=3634.05
+RESULT section=thru op=posv dtype=f64 N=32 B=8192 impl=block128 ns=3647.91
+RESULT section=thru op=posv dtype=f64 N=32 B=8192 impl=vendor ns=3461.98
+RESULT section=lat op=gemm dtype=f64 N=32 impl=block us=64.627
+RESULT section=lat op=gemm dtype=f64 N=32 impl=vendor us=86.832
+RESULT section=lat op=potrf dtype=f64 N=32 impl=block us=199.476
+RESULT section=lat op=potrf dtype=f64 N=32 impl=vendor us=355.360
+RESULT section=lat op=posv dtype=f64 N=32 impl=block us=286.860
+RESULT section=lat op=posv dtype=f64 N=32 impl=vendor us=459.162
+CHECK op=gemm dtype=f64 N=48 impl=block maxerr=0.000e+00
+CHECK op=gemm dtype=f64 N=48 impl=warp maxerr=0.000e+00
+CHECK op=gemm dtype=f64 N=48 impl=vendor maxerr=0.000e+00
+CHECK op=potrf dtype=f64 N=48 impl=block maxerr=3.553e-15
+CHECK op=potrf dtype=f64 N=48 impl=warp maxerr=3.553e-15
+CHECK op=potrf dtype=f64 N=48 impl=vendor maxerr=3.553e-15
+CHECK op=posv dtype=f64 N=48 impl=block maxerr=2.082e-17
+CHECK op=posv dtype=f64 N=48 impl=vendor maxerr=1.735e-17
+RESULT section=thru op=gemm dtype=f64 N=48 B=1 impl=block32 ns=165348.27
+RESULT section=thru op=gemm dtype=f64 N=48 B=1 impl=block128 ns=102807.47
+RESULT section=thru op=gemm dtype=f64 N=48 B=1 impl=warp8 ns=165049.60
+RESULT section=thru op=gemm dtype=f64 N=48 B=1 impl=vendor ns=78658.13
+RESULT section=thru op=potrf dtype=f64 N=48 B=1 impl=block32 ns=373683.20
+RESULT section=thru op=potrf dtype=f64 N=48 B=1 impl=block128 ns=348889.60
+RESULT section=thru op=potrf dtype=f64 N=48 B=1 impl=warp8 ns=384898.13
+RESULT section=thru op=potrf dtype=f64 N=48 B=1 impl=vendor ns=177288.53
+RESULT section=thru op=posv dtype=f64 N=48 B=1 impl=block32 ns=513339.74
+RESULT section=thru op=posv dtype=f64 N=48 B=1 impl=block128 ns=484646.40
+RESULT section=thru op=posv dtype=f64 N=48 B=1 impl=vendor ns=423895.46
+RESULT section=thru op=gemm dtype=f64 N=48 B=4 impl=block32 ns=41426.67
+RESULT section=thru op=gemm dtype=f64 N=48 B=4 impl=block128 ns=26009.07
+RESULT section=thru op=gemm dtype=f64 N=48 B=4 impl=warp8 ns=93612.27
+RESULT section=thru op=gemm dtype=f64 N=48 B=4 impl=vendor ns=19692.80
+RESULT section=thru op=potrf dtype=f64 N=48 B=4 impl=block32 ns=93531.73
+RESULT section=thru op=potrf dtype=f64 N=48 B=4 impl=block128 ns=87488.00
+RESULT section=thru op=potrf dtype=f64 N=48 B=4 impl=warp8 ns=110594.13
+RESULT section=thru op=potrf dtype=f64 N=48 B=4 impl=vendor ns=45176.00
+RESULT section=thru op=posv dtype=f64 N=48 B=4 impl=block32 ns=128458.13
+RESULT section=thru op=posv dtype=f64 N=48 B=4 impl=block128 ns=121432.00
+RESULT section=thru op=posv dtype=f64 N=48 B=4 impl=vendor ns=110346.13
+RESULT section=thru op=gemm dtype=f64 N=48 B=16 impl=block32 ns=10349.47
+RESULT section=thru op=gemm dtype=f64 N=48 B=16 impl=block128 ns=6620.40
+RESULT section=thru op=gemm dtype=f64 N=48 B=16 impl=warp8 ns=48600.93
+RESULT section=thru op=gemm dtype=f64 N=48 B=16 impl=vendor ns=14009.47
+RESULT section=thru op=potrf dtype=f64 N=48 B=16 impl=block32 ns=23364.40
+RESULT section=thru op=potrf dtype=f64 N=48 B=16 impl=block128 ns=21849.20
+RESULT section=thru op=potrf dtype=f64 N=48 B=16 impl=warp8 ns=47536.53
+RESULT section=thru op=potrf dtype=f64 N=48 B=16 impl=vendor ns=11765.60
+RESULT section=thru op=posv dtype=f64 N=48 B=16 impl=block32 ns=32089.60
+RESULT section=thru op=posv dtype=f64 N=48 B=16 impl=block128 ns=30318.27
+RESULT section=thru op=posv dtype=f64 N=48 B=16 impl=vendor ns=28330.53
+RESULT section=thru op=gemm dtype=f64 N=48 B=64 impl=block32 ns=5879.53
+RESULT section=thru op=gemm dtype=f64 N=48 B=64 impl=block128 ns=6078.73
+RESULT section=thru op=gemm dtype=f64 N=48 B=64 impl=warp8 ns=12196.63
+RESULT section=thru op=gemm dtype=f64 N=48 B=64 impl=vendor ns=12529.93
+RESULT section=thru op=potrf dtype=f64 N=48 B=64 impl=block32 ns=6630.80
+RESULT section=thru op=potrf dtype=f64 N=48 B=64 impl=block128 ns=6397.13
+RESULT section=thru op=potrf dtype=f64 N=48 B=64 impl=warp8 ns=11893.10
+RESULT section=thru op=potrf dtype=f64 N=48 B=64 impl=vendor ns=5401.30
+RESULT section=thru op=posv dtype=f64 N=48 B=64 impl=block32 ns=9067.70
+RESULT section=thru op=posv dtype=f64 N=48 B=64 impl=block128 ns=8704.77
+RESULT section=thru op=posv dtype=f64 N=48 B=64 impl=vendor ns=9764.30
+RESULT section=thru op=gemm dtype=f64 N=48 B=256 impl=block32 ns=6048.33
+RESULT section=thru op=gemm dtype=f64 N=48 B=256 impl=block128 ns=5956.10
+RESULT section=thru op=gemm dtype=f64 N=48 B=256 impl=warp8 ns=6133.97
+RESULT section=thru op=gemm dtype=f64 N=48 B=256 impl=vendor ns=12121.87
+RESULT section=thru op=potrf dtype=f64 N=48 B=256 impl=block32 ns=5691.27
+RESULT section=thru op=potrf dtype=f64 N=48 B=256 impl=block128 ns=6389.97
+RESULT section=thru op=potrf dtype=f64 N=48 B=256 impl=warp8 ns=5929.51
+RESULT section=thru op=potrf dtype=f64 N=48 B=256 impl=vendor ns=4524.63
+RESULT section=thru op=posv dtype=f64 N=48 B=256 impl=block32 ns=7288.67
+RESULT section=thru op=posv dtype=f64 N=48 B=256 impl=block128 ns=8294.98
+RESULT section=thru op=posv dtype=f64 N=48 B=256 impl=vendor ns=6809.31
+RESULT section=thru op=gemm dtype=f64 N=48 B=1024 impl=block32 ns=6025.17
+RESULT section=thru op=gemm dtype=f64 N=48 B=1024 impl=block128 ns=5928.74
+RESULT section=thru op=gemm dtype=f64 N=48 B=1024 impl=warp8 ns=6082.27
+RESULT section=thru op=gemm dtype=f64 N=48 B=1024 impl=vendor ns=11993.13
+RESULT section=thru op=potrf dtype=f64 N=48 B=1024 impl=block32 ns=5677.53
+RESULT section=thru op=potrf dtype=f64 N=48 B=1024 impl=block128 ns=5753.11
+RESULT section=thru op=potrf dtype=f64 N=48 B=1024 impl=warp8 ns=5897.87
+RESULT section=thru op=potrf dtype=f64 N=48 B=1024 impl=vendor ns=4321.28
+RESULT section=thru op=posv dtype=f64 N=48 B=1024 impl=block32 ns=7264.87
+RESULT section=thru op=posv dtype=f64 N=48 B=1024 impl=block128 ns=7436.91
+RESULT section=thru op=posv dtype=f64 N=48 B=1024 impl=vendor ns=6495.18
+RESULT section=thru op=gemm dtype=f64 N=48 B=8192 impl=block32 ns=6013.45
+RESULT section=thru op=gemm dtype=f64 N=48 B=8192 impl=block128 ns=5916.84
+RESULT section=thru op=gemm dtype=f64 N=48 B=8192 impl=warp8 ns=6055.11
+RESULT section=thru op=gemm dtype=f64 N=48 B=8192 impl=vendor ns=11951.66
+RESULT section=thru op=potrf dtype=f64 N=48 B=8192 impl=block32 ns=5655.53
+RESULT section=thru op=potrf dtype=f64 N=48 B=8192 impl=block128 ns=5652.59
+RESULT section=thru op=potrf dtype=f64 N=48 B=8192 impl=warp8 ns=5871.51
+RESULT section=thru op=potrf dtype=f64 N=48 B=8192 impl=vendor ns=4189.65
+RESULT section=thru op=posv dtype=f64 N=48 B=8192 impl=block32 ns=7235.49
+RESULT section=thru op=posv dtype=f64 N=48 B=8192 impl=block128 ns=7249.75
+RESULT section=thru op=posv dtype=f64 N=48 B=8192 impl=vendor ns=6306.52
+RESULT section=lat op=gemm dtype=f64 N=48 impl=block us=140.015
+RESULT section=lat op=gemm dtype=f64 N=48 impl=vendor us=103.039
+RESULT section=lat op=potrf dtype=f64 N=48 impl=block us=415.287
+RESULT section=lat op=potrf dtype=f64 N=48 impl=vendor us=399.557
+RESULT section=lat op=posv dtype=f64 N=48 impl=block us=557.287
+RESULT section=lat op=posv dtype=f64 N=48 impl=vendor us=524.078
+CHECK op=gemm dtype=f64 N=64 impl=block maxerr=0.000e+00
+CHECK op=gemm dtype=f64 N=64 impl=warp maxerr=0.000e+00
+CHECK op=gemm dtype=f64 N=64 impl=vendor maxerr=0.000e+00
+CHECK op=potrf dtype=f64 N=64 impl=block maxerr=5.329e-15
+CHECK op=potrf dtype=f64 N=64 impl=warp maxerr=5.329e-15
+CHECK op=potrf dtype=f64 N=64 impl=vendor maxerr=7.105e-15
+CHECK op=posv dtype=f64 N=64 impl=block maxerr=1.561e-17
+CHECK op=posv dtype=f64 N=64 impl=vendor maxerr=1.735e-17
+RESULT section=thru op=gemm dtype=f64 N=64 B=1 impl=block32 ns=368810.67
+RESULT section=thru op=gemm dtype=f64 N=64 B=1 impl=block128 ns=225725.87
+RESULT section=thru op=gemm dtype=f64 N=64 B=1 impl=warp8 ns=364910.93
+RESULT section=thru op=gemm dtype=f64 N=64 B=1 impl=vendor ns=92900.27
+RESULT section=thru op=potrf dtype=f64 N=64 B=1 impl=block32 ns=652874.67
+RESULT section=thru op=potrf dtype=f64 N=64 B=1 impl=block128 ns=573228.80
+RESULT section=thru op=potrf dtype=f64 N=64 B=1 impl=warp8 ns=640309.33
+RESULT section=thru op=potrf dtype=f64 N=64 B=1 impl=vendor ns=252887.46
+RESULT section=thru op=posv dtype=f64 N=64 B=1 impl=block32 ns=845702.40
+RESULT section=thru op=posv dtype=f64 N=64 B=1 impl=block128 ns=756307.20
+RESULT section=thru op=posv dtype=f64 N=64 B=1 impl=vendor ns=585920.00
+RESULT section=thru op=gemm dtype=f64 N=64 B=4 impl=block32 ns=92363.20
+RESULT section=thru op=gemm dtype=f64 N=64 B=4 impl=block128 ns=56684.27
+RESULT section=thru op=gemm dtype=f64 N=64 B=4 impl=warp8 ns=218002.66
+RESULT section=thru op=gemm dtype=f64 N=64 B=4 impl=vendor ns=23801.60
+RESULT section=thru op=potrf dtype=f64 N=64 B=4 impl=block32 ns=163586.67
+RESULT section=thru op=potrf dtype=f64 N=64 B=4 impl=block128 ns=143582.94
+RESULT section=thru op=potrf dtype=f64 N=64 B=4 impl=warp8 ns=183742.40
+RESULT section=thru op=potrf dtype=f64 N=64 B=4 impl=vendor ns=64395.73
+RESULT section=thru op=posv dtype=f64 N=64 B=4 impl=block32 ns=211615.46
+RESULT section=thru op=posv dtype=f64 N=64 B=4 impl=block128 ns=188774.40
+RESULT section=thru op=posv dtype=f64 N=64 B=4 impl=vendor ns=150883.73
+RESULT section=thru op=gemm dtype=f64 N=64 B=16 impl=block32 ns=23060.67
+RESULT section=thru op=gemm dtype=f64 N=64 B=16 impl=block128 ns=14190.13
+RESULT section=thru op=gemm dtype=f64 N=64 B=16 impl=warp8 ns=112760.40
+RESULT section=thru op=gemm dtype=f64 N=64 B=16 impl=vendor ns=18047.33
+RESULT section=thru op=potrf dtype=f64 N=64 B=16 impl=block32 ns=40821.73
+RESULT section=thru op=potrf dtype=f64 N=64 B=16 impl=block128 ns=35852.80
+RESULT section=thru op=potrf dtype=f64 N=64 B=16 impl=warp8 ns=83219.33
+RESULT section=thru op=potrf dtype=f64 N=64 B=16 impl=vendor ns=17963.33
+RESULT section=thru op=posv dtype=f64 N=64 B=16 impl=block32 ns=52828.00
+RESULT section=thru op=posv dtype=f64 N=64 B=16 impl=block128 ns=47247.07
+RESULT section=thru op=posv dtype=f64 N=64 B=16 impl=vendor ns=39821.33
+RESULT section=thru op=gemm dtype=f64 N=64 B=64 impl=block32 ns=14071.30
+RESULT section=thru op=gemm dtype=f64 N=64 B=64 impl=block128 ns=13952.87
+RESULT section=thru op=gemm dtype=f64 N=64 B=64 impl=warp8 ns=28224.70
+RESULT section=thru op=gemm dtype=f64 N=64 B=64 impl=vendor ns=16517.63
+RESULT section=thru op=potrf dtype=f64 N=64 B=64 impl=block32 ns=11468.17
+RESULT section=thru op=potrf dtype=f64 N=64 B=64 impl=block128 ns=10994.17
+RESULT section=thru op=potrf dtype=f64 N=64 B=64 impl=warp8 ns=20827.23
+RESULT section=thru op=potrf dtype=f64 N=64 B=64 impl=vendor ns=9119.13
+RESULT section=thru op=posv dtype=f64 N=64 B=64 impl=block32 ns=14784.03
+RESULT section=thru op=posv dtype=f64 N=64 B=64 impl=block128 ns=14127.93
+RESULT section=thru op=posv dtype=f64 N=64 B=64 impl=vendor ns=14927.13
+RESULT section=thru op=gemm dtype=f64 N=64 B=256 impl=block32 ns=14204.95
+RESULT section=thru op=gemm dtype=f64 N=64 B=256 impl=block128 ns=13909.51
+RESULT section=thru op=gemm dtype=f64 N=64 B=256 impl=warp8 ns=14248.51
+RESULT section=thru op=gemm dtype=f64 N=64 B=256 impl=vendor ns=16073.34
+RESULT section=thru op=potrf dtype=f64 N=64 B=256 impl=block32 ns=10143.71
+RESULT section=thru op=potrf dtype=f64 N=64 B=256 impl=block128 ns=11093.56
+RESULT section=thru op=potrf dtype=f64 N=64 B=256 impl=warp8 ns=10427.38
+RESULT section=thru op=potrf dtype=f64 N=64 B=256 impl=vendor ns=7906.27
+RESULT section=thru op=posv dtype=f64 N=64 B=256 impl=block32 ns=12371.61
+RESULT section=thru op=posv dtype=f64 N=64 B=256 impl=block128 ns=13992.84
+RESULT section=thru op=posv dtype=f64 N=64 B=256 impl=vendor ns=10962.94
+RESULT section=thru op=gemm dtype=f64 N=64 B=1024 impl=block32 ns=14240.57
+RESULT section=thru op=gemm dtype=f64 N=64 B=1024 impl=block128 ns=13852.13
+RESULT section=thru op=gemm dtype=f64 N=64 B=1024 impl=warp8 ns=14195.92
+RESULT section=thru op=gemm dtype=f64 N=64 B=1024 impl=vendor ns=15947.22
+RESULT section=thru op=potrf dtype=f64 N=64 B=1024 impl=block32 ns=10117.33
+RESULT section=thru op=potrf dtype=f64 N=64 B=1024 impl=block128 ns=10162.07
+RESULT section=thru op=potrf dtype=f64 N=64 B=1024 impl=warp8 ns=10494.08
+RESULT section=thru op=potrf dtype=f64 N=64 B=1024 impl=vendor ns=7555.45
+RESULT section=thru op=posv dtype=f64 N=64 B=1024 impl=block32 ns=12349.06
+RESULT section=thru op=posv dtype=f64 N=64 B=1024 impl=block128 ns=12517.65
+RESULT section=thru op=posv dtype=f64 N=64 B=1024 impl=vendor ns=10449.59
+RESULT section=thru op=gemm dtype=f64 N=64 B=8192 impl=block32 ns=14245.70
+RESULT section=thru op=gemm dtype=f64 N=64 B=8192 impl=block128 ns=13897.73
+RESULT section=thru op=gemm dtype=f64 N=64 B=8192 impl=warp8 ns=14191.02
+RESULT section=thru op=gemm dtype=f64 N=64 B=8192 impl=vendor ns=15920.49
+RESULT section=thru op=potrf dtype=f64 N=64 B=8192 impl=block32 ns=10102.36
+RESULT section=thru op=potrf dtype=f64 N=64 B=8192 impl=block128 ns=10069.22
+RESULT section=thru op=potrf dtype=f64 N=64 B=8192 impl=warp8 ns=10477.93
+RESULT section=thru op=potrf dtype=f64 N=64 B=8192 impl=vendor ns=7355.63
+RESULT section=thru op=posv dtype=f64 N=64 B=8192 impl=block32 ns=12258.87
+RESULT section=thru op=posv dtype=f64 N=64 B=8192 impl=block128 ns=12287.65
+RESULT section=thru op=posv dtype=f64 N=64 B=8192 impl=vendor ns=10166.55
+RESULT section=lat op=gemm dtype=f64 N=64 impl=block us=279.321
+RESULT section=lat op=gemm dtype=f64 N=64 impl=vendor us=122.263
+RESULT section=lat op=potrf dtype=f64 N=64 impl=block us=727.213
+RESULT section=lat op=potrf dtype=f64 N=64 impl=vendor us=449.929
+RESULT section=lat op=posv dtype=f64 N=64 impl=block us=919.402
+RESULT section=lat op=posv dtype=f64 N=64 impl=vendor us=576.830
+# done

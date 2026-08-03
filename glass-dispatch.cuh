@@ -88,11 +88,45 @@ GLASS_DISPATCH_HD constexpr body body_sm120(op o, uint32_t N, bool f64) {
 }
 // === END tune.py body sm_120 ===
 
+// === BEGIN tune.py body sm_87 ===
+// Source sweep: body_dispatch_sweep_20260803_0936.txt   margin: ±5%
+// RULE: never slower than block by >margin at ANY measured (NPROB, TB);
+// faster by >margin at >=1 TB in the NPROB=8192 section. Else block.
+// Verdicts are BOUNDED: N beyond the largest measured point stays block.
+GLASS_DISPATCH_HD constexpr body body_sm87(op o, uint32_t N, bool f64) {
+    switch (o) {
+        case op::dot:
+            if (!f64) return N <= 16u ? body::thread_in_block : N <= 64u ? body::warp_in_block : body::block;
+            else      return N <= 4u ? body::thread_in_block : N <= 16u ? body::block : N <= 64u ? body::warp_in_block : body::block;
+        case op::gemv: return N <= 4u ? body::block : N <= 16u ? body::warp_in_block : body::block;
+        case op::gemm:
+            if (!f64) return N <= 4u ? body::warp_in_block : body::block;
+            else      return body::block;
+        case op::chol: return body::block;
+        case op::trsv:
+            if (!f64) return N <= 4u ? body::thread_in_block : N <= 16u ? body::warp_in_block : body::block;
+            else      return N <= 8u ? body::block : N <= 16u ? body::warp_in_block : body::block;
+        case op::posv:
+            if (!f64) return N <= 32u ? body::warp_in_block : body::block;
+            else      return body::block;
+        case op::eig3:
+            if (!f64) return body::block;
+            else      return N <= 3u ? body::thread_in_block : body::block;
+        case op::softmax:
+            if (!f64) return N <= 16u ? body::warp_in_block : body::block;
+            else      return body::block;
+        default: break;
+    }
+    return body::block;
+}
+// === END tune.py body sm_87 ===
+
 // === BEGIN tune.py body dispatch ===
 // Bodies for the bare block-scope face; unmeasured arches stay block.
 GLASS_DISPATCH_HD constexpr body dispatch_body(op o, uint32_t N, bool f64,
                                                uint32_t sm = GLASS_DEFAULTS_SM) {
     switch (sm) {
+        case 870u: return body_sm87(o, N, f64);
         case 1200u: return body_sm120(o, N, f64);
         default: break;
     }
