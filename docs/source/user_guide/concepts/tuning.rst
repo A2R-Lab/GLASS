@@ -154,14 +154,18 @@ cells). With far fewer SMs to fill, packing more problems per warp beats
 spreading one problem across more lanes. No library source differs between the
 two machines; a third of the dispatch decisions do.
 
-**No, per power mode.** The same Orin measured at 15 W, 30 W and 50 W (the
-standard ``nvpmodel`` modes) changes only **4 of 330** cells between 30 W and
-15 W, all near-tie boundaries, even though everything slows by a median
-1.49× (P10–P90 1.46–1.51×). Regenerating the table from the 30 W capture
-instead of the 50 W one changes two lines of emitted code out of twelve
-(operation, precision) groups. **A dispatch table is a property of the
-silicon, not of the power budget** — retune once per architecture and every
-deployment power mode is covered.
+**No, per power mode.** The same Orin measured at all three standard
+``nvpmodel`` modes slows by a median 1.49× (30 W → 15 W), 1.31× (50 W →
+30 W), 1.95× end to end — but the picks barely move: 8 of 396 cells differ
+between 15 W and 30 W, 11 between 30 W and 50 W, 7 across the full span.
+For scale, two independent 50 W captures of the *same* board disagree on 5
+cells, so power-mode disagreement is close to plain re-measurement noise,
+while the architecture change (125 cells) is an order of magnitude beyond
+it. Regenerating the table from the 15 W or 30 W capture instead of 50 W
+changes 2 and 4 lines of emitted code, against 2 for a same-mode
+re-measurement. **A dispatch table is a property of the silicon, not of the
+power budget** — retune once per architecture and every deployment power
+mode is covered.
 
 Two practical notes from the Orin bring-up:
 
@@ -171,11 +175,13 @@ Two practical notes from the Orin bring-up:
   four-tier ladder. It is worth having — the vendor tier wins 118 of 396 cells
   on sm_87 (Cholesky up to 3.7× over the best SIMT tier at small N).
 * The ``nvpmodel`` labels are ceilings, not draws. Sampling the board rails at
-  1 Hz with the GPU ≥98.7 % busy, the whole ladder pulls 13.4 W in the 30 W
-  mode and 16.0 W in the 50 W mode. Small block-resident linear algebra is
-  clock-bound long before it is power-bound, so the fastest standard mode is
-  also the most efficient: 50 W is 1.31× faster than 30 W for 1.20× the power,
-  i.e. **0.91× the energy per problem**. Race to idle.
+  1 Hz with the GPU ≥98.6 % busy, the whole ladder pulls 9.2 W in the 15 W
+  mode, 13.4 W in the 30 W mode and 16.0 W in the 50 W mode. Small
+  block-resident linear algebra is clock-bound long before it is power-bound,
+  so the fastest standard mode is also the most efficient, monotonically: per
+  problem solved, 30 W costs 1.09× and 15 W costs 1.12× the energy of 50 W.
+  **Race to idle** — run the highest standard mode your thermals allow and let
+  the board idle between control cycles.
 
 **How reproducible is a retune?** Two independent 50 W captures of the same
 board (different sessions, hours apart) crown the same winner in 391 of 396
