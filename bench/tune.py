@@ -6,15 +6,19 @@ every shipped defaults table + figure under a single noise margin.
 
 It drives the three measurement harnesses and routes every verdict through the
 one shared tie rule in ``bench/tune_pick.py`` (a dependency-carrying impl wins
-only if it clears the margin), so no table bakes sub-noise jitter and a
-pure-noise re-run reproduces the same tables. The legs:
+only if it clears the margin; between SIMT tiers, any tier within the ±2% SIMT
+tie band of the fastest takes the cell if it is simpler — thread ≻ warp ≻
+block), so no table bakes sub-noise jitter and a pure-noise re-run reproduces
+the same tables. The legs:
 
   ladder   bench_mega_sweep.cu  → thread/warp/block/nvidia ladder in glass-defaults.cuh
                                   (thread — one problem/thread, N<=7 — is a
                                   dependency-free contender alongside warp/block:
-                                  the shared pick takes the cheapest SIMT tier, so
-                                  a fresh sweep emits `backend::thread` wherever the
-                                  low-DOF packing actually wins)
+                                  the shared pick takes the cheapest SIMT tier —
+                                  with ties inside the ±2% SIMT band resolving to
+                                  the simpler tier — so a fresh sweep emits
+                                  `backend::thread` wherever the low-DOF packing
+                                  actually wins)
                                   (per-arch constexpr ideal_sm* tables + the SM
                                   dispatch switch; a first-time arch — e.g. sm_87
                                   on a Jetson Orin — gets a new table + case,
@@ -303,7 +307,7 @@ def regen_ladder(sweep_text, margin, src_name, sms):
     region = "\n".join([
         begin,
         f"// Source sweep: {src_name}   tie margin: ±{margin*100:.0f}% "
-        "(nvidia must clear it)",
+        "(nvidia must clear it; SIMT ties ±2% prefer thread>warp>block)",
         "// Returns the *ideal* tier assuming nvidia is linked; "
         "nv_available() filters after.",
         emit_ideal_body(winners, f"ideal_sm{arch}"),

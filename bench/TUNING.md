@@ -82,7 +82,10 @@ Prebuild-cached like the other legs; offline hook `--from-solvers <txt>`.
 The shared rule (`bench/tune_pick.py::pick`): a dependency-carrying impl
 (`nvidia`/`cublasdx`/`reduced`) wins **only if it beats the simplest impl by more
 than the margin** — otherwise the no-dependency path (always launchable, no
-MathDx) stays. Every op is measured and recorded; a dispatch picker is
+MathDx) stays. Between the SIMT tiers themselves, any tier within the **±2%
+SIMT tie band** of the fastest takes the cell if it is simpler (thread ≻ warp
+≻ block), so a pure-noise re-run regenerates the identical table instead of
+flipping near-tied lines. Every op is measured and recorded; a dispatch picker is
 regenerated only where ≥2 impls genuinely compete. **Run on a quiet GPU** — perf
 timing must be isolated from other CPU/GPU load. Use `--dry-run` first to confirm
 a re-run only moves dispatch inside the tie band before committing a regenerated

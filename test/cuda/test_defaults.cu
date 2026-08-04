@@ -13,9 +13,11 @@ namespace gd = glass::defaults;
 // ── measured sm_120 ladder (the ideal tier, independent of what's linked) ──
 //   (2026-07-18 retune — first sweep with the THREAD contender: it takes the
 //    low-DOF corner of every op except gemm.)
-//   gemm f32: warp/block interleave <=24, nvidia 25..32, block >=48 — no thread
+//   gemm f32: warp <=16, block <=24, nvidia 25..32, block >=48 — no thread
+//   (the old warp/block interleave <=24 was sub-noise; the ±2% SIMT tie band
+//    resolves it to the simpler tier — see bench/tune_pick.py)
 static_assert(gd::ideal_sm120(op::gemm, 8,  false) == backend::warp,   "gemm8 f32");
-static_assert(gd::ideal_sm120(op::gemm, 12, false) == backend::block,  "gemm12 f32");
+static_assert(gd::ideal_sm120(op::gemm, 12, false) == backend::warp,   "gemm12 f32 (SIMT tie -> simpler tier; old warp/block zigzag collapsed)");
 static_assert(gd::ideal_sm120(op::gemm, 24, false) == backend::block,  "gemm24 f32");
 static_assert(gd::ideal_sm120(op::gemm, 32, false) == backend::nvidia, "gemm32 f32");
 static_assert(gd::ideal_sm120(op::gemm, 96, false) == backend::block,  "gemm96 f32 (smem cap)");
@@ -53,7 +55,8 @@ static_assert(gd::ideal_sm87(op::chol,  48, false) == backend::nvidia, "chol48 f
 static_assert(gd::ideal_sm87(op::posv,  32, false) == backend::nvidia, "posv32 f32 -> vendor");
 static_assert(gd::ideal_sm87(op::posv,  16, false) == backend::thread, "posv16 f32");
 static_assert(gd::ideal_sm87(op::gemm,  64, false) == backend::nvidia, "gemm64 f32 -> vendor");
-static_assert(gd::ideal_sm87(op::gemm,  64, true)  == backend::block,  "gemm64 f64");
+static_assert(gd::ideal_sm87(op::gemm,  64, true)  == backend::warp,   "gemm64 f64 (SIMT tie: warp within 1% of block to N=96)");
+static_assert(gd::ideal_sm87(op::gemm, 128, true)  == backend::block,  "gemm128 f64 (block's only real win, 24% faster)");
 static_assert(gd::ideal_sm87(op::chol,  24, true)  == backend::thread, "chol24 f64 (thread reaches further than sm_120)");
 
 // ── per-arch dispatch: a measured SM hits its table, an unmeasured SM falls to generic ──

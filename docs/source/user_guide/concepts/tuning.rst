@@ -185,19 +185,27 @@ Two practical notes from the Orin bring-up:
 
 **How reproducible is a retune?** Two independent 50 W captures of the same
 board (different sessions, hours apart) crown the same winner in 391 of 396
-cells (98.7 %), and generate tables differing in exactly one line: ``gemm``
-f64 near N=48, where the block and warp tiers land within 1 % of each other.
+cells (98.7 %), and originally generated tables differing in exactly one
+line: ``gemm`` f64 near N=48, where the block and warp tiers land within 1 %
+of each other.
 
-That single flip exposes a rough edge worth knowing about. The ±5 % tie rule
-governs whether a *dependency* tier (cuBLASDx/cuSOLVERDx) may take a cell from
-the no-dependency SIMT tiers — but **between two SIMT tiers the generator takes
-the raw minimum**, so sub-1 % run-to-run noise can change an emitted line
-without anything real having changed. If you regenerate and see a one-line
-diff in a near-tie band, that is what you are looking at, not a hardware
-finding. (Applying a margin between SIMT tiers as well — preferring the
-simpler tier on a tie — would make the tables reproducible across
-re-measurements; it is not done today because it would perturb every shipped
-table and so wants its own attested regeneration.)
+That single flip exposed a rough edge the generator has since closed. The
+±5 % tie rule always governed whether a *dependency* tier
+(cuBLASDx/cuSOLVERDx) may take a cell from the no-dependency SIMT tiers — but
+between two SIMT tiers it originally took the raw minimum, so sub-1 %
+run-to-run noise could change an emitted line without anything real having
+changed. The generator now applies a **±2 % SIMT tie band** as well: any
+dependency-free tier within 2 % of the fastest takes the cell if it is
+*simpler* (thread ≻ warp ≻ block — sequential beats shuffles beats barriers;
+``bench/tune_pick.py``). Under the fixed generator all four Orin captures —
+the two independent 50 W sessions, the 30 W and even the 15 W — emit a
+byte-identical ``ideal_sm87``: the generated table really is a property of
+the silicon, invariant across re-measurement *and* the whole power envelope. The rule also cleans up noise
+artifacts frozen into earlier tables — e.g. the sm_120 ``gemm`` f32 line
+interleaved warp and block below N=24 on gaps under 2 %, and on sm_87 the
+``gemm`` f64 block/warp boundary sat at N=16 when the two tiers are actually
+within 1 % of each other all the way to N=96 (block's one real win, 24 %, is
+at N=128 — where the boundary now lands).
 
 Raw captures, provenance bundles and the analysis scripts behind these numbers
 live in the paper repository (``data/jetson/``), not here — this repo ships the

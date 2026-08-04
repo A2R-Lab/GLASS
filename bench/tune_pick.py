@@ -10,8 +10,13 @@ re-run reproduces the same table.
 
 `pick` encodes the project rule: **a higher-complexity / dependency-carrying
 impl wins only if it beats the best dependency-free impl by more than the
-margin.** Ties go to the simpler impl. That single rule subsumes all three
-legacy decisions:
+margin.** Ties go to the simpler impl — including *between* dependency-free
+SIMT tiers: any tier within ``simt_margin`` of the fastest takes the cell if it
+is simpler (thread ≻ warp ≻ block: sequential beats shuffle beats barriers).
+Without that second rule a sub-noise timing difference decided the emitted
+line, so two clean re-runs of the same hardware could disagree (seen on the
+sm_87 replication pair: gemm f64 N=48 flipped block↔warp on a <1% gap). That
+single rule subsumes all three legacy decisions:
 
 * ladder:  ``dependency={"nvidia"}`` — block/warp (pure SIMT, no MathDx) is the
            incumbent; nvidia must clear the margin to be chosen.
@@ -22,7 +27,13 @@ legacy decisions:
 import re
 
 
-def pick(timings, margin=0.05, dependency=()):
+#: Dependency-free SIMT tiers, simplest first: thread is straight-line serial
+#: code (no barriers, no shuffles), warp needs shuffles, block needs barriers.
+#: On a tie the simpler tier takes the cell.
+SIMT_ORDER = ("thread", "warp", "block")
+
+
+def pick(timings, margin=0.05, dependency=(), simt_margin=0.02, order=SIMT_ORDER):
     """Return the winning impl name from ``timings`` (name -> time, lower=better).
 
     Entries that are ``None`` or non-positive (failed / un-measured legs) are
@@ -31,6 +42,14 @@ def pick(timings, margin=0.05, dependency=()):
     ``margin`` (fractional, e.g. 0.05 = 5%). With no dependency-free impl
     measured, the cheapest measured impl wins. Returns ``None`` if nothing was
     measured.
+
+    Between dependency-free impls the raw minimum is NOT the last word either:
+    if the raw-fastest impl appears in ``order`` (simplest first), every impl
+    within ``simt_margin`` of it competes and the *simplest* of those wins.
+    Impls not named in ``order`` (e.g. ``serial``/``simt`` in the shapes and
+    reduced tables) keep the raw-min behavior. This is what makes a pure-noise
+    re-run regenerate the identical table: a sub-noise gap between two SIMT
+    tiers no longer decides the emitted line.
 
     The rule is intentionally asymmetric: it makes near-ties resolve to the
     simpler / no-dependency code path, which is both the safer default (always
@@ -47,6 +66,11 @@ def pick(timings, margin=0.05, dependency=()):
         return min(valid, key=valid.get)
     base_name = min(simple, key=simple.get)
     base = simple[base_name]
+    rank = {n: i for i, n in enumerate(order)}
+    if simt_margin and base_name in rank:
+        within = [k for k in simple
+                  if k in rank and simple[k] <= base * (1.0 + simt_margin)]
+        base_name = min(within, key=rank.get)
     deps = {k: v for k, v in valid.items() if k in dep}
     if deps:
         best_dep = min(deps, key=deps.get)
@@ -55,7 +79,8 @@ def pick(timings, margin=0.05, dependency=()):
     return base_name
 
 
-def verdict(timings, margin=0.05, dependency=(), noise_floor=0.0):
+def verdict(timings, margin=0.05, dependency=(), noise_floor=0.0,
+            simt_margin=0.02, order=SIMT_ORDER):
     """Like :func:`pick`, but also return a human note explaining the call.
 
     Returns ``(winner_name, note)``. ``noise_floor`` (in the same time unit as
@@ -73,7 +98,7 @@ def verdict(timings, margin=0.05, dependency=(), noise_floor=0.0):
         return fallback, (f"all legs < {noise_floor:g} noise floor "
                           f"({', '.join(f'{k}={v:.3f}' for k, v in valid.items())}) "
                           f"→ {fallback}")
-    win = pick(valid, margin, dependency)
+    win = pick(valid, margin, dependency, simt_margin, order)
     ordered = sorted(valid.items(), key=lambda kv: kv[1])
     best, second = ordered[0], ordered[1] if len(ordered) > 1 else None
     if second is None:
@@ -84,8 +109,10 @@ def verdict(timings, margin=0.05, dependency=(), noise_floor=0.0):
     else:
         win_t = valid[win]
         gap = (win_t / best[1] - 1.0) * 100.0
+        tie = win in order and best[0] in order
+        used, which = (simt_margin, "SIMT tie") if tie else (margin, "margin")
         note = (f"{win} kept ({win_t:.3f}); {best[0]} faster by {gap:.1f}% "
-                f"but inside ±{margin*100:.0f}% margin")
+                f"but inside ±{used*100:.0f}% {which}")
     return win, note
 
 
@@ -233,16 +260,30 @@ if __name__ == "__main__":
     assert pick({"block": 150, "warp": 110, "nvidia": 99}, 0.05, {"nvidia"}) == "nvidia", \
         "nvidia 10% faster than warp → clears margin"
     assert pick({"block": 100, "warp": 99}, 0.05, {"nvidia"}) == "warp", \
-        "warp/block both simple → cheapest"
-    # thread tier: dependency-free SIMT alongside warp/block — cheapest of the
-    # three wins with no margin (a structural launch change, like warp, is not
-    # margin-gated); nvidia still must clear the margin over the SIMT incumbent.
+        "warp/block both simple → cheapest (warp also simpler)"
+    # thread tier: dependency-free SIMT alongside warp/block — the cheapest of
+    # the three is the anchor, but any SIMT tier within simt_margin of it takes
+    # the cell if it is simpler (thread ≻ warp ≻ block); nvidia still must
+    # clear the dependency margin over the raw-best SIMT time.
     assert pick({"block": 100, "warp": 90, "thread": 60}, 0.05, {"nvidia"}) == "thread", \
         "thread cheapest SIMT tier → wins (low-DOF packing)"
-    assert pick({"block": 100, "warp": 90, "thread": 91}, 0.05, {"nvidia"}) == "warp", \
-        "thread not cheapest → warp keeps it"
+    assert pick({"block": 100, "warp": 90, "thread": 91}, 0.05, {"nvidia"}) == "thread", \
+        "thread 1.1% behind warp → inside SIMT tie → simpler tier takes it"
+    assert pick({"block": 100, "warp": 90, "thread": 93}, 0.05, {"nvidia"}) == "warp", \
+        "thread 3.3% behind warp → outside SIMT tie → warp keeps it"
+    assert pick({"block": 91, "warp": 90, "thread": 120}, 0.05, {"nvidia"}) == "warp", \
+        "block 1.1% behind warp but LESS simple → warp keeps it"
     assert pick({"block": 100, "warp": 90, "thread": 60, "nvidia": 59}, 0.05, {"nvidia"}) == "thread", \
-        "nvidia inside margin of the thread incumbent → thread"
+        "nvidia inside margin of the raw-best SIMT time → thread"
+    assert pick({"block": 100, "warp": 90, "thread": 91, "nvidia": 80}, 0.05, {"nvidia"}) == "nvidia", \
+        "SIMT tie resolves to thread but nvidia clears the margin over raw-best warp"
+    assert pick({"serial": 100, "simt": 101}, 0.05, {"cublasdx"}) == "serial", \
+        "impls outside SIMT_ORDER keep raw-min behavior"
+    # SIMT tie must be measured against the raw-fastest tier, not pairwise
+    # chained: warp 1.9% behind block is a tie; thread 1.9% behind warp is
+    # NOT within the margin of block, so it cannot ride the chain.
+    assert pick({"block": 100, "warp": 101.9, "thread": 103.8}, 0.05, {"nvidia"}) == "warp", \
+        "tie band anchored at the raw min, no transitive chaining"
     assert pick({"nvidia": 50}, 0.05, {"nvidia"}) == "nvidia", "only nvidia measured"
     assert pick({"block": 0, "warp": None}, 0.05) is None, "nothing valid"
     assert pick({"serial": 1.0, "reduced": 0.90}, 0.05, {"reduced"}) == "reduced", \
