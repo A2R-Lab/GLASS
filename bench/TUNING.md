@@ -253,3 +253,18 @@ shipped table alone.
   before; if the GPU is at its peak boost, you're good.
 - Measurements with `--iters` below ~5000 (high variance for sub-microsecond ops).
 - Entries for shapes that aren't realistic for any workload (`M=N=K=2` etc.).
+
+## Backwards-reach compile probes
+
+`portability_smoke_simt.cu` / `portability_smoke_vendor.cu` are compile-only
+probes for the tier-vs-architecture floor table: the SIMT probe touches all
+three dependency-free tiers (block L3 factor/solve, warp L1/L2, thread L1)
+plus the unmeasured-arch dispatch collapse, and builds for every `-arch` the
+installed toolkit still targets (CUDA 12: sm_50+; CUDA 13: sm_75+ — the
+toolkit, not GLASS, sets the floor). The vendor probe instantiates a minimal
+cuBLASDx descriptor at `-DSM_TARGET=<cc*10>`: below cc 7.0 the
+`cublasdx::SM<>` operator is an *incomplete type* — the descriptor cannot be
+formed, which is the vendor tier's architectural wall stated by the vendor's
+own headers. Verified 2026-08-04 on the Orin (CUDA 13.2, MathDx 26.03):
+SIMT sm_75/86/87 PASS; vendor SM<620> FAIL (incomplete type), SM<720>/<870>
+PASS at descriptor level.
