@@ -20,7 +20,7 @@ from scipy.optimize import minimize
 
 # Thread counts swept for the invariance test: 1, one warp, two warps, the
 # production count, and a deliberate non-multiple of 32 (trailing partial warp).
-THREAD_COUNTS = [1, 32, 64, 256, 96]
+THREAD_COUNTS = [1, 7, 32, 33, 64, 96, 256]  # incl. partial warps (7, 33)
 
 
 # --- harness ----------------------------------------------------------------

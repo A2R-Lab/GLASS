@@ -3,7 +3,7 @@
 Validates the single + dual-output bdmv against a dense block-tridiagonal
 reference. Uses ASYMMETRIC L/R off-diagonal blocks so an L/R swap is caught,
 exercises the edge block-rows (row 0 with a zero L-pad, row N-1 with a zero
-R-pad), and checks thread-count invariance (1 / 32 / 256 threads).
+R-pad), and checks thread-count invariance (1 / 7 / 33 / 256 threads — incl. partial warps).
 """
 import numpy as np
 import pytest
@@ -33,7 +33,7 @@ def reference(mat, vec, BS, NBR):
 
 
 @pytest.mark.parametrize("BS,NBR", [(2, 3), (6, 4)])
-@pytest.mark.parametrize("threads", [1, 32, 256])
+@pytest.mark.parametrize("threads", [1, 7, 33, 256])  # THREAD_SWEEP_CORE
 def test_bdmv(bins, BS, NBR, threads):
     mat, vec = make_banded(BS, NBR, seed=BS * 100 + NBR)
     ref = reference(mat, vec, BS, NBR)

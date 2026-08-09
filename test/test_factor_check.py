@@ -61,7 +61,7 @@ def _spd(n):
 
 
 @pytest.mark.parametrize("n", CHOL_N)
-@pytest.mark.parametrize("surf,th", [("block", 128), ("cgrps", 96), ("warp", 32)])
+@pytest.mark.parametrize("surf,th", [("block", 128), ("block", 33), ("block", 7), ("cgrps", 96), ("warp", 32)])
 def test_chol_check_pd(bins, n, surf, th):
     P = _spd(n)
     fail, L = _cholchk(bins["factor_check"], surf, th, n, P.copy())
@@ -71,7 +71,7 @@ def test_chol_check_pd(bins, n, surf, th):
 
 
 @pytest.mark.parametrize("n", CHOL_N)
-@pytest.mark.parametrize("surf,th", [("block", 128), ("cgrps", 96), ("warp", 32)])
+@pytest.mark.parametrize("surf,th", [("block", 128), ("block", 33), ("block", 7), ("cgrps", 96), ("warp", 32)])
 def test_chol_check_non_pd(bins, n, surf, th):
     ND = (-_spd(n)).astype(np.float32)      # negative-definite => first pivot <= 0
     fail, _ = _cholchk(bins["factor_check"], surf, th, n, ND.copy())

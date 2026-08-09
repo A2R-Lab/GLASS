@@ -7,7 +7,7 @@ thread-count sweep asserting thread-count invariance AND oracle agreement.
 import numpy as np
 import pytest
 import scipy.linalg
-from conftest import run_op
+from conftest import run_op, THREAD_SWEEP_CORE
 
 RNG = np.random.default_rng(7)
 
@@ -103,7 +103,7 @@ def test_thread_invariance(bins, op, lower, unit, trans):
     else:
         expected = _oracle_trmv(A, v, lower, unit, trans).astype(np.float32)
     ref = None
-    for threads in (1, 7, 33, 256):
+    for threads in THREAD_SWEEP_CORE:
         result = _run(bins, op, threads, n, lower, unit, trans, A, v)
         assert np.allclose(result, expected, rtol=RTOL, atol=ATOL), \
             f"{op} threads={threads} lower={lower} unit={unit} trans={trans}: oracle mismatch"

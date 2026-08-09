@@ -49,7 +49,7 @@ def from_padded(p, SS, KP):
 
 
 @pytest.mark.parametrize("SS,KP", [(2, 3), (6, 4)])
-@pytest.mark.parametrize("threads", [32, 128, 256])
+@pytest.mark.parametrize("threads", [1, 7, 33, 128, 256])  # incl. partial warps
 def test_pcg_solve(bins, SS, KP, threads):
     Sd, band, pinv = make_spd_banded(SS, KP, seed=SS * 10 + KP)
     n = SS * KP

@@ -20,7 +20,7 @@ RTOL = 1e-3
 ATOL = 1e-3
 
 SIZES = [5, 7, 16, 33, 40, 64]
-WARP_COUNTS = [1, 2, 4]
+WARP_COUNTS = [1, 2, 3, 4, 8]  # odd + large; partial warps are FORBIDDEN by the warp contract
 
 
 def _per_warp(arr, W, n):

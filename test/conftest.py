@@ -151,7 +151,8 @@ def _hash_sources(cu_path: pathlib.Path) -> str:
     # any single-driver edit.
     paths = [cu_path, CUDA_DIR / "helpers.cuh",
              GLASS_DIR / "glass.cuh", GLASS_DIR / "glass-cgrps.cuh",
-             GLASS_DIR / "glass-defaults.cuh", GLASS_DIR / "glass-nvidia.cuh"]
+             GLASS_DIR / "glass-defaults.cuh", GLASS_DIR / "glass-dispatch.cuh",
+             GLASS_DIR / "glass-nvidia.cuh"]
     paths += sorted((GLASS_DIR / "src").rglob("*.cuh"))
     paths += [
               CUDA_DIR / "test_iamax.cu",

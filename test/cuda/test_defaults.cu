@@ -143,4 +143,21 @@ static_assert(glass::suggested_block_threads<op::gemm, 32, float>() == 256u, "ge
 static_assert(glass::suggested_warps_per_block<op::dot>()  == 8u, "dot WPB=8");
 static_assert(glass::suggested_warps_per_block<op::chol>() == 2u, "chol WPB=2");
 
+// ── host-side query/size helpers: constexpr, so the asserts ARE the test.
+// Property-based (positive, monotone in threads/size) rather than exact —
+// the formulas are the implementation's business, launchability is ours. ──
+static_assert(glass::dot_fast_scratch_bytes<float>(64) == 8, "2 warps -> 2 floats");
+static_assert(glass::dot_fast_scratch_bytes<double>(256) >= glass::dot_fast_scratch_bytes<double>(32), "monotone in threads");
+static_assert(glass::iamax_scratch_bytes<float>(64) > 0 && glass::iamax_fast_scratch_bytes<float>(64) > 0, "iamax scratch positive");
+static_assert(glass::argreduce_scratch_bytes<float>(64) > 0 && glass::argreduce_fast_scratch_bytes<float>(64) > 0, "argreduce scratch positive");
+static_assert(glass::congruence_scratch_bytes<float, 12, 4>() > 0, "congruence scratch positive");
+static_assert(glass::gn_step_scratch_bytes<float, 7>() > 0, "gn_step scratch positive");
+static_assert(glass::inv_dense_scratch_bytes<float>(8) >= glass::inv_dense_scratch_bytes<float>(4), "inv_dense monotone in dim");
+static_assert(glass::trmv_scratch_bytes<double>(6) == 6 * sizeof(double), "trmv scratch = n*T");
+constexpr uint32_t k_inv_dims[] = {4u, 6u};
+static_assert(glass::inv_fused_scratch_bytes<float>(2, k_inv_dims) > 0, "K-way fused inv scratch positive");
+static_assert(glass::eigh_sweeps<double>() > glass::eigh_sweeps<float>(), "f64 needs more Jacobi sweeps");
+static_assert(glass::syev_eps<float>() > 0 && glass::syev_eps<double>() < glass::syev_eps<float>(), "syev eps ordered by precision");
+static_assert(!glass::suggested_use_reduced<4, 8, 128>(), "reduced corner empty on sm_120 (REDUCED_SWEEP_RESULTS)");
+
 int main() { printf("ok\n"); return 0; }
