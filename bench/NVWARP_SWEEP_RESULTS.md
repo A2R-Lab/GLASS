@@ -22,6 +22,13 @@ warp-scope vendor dispatch target — which is the measured justification for
 the dispatch ladder not descending below block scope for the `nvidia` tier
 (`glass::nvidia::warp::` remains an explicit, contract-tier choice).
 
-## sm_120 (RTX 5090) — PENDING
+## sm_120 (RTX 5090, quiet window, 2026-08-06)
 
-Binary compiles clean; run blocked on a quiet-GPU window.
+Raw capture: `glass-paper/data/sm120/nvwarp_l1_sm120_20260806_0146.txt`.
+
+**119 / 126 cells tie within ±2%** — even more tie-heavy than sm_87. The 7
+non-ties: CUB takes 4 (small-N f32 `dot` at NPROB=8192, ≤3.8%), SIMT takes 3
+(≤3% at throughput; one 17% `reduce` N=4 outlier in the launch-latency-bound
+NPROB=64 section). Same verdict on both measured architectures: the warp
+tiers are the same algorithm, and no cell justifies a warp-scope vendor
+dispatch target.
