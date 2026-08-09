@@ -6,6 +6,7 @@
 [![GPU tests](https://img.shields.io/endpoint?url=https%3A%2F%2Fa2r-lab.github.io%2FGLASS%2Fbadges%2Freceipt.json)](test/gpu-proof.json)
 [![API surface tested](https://img.shields.io/endpoint?url=https%3A%2F%2Fa2r-lab.github.io%2FGLASS%2Fbadges%2Fsurface.json)](.github/scripts/surface_coverage.py)
 [![Contributors](https://img.shields.io/github/contributors/A2R-Lab/GLASS)](https://github.com/A2R-Lab/GLASS/graphs/contributors)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **GLASS is a comprehensive, header-only CUDA C++ `__device__` template library for
 block-local linear algebra on GPUs** — BLAS, LAPACK-style factorizations and triangular
