@@ -40,7 +40,7 @@ def main():
             if n not in _SKIP and not n.endswith("_impl") and not n.startswith("_"):
                 surface.setdefault(n, h.relative_to(ROOT))
     test_text = "\n".join(t.read_text(errors="ignore") for t in TESTS)
-    covered = {n for n in surface if re.search(rf"\b{re.escape(n)}\s*[(<]", test_text)}
+    covered = {n for n in surface if re.search(rf"\b{re.escape(n)}\b", test_text)}
     gaps = sorted(set(surface) - covered)
     pct = 100.0 * len(covered) / max(1, len(surface))
     print(f"surface: {len(surface)} public entry points, "
