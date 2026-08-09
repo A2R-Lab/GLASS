@@ -198,5 +198,47 @@ Solvers & dispatch
 .. literalinclude:: ../../../../examples/16_inv.cu
    :language: cuda
 
+17 — thread-tier packing (32 low-DOF problems per warp)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. literalinclude:: ../../../../examples/17_thread_pack.cu
+   :language: cuda
+
+18 — spatial dynamics (6-D cross products, transforms, inertia)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. literalinclude:: ../../../../examples/18_spatial_dynamics.cu
+   :language: cuda
+
+19 — floating-base retract (SE(3)/quaternion Lie ops)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. literalinclude:: ../../../../examples/19_floating_base_retract.cu
+   :language: cuda
+
+20 — MPPI weights (softmax over rollout costs)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. literalinclude:: ../../../../examples/20_mppi_weights.cu
+   :language: cuda
+
+21 — cone projection (AL / friction-cone operators)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. literalinclude:: ../../../../examples/21_cone_projection.cu
+   :language: cuda
+
+22 — collision spheres (pairwise distance checks)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. literalinclude:: ../../../../examples/22_collision_spheres.cu
+   :language: cuda
+
+23 — best-fit rotation (eig3 / svd3 / closest_rotation)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. literalinclude:: ../../../../examples/23_best_fit_rotation.cu
+   :language: cuda
+
 See also :doc:`sweep_results` for the measured ladder behind the picker, and
 :doc:`../../api_reference/defaults` for the picker helper reference.

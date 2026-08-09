@@ -180,5 +180,24 @@ generalizing, or measure with your actual matrices.
 same as the bare eigensolve (the clamp epilogue is free); budget ~0.9 µs
 fp32 / ~8.8 µs fp64 per 32×32 problem at saturation.
 
+The full measured-results archive
+----------------------------------
+
+Every measured family keeps its spliced verdict tables in a results file under
+``bench/`` in the repo:
+
+- ``MEGA_SWEEP_RESULTS.md`` — the thread/warp/block/nvidia ladder (feeds
+  ``glass-defaults.cuh``).
+- ``THREAD_SWEEP_RESULTS.md`` — the thread-tier contender verdicts.
+- ``BLAS2_SWEEP_RESULTS.md`` — warp-vs-block for syrk/syr2k/ldlt/ldltsv/inv/
+  trmv/ger.
+- ``RECT_SWEEP_RESULTS.md`` — warp-vs-block for rectangular gemv/gemm shapes.
+- ``SOLVERS_SWEEP_RESULTS.md`` — bdsv-vs-pcg, gesv/posv/inv-solve, syev
+  (characterization, never auto-picked).
+- ``REDUCED_SWEEP_RESULTS.md`` — the serial-vs-``*_reduced`` corner.
+- ``NVWARP_SWEEP_RESULTS.md`` — ``glass::warp`` vs the CUB warp tier (the
+  measured case for a block-scope-only vendor dispatch).
+- ``PAPER_SWEEPS.md`` — the hostblas/fusion/latency paper harnesses.
+
 See :doc:`../concepts/tuning` for how to emit a per-host override table from a
 sweep, and :doc:`../../api_reference/defaults` for the picker API.

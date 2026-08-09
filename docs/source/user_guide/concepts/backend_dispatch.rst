@@ -22,11 +22,13 @@ clean compile-time message when it is missing.
    different from both: ``glass::dispatch_body()`` (``glass-dispatch.cuh``)
    picks the **in-block body** behind the bare ``glass::op`` /
    ``glass::nvidia::op`` face, under a *fixed* block-scope calling contract —
-   the launch does not change. Phase 1 pins every cell to the block body (bare
-   names are exactly ``glass::block::``); a future measured in-block body sweep
-   (``bench/tune.py``) may move cells to a warp- or thread-body executed inside
-   the block — an attested, receipt-gated retune. Pin ``glass::block::`` where
-   determinism is load-bearing; see :doc:`namespaces`.
+   the launch does not change. The measured in-block body sweep
+   (``bench/tune.py --legs body``, Phase 2, 2026-07-30) moved the winning
+   cells to a warp- or thread-body executed inside the block — an attested,
+   receipt-gated retune, regenerated per arch like the ladder. A moved cell
+   matches the block body to tolerance, not bit-exactly; ops with no moved
+   cell remain exactly ``glass::block::``. Pin ``glass::block::`` where
+   determinism is load-bearing; see :doc:`namespaces` and :doc:`tuning`.
 
 The dispatch flow
 -----------------

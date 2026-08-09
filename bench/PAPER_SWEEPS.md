@@ -53,9 +53,12 @@ lines.
 
 ## Results
 
-Timing: none yet — deferred to a dedicated quiet window; smoke-validated
-2026-07-06 on a SHARED-load RTX 5090 / sm_120 (correctness guards green
-f32+f64, all smoke timing numbers discarded).
+sm_120 timing landed in the 2026-07-08 quiet window (captures
+`paper_hostblas_20260708_0054.txt` / `paper_fusion_20260708_0055.txt`; F2/F3/F4
+in the paper render from them). Jetson/Orin legs of THESE harnesses
+(hostblas/fusion at sm_87, optional tegrastats energy) remain un-run — the
+Orin runbook below is still pending for that leg only. (Original smoke
+validation 2026-07-06 on a shared box; those numbers were discarded.)
 
 **Numerics finding (valid despite shared load — maxerr is deterministic):**
 the `vendor_tf32` CHECK column doubles as a tensor-core ENGAGEMENT detector.
