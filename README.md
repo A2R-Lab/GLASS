@@ -1,5 +1,12 @@
 # GLASS
 
+[![CI](https://github.com/A2R-Lab/GLASS/actions/workflows/ci.yml/badge.svg)](https://github.com/A2R-Lab/GLASS/actions/workflows/ci.yml)
+[![verify-gpu-proof](https://github.com/A2R-Lab/GLASS/actions/workflows/verify-gpu-proof.yml/badge.svg)](https://github.com/A2R-Lab/GLASS/actions/workflows/verify-gpu-proof.yml)
+[![Documentation](https://github.com/A2R-Lab/GLASS/actions/workflows/gh-pages.yml/badge.svg)](https://a2r-lab.github.io/GLASS/)
+[![GPU tests](https://img.shields.io/endpoint?url=https%3A%2F%2Fa2r-lab.github.io%2FGLASS%2Fbadges%2Freceipt.json)](test/gpu-proof.json)
+[![API surface tested](https://img.shields.io/endpoint?url=https%3A%2F%2Fa2r-lab.github.io%2FGLASS%2Fbadges%2Fsurface.json)](.github/scripts/surface_coverage.py)
+[![Contributors](https://img.shields.io/github/contributors/A2R-Lab/GLASS)](https://github.com/A2R-Lab/GLASS/graphs/contributors)
+
 **GLASS is a comprehensive, header-only CUDA C++ `__device__` template library for
 block-local linear algebra on GPUs** — BLAS, LAPACK-style factorizations and triangular
 solves, dense linear-system solvers, related algorithms, and **robotics-specialized

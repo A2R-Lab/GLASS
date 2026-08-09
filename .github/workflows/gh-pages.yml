@@ -8,6 +8,7 @@ on:
       - 'docs/**'
       - 'src/**'          # API reference is generated from header doc-comments
       - 'glass*.cuh'
+      - 'test/**'         # badges: surface coverage + receipt read the test tree
       - '.github/workflows/gh-pages.yml'
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
@@ -48,6 +49,15 @@ jobs:
         run: |
           cd docs
           make all
+
+      # shields.io endpoint badges, served from the docs site: API-surface
+      # coverage (device-code line coverage does not exist; this is the honest
+      # metric) + the receipted GPU-test count from the signed receipt.
+      - name: Generate badges
+        run: |
+          mkdir -p docs/build/html/badges
+          python .github/scripts/surface_coverage.py --json docs/build/html/badges/surface.json
+          python .github/scripts/receipt_badge.py docs/build/html/badges/receipt.json
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
