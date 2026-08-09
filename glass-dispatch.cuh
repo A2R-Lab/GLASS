@@ -45,8 +45,10 @@
 namespace glass {
 
 // APPEND-ONLY (ordinals are load-bearing for the per-arch ladder tables in
-// glass-defaults.cuh): the six ladder ops first, then the body-sweep additions.
-enum class op : int      { dot, gemv, gemm, chol, trsv, posv, eig3, softmax };
+// glass-defaults.cuh): the six ladder ops first, then the body-sweep additions,
+// then the blas2 family (warp-vs-block only; measured by tune.py's blas2 leg).
+enum class op : int      { dot, gemv, gemm, chol, trsv, posv, eig3, softmax,
+                           syrk, syr2k, ldlt, ldltsv };
 
 // The bare face's implementation bodies under the fixed block-scope contract.
 // `warp_in_block` / `thread_in_block` = the op's warp/thread twin executed by

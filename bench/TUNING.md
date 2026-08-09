@@ -34,7 +34,7 @@ on the rendered source + a digest of the whole header library + the SM, so any
 library edit transparently rebuilds the affected binaries; a cuBLASDx-rejected
 shape is remembered so it isn't retried.
 
-### The `blas2` and `rect` legs (measured + reported, no table yet)
+### The `blas2` and `rect` legs
 
 Two additional legs cover what the ladder misses; both are pure-SIMT (no MathDx
 needed), prebuild-cached like the others, and route every verdict through the
@@ -52,12 +52,15 @@ same `tune_pick` margin rule:
   `DEFINE_NVIDIA_*` instantiation machinery; per-shape vendor decisions belong
   to the `shapes` leg).
 
-Unlike `ladder`/`shapes`/`reduced`, these legs regenerate **no header table
-yet** — they splice the measured picks into marker-delimited blocks in
-`bench/BLAS2_SWEEP_RESULTS.md` / `bench/RECT_SWEEP_RESULTS.md` (the
-`suggested_backend<>` defaults-table extension for these ops is a follow-up).
-Offline hooks `--from-blas2 <txt>` / `--from-rect <txt>` re-report from an
-existing sweep capture without touching the GPU:
+Since 2026-08-06 both legs regenerate shipped header tables alongside their
+md reports: `blas2` splices a per-arch `blas2_sm*` block into
+`glass-defaults.cuh` for the 2-impl ops (syrk/syr2k/ldlt/ldltsv — reachable
+through the ordinary `suggested_backend<>`; inv/trmv/ger are single-impl and
+stay report-only), and `rect` splices exact-shape `rect_gemv_sm*` /
+`rect_gemm_sm*` pickers (public face `suggested_backend_rect_gemv/gemm<>`;
+unmeasured shapes and arches fall to block). Offline hooks
+`--from-blas2 <txt>` / `--from-rect <txt>` regenerate from an existing sweep
+capture without touching the GPU (pass `--sm` to name the capture's arch):
 
 ```bash
 python bench/tune.py --sm auto --prebuild --legs blas2,rect  # compile only

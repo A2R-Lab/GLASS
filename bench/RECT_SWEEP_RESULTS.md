@@ -25,9 +25,9 @@ shared `tune_pick` margin rule.
 <!-- BEGIN tune.py: latest measured run -->
 ## Latest measured run (auto-refreshed by `bench/tune.py`)
 
-_Source: `rect_sweep_20260718_0328.txt` · NPROB=8192 ns/problem · margin ±5% (warp/block are both dependency-free; pick = cheapest, note flags sub-margin gaps) · warp picked in 16 of 24 cells._
+_Source: `rect_sweep_20260718_0328.txt` · NPROB=8192 ns/problem · margin ±5% (warp/block are both dependency-free; pick = cheapest, note flags sub-margin gaps) · warp picked in 19 of 24 cells._
 
-nvidia leg skipped for rectangular shapes (needs new per-shape DEFINE_NVIDIA_* machinery; cuBLASDx-vs-SIMT per (M,N,K) lives in the `shapes` leg).
+nvidia leg skipped for rectangular shapes (needs new per-shape DEFINE_NVIDIA_* machinery; cuBLASDx-vs-SIMT per (M,N,K) lives in the `shapes` leg). Measured shapes regenerate the shipped exact-shape `rect_*_sm*` pickers in glass-defaults.cuh (`suggested_backend_rect_gemv/gemm<>`, since 2026-08-06); unmeasured shapes stay block.
 
 | op | shape | dtype | block ns | warp ns | pick | note |
 |----|-------|-------|----------|---------|------|------|
@@ -40,9 +40,9 @@ nvidia leg skipped for rectangular shapes (needs new per-shape DEFINE_NVIDIA_* m
 | gemv | 64x8 | f32 | 0.64 | 0.48 | **warp** | warp wins (0.480 vs block 0.640, 33.3%) |
 | gemv | 64x8 | f64 | 0.89 | 0.87 | **warp** | warp wins (0.870 vs block 0.890, 2.3%) |
 | gemv | 128x16 | f32 | 1.37 | 1.59 | **block** | block wins (1.370 vs warp 1.590, 16.1%) |
-| gemv | 128x16 | f64 | 10.48 | 10.57 | **block** | block wins (10.480 vs warp 10.570, 0.9%) |
-| gemv | 256x32 | f32 | 20.36 | 20.42 | **block** | block wins (20.360 vs warp 20.420, 0.3%) |
-| gemv | 256x32 | f64 | 40.31 | 40.78 | **block** | block wins (40.310 vs warp 40.780, 1.2%) |
+| gemv | 128x16 | f64 | 10.48 | 10.57 | **warp** | warp kept (10.570); block faster by 0.9% but inside ±2% SIMT tie |
+| gemv | 256x32 | f32 | 20.36 | 20.42 | **warp** | warp kept (20.420); block faster by 0.3% but inside ±2% SIMT tie |
+| gemv | 256x32 | f64 | 40.31 | 40.78 | **warp** | warp kept (40.780); block faster by 1.2% but inside ±2% SIMT tie |
 | gemm | 6x6x64 | f32 | 0.88 | 0.92 | **block** | block wins (0.880 vs warp 0.920, 4.5%) |
 | gemm | 6x6x64 | f64 | 2.74 | 3.02 | **block** | block wins (2.740 vs warp 3.020, 10.2%) |
 | gemm | 8x32x8 | f32 | 0.92 | 0.88 | **warp** | warp wins (0.880 vs block 0.920, 4.5%) |

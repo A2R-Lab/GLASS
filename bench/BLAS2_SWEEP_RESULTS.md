@@ -23,9 +23,9 @@ through the shared `tune_pick` margin rule.
 <!-- BEGIN tune.py: latest measured run -->
 ## Latest measured run (auto-refreshed by `bench/tune.py`)
 
-_Source: `blas2_sweep_20260718_0327.txt` · NPROB=8192 ns/problem · margin ±5% (warp/block are both dependency-free; pick = cheapest, note flags sub-margin gaps) · warp picked in 28 of 154 cells._
+_Source: `blas2_sweep_20260718_0327.txt` · NPROB=8192 ns/problem · margin ±5% (warp/block are both dependency-free; pick = cheapest, note flags sub-margin gaps) · warp picked in 33 of 154 cells._
 
-inv/trmv/ger are BLOCK-ONLY (no `glass::warp::` variant); none of these ops has a `glass::nvidia::` counterpart.
+inv/trmv/ger are BLOCK-ONLY (no `glass::warp::` variant, so nothing competes — reported, never picked); none of these ops has a `glass::nvidia::` counterpart. The 2-impl ops (syrk/syr2k/ldlt/ldltsv) regenerate the shipped per-arch `blas2_sm*` table in glass-defaults.cuh (since 2026-08-06).
 
 | op | shape | dtype | block ns | warp ns | pick | note |
 |----|-------|-------|----------|---------|------|------|
@@ -34,11 +34,11 @@ inv/trmv/ger are BLOCK-ONLY (no `glass::warp::` variant); none of these ops has 
 | syrk | N=6 | f32 | 0.59 | 0.28 | **warp** | warp wins (0.280 vs block 0.590, 110.7%) |
 | syrk | N=6 | f64 | 0.70 | 0.67 | **warp** | warp wins (0.670 vs block 0.700, 4.5%) |
 | syrk | N=8 | f32 | 0.60 | 0.35 | **warp** | warp wins (0.350 vs block 0.600, 71.4%) |
-| syrk | N=8 | f64 | 0.83 | 0.84 | **block** | block wins (0.830 vs warp 0.840, 1.2%) |
-| syrk | N=12 | f32 | 0.85 | 0.85 | **block** | block wins (0.850 vs warp 0.850, 0.0%) |
-| syrk | N=12 | f64 | 2.66 | 2.68 | **block** | block wins (2.660 vs warp 2.680, 0.8%) |
+| syrk | N=8 | f64 | 0.83 | 0.84 | **warp** | warp kept (0.840); block faster by 1.2% but inside ±2% SIMT tie |
+| syrk | N=12 | f32 | 0.85 | 0.85 | **warp** | warp kept (0.850); block faster by 0.0% but inside ±2% SIMT tie |
+| syrk | N=12 | f64 | 2.66 | 2.68 | **warp** | warp kept (2.680); block faster by 0.8% but inside ±2% SIMT tie |
 | syrk | N=16 | f32 | 1.57 | 1.54 | **warp** | warp wins (1.540 vs block 1.570, 1.9%) |
-| syrk | N=16 | f64 | 5.06 | 5.15 | **block** | block wins (5.060 vs warp 5.150, 1.8%) |
+| syrk | N=16 | f64 | 5.06 | 5.15 | **warp** | warp kept (5.150); block faster by 1.8% but inside ±2% SIMT tie |
 | syrk | N=24 | f32 | 4.50 | 4.86 | **block** | block wins (4.500 vs warp 4.860, 8.0%) |
 | syrk | N=24 | f64 | 15.15 | 16.16 | **block** | block wins (15.150 vs warp 16.160, 6.7%) |
 | syrk | N=32 | f32 | 10.78 | 13.82 | **block** | block wins (10.780 vs warp 13.820, 28.2%) |
@@ -56,7 +56,7 @@ inv/trmv/ger are BLOCK-ONLY (no `glass::warp::` variant); none of these ops has 
 | syr2k | N=6 | f32 | 0.60 | 0.37 | **warp** | warp wins (0.370 vs block 0.600, 62.2%) |
 | syr2k | N=6 | f64 | 1.52 | 1.56 | **block** | block wins (1.520 vs warp 1.560, 2.6%) |
 | syr2k | N=8 | f32 | 0.61 | 0.43 | **warp** | warp wins (0.430 vs block 0.610, 41.9%) |
-| syr2k | N=8 | f64 | 2.04 | 2.08 | **block** | block wins (2.040 vs warp 2.080, 2.0%) |
+| syr2k | N=8 | f64 | 2.04 | 2.08 | **warp** | warp kept (2.080); block faster by 2.0% but inside ±2% SIMT tie |
 | syr2k | N=12 | f32 | 1.27 | 1.30 | **block** | block wins (1.270 vs warp 1.300, 2.4%) |
 | syr2k | N=12 | f64 | 7.10 | 7.36 | **block** | block wins (7.100 vs warp 7.360, 3.7%) |
 | syr2k | N=16 | f32 | 2.56 | 2.69 | **block** | block wins (2.560 vs warp 2.690, 5.1%) |

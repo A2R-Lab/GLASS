@@ -130,6 +130,106 @@ constexpr backend ideal_sm87(op o, uint32_t N, bool f64) {
 }
 // === END tune.py ladder sm_87 ===
 
+// ─── blas2 family (syrk / syr2k / ldlt / ldltsv): warp-vs-block only — no
+// vendor tier exists for these ops (nv_available() is already false for them).
+// tune.py's blas2 leg owns the marker blocks; unmeasured arches stay block
+// (the always-correct incumbent). inv/trmv/ger are single-impl (block-only)
+// and deliberately have no table — measured and reported, never picked. ───
+
+// === BEGIN tune.py blas2 sm_120 ===
+// Source sweep: blas2_sweep_20260718_0327.txt   tie margin: ±5% (SIMT ties ±2% prefer the simpler tier)
+constexpr backend blas2_sm120(op o, uint32_t N, bool f64) {
+    switch (o) {
+        case op::syrk: return N <= 16u ? backend::warp : backend::block;
+        case op::syr2k:
+            if (!f64) return N <= 8u ? backend::warp : backend::block;
+            else      return N <= 4u ? backend::warp : N <= 6u ? backend::block : N <= 8u ? backend::warp : backend::block;
+        case op::ldlt:
+            if (!f64) return N <= 64u ? backend::warp : backend::block;
+            else      return backend::block;
+        case op::ldltsv:
+            if (!f64) return N <= 64u ? backend::warp : backend::block;
+            else      return backend::block;
+    }
+    return backend::block;
+}
+// === END tune.py blas2 sm_120 ===
+
+constexpr bool is_blas2(op o) {
+    return o == op::syrk || o == op::syr2k || o == op::ldlt || o == op::ldltsv;
+}
+constexpr backend blas2_ideal(op o, uint32_t N, bool f64, uint32_t sm) {
+    switch (sm) {
+        // === BEGIN tune.py blas2 dispatch ===
+        case 1200u: return blas2_sm120(o, N, f64);
+        // === END tune.py blas2 dispatch ===
+        default:    return backend::block;  // unmeasured arch: block incumbent
+    }
+}
+
+// ─── rectangular gemv/gemm: measured per EXACT shape by tune.py's rect leg
+// (warp-vs-block; the vendor leg is per-shape machinery that belongs to the
+// `shapes` table). Unmeasured shapes stay block. ───
+
+// === BEGIN tune.py rect sm_120 ===
+// Source sweep: rect_sweep_20260718_0328.txt   tie margin: ±5% (SIMT ties ±2% prefer the simpler tier); exact shapes only
+constexpr backend rect_gemv_sm120(uint32_t M, uint32_t N, bool f64) {
+    if (!f64) {
+        if (M == 8u && N == 64u) return backend::warp;
+        if (M == 16u && N == 128u) return backend::warp;
+        if (M == 32u && N == 256u) return backend::warp;
+        if (M == 64u && N == 8u) return backend::warp;
+        if (M == 128u && N == 16u) return backend::block;
+        if (M == 256u && N == 32u) return backend::warp;
+    }
+    if (f64) {
+        if (M == 8u && N == 64u) return backend::warp;
+        if (M == 16u && N == 128u) return backend::warp;
+        if (M == 32u && N == 256u) return backend::warp;
+        if (M == 64u && N == 8u) return backend::warp;
+        if (M == 128u && N == 16u) return backend::warp;
+        if (M == 256u && N == 32u) return backend::warp;
+    }
+    return backend::block;
+}
+constexpr backend rect_gemm_sm120(uint32_t M, uint32_t K, uint32_t N, bool f64) {
+    if (!f64) {
+        if (M == 6u && K == 6u && N == 64u) return backend::block;
+        if (M == 8u && K == 32u && N == 8u) return backend::warp;
+        if (M == 16u && K == 64u && N == 16u) return backend::block;
+        if (M == 32u && K == 8u && N == 32u) return backend::warp;
+        if (M == 64u && K == 6u && N == 6u) return backend::warp;
+        if (M == 64u && K == 16u && N == 16u) return backend::warp;
+    }
+    if (f64) {
+        if (M == 6u && K == 6u && N == 64u) return backend::block;
+        if (M == 8u && K == 32u && N == 8u) return backend::warp;
+        if (M == 16u && K == 64u && N == 16u) return backend::block;
+        if (M == 32u && K == 8u && N == 32u) return backend::warp;
+        if (M == 64u && K == 6u && N == 6u) return backend::warp;
+        if (M == 64u && K == 16u && N == 16u) return backend::warp;
+    }
+    return backend::block;
+}
+// === END tune.py rect sm_120 ===
+
+constexpr backend rect_gemv_ideal(uint32_t M, uint32_t N, bool f64, uint32_t sm) {
+    switch (sm) {
+        // === BEGIN tune.py rect dispatch ===
+        case 1200u: return rect_gemv_sm120(M, N, f64);
+        // === END tune.py rect dispatch ===
+        default:    return backend::block;
+    }
+}
+constexpr backend rect_gemm_ideal(uint32_t M, uint32_t K, uint32_t N, bool f64, uint32_t sm) {
+    switch (sm) {
+        // === BEGIN tune.py rect gemm dispatch ===
+        case 1200u: return rect_gemm_sm120(M, K, N, f64);
+        // === END tune.py rect gemm dispatch ===
+        default:    return backend::block;
+    }
+}
+
 // Coarse fallback for unmeasured SMs: warp tiny, block large, nvidia mid for the
 // parallel/factor ops when linked. Mirrors the sm_120 *shape*.
 constexpr backend ideal_generic(op o, uint32_t N, bool /*f64*/) {
@@ -168,6 +268,7 @@ constexpr backend ideal(op o, uint32_t N, bool f64, uint32_t sm) {
 #ifdef GLASS_DEFAULTS_HAVE_LOCAL
     return local_ideal(o, N, f64, sm);
 #else
+    if (is_blas2(o)) return blas2_ideal(o, N, f64, sm);
     switch (sm) {
         // === BEGIN tune.py ladder dispatch ===
         case 870u: return ideal_sm87(o, N, f64);
@@ -194,6 +295,19 @@ constexpr backend suggested_backend() {
     if (id == backend::nvidia && !defaults::nv_available(Op))
         return defaults::without_nvidia(Op, N);
     return id;
+}
+
+/// Rectangular gemv: measured per exact (M, N) shape by the rect leg; unmeasured
+/// shapes (and unmeasured arches) return `block`. Never returns `nvidia`.
+template <uint32_t M, uint32_t N, typename T, uint32_t SM = GLASS_DEFAULTS_SM>
+constexpr backend suggested_backend_rect_gemv() {
+    return defaults::rect_gemv_ideal(M, N, sizeof(T) == 8, SM);
+}
+
+/// Rectangular gemm (C is MxN, contraction K): measured per exact (M, K, N) shape.
+template <uint32_t M, uint32_t K, uint32_t N, typename T, uint32_t SM = GLASS_DEFAULTS_SM>
+constexpr backend suggested_backend_rect_gemm() {
+    return defaults::rect_gemm_ideal(M, K, N, sizeof(T) == 8, SM);
 }
 
 /// Suggested block thread count for the `block` backend: factor/solve want 32 (extra

@@ -69,6 +69,26 @@ static_assert(gd::ideal(op::posv, 64, true,  870u)  == gd::ideal_sm87(op::posv, 
 static_assert(gd::ideal(op::gemm, 32, false, 0u) == gd::ideal_generic(op::gemm, 32, false), "unmeasured SM falls to generic");
 static_assert(gd::ideal(op::chol, 24, false, 1u) == gd::ideal_generic(op::chol, 24, false), "unmeasured SM falls to generic");
 
+// ── blas2 family (warp-vs-block; tune.py blas2 leg, blas2_sweep_20260718_0327) ──
+static_assert(gd::blas2_sm120(op::syrk,  16, false) == backend::warp,  "syrk16 f32 -> warp");
+static_assert(gd::blas2_sm120(op::syrk,  24, false) == backend::block, "syrk24 f32 -> block");
+static_assert(gd::blas2_sm120(op::ldlt,  32, false) == backend::warp,  "ldlt32 f32 -> warp");
+static_assert(gd::blas2_sm120(op::ldlt,  32, true)  == backend::block, "ldlt32 f64 -> block");
+static_assert(gd::blas2_sm120(op::syr2k,  8, true)  == backend::warp,  "syr2k8 f64 (2.0% gap inside SIMT tie band -> simpler tier)");
+static_assert(gd::ideal(op::syrk, 16, false, 1200u) == gd::blas2_sm120(op::syrk, 16, false), "blas2 ops route through ideal()");
+static_assert(gd::ideal(op::ldltsv, 32, false, 870u) == backend::block, "blas2 unmeasured arch -> block incumbent");
+static_assert(glass::suggested_backend<op::ldlt, 32, float, 1200u>() == backend::warp, "public picker reaches blas2 table");
+
+// ── rect exact-shape pickers (tune.py rect leg, rect_sweep_20260718_0328) ──
+static_assert(gd::rect_gemv_sm120( 64,  8, false) == backend::warp,  "gemv 64x8 f32 tall -> warp");
+static_assert(gd::rect_gemv_sm120(128, 16, false) == backend::block, "gemv 128x16 f32 -> block");
+static_assert(gd::rect_gemv_sm120(128, 16, true)  == backend::warp,  "gemv 128x16 f64 -> warp");
+static_assert(gd::rect_gemm_sm120( 6,  6, 64, false) == backend::block, "gemm 6x6x64 wide -> block");
+static_assert(gd::rect_gemm_sm120(32,  8, 32, false) == backend::warp,  "gemm 32x8x32 -> warp");
+static_assert(glass::suggested_backend_rect_gemv<64, 8, float, 1200u>() == backend::warp, "public rect gemv picker");
+static_assert(glass::suggested_backend_rect_gemm<7, 7, 7, float, 1200u>() == backend::block, "unmeasured rect shape -> block");
+static_assert(glass::suggested_backend_rect_gemv<64, 8, float, 870u>() == backend::block, "rect unmeasured arch -> block");
+
 // ── bare-namespace face: Phase-2 pins (2026-07-30 body sweep, sm_120) ──
 // dispatch_body() now carries the measured body_sm120 table
 // (bench/body_dispatch_sweep_20260730_2041.txt; rule = never worse than block

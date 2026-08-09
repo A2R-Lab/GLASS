@@ -29,9 +29,11 @@ the same tables. The legs:
                                   suggested_use_reduced<>; rewrites REDUCED_SWEEP_RESULTS.md
   blas2    bench_blas2.cu       → warp/block sweep of the ops the ladder misses
                                   (syrk/syr2k/ldlt/ldltsv/inv/trmv/ger); reports picks
-                                  into BLAS2_SWEEP_RESULTS.md (no header table yet)
+                                  into BLAS2_SWEEP_RESULTS.md + regenerates the
+                                  per-arch blas2_sm* table (2-impl ops only)
   rect     bench_rect.cu        → warp/block sweep of rectangular gemv/gemm shapes;
-                                  reports picks into RECT_SWEEP_RESULTS.md (no table yet)
+                                  reports picks into RECT_SWEEP_RESULTS.md +
+                                  regenerates the exact-shape rect_*_sm* pickers
   solvers  bench_solvers.cu     → solver characterization (bdsv-vs-pcg crossover,
                                   gesv/posv/inv-solve on SPD, syev/eig_clamp) into
                                   SOLVERS_SWEEP_RESULTS.md — measured, never picked
@@ -275,10 +277,10 @@ def winners_from_sweep(text, margin):
     return winners
 
 
-def emit_ideal_body(winners, fname):
+def emit_ideal_body(winners, fname, ops=tp.LADDER_OPS):
     lines = [f"constexpr backend {fname}(op o, uint32_t N, bool f64) {{",
              "    switch (o) {"]
-    for op in tp.LADDER_OPS:
+    for op in ops:
         f32 = _ladder_expr(winners, "f32", op)
         f64 = _ladder_expr(winners, "f64", op)
         if f32 is None and f64 is None:
@@ -334,6 +336,126 @@ def regen_ladder(sweep_text, margin, src_name, sms):
     _, _, post = rest.partition(_DIS_END)
     text = pre + _DIS_BEGIN + "\n" + cases + "        " + _DIS_END + post
     return text, len(winners)
+
+
+# ─── blas2 + rect header tables (glass-defaults.cuh; warp-vs-block only) ─────
+#
+# Same marker-block model as the ladder: each swept arch owns a spliced
+# `blas2_sm<A>` / `rect_*_sm<A>` block and a dispatch case; other arches are
+# untouched and unmeasured arches fall to block (the incumbent). Only the
+# 2-impl blas2 ops are tabled — inv/trmv/ger are block-only and stay
+# report-only by the "single-impl families are reported, not picked" rule.
+
+B2_TABLE_OPS = ("syrk", "syr2k", "ldlt", "ldltsv")
+
+_B2_BEGIN = "// === BEGIN tune.py blas2 sm_{a} ==="
+_B2_END   = "// === END tune.py blas2 sm_{a} ==="
+_B2_END_RE = re.compile(r"// === END tune\.py blas2 sm_\d+ ===")
+_B2_RE     = re.compile(r"// === BEGIN tune\.py blas2 sm_(\d+) ===")
+_B2_DIS_BEGIN = "// === BEGIN tune.py blas2 dispatch ==="
+_B2_DIS_END   = "// === END tune.py blas2 dispatch ==="
+
+_RECT_BEGIN = "// === BEGIN tune.py rect sm_{a} ==="
+_RECT_END   = "// === END tune.py rect sm_{a} ==="
+_RECT_END_RE = re.compile(r"// === END tune\.py rect sm_\d+ ===")
+_RECT_RE     = re.compile(r"// === BEGIN tune\.py rect sm_(\d+) ===")
+_RECT_DIS = (("// === BEGIN tune.py rect dispatch ===",
+              "// === END tune.py rect dispatch ===", "rect_gemv_sm"),
+             ("// === BEGIN tune.py rect gemm dispatch ===",
+              "// === END tune.py rect gemm dispatch ===", "rect_gemm_sm"))
+
+
+def _splice_arch_block(text, begin, end, end_re, region):
+    """Replace an arch's marker block, or insert after the family's last one."""
+    if begin in text:
+        pre, _, rest = text.partition(begin)
+        _, _, post = rest.partition(end)
+        return pre + region + post
+    ends = list(end_re.finditer(text))
+    if not ends:
+        sys.exit(f"ERROR: marker family for {begin!r} missing from {DEFAULTS.name}.")
+    at = ends[-1].end()
+    return text[:at] + "\n\n" + region + text[at:]
+
+
+def _rebuild_dispatch(text, dis_begin, dis_end, arches, fn_prefix, argstr):
+    cases = "".join(f"        case {a * 10}u: return {fn_prefix}{a}({argstr});\n"
+                    for a in arches)
+    pre, _, rest = text.partition(dis_begin)
+    _, _, post = rest.partition(dis_end)
+    return pre + dis_begin + "\n" + cases + "        " + dis_end + post
+
+
+def regen_blas2_table(sweep_text, margin, src_name, sms):
+    """Regenerate this arch's blas2_sm<A> block + dispatch in glass-defaults.cuh."""
+    arch = sms // 10
+    cells = tp.parse_blas2(sweep_text, nprob=8192)
+    winners = {}
+    for (dt, op, N), times in cells.items():
+        if op not in B2_TABLE_OPS:
+            continue                      # single-impl families: report, don't pick
+        win = tp.pick(times, margin)
+        if win:
+            winners.setdefault((dt, op), {})[N] = win
+    if not winners:
+        sys.exit("ERROR: no NPROB=8192 blas2 verdicts parsed from the sweep.")
+    begin, end = _B2_BEGIN.format(a=arch), _B2_END.format(a=arch)
+    region = "\n".join([
+        begin,
+        f"// Source sweep: {src_name}   tie margin: ±{margin*100:.0f}% "
+        "(SIMT ties ±2% prefer the simpler tier)",
+        emit_ideal_body(winners, f"blas2_sm{arch}", ops=B2_TABLE_OPS),
+        end])
+    text = _splice_arch_block(DEFAULTS.read_text(), begin, end, _B2_END_RE, region)
+    arches = sorted(int(a) for a in _B2_RE.findall(text))
+    if _B2_DIS_BEGIN not in text or _B2_DIS_END not in text:
+        sys.exit(f"ERROR: blas2 dispatch markers missing from {DEFAULTS.name}.")
+    text = _rebuild_dispatch(text, _B2_DIS_BEGIN, _B2_DIS_END, arches,
+                             "blas2_sm", "o, N, f64")
+    return text, len(winners)
+
+
+def _emit_rect_fn(cells, op_name, fname, dims_names, margin):
+    """Exact-shape constexpr: measured shapes emit their winner; rest → block."""
+    args = ", ".join(f"uint32_t {d}" for d in dims_names)
+    lines = [f"constexpr backend {fname}({args}, bool f64) {{"]
+    for f64, dt in ((False, "f32"), (True, "f64")):
+        rows = sorted((dims, be) for (d, o, dims), t in cells.items()
+                      if d == dt and o == op_name
+                      for be in [tp.pick(t, margin)] if be)
+        if not rows:
+            continue
+        lines.append(f"    if ({'f64' if f64 else '!f64'}) {{")
+        for dims, be in rows:
+            cond = " && ".join(f"{n} == {v}u" for n, v in zip(dims_names, dims))
+            lines.append(f"        if ({cond}) return backend::{be};")
+        lines.append("    }")
+    lines += ["    return backend::block;", "}"]
+    return "\n".join(lines)
+
+
+def regen_rect_table(sweep_text, margin, src_name, sms):
+    """Regenerate this arch's rect_gemv/gemm_sm<A> blocks + dispatch cases."""
+    arch = sms // 10
+    cells = tp.parse_rect(sweep_text, nprob=8192)
+    if not cells:
+        sys.exit("ERROR: no NPROB=8192 rect rows parsed from the sweep.")
+    begin, end = _RECT_BEGIN.format(a=arch), _RECT_END.format(a=arch)
+    region = "\n".join([
+        begin,
+        f"// Source sweep: {src_name}   tie margin: ±{margin*100:.0f}% "
+        "(SIMT ties ±2% prefer the simpler tier); exact shapes only",
+        _emit_rect_fn(cells, "gemv", f"rect_gemv_sm{arch}", ("M", "N"), margin),
+        _emit_rect_fn(cells, "gemm", f"rect_gemm_sm{arch}", ("M", "K", "N"), margin),
+        end])
+    text = _splice_arch_block(DEFAULTS.read_text(), begin, end, _RECT_END_RE, region)
+    arches = sorted(int(a) for a in _RECT_RE.findall(text))
+    for dis_begin, dis_end, fn_prefix in _RECT_DIS:
+        if dis_begin not in text or dis_end not in text:
+            sys.exit(f"ERROR: rect dispatch markers missing from {DEFAULTS.name}.")
+        argstr = "M, N, f64" if "gemv" in fn_prefix else "M, K, N, f64"
+        text = _rebuild_dispatch(text, dis_begin, dis_end, arches, fn_prefix, argstr)
+    return text, len(cells)
 
 
 # ─── body leg: bench_body_dispatch → dispatch_body() for the bare face ───────
@@ -607,7 +729,7 @@ def splice_reduced_md(existing, block):
     return existing.rstrip() + "\n\n" + block + "\n"
 
 
-# ─── blas2 + rect legs: warp/block picks, reported (no header table yet) ─────
+# ─── blas2 + rect legs: warp/block picks → md report + header tables ─────────
 # These legs measure ops/shapes with no shipped defaults table: blas2 covers the
 # ladder's blind-spot ops (syrk/syr2k/ldlt/ldltsv/inv/trmv/ger; no nvidia
 # counterparts, so 2-way), rect covers rectangular gemv/gemm (nvidia skipped —
@@ -700,11 +822,17 @@ def report_pick_leg(name, txt, txt_name, md_path, margin, parse, dry_run,
         print(f"  wrote {md_path.relative_to(GLASS_DIR)}")
 
 
-_BLAS2_NOTE = ("inv/trmv/ger are BLOCK-ONLY (no `glass::warp::` variant); "
-               "none of these ops has a `glass::nvidia::` counterpart.")
+_BLAS2_NOTE = ("inv/trmv/ger are BLOCK-ONLY (no `glass::warp::` variant, so "
+               "nothing competes — reported, never picked); none of these ops "
+               "has a `glass::nvidia::` counterpart. The 2-impl ops "
+               "(syrk/syr2k/ldlt/ldltsv) regenerate the shipped per-arch "
+               "`blas2_sm*` table in glass-defaults.cuh (since 2026-08-06).")
 _RECT_NOTE = ("nvidia leg skipped for rectangular shapes (needs new per-shape "
               "DEFINE_NVIDIA_* machinery; cuBLASDx-vs-SIMT per (M,N,K) lives in "
-              "the `shapes` leg).")
+              "the `shapes` leg). Measured shapes regenerate the shipped "
+              "exact-shape `rect_*_sm*` pickers in glass-defaults.cuh "
+              "(`suggested_backend_rect_gemv/gemm<>`, since 2026-08-06); "
+              "unmeasured shapes stay block.")
 
 
 # ─── solvers leg: characterization only (measured + reported, NEVER picked) ──
@@ -1067,12 +1195,12 @@ def main():
                 REDUCED_MD.write_text(md)
                 print(f"  wrote {REDUCED_MD.relative_to(GLASS_DIR)}")
 
-    # ── blas2 / rect (warp-vs-block picks, reported; no header table yet) ──
-    for leg, from_arg, builder, prefix, md_path, parse, note in (
+    # ── blas2 / rect (warp-vs-block picks → md report + header table) ──
+    for leg, from_arg, builder, prefix, md_path, parse, note, regen in (
             ("blas2", args.from_blas2, build_blas2, "blas2_sweep",
-             BLAS2_MD, tp.parse_blas2, _BLAS2_NOTE),
+             BLAS2_MD, tp.parse_blas2, _BLAS2_NOTE, regen_blas2_table),
             ("rect", args.from_rect, build_rect, "rect_sweep",
-             RECT_MD, tp.parse_rect, _RECT_NOTE)):
+             RECT_MD, tp.parse_rect, _RECT_NOTE, regen_rect_table)):
         if leg not in legs:
             continue
         print(f"── {leg} (warp vs block, ns/problem) ─────────────────────")
@@ -1088,6 +1216,19 @@ def main():
             txt = txt_path.read_text()
         report_pick_leg(leg, txt, txt_path.name, md_path, args.margin,
                         parse, args.dry_run, changed, note)
+        # header table: same marker-block model as the ladder (per-arch splice).
+        if sms is None:
+            print(f"  [skip] {leg} header table needs an explicit --sm "
+                  "(the arch the capture came from).")
+        else:
+            new_text, n = regen(txt, args.margin, txt_path.name, sms)
+            print(f"  regenerated {leg} table from {n} groups")
+            if args.dry_run:
+                changed[f"{leg}-table"] = show_diff(DEFAULTS, new_text,
+                                                    DEFAULTS.name)
+            else:
+                DEFAULTS.write_text(new_text)
+                print(f"  wrote {DEFAULTS.relative_to(GLASS_DIR)}")
 
     # ── solvers (characterization only — measured + reported, never picked) ──
     if "solvers" in legs:
