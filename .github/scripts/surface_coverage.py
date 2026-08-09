@@ -15,7 +15,8 @@ import argparse, json, pathlib, re, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 HEADERS = [*ROOT.glob("glass*.cuh"), *(ROOT / "src").rglob("*.cuh")]
-TESTS = list((ROOT / "test" / "cuda").glob("*.cu"))
+TESTS = [*(ROOT / "test" / "cuda").glob("*.cu"),
+         *(ROOT / "examples").glob("*.cu")]  # examples run on GPU via test_examples.py
 
 # A public entry point = a `/** ... */` doc comment whose following declaration
 # names a function. Captures free functions and namespaced ones alike.
@@ -43,7 +44,7 @@ def main():
     gaps = sorted(set(surface) - covered)
     pct = 100.0 * len(covered) / max(1, len(surface))
     print(f"surface: {len(surface)} public entry points, "
-          f"{len(covered)} exercised by test/cuda -> {pct:.1f}%")
+          f"{len(covered)} exercised by test/cuda + examples -> {pct:.1f}%")
     if args.list_gaps and gaps:
         print("uncovered:")
         for n in gaps:
