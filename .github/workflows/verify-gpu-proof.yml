@@ -40,4 +40,4 @@ jobs:
 
       - name: Verify receipt
         if: steps.receipt.outputs.present == 'true'
-        run: gpu-proof verify --receipt test/gpu-proof.json --require-gpu --expected-skips test/expected_skips.txt
+        run: gpu-proof verify --receipt test/gpu-proof.json --require-gpu --expected-skips test/expected_skips.txt --policy test/gpu-proof-policy.yml

@@ -2,4 +2,4 @@ numpy>=1.17
 pytest>=7.0
 scipy>=1.7
 matplotlib>=3.5   # bench/export_sweep_figures.py (tune.py figures leg)
-pytest-gpu-proof==0.1.0   # signed GPU-run receipts (exact pin = attestation provenance)
+pytest-gpu-proof==0.3.0   # exact pin = attestation provenance; schema-2 shards + carry-forward
