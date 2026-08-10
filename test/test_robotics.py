@@ -61,7 +61,8 @@ _OUT = {
     "quat_retract": 4,
     "skew": 9, "so3_exp": 9, "so3_log": 3, "so3_rjac": 9, "so3_rjac_inv": 9,
     "so3_ljac": 9, "so3_ljac_inv": 9,
-    "se3_q_block": 9, "se3_retract": 7, "se3_jac_q": 36, "se3_jac_v": 36,
+    "se3_q_block": 9, "se3_retract": 7, "se3_difference": 6,
+    "se3_jac_q": 36, "se3_jac_v": 36,
     "se3_hess_q": 216, "se3_hess_v": 216,
     "motion_cross": 36, "force_cross": 36, "force_cross_dual": 36,
     "mcross_mul": 6, "fcross_mul": 6,
@@ -256,6 +257,10 @@ def _tier_case(op):
         pose = np.hstack([_f32(RNG.standard_normal((P, 3)).astype(np.float32)), _quats(P)])
         return [pose, _f32(RNG.standard_normal((P, 3)).astype(np.float32)),
                 _rotvecs(P)], 0, 0, "tight"
+    if op == "se3_difference":
+        pose_from = np.hstack([_f32(RNG.standard_normal((P, 3)).astype(np.float32)), _quats(P)])
+        pose_to = np.hstack([_f32(RNG.standard_normal((P, 3)).astype(np.float32)), _quats(P)])
+        return [pose_from, pose_to], 0, 0, "tight"
     if op == "se3_jac_v":
         return [_f32(RNG.standard_normal((P, 3)).astype(np.float32)), _rotvecs(P)], 0, 0, "tight"
     if op == "se3_hess_v":
@@ -295,7 +300,7 @@ def _tier_case(op):
 
 
 TIER_OPS = ["quat_mul", "quat_retract", "so3_exp", "so3_log", "so3_rjac_inv",
-            "se3_retract", "se3_jac_v", "se3_hess_v", "motion_cross",
+            "se3_retract", "se3_difference", "se3_jac_v", "se3_hess_v", "motion_cross",
             "mcross_mul", "force_cross_dual", "soc_project", "softmax", "argmax",
             "mxform_mul", "fxform_mul", "spatial_inertia", "sinertia_mul",
             "quat_error", "eig3", "closest_rot"]
@@ -489,6 +494,27 @@ def test_se3_retract_oracle(bins, dtype):
         got = out[i].copy()
         got[3:] = _sign_align(got[3:][None], want[3:][None])[0]
         np.testing.assert_allclose(got, want, **_TOL[dtype])
+
+
+@pytest.mark.parametrize("dtype", DTYPES)
+def test_se3_difference_oracle(bins, dtype):
+    """difference is the exact inverse of retract: recover a known tangent,
+    then close the forward roundtrip retract(from, diff(from, to)) == to."""
+    pose_from = np.hstack([_f32(RNG.standard_normal((P, 3)).astype(np.float32)), _quats(P)])
+    rho = _f32(RNG.standard_normal((P, 3)).astype(np.float32))
+    phi = _rotvecs(P)   # |φ| < π keeps the canonical log branch exact
+    pose_to = np.stack([_retract_np(pose_from[i].astype(np.float64),
+                                    rho[i].astype(np.float64),
+                                    phi[i].astype(np.float64))
+                        for i in range(P)]).astype(np.float32)
+    out = _run(bins, "se3_difference", "block", dtype, [pose_from, pose_to])
+    np.testing.assert_allclose(out, np.hstack([rho, phi]), **_TOL[dtype])
+    for i in range(P):
+        back = _retract_np(pose_from[i].astype(np.float64),
+                           out[i, :3].astype(np.float64),
+                           out[i, 3:].astype(np.float64))
+        back[3:] = _sign_align(back[3:][None], pose_to[i, 3:][None])[0]
+        np.testing.assert_allclose(back, pose_to[i], **_TOL[dtype])
 
 
 def test_se3_jacobians_fd(bins):

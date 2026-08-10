@@ -97,6 +97,35 @@ namespace lie_detail {
         out[2] = pose[2] + pw[2];
     }
 
+    // serial core: SE(3) difference (boxminus) — the exact inverse of
+    // se3_retract_core: the tangent [ρ; φ] with
+    // se3_retract(pose_from, ρ, φ) == pose_to. Canonical branch |φ| ≤ π
+    // (quat_log's w-sign fold), matching Pinocchio `difference` on the
+    // free-flyer.
+    template <typename T, QuatLayout L>
+    __device__ __forceinline__ void se3_difference_core(const T *pose_from, const T *pose_to,
+                                                        T *rho, T *phi) {
+        using QL = quat_detail::layout<L>;
+        // φ = log(q_from⁻¹ ⊗ q_to)
+        const T *qf = pose_from + 3;
+        T qf_conj[4];
+        qf_conj[QL::X] = -qf[QL::X]; qf_conj[QL::Y] = -qf[QL::Y];
+        qf_conj[QL::Z] = -qf[QL::Z]; qf_conj[QL::W] =  qf[QL::W];
+        T q_rel[4]; quat_detail::quat_mul_core<T, L>(qf_conj, pose_to + 3, q_rel);
+        quat_detail::quat_log_core<T, L>(q_rel, phi);
+        // ρ = Jl(φ)⁻¹ · R(q_from)ᵀ · (p_to − p_from)   (undo the body-frame V·ρ)
+        const T dp[3] = {pose_to[0] - pose_from[0],
+                         pose_to[1] - pose_from[1],
+                         pose_to[2] - pose_from[2]};
+        T R[9];  quat_detail::quat_to_rot_core<T, L>(qf, R);
+        T pl[3];   // Rᵀ·dp (R column-major: row i of Rᵀ = column i of R)
+        #pragma unroll
+        for (uint32_t i = 0; i < 3; ++i)
+            pl[i] = R[i*3 + 0]*dp[0] + R[i*3 + 1]*dp[1] + R[i*3 + 2]*dp[2];
+        T Vinv[9]; so3_left_jacobian_inv_core(phi, Vinv);
+        mat3_vec_core(Vinv, pl, rho);
+    }
+
     // serial core: d(retract)/d(base pose) = Ad_{exp(−[ρ;φ])} as a 6x6
     // column-major block [[R⁻, off],[0, R⁻]] in [ρ; φ] tangent order.
     template <typename T>
@@ -414,6 +443,34 @@ __device__ void se3_retract(const T *pose, const T *rho, const T *phi, T *pose_n
 }
 
 /**
+ * @brief SE(3) difference (boxminus): the tangent `[ρ; φ]` with
+ *        `se3_retract(pose_from, ρ, φ) == pose_to` — the exact inverse of the
+ *        retract, equal to Pinocchio `difference(model, q_from, q_to)` on the
+ *        free-flyer block. Canonical branch |φ| ≤ π.
+ *
+ * `φ = log(q_from⁻¹ ⊗ q_to)`, `ρ = Jl(φ)⁻¹ · R(q_from)ᵀ · (p_to − p_from)`
+ * (body-frame tangent, linear-first — the same conventions as the retract).
+ *
+ * @tparam T  Scalar type.
+ * @tparam L  Quaternion layout inside the pose blocks (default `xyzw`).
+ * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+ * @param pose_from  Base pose block (7 elements: position then quaternion).
+ * @param pose_to    Target pose block (7 elements).
+ * @param rho  Output linear tangent (3 elements; no aliasing at block scope).
+ * @param phi  Output angular tangent (3 elements; no aliasing at block scope).
+ */
+template <typename T, QuatLayout L = QuatLayout::xyzw, bool TRAILING_SYNC = true>
+__device__ void se3_difference(const T *pose_from, const T *pose_to, T *rho, T *phi)
+{
+    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    T tr[3], tp[3]; lie_detail::se3_difference_core<T, L>(pose_from, pose_to, tr, tp);
+    quat_detail::copy_out<T, 3>(rank, size, tr, rho);
+    quat_detail::copy_out<T, 3>(rank, size, tp, phi);
+    if constexpr (TRAILING_SYNC) __syncthreads();
+}
+
+/**
  * @brief 6x6 derivative of the SE(3) retract w.r.t. the BASE POSE:
  *        `J = Ad_{exp(−[ρ;φ])}` (Pinocchio `dIntegrate` ARG0).
  *
@@ -504,6 +561,11 @@ namespace thread {
         for (uint32_t i = 0; i < 7; i++) pose_new[i] = tmp[i];
     }
 
+    /** @brief Single-thread SE(3) difference (boxminus). See `glass::se3_difference`. */
+    template <typename T, QuatLayout L = QuatLayout::xyzw>
+    __device__ void se3_difference(const T *pose_from, const T *pose_to, T *rho, T *phi)
+    { lie_detail::se3_difference_core<T, L>(pose_from, pose_to, rho, phi); }
+
     /** @brief Single-thread retract Jacobian w.r.t. the base pose. See `glass::se3_retract_jacobian_q`. */
     template <typename T>
     __device__ void se3_retract_jacobian_q(const T *rho, const T *phi, T *J)
@@ -539,6 +601,17 @@ namespace warp {
         uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
         T tmp[7]; lie_detail::se3_retract_core<T, L>(pose, rho, phi, tmp);
         quat_detail::copy_out<T, 7>(lane, 32u, tmp, pose_new);
+        __syncwarp();
+    }
+
+    /** @brief Single-warp SE(3) difference (boxminus). See `glass::se3_difference`. */
+    template <typename T, QuatLayout L = QuatLayout::xyzw>
+    __device__ void se3_difference(const T *pose_from, const T *pose_to, T *rho, T *phi)
+    {
+        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+        T tr[3], tp[3]; lie_detail::se3_difference_core<T, L>(pose_from, pose_to, tr, tp);
+        quat_detail::copy_out<T, 3>(lane, 32u, tr, rho);
+        quat_detail::copy_out<T, 3>(lane, 32u, tp, phi);
         __syncwarp();
     }
 

@@ -52,7 +52,7 @@ enum Op {
     OP_QUAT_TO_ROT, OP_ROT_TO_QUAT, OP_QUAT_TO_BASIS, OP_QUAT_RETRACT,
     OP_SKEW, OP_SO3_EXP, OP_SO3_LOG, OP_SO3_RJAC, OP_SO3_RJAC_INV,
     OP_SO3_LJAC, OP_SO3_LJAC_INV,
-    OP_SE3_Q_BLOCK, OP_SE3_RETRACT, OP_SE3_JAC_Q, OP_SE3_JAC_V,
+    OP_SE3_Q_BLOCK, OP_SE3_RETRACT, OP_SE3_DIFFERENCE, OP_SE3_JAC_Q, OP_SE3_JAC_V,
     OP_SE3_HESS_Q, OP_SE3_HESS_V,
     OP_MOTION_CROSS, OP_FORCE_CROSS, OP_FORCE_CROSS_DUAL,
     OP_MCROSS_MUL, OP_FCROSS_MUL,
@@ -82,6 +82,7 @@ static const OpInfo OPS[OP_COUNT] = {
     {"so3_rjac_inv", 3, 0, 0, 9},      {"so3_ljac", 3, 0, 0, 9},
     {"so3_ljac_inv", 3, 0, 0, 9},
     {"se3_q_block", 3, 3, 0, 9},       {"se3_retract", 7, 3, 3, 7},
+    {"se3_difference", 7, 7, 0, 6},
     {"se3_jac_q", 3, 3, 0, 36},        {"se3_jac_v", 3, 3, 0, 36},
     {"se3_hess_q", 3, 3, 0, 216},      {"se3_hess_v", 3, 3, 0, 216},
     {"motion_cross", 6, 0, 0, 36},     {"force_cross", 6, 0, 0, 36},
@@ -186,6 +187,7 @@ __device__ void dev_tier_op(int op, int flag0, int flag1,
         case OP_SO3_LJAC_INV:   TIER3(so3_left_jacobian_inv, a, out); break;
         case OP_SE3_Q_BLOCK:    TIER3(se3_Q_block, a, b, out); break;
         case OP_SE3_RETRACT:    TIER3(se3_retract, a, b, c, out); break;
+        case OP_SE3_DIFFERENCE: TIER3(se3_difference, a, b, out, out + 3); break;
         case OP_SE3_JAC_Q:      TIER3(se3_retract_jacobian_q, a, b, out); break;
         case OP_SE3_JAC_V:      TIER3(se3_retract_jacobian_v, a, b, out); break;
         case OP_SE3_HESS_Q:
