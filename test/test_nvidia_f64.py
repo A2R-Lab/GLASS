@@ -58,3 +58,49 @@ def test_gemv_f64(bin_nvidia_f64, N):
     assert y.shape == (N,)
     ref = A @ b
     assert np.allclose(y, ref, rtol=1e-11, atol=1e-11), f"max err {np.max(np.abs(y-ref)):.2e}"
+
+
+# ─── float LAPACK tail (getrf/getrs/gesv no-pivot, geqrf, gels) ──────────────
+
+def _lapack_A():
+    A = np.zeros((8, 8), dtype=np.float64)
+    for i in range(8):
+        for j in range(8):
+            A[i, j] = ((i + 3*j) % 5)*0.1 + (8.0 if i == j else 0.0)
+    return A
+
+
+def _lapack_b():
+    return np.array([1.0 + 0.1*i for i in range(8)])
+
+
+def _run_tail(nvidia_bin, op):
+    out = subprocess.run([str(nvidia_bin), op, "8"], capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+    assert "LAUNCH_FAIL" not in out.stdout, f"{op}: launch failed"
+    return np.array([float(t) for t in out.stdout.split()])
+
+
+def test_gesv_no_pivot(bin_nvidia_f64):
+    x = _run_tail(bin_nvidia_f64, "gesv")
+    want = np.linalg.solve(_lapack_A(), _lapack_b())
+    np.testing.assert_allclose(x, want, rtol=1e-4, atol=1e-5)
+
+
+def test_getrf_getrs_no_pivot(bin_nvidia_f64):
+    x = _run_tail(bin_nvidia_f64, "lu_solve")
+    want = np.linalg.solve(_lapack_A(), _lapack_b())
+    np.testing.assert_allclose(x, want, rtol=1e-4, atol=1e-5)
+
+
+def test_geqrf(bin_nvidia_f64):
+    out = _run_tail(bin_nvidia_f64, "geqrf").reshape(8, 4, order="F")
+    R = np.triu(out[:4, :4])
+    _, Rref = np.linalg.qr(_lapack_A()[:, :4])
+    np.testing.assert_allclose(np.abs(R), np.abs(Rref), rtol=1e-4, atol=1e-4)
+
+
+def test_gels(bin_nvidia_f64):
+    x = _run_tail(bin_nvidia_f64, "gels")
+    want, *_ = np.linalg.lstsq(_lapack_A()[:, :4], _lapack_b(), rcond=None)
+    np.testing.assert_allclose(x, want, rtol=1e-4, atol=1e-4)

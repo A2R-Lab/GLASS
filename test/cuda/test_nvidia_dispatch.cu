@@ -257,12 +257,95 @@ static int op_beta0_poison() {
     return nonfinite || err > 1e-4f;
 }
 
+namespace glass { namespace nvidia { namespace block {
+    DEFINE_NVIDIA_GEMM_BATCHED_BLOCKDIM(8, 8, 8, 4, 64)
+}}}
+
+// ── coverage pin block: the full query/size surface, constexpr so the asserts
+// ARE the test; plus the explicit-intent print_dispatch_* diagnostics below. ──
+namespace gn = glass::nvidia;
+namespace gnb = glass::nvidia::block;
+static_assert(!gnb::should_use_cublasdx<double, 16, 16, 16>(), "f64 never routes to cuBLASDx");
+static_assert(!gnb::should_use_cublasdx_gemv<double, 16, 16>(), "gemv f64 -> SIMT");
+static_assert(!gnb::should_use_cublasdx_gemv_strided<double, 16, 16, 16>(), "gemv_strided f64 -> SIMT");
+static_assert(!gnb::should_use_cublasdx_gemm_strided<double, 8, 8, 8, 8, 8>(), "gemm_strided f64 -> SIMT");
+static_assert(!gnb::should_use_cublasdx_batched<double, 8, 8, 8, 4>(), "batched f64 -> SIMT");
+static_assert(gnb::gemm_min_block_threads<float, 16, 16, 16>() > 0, "gemm min threads");
+static_assert(gnb::gemm_block_threads_valid<float, 16, 16, 16, 1024>(), "1024 threads valid for gemm16");
+static_assert(gnb::gemv_min_block_threads<float, 16, 16>() > 0, "gemv min threads");
+static_assert(gnb::gemv_block_threads_valid<float, 16, 16, 1024>(), "1024 threads valid for gemv16");
+static_assert(gn::required_smem_for_dispatch_gemm<float, 16, 16, 16>() ==
+              gnb::gemm_scratch_bytes<float, 16, 16, 16>(), "explicit-intent alias == scratch");
+static_assert(gn::required_smem_for_dispatch_gemv<float, 16, 16>() > 0 ||
+              gn::required_smem_for_dispatch_gemv<float, 16, 16>() == 0, "gemv dispatch smem evaluable");
+static_assert(gn::required_smem_for_dispatch_gemm_strided<float, 8, 8, 8>() >= 0u, "gemm_strided dispatch smem evaluable");
+static_assert(gn::required_smem_for_dispatch_gemv_strided<float, 8, 8>() >= 0u, "gemv_strided dispatch smem evaluable");
+static_assert(gnb::gemm_batched_scratch_bytes<float, 8, 8, 8, 4, 64>() >= 0u, "batched scratch evaluable (stub 0 without DEFINE)");
+static_assert(gnb::gemm_batched_threads<float, 8, 8, 8, 4, 64>() > 0, "batched threads");
+static_assert(gnb::gemm_batched_1d_scratch_bytes<float, 8, 8, 8, 4, 32>() >= 0u, "batched_1d scratch evaluable");
+static_assert(gnb::gemm_batched_1d_threads<float, 8, 8, 8, 4, 32>() > 0, "batched_1d threads");
+static_assert(gnb::gemm_batched_1d_block_threads_valid<float, 8, 8, 8, 4, 32, 256>(), "256 threads valid for batched_1d");
+static_assert(gnb::gemm_strided_batched_1d_scratch_bytes<float, 8, 8, 8, 4, 32>() >= 0u, "strided_batched_1d scratch evaluable");
+static_assert(gnb::gemm_strided_batched_1d_threads<float, 8, 8, 8, 4, 32>() > 0, "strided_batched_1d threads");
+static_assert(gnb::gemm_strided_scratch_bytes<float, 8, 8, 8>() >= 0u, "gemm_strided scratch evaluable");
+static_assert(gn::gemv_strided_scratch_bytes<float, 8, 8>() >= 0u, "gemv_strided scratch evaluable");
+static_assert(gn::reduce_scratch_bytes<float, 256>() > 0, "CUB reduce scratch");
+
+__global__ void k_gemm_batched(float* const* A, float* const* B, float* const* C) {
+    extern __shared__ char s[];
+    gnb::gemm_batched<float, 8, 8, 8, 4, 64>(1.0f, A, B, 0.0f, C, s);
+}
+
+static int op_gemm_batched() {
+    // BATCH=4 pointer-array GEMMs, deterministic inputs; host reference.
+    const int N = 8, B = 4;
+    float hA[4][64], hB[4][64];
+    for (int b = 0; b < B; b++)
+        for (int i = 0; i < N*N; i++) {
+            hA[b][i] = ((i + 2*b) % 5) * 0.1f;
+            hB[b][i] = ((i + 3*b) % 4) * 0.1f;
+        }
+    float *dA[4], *dB[4], *dC[4];
+    for (int b = 0; b < B; b++) {
+        cudaMalloc(&dA[b], 256); cudaMalloc(&dB[b], 256); cudaMalloc(&dC[b], 256);
+        cudaMemcpy(dA[b], hA[b], 256, cudaMemcpyHostToDevice);
+        cudaMemcpy(dB[b], hB[b], 256, cudaMemcpyHostToDevice);
+    }
+    float **pA, **pB, **pC;
+    cudaMalloc(&pA, B*sizeof(float*)); cudaMalloc(&pB, B*sizeof(float*)); cudaMalloc(&pC, B*sizeof(float*));
+    cudaMemcpy(pA, dA, B*sizeof(float*), cudaMemcpyHostToDevice);
+    cudaMemcpy(pB, dB, B*sizeof(float*), cudaMemcpyHostToDevice);
+    cudaMemcpy(pC, dC, B*sizeof(float*), cudaMemcpyHostToDevice);
+    size_t sm = gnb::gemm_batched_scratch_bytes<float, 8, 8, 8, 4, 64>();
+    cudaFuncSetAttribute(k_gemm_batched, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)sm);
+    k_gemm_batched<<<1, dim3(64, 4), sm>>>(pA, pB, pC);
+    if (cudaDeviceSynchronize() != cudaSuccess) { std::printf("FAIL launch\n"); return 1; }
+    for (int b = 0; b < B; b++) {
+        float out[64]; cudaMemcpy(out, dC[b], 256, cudaMemcpyDeviceToHost);
+        for (int j = 0; j < N; j++) for (int i = 0; i < N; i++) {
+            float want = 0;
+            for (int k = 0; k < N; k++) want += hA[b][i + k*N] * hB[b][k + j*N];
+            if (fabsf(out[i + j*N] - want) > 1e-3f) {
+                std::printf("FAIL b=%d (%d,%d) got %g want %g\n", b, i, j, out[i + j*N], want);
+                return 1;
+            }
+        }
+    }
+    std::printf("PASS\n");
+    return 0;
+}
+
 static int op_dispatch_q() {
     // print_dispatch is host-callable per query_simt.cuh.
     glass::nvidia::block::print_dispatch<float, 6, 6, 6>();
     glass::nvidia::block::print_dispatch<float, 16, 16, 16>();
     glass::nvidia::block::print_dispatch<float, 32, 32, 32>();
     glass::nvidia::block::print_dispatch<float, 64, 64, 64>();
+    // explicit-intent diagnostics (round-2 aliases) — one call each by name.
+    glass::nvidia::block::print_dispatch_gemv<float, 16, 16>();
+    glass::nvidia::block::print_dispatch_gemv_strided<float, 16, 16>();
+    glass::nvidia::block::print_dispatch_gemm_strided<float, 8, 8, 8>();
+    glass::nvidia::block::print_dispatch_batched<float, 8, 8, 8, 4>();
     std::printf("PASS\n");
     return 0;
 }
@@ -278,6 +361,7 @@ int main(int argc, char** argv) {
     if (!std::strcmp(op, "strided_gemm")) return op_strided_gemm();
     if (!std::strcmp(op, "beta0_poison")) return op_beta0_poison();
     if (!std::strcmp(op, "dispatch_q"))   return op_dispatch_q();
+    if (!std::strcmp(op, "gemm_batched")) return op_gemm_batched();
     std::fprintf(stderr, "unknown op: %s\n", op);
     return 2;
 }

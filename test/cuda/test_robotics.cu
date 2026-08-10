@@ -88,7 +88,7 @@ static const OpInfo OPS[OP_COUNT] = {
     {"force_cross_dual", 6, 0, 0, 36},
     {"mcross_mul", 6, 6, 6, 6},        {"fcross_mul", 6, 6, 6, 6},
     {"soc_project", -1, 0, 0, -1},     {"soc_scalars", -1, -1, 0, 3},
-    {"interval_scalars", 5, 0, 0, 4},  {"rbar", 3, 0, 0, 3},
+    {"interval_scalars", 5, 0, 0, 4},  {"rbar", 3, 0, 0, 8},
     {"smooth_hinge", 1, 0, 0, 2},      {"angle", 3, 0, 0, 4},
     {"sphere_sphere", 8, 0, 0, 4},     {"sphere_box", 7, 0, 0, 4},
     {"transform_sphere", 4, 3, 4, 4},  {"frame", 3, 0, 0, 6},
@@ -448,6 +448,13 @@ __device__ void dev_scalar_op(int op, int flag0, const T* a, const T* b, const T
             out[0] = glass::block::relaxed_barrier_interval_value<T>(a[0], a[1], a[2], (T)RB_MU, (T)RB_DELTA);
             out[1] = glass::block::relaxed_barrier_interval_grad<T>(a[0], a[1], a[2], (T)RB_MU, (T)RB_DELTA);
             out[2] = glass::block::relaxed_barrier_interval_hess<T>(a[0], a[1], a[2], (T)RB_MU, (T)RB_DELTA);
+            // scalar forms by name (the interval wrappers compose them; pin the
+            // one-sided primitives + the eq-row predicate directly too)
+            out[3] = glass::block::relaxed_barrier_value<T>(a[0] - a[1], (T)RB_MU, (T)RB_DELTA);
+            out[4] = glass::block::relaxed_barrier_grad<T>(a[0] - a[1], (T)RB_MU, (T)RB_DELTA);
+            out[5] = glass::block::relaxed_barrier_hess<T>(a[0] - a[1], (T)RB_MU, (T)RB_DELTA);
+            out[6] = (T)glass::block::al_is_eq_row<T>(a[1], a[2]);
+            out[7] = (T)glass::block::al_is_eq_row<T>(a[1], a[1]);
             break;
         case OP_SMOOTH_HINGE:
             out[0] = glass::block::smooth_hinge<T>(a[0], (T)SH_ETA);

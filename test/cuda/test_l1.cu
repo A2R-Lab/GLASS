@@ -146,6 +146,14 @@ __global__ void k_loadIdentity_simple(int n, float* A) { glass::block::set_ident
 
 __global__ void k_addI_cg(int n, float alpha, float* A) { glass::cgrps::add_identity(n, A, alpha); }
 __global__ void k_addI_simple(int n, float alpha, float* A) { glass::block::add_identity(n, A, alpha); }
+__global__ void k_addIp_simple(int n, float alpha, int dc, float* A) { glass::block::add_identity_partial(n, A, alpha, (uint32_t)dc); }
+// reduced_tree32: the shared 32-way invariance primitive behind the *_reduced
+// ops — exercised directly: sum 32 partials, single thread.
+__global__ void k_tree32(float* io) {
+    float p[32];
+    for (int i = 0; i < 32; i++) p[i] = io[i];
+    io[0] = glass::block::reduced_tree32(p);
+}
 
 __global__ void k_transpose_cg(int N, int M, float* a, float* b) {
     glass::cgrps::transpose(N, M, a, b);
@@ -459,6 +467,20 @@ int main(int argc, char** argv) {
         float* dA = alloc_device_vec(n * n);
         if (is_cg(ver))  k_loadIdentity_cg<<<1, THREADS>>>(n, dA);
         else             k_loadIdentity_simple<<<1, THREADS>>>(n, dA);
+        cudaDeviceSynchronize();
+        print_device_vec(dA, n * n);
+
+    } else if (strcmp(op, "reduced_tree32") == 0) {
+        float* dx = read_device_vec(argv[4], 32);
+        k_tree32<<<1, 1>>>(dx);
+        cudaDeviceSynchronize();
+        print_device_vec(dx, 1);
+
+    } else if (strcmp(op, "add_identity_partial") == 0) {
+        float alpha = atof(argv[4]);
+        int dc = atoi(argv[5]);
+        float* dA = read_device_vec(argv[6], n * n);
+        k_addIp_simple<<<1, THREADS>>>(n, alpha, dc, dA);
         cudaDeviceSynchronize();
         print_device_vec(dA, n * n);
 

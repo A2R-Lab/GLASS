@@ -325,6 +325,26 @@ def test_packed_gemm(bins, k, case):
 # ─── inv ──────────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("n", [3, 4, 6])
+def test_inv_dense(bins, n):
+    """inv_dense: out-of-place inverse (separate Ainv buffer), thread-swept
+    byte-identical, vs np.linalg.inv."""
+    A = make_spd(n, seed=n + 7)
+    A_col = np.asfortranarray(A).ravel(order='F')
+    expected = np.linalg.inv(A).astype(np.float32)
+    ref = None
+    for threads in THREAD_SWEEP:
+        result = run_op(bins["l3"], "inv_dense", "simple",
+                        args=[threads, n], inputs=[A_col])
+        Ainv = result.reshape(n, n, order='F')
+        assert np.allclose(Ainv, expected, rtol=1e-2, atol=1e-3), \
+            f"n={n} threads={threads}: mismatch vs np.linalg.inv"
+        if ref is None:
+            ref = result
+        else:
+            assert np.array_equal(result, ref), f"threads={threads} not byte-identical"
+
+
+@pytest.mark.parametrize("n", [3, 4, 6])
 @pytest.mark.parametrize("cond", [None, 1e4])  # well-conditioned + ill-conditioned
 @pytest.mark.parametrize("version", CG_SIMPLE)
 def test_inv(bins, n, cond, version):

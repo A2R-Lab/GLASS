@@ -143,6 +143,7 @@ __global__ void k_inv_cg(int n, float* A, float* scratch) {
 __global__ void k_inv_simple(int n, float* A, float* scratch) {
     glass::block::inv(n, A, scratch);
 }
+__global__ void k_inv_dense(int n, float* A, float* Ainv, float* scr) { glass::block::inv_dense((uint32_t)n, A, Ainv, scr); }
 __global__ void k_inv_pivot_simple(int n, float* A, float* scratch) {
     glass::block::inv_pivoted(n, A, scratch);
 }
@@ -281,6 +282,17 @@ int main(int argc, char** argv) {
         }
         cudaDeviceSynchronize();
         print_device_vec(dC, M * N);
+
+    } else if (strcmp(op, "inv_dense") == 0) {
+        int threads = atoi(argv[3]);
+        int n = atoi(argv[4]);
+        float* dA = read_device_vec(argv[5], n * n);
+        float* dAinv; cudaMalloc(&dAinv, n * n * sizeof(float));
+        float* scratch; cudaMalloc(&scratch, glass::block::inv_dense_scratch_bytes<float>((uint32_t)n));
+        k_inv_dense<<<1, threads>>>(n, dA, dAinv, scratch);
+        cudaDeviceSynchronize();
+        print_device_vec(dAinv, n * n);
+        cudaFree(scratch); cudaFree(dAinv);
 
     } else if (strcmp(op, "inv") == 0) {
         int threads = atoi(argv[3]);

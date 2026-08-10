@@ -65,7 +65,7 @@ _OUT = {
     "se3_hess_q": 216, "se3_hess_v": 216,
     "motion_cross": 36, "force_cross": 36, "force_cross_dual": 36,
     "mcross_mul": 6, "fcross_mul": 6,
-    "soc_project": -1, "soc_scalars": 3, "interval_scalars": 4, "rbar": 3,
+    "soc_project": -1, "soc_scalars": 3, "interval_scalars": 4, "rbar": 8,
     "smooth_hinge": 2, "angle": 4,
     "sphere_sphere": 4, "sphere_box": 4, "transform_sphere": 4, "frame": 6,
     "segment": 9,
@@ -767,6 +767,21 @@ def test_relaxed_barrier_and_smooth_hinge(bins):
         np.testing.assert_allclose(out[i, 0], val(g), rtol=1e-10, atol=1e-10)
         np.testing.assert_allclose(out[i, 1], (val(g + h) - val(g - h))/(2*h),
                                    rtol=1e-4, atol=1e-4)
+        # scalar one-sided forms by name: value/grad/hess at d = g - lo
+        d1 = g + 1.0
+        def sval(dd):
+            if dd > RB_DELTA:
+                return -RB_MU*np.log(dd)
+            r = dd/RB_DELTA
+            return -RB_MU*(np.log(RB_DELTA) - 1.5 + 2*r - 0.5*r*r)
+        np.testing.assert_allclose(out[i, 3], sval(d1), rtol=1e-10, atol=1e-10)
+        np.testing.assert_allclose(out[i, 4], (sval(d1 + h) - sval(d1 - h))/(2*h),
+                                   rtol=1e-4, atol=1e-4)
+        hh = 1e-4
+        np.testing.assert_allclose(out[i, 5],
+                                   (sval(d1 + hh) - 2*sval(d1) + sval(d1 - hh))/(hh*hh),
+                                   rtol=2e-2, atol=1e-4)
+        assert out[i, 6] == 0.0 and out[i, 7] == 1.0, "al_is_eq_row predicate"
     d = _f32(RNG.uniform(-0.3, 0.5, (P, 1)).astype(np.float32))
     sh = _run(bins, "smooth_hinge", "block", "f64", [d])
     for i in range(P):

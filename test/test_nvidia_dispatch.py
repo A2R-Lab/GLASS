@@ -294,3 +294,9 @@ def test_gemm_batched_indexed_atomic(bins, op, ta):
         expected[base:base + MAT] += np.asfortranarray(prod).ravel(order='F')
     expected = expected.astype(np.float32)
     assert np.allclose(result, expected, rtol=RTOL, atol=ATOL)
+
+
+def test_gemm_batched(bin_nvidia_dispatch):
+    """Pointer-array batched GEMM (BATCH=4, 8x8x8) vs in-driver host reference."""
+    rc, stdout, stderr = _run(bin_nvidia_dispatch, "gemm_batched")
+    assert rc == 0 and "PASS" in stdout, stderr

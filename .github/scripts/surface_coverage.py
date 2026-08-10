@@ -50,7 +50,7 @@ def main():
         for n in gaps:
             print(f"  {n:32s} ({surface[n]})")
     if args.json:
-        color = "brightgreen" if pct >= 90 else "green" if pct >= 80 else "yellow"
+        color = "brightgreen" if pct >= 100 else "red"  # 100% is the contract (ruled 2026-08-06)
         pathlib.Path(args.json).write_text(json.dumps({
             "schemaVersion": 1, "label": "API surface tested",
             "message": f"{len(covered)}/{len(surface)} ({pct:.0f}%)",

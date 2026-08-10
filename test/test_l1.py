@@ -378,6 +378,21 @@ def test_addI(bins, n, version):
     assert np.allclose(mat, expected, rtol=RTOL, atol=ATOL)
 
 
+@pytest.mark.parametrize("n,dc", [(8, 3), (8, 8), (16, 1)])
+def test_addI_partial(bins, n, dc):
+    alpha = 0.5
+    A = RNG.random((n, n)).astype(np.float32)
+    A_col = np.asfortranarray(A)
+    result = sweep_exact(bins["l1"], "add_identity_partial", "simple",
+                         [n, alpha, dc], [A_col.ravel(order='F')])
+    eye = np.zeros((n, n), dtype=np.float32)
+    for i in range(dc):
+        eye[i, i] = 1.0
+    expected = A + alpha * eye
+    mat = result.reshape(n, n, order='F')
+    assert np.allclose(mat, expected, rtol=RTOL, atol=ATOL)
+
+
 # ─── transpose ────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("N,M", [(4, 6), (8, 8), (12, 4)])
@@ -556,3 +571,11 @@ def test_elementwise_less_than_scalar(bins, n, kind):
     result = sweep_exact(bins["l1"], "elementwise_less_than_scalar", "simple",
                          [n, float(s)], [a])
     assert np.allclose(result, (a < s).astype(np.float32), rtol=RTOL, atol=ATOL)
+
+
+def test_reduced_tree32(bins):
+    """The shared 32-way tree-reduction primitive, direct: sum of 32 partials."""
+    x = RNG.random(32).astype(np.float32)
+    result = run_op(bins["l1"], "reduced_tree32", "simple", [32], [x])
+    np.testing.assert_allclose(result[0], np.sum(x.astype(np.float64)),
+                               rtol=1e-5, atol=1e-6)
