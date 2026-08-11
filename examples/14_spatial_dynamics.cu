@@ -1,6 +1,6 @@
-// 18_spatial_dynamics.cu — Featherstone spatial cross products: the RNEA inner loop.
+// 14_spatial_dynamics.cu — Featherstone spatial cross products: the RNEA inner loop.
 //
-// Build: nvcc -std=c++17 -arch=sm_75 -I.. 18_spatial_dynamics.cu -o spatial_dynamics && ./spatial_dynamics
+// Build: nvcc -std=c++17 -arch=sm_75 -I.. 14_spatial_dynamics.cu -o spatial_dynamics && ./spatial_dynamics
 //
 // USE CASE (rigid-body dynamics): every RNEA/ABA velocity/acceleration sweep is
 // built from `v ×ₘ x` and `v ×* f` — a typical generated dynamics suite calls

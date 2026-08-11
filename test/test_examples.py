@@ -5,7 +5,7 @@ convention, `row-major == transpose`, nrm2, strided GEMM, …) from bit-rotting 
 the API evolves. The host-verified examples return non-zero on a numeric
 mismatch, so a clean exit is a real correctness check, not just "it linked".
 
-The one MathDx/cuBLASDx example (06_nvidia_gemm) is skipped unless MATHDX_ROOT is
+The one MathDx/cuBLASDx example (05_nvidia_gemm) is skipped unless MATHDX_ROOT is
 present, mirroring how conftest gates the nvidia binaries.
 """
 
@@ -19,9 +19,9 @@ from conftest import GLASS_DIR, CUDA_ARCH
 
 EXAMPLES_DIR = GLASS_DIR / "examples"
 
-# Pure-SIMT examples (no MathDx). 06_nvidia_gemm is handled separately.
+# Pure-SIMT examples (no MathDx). 05_nvidia_gemm is handled separately.
 SIMT_EXAMPLES = sorted(
-    p.name for p in EXAMPLES_DIR.glob("*.cu") if not p.name.startswith("06_")
+    p.name for p in EXAMPLES_DIR.glob("*.cu") if not p.name.startswith("05_")
 )
 
 
@@ -45,8 +45,8 @@ def test_simt_example(tmp_path, src_name):
 def test_nvidia_example(tmp_path):
     mathdx = os.environ.get("MATHDX_ROOT")
     if not (mathdx and (pathlib.Path(mathdx) / "include" / "cublasdx.hpp").exists()):
-        pytest.skip("06_nvidia_gemm needs MATHDX_ROOT (cuBLASDx)")
-    _compile_and_run(tmp_path, "06_nvidia_gemm.cu", extra_flags=[
+        pytest.skip("05_nvidia_gemm needs MATHDX_ROOT (cuBLASDx)")
+    _compile_and_run(tmp_path, "05_nvidia_gemm.cu", extra_flags=[
         "--expt-relaxed-constexpr", "-DGLASS_BENCH_CUBLASDX", "-DSMS=860",
         "-I", str(pathlib.Path(mathdx) / "include"),
         "-I", str(pathlib.Path(mathdx) / "external" / "cutlass" / "include"),

@@ -1,6 +1,6 @@
-// 22_collision_spheres.cu — sphere-based narrow phase: transform, distance, cost.
+// 18_collision_spheres.cu — sphere-based narrow phase: transform, distance, cost.
 //
-// Build: nvcc -std=c++17 -arch=sm_75 -I.. 22_collision_spheres.cu -o collision_spheres && ./collision_spheres
+// Build: nvcc -std=c++17 -arch=sm_75 -I.. 18_collision_spheres.cu -o collision_spheres && ./collision_spheres
 //
 // USE CASE (motion generation / IK): the dominant GPU robot-collision
 // representation decomposes the robot into spheres and scores each against

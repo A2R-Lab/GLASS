@@ -229,6 +229,15 @@ __global__ void k_gemm_tiled(int m, int n, int k, float alpha, float* A, float* 
     glass::block::gemm_tiled<float, 8>(m, n, k, alpha, A, B, beta, C, s_A, s_B);
 }
 
+__global__ void k_gemm_dispatch(int m, int n, int k, float alpha, float* A, float* B,
+                                float beta, float* C, int have_smem) {
+    extern __shared__ float smem[];
+    float* s_A = have_smem ? smem         : nullptr;
+    float* s_B = have_smem ? smem + m * 8 : nullptr;
+    glass::block::gemm_dispatch<float>((uint32_t)m, (uint32_t)n, (uint32_t)k,
+                                       alpha, A, B, beta, C, s_A, s_B);
+}
+
 // ─── main ────────────────────────────────────────────────────────────────────
 
 int main(int argc, char** argv) {
@@ -256,6 +265,20 @@ int main(int argc, char** argv) {
             #define L_RT(TA,TB,RMC) k_gemm_rt<TA,TB,RMC><<<1,th>>>(m,n,k,alpha,dA,dB,beta,dC,nb)
             GEMM_FLAG_DISPATCH(ta, tb, rmc, L_RT);
         }
+        cudaDeviceSynchronize();
+        print_device_vec(dC, m * n);
+
+    } else if (strcmp(op, "gemm_dispatch") == 0) {
+        // gemm_dispatch <unused> <threads> <m> <n> <k> <alpha> <beta> <A> <B> <C>
+        // exercises gemm_dispatch (auto tiled-vs-plain) + the host smem helper
+        int th = atoi(argv[3]);
+        int m = atoi(argv[4]), n = atoi(argv[5]), k = atoi(argv[6]);
+        float alpha = atof(argv[7]), beta = atof(argv[8]);
+        float* dA = read_device_vec(argv[9], m * k);
+        float* dB = read_device_vec(argv[10], k * n);
+        float* dC = read_device_vec(argv[11], m * n);
+        size_t smem = glass_gemm_dispatch_smem<float>((uint32_t)m, (uint32_t)n, (uint32_t)th);
+        k_gemm_dispatch<<<1, th, smem>>>(m, n, k, alpha, dA, dB, beta, dC, smem > 0 ? 1 : 0);
         cudaDeviceSynchronize();
         print_device_vec(dC, m * n);
 

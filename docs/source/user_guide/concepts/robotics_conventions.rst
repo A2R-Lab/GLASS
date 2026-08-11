@@ -162,4 +162,4 @@ without the 36-element temporary, ``so3_exp`` is exactly
 those equivalences. A hand-rolled copy of any of these formulas computes the
 same thing at the same speed; what it cannot give you is the pinned
 convention, the identity test suite, and the three tiers. Examples
-``18``–``22`` under ``examples/`` walk one use case per family.
+``14``–``19`` under ``examples/`` walk one use case per family (spatial dynamics, SE(3) retract, MPPI weights, cone AL, sphere collision, best-fit rotation).

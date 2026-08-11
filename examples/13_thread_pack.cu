@@ -1,7 +1,7 @@
-// 17_thread_pack.cu — the glass::thread:: tier: 32 low-DOF SPD solves packed per warp.
+// 13_thread_pack.cu — the glass::thread:: tier: 32 low-DOF SPD solves packed per warp.
 //
 // Build (from this examples/ dir, pure SIMT — no MathDx needed):
-//   nvcc -std=c++17 -arch=sm_75 -I.. 17_thread_pack.cu -o thread_pack && ./thread_pack
+//   nvcc -std=c++17 -arch=sm_75 -I.. 13_thread_pack.cu -o thread_pack && ./thread_pack
 //
 // The low-DOF corner: at N=6 a warp-per-problem factor leaves ~26 of 32 lanes idle
 // on the serial pivot steps. glass::thread:: flips the mapping — ONE problem per

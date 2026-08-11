@@ -1,6 +1,6 @@
-// 23_best_fit_rotation.cu — batched point alignment + rotation cleanup (est kit).
+// 19_best_fit_rotation.cu — batched point alignment + rotation cleanup (est kit).
 //
-// Build: nvcc -std=c++17 -arch=sm_75 -I.. 23_best_fit_rotation.cu -o best_fit_rotation && ./best_fit_rotation
+// Build: nvcc -std=c++17 -arch=sm_75 -I.. 19_best_fit_rotation.cu -o best_fit_rotation && ./best_fit_rotation
 //
 // USE CASE (estimation / registration): the inner op of ICP and point-cloud
 // alignment is Wahba's problem — given correspondences (a_i, b_i), find the

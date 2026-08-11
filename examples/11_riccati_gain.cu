@@ -1,7 +1,7 @@
-// 15_riccati_gain.cu — LQR feedback gain K = (R + BᵀPB)⁻¹ (BᵀPA) in one call.
+// 11_riccati_gain.cu — LQR feedback gain K = (R + BᵀPB)⁻¹ (BᵀPA) in one call.
 //
 // Build (from this examples/ dir):
-//   nvcc -std=c++17 -arch=sm_75 -I.. 15_riccati_gain.cu -o riccati && ./riccati
+//   nvcc -std=c++17 -arch=sm_75 -I.. 11_riccati_gain.cu -o riccati && ./riccati
 //
 // The control-update solve at the heart of an LQR / iLQR backward pass.
 // glass::riccati_gain composes three library primitives in one block:
@@ -12,7 +12,7 @@
 // Scratch is dynamic shared memory sized by the host-callable
 // glass::riccati_scratch_bytes<T, NX, NU>() (BYTES, pass as the launch smem).
 // s_fail reports a non-PD S (an iLQR caller would escalate rho and retry via
-// the REGULARIZE template flag; see 14_ldlt_solve.cu for the CHECK idea).
+// the REGULARIZE template flag; see 10_ldlt_solve.cu for the CHECK idea).
 
 #include "glass.cuh"
 #include <cstdio>

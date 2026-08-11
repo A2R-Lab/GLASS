@@ -154,6 +154,12 @@ static_assert(glass::congruence_scratch_bytes<float, 12, 4>() > 0, "congruence s
 static_assert(glass::gn_step_scratch_bytes<float, 7>() > 0, "gn_step scratch positive");
 static_assert(glass::inv_dense_scratch_bytes<float>(8) >= glass::inv_dense_scratch_bytes<float>(4), "inv_dense monotone in dim");
 static_assert(glass::trmv_scratch_bytes<double>(6) == 6 * sizeof(double), "trmv scratch = n*T");
+// scratch-formula pins (audit 2026-08-11: covered in test/cuda so the coverage
+// badge never depends on the examples that also call them)
+static_assert(glass::ldlt_scratch_bytes<float>(8) == 9 * sizeof(float), "ldlt scratch = (n+1)*T");
+static_assert(glass::inv_scratch_bytes<double>(8) == 17 * sizeof(double), "inv scratch = (2n+1)*T");
+static_assert(glass::inv_pivoted_scratch_bytes<float>(8) == 25 * sizeof(float), "inv_pivoted scratch = (3n+1)*T");
+static_assert(glass::softmax_scratch_bytes<double>(16) == 16 * sizeof(double), "softmax scratch = n*T");
 constexpr uint32_t k_inv_dims[] = {4u, 6u};
 static_assert(glass::inv_fused_scratch_bytes<float>(2, k_inv_dims) > 0, "K-way fused inv scratch positive");
 static_assert(glass::eigh_sweeps<double>() > glass::eigh_sweeps<float>(), "f64 needs more Jacobi sweeps");

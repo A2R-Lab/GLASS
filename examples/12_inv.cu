@@ -1,8 +1,8 @@
-// 16_inv.cu — matrix inversion: the augmented [A | I] convention + the robust
+// 12_inv.cu — matrix inversion: the augmented [A | I] convention + the robust
 // partial-pivoting variant.
 //
 // Build (from this examples/ dir):
-//   nvcc -std=c++17 -arch=sm_75 -I.. 16_inv.cu -o inv && ./inv
+//   nvcc -std=c++17 -arch=sm_75 -I.. 12_inv.cu -o inv && ./inv
 //
 // glass::inv is Gauss-Jordan on an AUGMENTED buffer: you hand it a column-major
 // N x 2N matrix laid out [A | I] (left half A, right half identity) and on

@@ -89,7 +89,7 @@ static const OpInfo OPS[OP_COUNT] = {
     {"force_cross_dual", 6, 0, 0, 36},
     {"mcross_mul", 6, 6, 6, 6},        {"fcross_mul", 6, 6, 6, 6},
     {"soc_project", -1, 0, 0, -1},     {"soc_scalars", -1, -1, 0, 3},
-    {"interval_scalars", 5, 0, 0, 4},  {"rbar", 3, 0, 0, 8},
+    {"interval_scalars", 5, 0, 0, 5},  {"rbar", 3, 0, 0, 8},
     {"smooth_hinge", 1, 0, 0, 2},      {"angle", 3, 0, 0, 4},
     {"sphere_sphere", 8, 0, 0, 4},     {"sphere_box", 7, 0, 0, 4},
     {"transform_sphere", 4, 3, 4, 4},  {"frame", 3, 0, 0, 6},
@@ -444,6 +444,10 @@ __device__ void dev_scalar_op(int op, int flag0, const T* a, const T* b, const T
             T gr, h;
             glass::block::al_interval_grad_hess<T>(a[0], a[1], a[2], a[3], a[4], (T)AL_RHO, sg, gr, h);
             out[2] = gr; out[3] = h;
+            // one bare hinge side (upper bound, lam_hi) — the building block
+            // al_interval_value composes; pinned directly so the public
+            // al_hinge_value entry point is test/cuda-covered (audit 2026-08-11)
+            out[4] = glass::block::al_hinge_value<T>(a[0] - a[2], a[3], (T)AL_RHO, sg);
             break;
         }
         case OP_RBAR:

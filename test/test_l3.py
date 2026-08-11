@@ -610,3 +610,22 @@ def test_posv_warp_7_conditioning(bins, cond):
     rel = np.linalg.norm(A.astype(np.float64) @ x - b) / (
         np.linalg.norm(A) * np.linalg.norm(x) + 1e-300)
     assert rel < 5e-6, f"posv_warp residual {rel:.2e} at cond={cond}"
+
+
+@pytest.mark.parametrize("m,n,k", [(4, 4, 4), (16, 16, 16), (32, 32, 32)])
+def test_gemm_dispatch(bins, m, n, k):
+    """gemm_dispatch (auto tiled-vs-plain) + the host glass_gemm_dispatch_smem
+    sizing helper: whichever path the dispatch picks must match numpy, at every
+    swept thread count (the smem helper decides per (m, n, threads))."""
+    rng = np.random.default_rng(97 + m)
+    A = rng.standard_normal((m, k)).astype(np.float32)
+    B = rng.standard_normal((k, n)).astype(np.float32)
+    expected = (A.astype(np.float64) @ B.astype(np.float64)).astype(np.float32)
+    for th in (32, 128, 256):
+        result = run_op(bins["l3"], "gemm_dispatch", "simple",
+                        args=[th, m, n, k, 1.0, 0.0],
+                        inputs=[np.asfortranarray(A).ravel(order='F'),
+                                np.asfortranarray(B).ravel(order='F'),
+                                np.zeros(m * n, np.float32)])
+        assert np.allclose(result.reshape(m, n, order='F'), expected,
+                           rtol=RTOL, atol=ATOL), f"m,n,k={m},{n},{k} th={th}"

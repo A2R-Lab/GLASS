@@ -1,7 +1,7 @@
-// 14_ldlt_solve.cu — symmetric-INDEFINITE solve via LDLᵀ (no square root).
+// 10_ldlt_solve.cu — symmetric-INDEFINITE solve via LDLᵀ (no square root).
 //
 // Build (from this examples/ dir):
-//   nvcc -std=c++17 -arch=sm_75 -I.. 14_ldlt_solve.cu -o ldlt && ./ldlt
+//   nvcc -std=c++17 -arch=sm_75 -I.. 10_ldlt_solve.cu -o ldlt && ./ldlt
 //
 // Cholesky (potrf/posv) requires SPD. A symmetric matrix with NEGATIVE
 // eigenvalues (a KKT / saddle-point system) has no Cholesky factor — but it

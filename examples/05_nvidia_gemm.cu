@@ -1,4 +1,4 @@
-// 06_nvidia_gemm.cu — cuBLASDx-backed GEMM via glass::nvidia::  (REQUIRES MathDx).
+// 05_nvidia_gemm.cu — cuBLASDx-backed GEMM via glass::nvidia::  (REQUIRES MathDx).
 //
 // This is the ONLY example that needs NVIDIA MathDx (cuBLASDx). The pure-SIMT
 // examples 01-05 build with plain nvcc; this one does not.
@@ -11,7 +11,7 @@
 //        --expt-relaxed-constexpr -Xptxas -O1 \
 //        -I$MATHDX_ROOT/include \
 //        -I$MATHDX_ROOT/external/cutlass/include \
-//        06_nvidia_gemm.cu -o nvidia_gemm && ./nvidia_gemm
+//        05_nvidia_gemm.cu -o nvidia_gemm && ./nvidia_gemm
 //
 // Notes:
 //   * -DGLASS_BENCH_CUBLASDX force-includes <cublasdx.hpp> from glass-nvidia.cuh.

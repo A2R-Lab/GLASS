@@ -1,6 +1,6 @@
-// 21_cone_projection.cu — friction-cone AL constraint step: soc_project + interval AL.
+// 17_cone_projection.cu — friction-cone AL constraint step: soc_project + interval AL.
 //
-// Build: nvcc -std=c++17 -arch=sm_75 -I.. 21_cone_projection.cu -o cone_projection && ./cone_projection
+// Build: nvcc -std=c++17 -arch=sm_75 -I.. 17_cone_projection.cu -o cone_projection && ./cone_projection
 //
 // USE CASE (constrained trajectory optimization): a contact-rich solver carries
 // friction-cone rows (‖f_tangential‖ <= μ·f_normal — a second-order cone) and

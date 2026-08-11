@@ -3,85 +3,63 @@
 Minimal, self-contained, **compile-and-run** CUDA programs — one concept each.
 Every file is a complete program: a `__global__` kernel that calls a GLASS
 device function, plus a `main` that allocates device memory, launches **one
-block**, copies the result back, and prints it so you can eyeball correctness.
-They are deliberately tiny (~30–60 lines) — the point is clarity, not features.
+block** (or a batch of blocks for the batched demos), copies the result back,
+and **verifies it** — examples return non-zero on a numeric mismatch, and the
+test suite (`test/test_examples.py`) compiles and runs every one of them on
+hardware.
 
-These are the same snippets shown in the [top-level README](../README.md)
-"Usage Examples" section, extracted into standalone files you can actually
-build. For the full API surface and the backend-choice guide, read that README.
+> This table is the CANONICAL per-example description (the hosted docs page
+> `docs/source/user_guide/tutorials/examples.rst` mirrors it and carries the
+> full code listings — keep the two in sync).
 
 ## Which example shows what
 
 | File | Shows | Backend / deps |
 |------|-------|----------------|
-| [`01_axpy_simt.cu`](01_axpy_simt.cu) | L1 vector op `axpy` (`y = αx + y`), **runtime size** | pure SIMT — no extra deps |
-| [`02_gemm.cu`](02_gemm.cu) | single-block `gemm` (`C = αAB + βC`), runtime + **compile-time** size overloads, column-major | pure SIMT — no extra deps |
-| [`10_gemm_basics.cu`](10_gemm_basics.cu) | the **standard-BLAS GEMM convention** (`C` is M×N, contraction K) and all four `TRANSPOSE_A`/`TRANSPOSE_B` combos, verified at a non-square shape | pure SIMT — no extra deps |
-| [`11_rowmajor_is_transpose.cu`](11_rowmajor_is_transpose.cu) | **"row-major is just a transpose"** — a row-major operand read with `TRANSPOSE_*` gives bit-identical output (why per-operand `ROW_MAJOR` was pruned) | pure SIMT — no extra deps |
-| [`12_nrm2.cu`](12_nrm2.cu) | Euclidean norm `nrm2` (BLAS name; `np.linalg.norm` / Eigen `x.norm()`), block + warp forms | pure SIMT — no extra deps |
-| [`13_gemm_strided.cu`](13_gemm_strided.cu) | `gemm_strided` — GEMM on column-major sub-blocks with explicit leading dims, `alpha`/`beta` at the front | pure SIMT — no extra deps |
-| [`03_reduce.cu`](03_reduce.cu) | block reduction: `glass::block::reduce` and the warp-shuffle `glass::block::reduce_fast` (with scratch) | pure SIMT — no extra deps |
-| [`04_cgrps.cu`](04_cgrps.cu) | the **cooperative-groups** variant `glass::cgrps::gemm` (whole-block or warp-tile) | pure SIMT — no extra deps |
-| [`05_gemm_dispatch.cu`](05_gemm_dispatch.cu) | `glass::block::gemm_dispatch` + dynamic shared memory via the `glass_gemm_dispatch_smem` host helper (tiled path) | pure SIMT — no extra deps |
-| [`06_nvidia_gemm.cu`](06_nvidia_gemm.cu) | the cuBLASDx-backed `glass::nvidia::block::gemm` path | **requires NVIDIA MathDx** |
-| [`07_warp_ops.cu`](07_warp_ops.cu) | single-warp `glass::warp::` ops (`reduce`, 4×4 `gemm`, SPD `potrf`+`trsm`+`trsm_transpose`), launched `<<<1,32>>>` | pure SIMT — no extra deps |
-| [`08_pcg_solve.cu`](08_pcg_solve.cu) | block-tridiagonal PCG solve `glass::block::pcg` (`[L\|D\|R]` strips, padded vectors, block-Jacobi preconditioner) | pure SIMT — no extra deps |
-| [`09_backend_picker.cu`](09_backend_picker.cu) | choose a backend + launch config with `glass-defaults.cuh` (`suggested_backend` / `suggested_block_threads` / `suggested_warps_per_block`), then dispatch a real SPD solve to the picked launch | pure SIMT — no extra deps |
-| [`14_ldlt_solve.cu`](14_ldlt_solve.cu) | symmetric-**indefinite** solve `ldlt` + `ldlt_solve` (no Cholesky exists), plus the `CHECK=true` failure-flag + **inertia** reporting on a good and a zero-pivot matrix (`ldlt_scratch_bytes`) | pure SIMT — no extra deps |
-| [`15_riccati_gain.cu`](15_riccati_gain.cu) | LQR feedback gain `K = (R + BᵀPB)⁻¹(BᵀPA)` via `riccati_gain`, dynamic smem sized by `riccati_scratch_bytes<T,NX,NU>()`, verified against a plain-loop CPU reference | pure SIMT — no extra deps |
-| [`16_inv.cu`](16_inv.cu) | matrix inversion on the augmented `[A \| I]` layout: `inv` (+ `inv_scratch_bytes`), and the robust `inv_pivoted` recovering a matrix with a zero leading pivot that plain `inv` sends non-finite | pure SIMT — no extra deps |
-| [`17_thread_pack.cu`](17_thread_pack.cu) | the `glass::thread::` tier: 4096 N=6 SPD solves, one problem per THREAD (32 packed per warp), staged global→registers→global, launch shape from `suggested_threads_per_block<>`, verified `\|Ax-b\|` per problem | pure SIMT — no extra deps |
-| [`18_spatial_dynamics.cu`](18_spatial_dynamics.cu) | Featherstone spatial cross products (the RNEA inner loop): fused `motion_cross_mul`/`force_cross_mul` verified against materialize-6×6 + `gemv` composition | pure SIMT — no extra deps |
-| [`19_floating_base_retract.cu`](19_floating_base_retract.cu) | batched SE(3) manifold integration at thread scope (`se3_retract`, 4096 states × 200 steps): unit-norm drift-free, one-parameter-subgroup check vs `quat_retract` | pure SIMT — no extra deps |
-| [`20_mppi_weights.cu`](20_mppi_weights.cu) | the MPPI path-integral weight update: `softmax` + `argmin` per controller block, verified vs a double host reference and bit-identical across block sizes | pure SIMT — no extra deps |
-| [`21_cone_projection.cu`](21_cone_projection.cu) | friction-cone AL constraint step: `soc_project` + `al_soc_value`/`al_hinge_value` per thread, with projection-orthogonality and m=1 hinge-degeneration checks | pure SIMT — no extra deps |
-| [`22_collision_spheres.cu`](22_collision_spheres.cu) | sphere narrow phase: `transform_sphere` → `sphere_box_dist` → `smooth_hinge` cost chain, one (sphere, box) pair per thread, verified vs a double host SDF | pure SIMT — no extra deps |
-| [`23_best_fit_rotation.cu`](23_best_fit_rotation.cu) | batched Wahba/Kabsch alignment + rotation re-orthonormalization: cross-covariance accumulation → `closest_rotation` per thread, verified vs known ground-truth rotations | pure SIMT — no extra deps |
+| [`01_axpy_simt.cu`](01_axpy_simt.cu) | L1 vector op `axpy` (`y = αx + y`), **runtime size** | pure SIMT |
+| [`02_gemm_conventions.cu`](02_gemm_conventions.cu) | THE GEMM example: the **standard-BLAS convention** at a non-square shape, runtime + compile-time size overloads, all four `TRANSPOSE_A`/`TRANSPOSE_B` combos, **"row-major is just a transpose"** (bit-identical), and the `glass::cgrps::` spelling | pure SIMT |
+| [`03_reductions_norms.cu`](03_reductions_norms.cu) | block reductions + norms: `reduce`, warp-shuffle `reduce_fast` (+ `reduce_fast_scratch_bytes`), and the `nrm2` family across block + warp tiers | pure SIMT |
+| [`04_gemm_dispatch.cu`](04_gemm_dispatch.cu) | `glass::block::gemm_dispatch` auto-tiling + dynamic shared memory via the `glass_gemm_dispatch_smem` host helper | pure SIMT |
+| [`05_nvidia_gemm.cu`](05_nvidia_gemm.cu) | the cuBLASDx-backed `glass::nvidia::block::gemm` path | **requires NVIDIA MathDx** |
+| [`06_warp_ops.cu`](06_warp_ops.cu) | single-warp `glass::warp::` ops (`reduce`, 4×4 `gemm`, SPD `potrf`+`trsm`+`trsm_transpose`), launched `<<<1,32>>>` | pure SIMT |
+| [`07_pcg_solve.cu`](07_pcg_solve.cu) | block-tridiagonal PCG solve `glass::block::pcg` (`[L\|D\|R]` strips, padded vectors, block-Jacobi preconditioner) | pure SIMT |
+| [`08_backend_picker.cu`](08_backend_picker.cu) | choose a backend + launch config with `glass-defaults.cuh` (`suggested_backend` / `suggested_block_threads` / `suggested_warps_per_block`), then dispatch a real SPD solve to the picked launch | pure SIMT |
+| [`09_gemm_strided.cu`](09_gemm_strided.cu) | `gemm_strided` — GEMM on column-major sub-blocks with explicit leading dims | pure SIMT |
+| [`10_ldlt_solve.cu`](10_ldlt_solve.cu) | symmetric-**indefinite** solve `ldlt` + `ldlt_solve`, plus the `CHECK=true` failure flag + **inertia** reporting (`ldlt_scratch_bytes`) | pure SIMT |
+| [`11_riccati_gain.cu`](11_riccati_gain.cu) | LQR feedback gain `K = (R + BᵀPB)⁻¹(BᵀPA)` via `riccati_gain`, smem sized by `riccati_scratch_bytes<T,NX,NU>()` | pure SIMT |
+| [`12_inv.cu`](12_inv.cu) | matrix inversion on the augmented `[A \| I]` layout: `inv` (+ `inv_scratch_bytes`), and the robust `inv_pivoted` recovering a zero leading pivot | pure SIMT |
+| [`13_thread_pack.cu`](13_thread_pack.cu) | the `glass::thread::` tier: 4096 N=6 SPD solves, one problem per THREAD (32 packed per warp), launch shape from `suggested_threads_per_block<>` | pure SIMT |
+| [`14_spatial_dynamics.cu`](14_spatial_dynamics.cu) | Featherstone spatial cross products (the RNEA inner loop): fused `motion_cross_mul`/`force_cross_mul` vs materialize-6×6 + `gemv` | pure SIMT |
+| [`15_floating_base_retract.cu`](15_floating_base_retract.cu) | batched SE(3) manifold integration at thread scope (`se3_retract`): unit-norm drift-free, one-parameter-subgroup check | pure SIMT |
+| [`16_mppi_weights.cu`](16_mppi_weights.cu) | the MPPI weight update: `softmax` + `argmin` per controller block, bit-identical across block sizes | pure SIMT |
+| [`17_cone_projection.cu`](17_cone_projection.cu) | friction-cone AL constraint step: `soc_project` + `al_soc_value`/`al_hinge_value`, projection-orthogonality checks | pure SIMT |
+| [`18_collision_spheres.cu`](18_collision_spheres.cu) | sphere narrow phase: `transform_sphere` → `sphere_box_dist` → `smooth_hinge` cost chain | pure SIMT |
+| [`19_best_fit_rotation.cu`](19_best_fit_rotation.cu) | batched Wahba/Kabsch alignment: cross-covariance → `thread::closest_rotation`, verified vs ground-truth rotations | pure SIMT |
 
-**Examples 01–05 and 07–16 are pure SIMT** — they build with plain `nvcc` and
-need no external libraries. **Only `06_nvidia_gemm.cu` needs MathDx** (cuBLASDx);
-skip it if you don't have MathDx installed.
+**Every example is pure SIMT except `05_nvidia_gemm.cu`**, which needs MathDx
+(cuBLASDx); skip it if you don't have MathDx installed.
 
 ## Building
 
-All examples `#include` the GLASS headers from the repo root. The build commands
-below use `-I..` so the relative `#include "glass.cuh"` resolves from this
-`examples/` directory; run them **from inside `examples/`**. Pick the `-arch`
-that matches your GPU (`sm_75` Turing, `sm_86` Ampere, `sm_89` Ada, `sm_120`
-Blackwell, …).
-
-### Pure-SIMT examples (all but 06)
+The easy way (auto-detects your GPU arch; skips 05 unless `MATHDX_ROOT` is set):
 
 ```bash
-nvcc -std=c++17 -arch=sm_75 -I.. 01_axpy_simt.cu    -o axpy     && ./axpy
-nvcc -std=c++17 -arch=sm_75 -I.. 02_gemm.cu         -o gemm     && ./gemm
-nvcc -std=c++17 -arch=sm_75 -I.. 03_reduce.cu       -o reduce   && ./reduce
-nvcc -std=c++17 -arch=sm_75 -I.. 04_cgrps.cu        -o cgrps    && ./cgrps
-nvcc -std=c++17 -arch=sm_75 -I.. 05_gemm_dispatch.cu -o dispatch && ./dispatch
-nvcc -std=c++17 -arch=sm_75 -I.. 07_warp_ops.cu     -o warp_ops && ./warp_ops
-nvcc -std=c++17 -arch=sm_75 -I.. 08_pcg_solve.cu    -o pcg      && ./pcg
-nvcc -std=c++17 -arch=sm_75 -I.. 09_backend_picker.cu -o picker  && ./picker
-nvcc -std=c++17 -arch=sm_75 -I.. 10_gemm_basics.cu  -o gemm_basics && ./gemm_basics
-nvcc -std=c++17 -arch=sm_75 -I.. 11_rowmajor_is_transpose.cu -o rmt && ./rmt
-nvcc -std=c++17 -arch=sm_75 -I.. 12_nrm2.cu         -o nrm2     && ./nrm2
-nvcc -std=c++17 -arch=sm_75 -I.. 13_gemm_strided.cu -o gemm_strided && ./gemm_strided
-nvcc -std=c++17 -arch=sm_75 -I.. 14_ldlt_solve.cu   -o ldlt     && ./ldlt
-nvcc -std=c++17 -arch=sm_75 -I.. 15_riccati_gain.cu -o riccati  && ./riccati
-nvcc -std=c++17 -arch=sm_75 -I.. 16_inv.cu          -o inv      && ./inv
-nvcc -std=c++17 -arch=sm_75 -I.. 17_thread_pack.cu  -o tpack    && ./tpack
-nvcc -std=c++17 -arch=sm_75 -I.. 18_spatial_dynamics.cu -o spatial && ./spatial
-nvcc -std=c++17 -arch=sm_75 -I.. 19_floating_base_retract.cu -o retract && ./retract
-nvcc -std=c++17 -arch=sm_75 -I.. 20_mppi_weights.cu -o mppi     && ./mppi
-nvcc -std=c++17 -arch=sm_75 -I.. 21_cone_projection.cu -o cone  && ./cone
-nvcc -std=c++17 -arch=sm_75 -I.. 22_collision_spheres.cu -o spheres && ./spheres
-nvcc -std=c++17 -arch=sm_75 -I.. 23_best_fit_rotation.cu -o bestfit && ./bestfit
+cd examples
+make -j            # or: make -j ARCH=sm_120  /  make -j MATHDX_ROOT=/opt/nvidia/mathdx/26.03
+make run           # runs every built example
 ```
 
-### NVIDIA / cuBLASDx example (06) — requires MathDx
+Or by hand — all examples `#include` the GLASS headers from the repo root, so
+build **from inside `examples/`** with `-I..` and the `-arch` matching your GPU:
 
-This one needs NVIDIA MathDx (which ships cuBLASDx). Install it and set
-`MATHDX_ROOT` first — see [`../bench/INSTALL.md`](../bench/INSTALL.md) for the
-download + setup steps. Then:
+```bash
+nvcc -std=c++17 -arch=sm_75 -I.. 02_gemm_conventions.cu -o gemm && ./gemm
+```
+
+### The MathDx example (05) — extra flags
+
+Install MathDx and set `MATHDX_ROOT` first — see
+[`../bench/INSTALL.md`](../bench/INSTALL.md). Then:
 
 ```bash
 nvcc -std=c++17 -arch=sm_86 -I.. \
@@ -89,14 +67,12 @@ nvcc -std=c++17 -arch=sm_86 -I.. \
      --expt-relaxed-constexpr -Xptxas -O1 \
      -I$MATHDX_ROOT/include \
      -I$MATHDX_ROOT/external/cutlass/include \
-     06_nvidia_gemm.cu -o nvidia_gemm && ./nvidia_gemm
+     05_nvidia_gemm.cu -o nvidia_gemm && ./nvidia_gemm
 ```
-
-The MathDx-specific flags:
 
 | Flag | Why |
 |------|-----|
-| `-DGLASS_BENCH_CUBLASDX` | force-includes `<cublasdx.hpp>` from `glass-nvidia.cuh` (it is otherwise gated on include order) |
+| `-DGLASS_BENCH_CUBLASDX` | force-includes `<cublasdx.hpp>` from `glass-nvidia.cuh` (otherwise gated on include order) |
 | `-DSMS=860` | selects the cuBLASDx-tuned config + pre-instantiated GEMM table; **must match `-arch`** (860↔sm_86, 1200↔sm_120, …) |
 | `--expt-relaxed-constexpr` | required by cuBLASDx's constexpr `__host__`/`__device__` helpers |
 | `-Xptxas -O1` | works around a cuBLASDx miscompilation on recent CUDA (see `INSTALL.md`) |
@@ -106,18 +82,18 @@ The MathDx-specific flags:
 > The cuSOLVERDx (LAPACK: `potrf` / `posv` / `gels` / …) path is **not**
 > covered by these examples — it additionally requires linking a precompiled
 > device library (`-rdc=true -dlto -L$MATHDX_ROOT/lib -lcusolverdx -lcublas
-> -lcusolver -lcudart`). See the top-level README section 5e and
-> [`../bench/INSTALL.md`](../bench/INSTALL.md).
+> -lcusolver -lcudart`). See [`../bench/INSTALL.md`](../bench/INSTALL.md).
 
 ## Notes
 
 - **One block per data item.** Every GLASS function assumes it runs inside a
-  single CUDA block; these examples all launch `<<<1, threads>>>`. To process
-  many independent items, launch one block each (`<<<num_items, threads>>>`).
+  single CUDA block; most examples launch `<<<1, threads>>>`. To process many
+  independent items, launch one block each (`<<<num_items, threads>>>`) — the
+  batched demos (13, 15–19) do exactly that.
 - **Column-major by default.** Matrices are Fortran/column-major (`A[row +
   col*m]`), matching cuBLAS / Eigen. GEMM follows the standard BLAS convention
   (`C` is M×N, contraction K) with `TRANSPOSE_A` / `TRANSPOSE_B` / `ROW_MAJOR_C`
-  flags; a row-major operand is just a transpose (`11_rowmajor_is_transpose.cu`).
+  flags; a row-major operand is just a transpose (`02_gemm_conventions.cu`).
   The `glass::nvidia::` path uses the `layout` enum.
 - Reductions (`reduce`, `dot`, `nrm2`) write their result **in place** to
   `x[0]` and may consume the input as scratch (the `glass::warp::` forms return

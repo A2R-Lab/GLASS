@@ -74,7 +74,7 @@ Example
        /* <<<P, TB>>> */
    }
 
-A runnable version is ``examples/09_backend_picker.cu``.
+A runnable version is ``examples/08_backend_picker.cu``.
 
 Per-host override
 -----------------

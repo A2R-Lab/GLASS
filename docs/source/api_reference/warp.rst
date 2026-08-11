@@ -41,4 +41,4 @@ All cross-lane scalars (reduction results, solve pivots) are broadcast via
 ``__shfl_sync`` from a lane register — never a shared re-read — to avoid the
 ``__restrict__`` stale-cache miscompile class.
 
-See ``examples/07_warp_ops.cu`` for a runnable demonstration.
+See ``examples/06_warp_ops.cu`` for a runnable demonstration.

@@ -1,7 +1,7 @@
-// 07_warp_ops.cu — single-warp (glass::warp::) primitives, launched <<<1,32>>>.
+// 06_warp_ops.cu — single-warp (glass::warp::) primitives, launched <<<1,32>>>.
 //
 // Build (from this examples/ dir):
-//   nvcc -std=c++17 -arch=sm_75 -I.. 07_warp_ops.cu -o warp_ops && ./warp_ops
+//   nvcc -std=c++17 -arch=sm_75 -I.. 06_warp_ops.cu -o warp_ops && ./warp_ops
 //
 // The glass::warp:: namespace holds warp-scoped SIMT variants (raw __shfl, one
 // 32-lane warp, no shared scratch, no __syncthreads) for warp-per-problem

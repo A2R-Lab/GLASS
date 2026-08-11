@@ -1,7 +1,7 @@
-// 09_backend_picker.cu — choosing a backend + launch config with glass-defaults.cuh.
+// 08_backend_picker.cu — choosing a backend + launch config with glass-defaults.cuh.
 //
 // Build (from this examples/ dir, pure SIMT — no MathDx needed):
-//   nvcc -std=c++17 -arch=sm_75 -I.. 09_backend_picker.cu -o picker && ./picker
+//   nvcc -std=c++17 -arch=sm_75 -I.. 08_backend_picker.cu -o picker && ./picker
 //   (to make the `nvidia` tier eligible, include glass-nvidia.cuh first + link MathDx.)
 //
 // glass-defaults.cuh exposes the measured thread/warp/block/nvidia ladder (bench/RESULTS.md)

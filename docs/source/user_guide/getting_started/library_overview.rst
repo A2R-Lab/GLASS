@@ -126,7 +126,7 @@ trajectory optimization / MPC — see :doc:`../concepts/block_tridiagonal`.
    error return. To detect failure, instantiate with ``CHECK=true`` and pass an
    ``s_fail`` flag (and, for ``ldlt``, the optional ``s_inertia`` pivot-sign
    counts); the reporting path compiles out entirely when ``CHECK`` is off. See
-   ``examples/14_ldlt_solve.cu`` for the pattern on both a good and a
+   ``examples/10_ldlt_solve.cu`` for the pattern on both a good and a
    zero-pivot matrix.
 
 Choosing the right backend

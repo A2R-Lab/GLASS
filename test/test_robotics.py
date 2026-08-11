@@ -66,7 +66,7 @@ _OUT = {
     "se3_hess_q": 216, "se3_hess_v": 216,
     "motion_cross": 36, "force_cross": 36, "force_cross_dual": 36,
     "mcross_mul": 6, "fcross_mul": 6,
-    "soc_project": -1, "soc_scalars": 3, "interval_scalars": 4, "rbar": 8,
+    "soc_project": -1, "soc_scalars": 3, "interval_scalars": 5, "rbar": 8,
     "smooth_hinge": 2, "angle": 4,
     "sphere_sphere": 4, "sphere_box": 4, "transform_sphere": 4, "frame": 6,
     "segment": 9,
@@ -860,6 +860,13 @@ def test_interval_al_oracle_and_fd(bins, soft):
         np.testing.assert_allclose(out[i, 0], max(0, g - hi) + max(0, lo - g), atol=1e-12)
         np.testing.assert_allclose(out[i, 1], _al_interval_np(g, lo, hi, lh, ll, AL_RHO, sigma),
                                    rtol=1e-10, atol=1e-10)
+        # bare upper hinge against its own published formula
+        a_act = max(0.0, lh + AL_RHO*(g - hi))
+        if sigma > 0 and a_act > sigma:
+            want_h = sigma*(g - hi) - (sigma - lh)**2/(2*AL_RHO)
+        else:
+            want_h = (a_act*a_act - lh*lh)/(2*AL_RHO)
+        np.testing.assert_allclose(out[i, 4], want_h, rtol=1e-10, atol=1e-10)
         # FD gradient gate (φ is C¹; skip the measure-zero seam neighborhoods)
         vp = _al_interval_np(g + h, lo, hi, lh, ll, AL_RHO, sigma)
         vm = _al_interval_np(g - h, lo, hi, lh, ll, AL_RHO, sigma)

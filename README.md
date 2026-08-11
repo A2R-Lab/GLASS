@@ -105,7 +105,7 @@ my_kernel<<<num_items, 256>>>(A, B, C, m, n, k);   // one block per data item
 Runnable, self-contained programs (one concept each) live in [`examples/`](examples/). GEMM
 follows the **standard BLAS convention** — `C` is M×N, contraction K (`A` is M×K, `B` is K×N) —
 with `TRANSPOSE_A` / `TRANSPOSE_B` operand flags and a single `ROW_MAJOR_C` output flag; a
-row-major operand is just a transpose. See [`examples/10_gemm_basics.cu`](examples/10_gemm_basics.cu).
+row-major operand is just a transpose. See [`examples/02_gemm_conventions.cu`](examples/02_gemm_conventions.cu).
 
 ## Installation
 

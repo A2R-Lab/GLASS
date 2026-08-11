@@ -1,6 +1,6 @@
-// 19_floating_base_retract.cu — batched SE(3) manifold integration, one state per THREAD.
+// 15_floating_base_retract.cu — batched SE(3) manifold integration, one state per THREAD.
 //
-// Build: nvcc -std=c++17 -arch=sm_75 -I.. 19_floating_base_retract.cu -o floating_base_retract && ./floating_base_retract
+// Build: nvcc -std=c++17 -arch=sm_75 -I.. 15_floating_base_retract.cu -o floating_base_retract && ./floating_base_retract
 //
 // USE CASE (floating-base dynamics / sampling control): a floating-base
 // integrator step is a MANIFOLD update — position+quaternion pose ⊞ body twist

@@ -71,8 +71,8 @@ A few more vector/matrix calls (runtime sizes shown):
    output). ``gemv`` is the exception and keeps a per-matrix ``ROW_MAJOR`` flag,
    because its ``TRANSPOSE`` selects the mathematical op (``A·x`` vs ``Aᵀ·x``)
    and cannot also stand in for storage order. See the "row-major is just a
-   transpose" walkthrough in ``examples/11_rowmajor_is_transpose.cu`` and the
-   convention primer in ``examples/10_gemm_basics.cu``.
+   transpose" walkthrough and convention primer in
+   ``examples/02_gemm_conventions.cu``.
 
 Next steps
 ----------

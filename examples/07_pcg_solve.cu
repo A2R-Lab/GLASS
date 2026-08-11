@@ -1,7 +1,7 @@
-// 08_pcg_solve.cu — block-tridiagonal PCG solve (glass::pcg), pure SIMT.
+// 07_pcg_solve.cu — block-tridiagonal PCG solve (glass::pcg), pure SIMT.
 //
 // Build (from this examples/ dir):
-//   nvcc -std=c++17 -arch=sm_75 -I.. 08_pcg_solve.cu -o pcg && ./pcg
+//   nvcc -std=c++17 -arch=sm_75 -I.. 07_pcg_solve.cu -o pcg && ./pcg
 //
 // Solves an SPD block-tridiagonal system S x = b in ONE CUDA block with
 // preconditioned conjugate gradient, using a block-Jacobi preconditioner Pinv

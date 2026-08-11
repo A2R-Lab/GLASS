@@ -1,8 +1,8 @@
-// 13_gemm_strided.cu — GEMM on column-major sub-blocks with explicit
+// 09_gemm_strided.cu — GEMM on column-major sub-blocks with explicit
 // leading dimensions (the "strided" GEMM).
 //
 // Build (from this examples/ dir):
-//   nvcc -std=c++17 -arch=sm_75 -I.. 13_gemm_strided.cu -o rsgemm && ./rsgemm
+//   nvcc -std=c++17 -arch=sm_75 -I.. 09_gemm_strided.cu -o rsgemm && ./rsgemm
 //
 // Same standard convention as glass::gemm (C is M×N, contraction K), but A and B
 // live inside larger buffers with custom column strides (leading dimensions):

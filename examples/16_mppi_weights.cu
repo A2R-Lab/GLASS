@@ -1,6 +1,6 @@
-// 20_mppi_weights.cu — the path-integral (MPPI) weight update: softmax + argmin.
+// 16_mppi_weights.cu — the path-integral (MPPI) weight update: softmax + argmin.
 //
-// Build: nvcc -std=c++17 -arch=sm_75 -I.. 20_mppi_weights.cu -o mppi_weights && ./mppi_weights
+// Build: nvcc -std=c++17 -arch=sm_75 -I.. 16_mppi_weights.cu -o mppi_weights && ./mppi_weights
 //
 // USE CASE (sampling-based control): an MPPI/CEM controller rolls out N
 // perturbed control sequences, scores each with a cost J_i, and blends them

@@ -1,7 +1,7 @@
-// 05_gemm_dispatch.cu — glass::gemm_dispatch + dynamic shared memory (tiled path).
+// 04_gemm_dispatch.cu — glass::gemm_dispatch + dynamic shared memory (tiled path).
 //
 // Build (from this examples/ dir):
-//   nvcc -std=c++17 -arch=sm_75 -I.. 05_gemm_dispatch.cu -o dispatch && ./dispatch
+//   nvcc -std=c++17 -arch=sm_75 -I.. 04_gemm_dispatch.cu -o dispatch && ./dispatch
 //
 // glass::gemm_dispatch auto-selects the shared-memory-tiled GEMM when scratch
 // pointers are supplied (and m*n <= blockDim), else the plain path. The host
