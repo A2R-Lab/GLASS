@@ -70,13 +70,16 @@ mkdir -p test/receipts
 FRESH=()
 for s in $RUN_SHARDS; do
     echo "── shard: $s ──────────────────────────────────────────"
+    # A shard's own .py test files belong in its fingerprint: without them an
+    # edited test could carry forward stale results (hole closed 2026-08-11).
+    FP_PATHS="${SHARD_PATHS[$s]},$(echo ${SHARD_FILES[$s]} | tr -s ' ' ',')"
     # shellcheck disable=SC2086
     $PY -m pytest ${SHARD_FILES[$s]} -q "$@" \
         --gpu-proof-enable \
         --gpu-proof-out "test/receipts/$s.json" \
         --gpu-proof-github-user plancherb1 \
         --gpu-proof-shard "$s" \
-        --gpu-proof-shard-fingerprint-paths "${SHARD_PATHS[$s]}" \
+        --gpu-proof-shard-fingerprint-paths "$FP_PATHS" \
         --gpu-proof-fingerprint-paths "glass.cuh,glass-cgrps.cuh,glass-nvidia.cuh,glass-defaults.cuh,glass-dispatch.cuh,src,test/cuda,test/conftest.py"
     FRESH+=("test/receipts/$s.json")
 done

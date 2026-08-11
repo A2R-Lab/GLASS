@@ -143,6 +143,10 @@ pytest test/                 # compiles test/cuda/*.cu once, caches by source ha
 
 `rm -rf test/build` forces a clean rebuild. Details in
 [`docs/source/user_guide/tutorials/running_tests.rst`](docs/source/user_guide/tutorials/running_tests.rst).
+What "tested" means per op — which independent oracle (NumPy/SciPy/Pinocchio),
+finite-difference identity, or pinned contract validates each family, on real
+hardware under a signed receipt — is documented in
+[`testing_oracles`](docs/source/user_guide/concepts/testing_oracles.rst).
 
 ## Documentation map
 

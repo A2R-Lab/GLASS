@@ -852,3 +852,26 @@ def test_riccati_gain(bins, n, reg, dtype):
         outs.append(K.ravel(order="F"))
     np.testing.assert_allclose(t, np.concatenate(outs), **_RIC_TOL[dtype])
     _assert_close_tight(t, b, f"riccati(reg={reg})", dtype)
+
+
+# ─── conditioning hardening (2026-08-11) ──────────────────────────────────────
+
+@pytest.mark.parametrize("dtype", DTYPES)
+def test_posv_conditioned(bins, dtype):
+    """cond≈1e6 SPD spectra through the thread tier (and its block1 twin).
+    Residual-based: the forward error may reach cond·eps; the normalized
+    backward residual may not. Cross-tier agreement asserted as usual."""
+    from conftest import make_spd
+    n = 6
+    mats = [make_spd(n, seed=500 + p, cond=1e6) for p in range(NPROB)]
+    A = _colmajor_batch(mats)
+    bvec = RNG.standard_normal(NPROB * n).astype(np.float32)
+    t, b = _both(bins, "posv", dtype, n, NPROB, [A, bvec])
+    bound = 5e-6 if dtype == "f32" else 1e-11
+    for p in range(NPROB):
+        x = t[p*n:(p+1)*n].astype(np.float64)
+        Ad = mats[p].astype(np.float64)
+        rel = np.linalg.norm(Ad @ x - bvec[p*n:(p+1)*n].astype(np.float64)) / (
+            np.linalg.norm(Ad) * np.linalg.norm(x) + 1e-300)
+        assert rel < bound, f"prob {p}: residual {rel:.2e} (cond=1e6, {dtype})"
+    _assert_close_tight(t, b, "posv_conditioned", dtype)

@@ -236,3 +236,20 @@ def test_posv_flag_warp(bins, mode):
     x, s_fail = _run_flag(bins["posv"], f"posv_warp_{mode}", WARP, A, b, rho)
     assert s_fail == 0
     assert np.allclose(x, expected, rtol=RTOL, atol=ATOL), f"warp {mode}: mismatch"
+
+
+# ─── scale + conditioning hardening (2026-08-11) ──────────────────────────────
+
+@pytest.mark.parametrize("s", [1e-3, 1.0, 1e3])
+@pytest.mark.parametrize("cond", [None, 1e6])
+def test_posv_scale_conditioning(bins, s, cond):
+    """Block SPD solve at s²·A, s·b input scale and cond≈1e6 spectra: the
+    NORMALIZED backward residual stays at f32 backward-stability levels (the
+    forward error x−x* may legitimately reach cond·eps — not asserted)."""
+    n = 8
+    A = ((s * s) * make_spd(n, seed=41, cond=cond).astype(np.float64)).astype(np.float32)
+    b = (s * RNG.standard_normal(n)).astype(np.float32)
+    x = _run(bins["posv"], "posv", n, 64, A, b).astype(np.float64)
+    rel = np.linalg.norm(A.astype(np.float64) @ x - b.astype(np.float64)) / (
+        np.linalg.norm(A) * np.linalg.norm(x) + 1e-300)
+    assert rel < 5e-6, f"posv residual {rel:.2e} (s={s}, cond={cond})"

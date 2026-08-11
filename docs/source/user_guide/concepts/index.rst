@@ -21,3 +21,4 @@ robotics-specialized operator families.
    batched_1d
    block_tridiagonal
    robotics_conventions
+   testing_oracles

@@ -534,3 +534,79 @@ def test_posv_warp_7(bins):
     result = run_op(bins["l3"], "posv_warp", "warp", args=[n], inputs=[A_col, b])
     residual = A.astype(np.float64) @ result.astype(np.float64) - b.astype(np.float64)
     assert np.allclose(residual, 0, atol=1e-3)
+
+
+# ─── scale + conditioning hardening (2026-08-11) ──────────────────────────────
+# The standard draws above are unit-scale and well-conditioned; these sweeps
+# assert the tolerances are genuinely RELATIVE (same relative accuracy at 1e∓3
+# input scale) and that the factor/solve chain is backward-stable on cond≈1e6
+# spectra. Ill-conditioned checks are residual-based on purpose: the FORWARD
+# error ||x − x*|| may legitimately reach cond·eps in f32; the backward
+# residual may not.
+
+SCALES = [1e-3, 1e3]
+
+
+@pytest.mark.parametrize("s", SCALES)
+@pytest.mark.parametrize("m,n,k", [(5, 7, 3), (16, 16, 16)])
+def test_gemm_rt_scale(bins, s, m, n, k):
+    """gemm at 1e∓3 input scale: dividing the s² output scale back out must
+    reproduce the (quantized-input) oracle at the standard relative tolerance."""
+    _, _, A_flat, B_flat = _gemm_storage(m, n, k, 0, 0, seed=4242 + m)
+    As = (A_flat * s).astype(np.float32)
+    Bs = (B_flat * s).astype(np.float32)
+    result = run_op(bins["l3"], "gemm_rt", "simple",
+                    args=[64, m, n, k, 0, 0, 0, 0, 1.0, 0.0],
+                    inputs=[As, Bs, np.zeros(m * n, np.float32)])
+    got = result.reshape(m, n, order='F').astype(np.float64) / (s * s)
+    expected = (As.reshape(m, k, order='F').astype(np.float64)
+                @ Bs.reshape(k, n, order='F').astype(np.float64)) / (s * s)
+    assert np.allclose(got, expected, rtol=RTOL, atol=ATOL), \
+        f"gemm relative accuracy lost at scale {s} (m,n,k={m},{n},{k})"
+
+
+@pytest.mark.parametrize("s", [1e-3, 1.0, 1e3])
+@pytest.mark.parametrize("cond", [None, 1e6])
+@pytest.mark.parametrize("n", [4, 8])
+def test_chol_scale_conditioning(bins, s, cond, n):
+    """Cholesky is backward-stable: the relative factorization residual
+    ||LLᵀ − A||_F/||A||_F stays at f32 machine levels regardless of the s²
+    input scale or a cond≈1e6 spectrum."""
+    A = ((s * s) * make_spd(n, seed=310 + n, cond=cond).astype(np.float64)) \
+        .astype(np.float32)
+    result = run_op(bins["l3"], "chol", "simple", args=[n],
+                    inputs=[np.asfortranarray(A).ravel(order='F')])
+    L = np.tril(result.reshape(n, n, order='F')).astype(np.float64)
+    rel = np.linalg.norm(L @ L.T - A, 'fro') / np.linalg.norm(A, 'fro')
+    assert rel < 5e-6, f"chol residual {rel:.2e} (s={s}, cond={cond}, n={n})"
+
+
+@pytest.mark.parametrize("transpose", [False, True])
+def test_trsm_conditioning(bins, transpose):
+    """Triangular solve with a geometric diagonal spanning 1e3..1e-3
+    (cond(L) ≈ 1e6): normalized backward residual stays at f32 levels."""
+    n, nrhs = 8, 3
+    L = np.tril(np.random.default_rng(55).standard_normal((n, n))).astype(np.float32)
+    np.fill_diagonal(L, np.geomspace(1e3, 1e-3, n).astype(np.float32))
+    B = np.random.default_rng(56).standard_normal((n, nrhs)).astype(np.float32)
+    result = run_op(bins["l3"], "trsm", "simple",
+                    args=[n, nrhs, int(transpose)],
+                    inputs=[np.asfortranarray(L).ravel(order='F'),
+                            np.asfortranarray(B).ravel(order='F')])
+    X = result.reshape(n, nrhs, order='F').astype(np.float64)
+    opL = (L.T if transpose else L).astype(np.float64)
+    rel = np.linalg.norm(opL @ X - B) / (np.linalg.norm(opL) * np.linalg.norm(X) + 1e-300)
+    assert rel < 5e-6, f"trsm backward residual {rel:.2e} (transpose={transpose})"
+
+
+@pytest.mark.parametrize("cond", [1e4, 1e6])
+def test_posv_warp_7_conditioning(bins, cond):
+    """warp:: SPD solve on an ill-conditioned spectrum — residual-based."""
+    n = 7
+    A = make_spd(n, seed=99, cond=cond)
+    b = np.random.default_rng(98).standard_normal(n).astype(np.float32)
+    x = run_op(bins["l3"], "posv_warp", "warp", args=[n],
+               inputs=[np.asfortranarray(A).ravel(order='F'), b]).astype(np.float64)
+    rel = np.linalg.norm(A.astype(np.float64) @ x - b) / (
+        np.linalg.norm(A) * np.linalg.norm(x) + 1e-300)
+    assert rel < 5e-6, f"posv_warp residual {rel:.2e} at cond={cond}"

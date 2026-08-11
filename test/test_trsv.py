@@ -113,3 +113,20 @@ def test_thread_invariance(bins, op, lower, unit, trans):
             assert np.allclose(result, ref, rtol=0, atol=0) or \
                    np.allclose(result, ref, rtol=RTOL, atol=ATOL), \
                 f"{op} threads={threads}: output differs from threads-1 baseline"
+
+
+# ─── scale hardening (2026-08-11): relative accuracy at 1e∓3 rhs scale ────────
+
+@pytest.mark.parametrize("s", [1e-3, 1e3])
+@pytest.mark.parametrize("lower,trans", [(1, 0), (0, 1)])
+def test_trsv_scale(bins, s, lower, trans):
+    """x scales linearly with b; normalizing the scale back out must reproduce
+    the standard relative tolerance — catches any hidden absolute threshold."""
+    n = 8
+    A = _make_A(n, lower)
+    b = (s * (RNG.random(n).astype(np.float64) - 0.5)).astype(np.float32)
+    result = _run(bins, "trsv", 256, n, lower, 0, trans, A, b)
+    expected = _oracle_trsv(A, b, lower, 0, trans)
+    assert np.allclose(result.astype(np.float64) / s, expected / s,
+                       rtol=RTOL, atol=ATOL), \
+        f"trsv relative accuracy lost at scale {s} (lower={lower}, trans={trans})"

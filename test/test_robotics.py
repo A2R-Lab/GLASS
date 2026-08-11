@@ -517,6 +517,105 @@ def test_se3_difference_oracle(bins, dtype):
         np.testing.assert_allclose(back, pose_to[i], **_TOL[dtype])
 
 
+# ─── pinocchio cross-oracle ───────────────────────────────────────────────────
+# scipy.Rotation validates the quaternion algebra, but the SO(3)/SE(3) tangent
+# maps are checked against OUR OWN numpy mirrors above — a shared convention
+# misunderstanding could pass both sides. pinocchio (pip 'pin', pinned in
+# test/requirements.txt so receipts never skip) is the third-party reference:
+# integrate/difference/dIntegrate on a free-flyer model plus exp3/log3/Jexp3/
+# Jlog3, the same references GRiD and GATO validate against downstream.
+
+try:
+    import pinocchio as _pin
+    _PIN_FF = _pin.Model()
+    _PIN_FF.addJoint(0, _pin.JointModelFreeFlyer(), _pin.SE3.Identity(), "ff")
+except ImportError:                                           # pragma: no cover
+    _pin = None
+needs_pin = pytest.mark.skipif(_pin is None, reason="pinocchio (pip 'pin') missing")
+
+
+def _pin_poses(n):
+    """Random [p(3); quat_xyzw(4)] pose blocks, f32-quantized like the device."""
+    return np.hstack([_f32(RNG.standard_normal((n, 3)).astype(np.float32)),
+                      _quats(n)])
+
+
+@needs_pin
+@pytest.mark.parametrize("dtype", DTYPES)
+def test_se3_retract_vs_pinocchio(bins, dtype):
+    pose, rho, phi = _pin_poses(P), _f32(RNG.standard_normal((P, 3)).astype(np.float32)), _rotvecs(P)
+    out = _run(bins, "se3_retract", "block", dtype, [pose, rho, phi])
+    for i in range(P):
+        want = _pin.integrate(_PIN_FF, pose[i], np.concatenate([rho[i], phi[i]]))
+        got = out[i].copy()
+        got[3:] = _sign_align(got[3:][None], want[3:][None])[0]
+        np.testing.assert_allclose(got, want, **_TOL[dtype],
+                                   err_msg=f"pin.integrate mismatch (prob {i})")
+
+
+@needs_pin
+@pytest.mark.parametrize("dtype", DTYPES)
+def test_se3_difference_vs_pinocchio(bins, dtype):
+    """Independent random pose pairs — relative angles land anywhere in (0, π)."""
+    pose_from, pose_to = _pin_poses(P), _pin_poses(P)
+    out = _run(bins, "se3_difference", "block", dtype, [pose_from, pose_to])
+    for i in range(P):
+        want = _pin.difference(_PIN_FF, pose_from[i], pose_to[i])
+        np.testing.assert_allclose(out[i], want, **_TOL[dtype],
+                                   err_msg=f"pin.difference mismatch (prob {i})")
+
+
+@needs_pin
+def test_se3_jacobians_vs_pinocchio(bins):
+    """dIntegrate ARG0/ARG1 on the free-flyer, exact algorithm vs exact
+    algorithm (both consume identical f32-quantized tangents, compute in f64)."""
+    pose = _pin_poses(P)
+    rho = _f32(RNG.standard_normal((P, 3)).astype(np.float32))
+    phi = _rotvecs(P)
+    Jq = _run(bins, "se3_jac_q", "block", "f64", [rho, phi])
+    Jv = _run(bins, "se3_jac_v", "block", "f64", [rho, phi])
+    for i in range(P):
+        v = np.concatenate([rho[i], phi[i]])
+        want_q = _pin.dIntegrate(_PIN_FF, pose[i], v, _pin.ArgumentPosition.ARG0)
+        want_v = _pin.dIntegrate(_PIN_FF, pose[i], v, _pin.ArgumentPosition.ARG1)
+        np.testing.assert_allclose(Jq[i].reshape(6, 6, order="F"), want_q,
+                                   rtol=1e-9, atol=1e-9,
+                                   err_msg=f"dIntegrate ARG0 mismatch (prob {i})")
+        np.testing.assert_allclose(Jv[i].reshape(6, 6, order="F"), want_v,
+                                   rtol=1e-9, atol=1e-9,
+                                   err_msg=f"dIntegrate ARG1 mismatch (prob {i})")
+
+
+@needs_pin
+def test_so3_maps_vs_pinocchio(bins):
+    """exp3/log3/Jexp3/Jlog3 against the whole SO(3) helper family (f64):
+    so3_exp == exp3, so3_log == log3, so3_rjac == Jexp3,
+    so3_ljac(φ) == Jexp3(−φ) (Jl(φ) = Jr(−φ)), so3_rjac_inv == Jlog3(exp3(φ))."""
+    phi = np.vstack([_rotvecs(P - 2), _f32([[0, 0, 0], [1e-9, 2e-9, -1e-9]])])
+    R = _run(bins, "so3_exp", "block", "f64", [phi])
+    Jr = _run(bins, "so3_rjac", "block", "f64", [phi])
+    Jl = _run(bins, "so3_ljac", "block", "f64", [phi])
+    Jri = _run(bins, "so3_rjac_inv", "block", "f64", [phi])
+    Rmats = np.stack([_f32(_pin.exp3(p).T.ravel().astype(np.float32)) for p in phi])
+    logs = _run(bins, "so3_log", "block", "f64", [Rmats])
+    tol = dict(rtol=1e-9, atol=1e-9)
+    for i in range(P):
+        Rp = _pin.exp3(phi[i])
+        np.testing.assert_allclose(R[i].reshape(3, 3, order="F"), Rp, **tol,
+                                   err_msg=f"exp3 mismatch (prob {i})")
+        # the shipped R is f32-quantized (≈1e-7 from orthogonal), and the two
+        # implementations project non-orthogonal input differently — the honest
+        # bound is input precision, not f64 algorithm agreement
+        np.testing.assert_allclose(logs[i], _pin.log3(Rmats[i].reshape(3, 3, order="F")),
+                                   rtol=1e-6, atol=1e-6, err_msg=f"log3 mismatch (prob {i})")
+        np.testing.assert_allclose(Jr[i].reshape(3, 3, order="F"), _pin.Jexp3(phi[i]),
+                                   **tol, err_msg=f"Jexp3 mismatch (prob {i})")
+        np.testing.assert_allclose(Jl[i].reshape(3, 3, order="F"), _pin.Jexp3(-phi[i]),
+                                   **tol, err_msg=f"Jl(φ)=Jr(−φ) mismatch (prob {i})")
+        np.testing.assert_allclose(Jri[i].reshape(3, 3, order="F"), _pin.Jlog3(Rp),
+                                   **tol, err_msg=f"Jlog3 mismatch (prob {i})")
+
+
 def test_se3_jacobians_fd(bins):
     """The defining composition identities of pin-style dIntegrate, by FD (f64):
       ARG1: retract(q, w+εδ) == retract(retract(q, w), ε·J_v·δ) + O(ε²)
