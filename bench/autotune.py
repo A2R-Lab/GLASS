@@ -106,6 +106,24 @@ _BENCH_PREAMBLE = textwrap.dedent("""
         }}
         return false;
     }}
+
+    // best-of-3 + spread (methodology audit 2026-08-11): the min of 3 timed
+    // legs estimates the clean time (noise is one-sided on a quiet GPU); the
+    // spread (max/min - 1, %) rides on the output line so autotune.py can
+    // flag cells whose jitter exceeds the decision margin.
+    #define TIME3(LEG, LAUNCH) do {{ \
+        double _best = 1e30, _worst = 0.0; \
+        for (int _t = 0; _t < 3; _t++) {{ \
+            struct timespec _a, _b; \
+            clock_gettime(CLOCK_MONOTONIC, &_a); \
+            LAUNCH; cudaDeviceSynchronize(); \
+            clock_gettime(CLOCK_MONOTONIC, &_b); \
+            double _us = elapsed_us(_a, _b) / iters; \
+            if (_us < _best) _best = _us; \
+            if (_us > _worst) _worst = _us; \
+        }} \
+        printf("%s %.6f spread %.1f\\n", LEG, _best, (_worst / _best - 1.0) * 100.0); \
+    }} while (0)
 """).strip()
 
 
@@ -114,9 +132,9 @@ _GEMM_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
 
     static const int M = {M}, N = {N}, K = {K};
 
-    namespace glass {{ namespace nvidia {{
+    namespace glass {{ namespace nvidia {{ namespace block {{   // block:: required since the 2026-07-30 namespace restructure
         DEFINE_NVIDIA_GEMM_BLOCKDIM(M, N, K, TC)
-    }}}}
+    }}}}}}
 
     __global__ void k_simt(float* A, float* B, float* C, volatile float* sink, int iters) {{
         for (int rep = 0; rep < iters; rep++) {{
@@ -144,8 +162,6 @@ _GEMM_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
         cudaMalloc(&dB, N*K * sizeof(float));
         cudaMalloc(&dC, M*K * sizeof(float));
         cudaMalloc(&dSink, 256 * sizeof(float));
-
-        struct timespec t0, t1;
         constexpr size_t smem = glass::nvidia::gemm_scratch_bytes<float, M, N, K, TC>();
 
         k_simt<<<1, TC>>>(dA, dB, dC, dSink, 100);
@@ -155,17 +171,11 @@ _GEMM_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
         bool cdx_ok = !leg_failed("cublasdx");
 
         if (simt_ok) {{
-            clock_gettime(CLOCK_MONOTONIC, &t0);
-            k_simt<<<1, TC>>>(dA, dB, dC, dSink, iters); cudaDeviceSynchronize();
-            clock_gettime(CLOCK_MONOTONIC, &t1);
-            printf("simt %.6f\\n", elapsed_us(t0, t1) / iters);
+            TIME3("simt", (k_simt<<<1, TC>>>(dA, dB, dC, dSink, iters)));
         }}
 
         if (cdx_ok) {{
-            clock_gettime(CLOCK_MONOTONIC, &t0);
-            k_cublasdx<<<1, TC, smem>>>(dA, dB, dC, dSink, iters); cudaDeviceSynchronize();
-            clock_gettime(CLOCK_MONOTONIC, &t1);
-            printf("cublasdx %.6f\\n", elapsed_us(t0, t1) / iters);
+            TIME3("cublasdx", (k_cublasdx<<<1, TC, smem>>>(dA, dB, dC, dSink, iters)));
         }}
 
         cudaFree(dA); cudaFree(dB); cudaFree(dC); cudaFree(dSink);
@@ -179,9 +189,9 @@ _GEMV_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
 
     static const int M = {M}, N = {N};
 
-    namespace glass {{ namespace nvidia {{
+    namespace glass {{ namespace nvidia {{ namespace block {{   // block:: required since the 2026-07-30 namespace restructure
         DEFINE_NVIDIA_GEMV_BLOCKDIM(M, N, TC)
-    }}}}
+    }}}}}}
 
     __global__ void k_simt(float* A, float* x, float* y, volatile float* sink, int iters) {{
         for (int rep = 0; rep < iters; rep++) {{
@@ -209,8 +219,6 @@ _GEMV_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
         cudaMalloc(&dx, N   * sizeof(float));
         cudaMalloc(&dy, M   * sizeof(float));
         cudaMalloc(&dSink, 256 * sizeof(float));
-
-        struct timespec t0, t1;
         constexpr size_t smem = glass::nvidia::gemv_scratch_bytes<float, M, N, TC>();
 
         k_simt<<<1, TC>>>(dA, dx, dy, dSink, 100);
@@ -220,17 +228,11 @@ _GEMV_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
         bool cdx_ok = !leg_failed("cublasdx");
 
         if (simt_ok) {{
-            clock_gettime(CLOCK_MONOTONIC, &t0);
-            k_simt<<<1, TC>>>(dA, dx, dy, dSink, iters); cudaDeviceSynchronize();
-            clock_gettime(CLOCK_MONOTONIC, &t1);
-            printf("simt %.6f\\n", elapsed_us(t0, t1) / iters);
+            TIME3("simt", (k_simt<<<1, TC>>>(dA, dx, dy, dSink, iters)));
         }}
 
         if (cdx_ok) {{
-            clock_gettime(CLOCK_MONOTONIC, &t0);
-            k_cublasdx<<<1, TC, smem>>>(dA, dx, dy, dSink, iters); cudaDeviceSynchronize();
-            clock_gettime(CLOCK_MONOTONIC, &t1);
-            printf("cublasdx %.6f\\n", elapsed_us(t0, t1) / iters);
+            TIME3("cublasdx", (k_cublasdx<<<1, TC, smem>>>(dA, dx, dy, dSink, iters)));
         }}
 
         cudaFree(dA); cudaFree(dx); cudaFree(dy); cudaFree(dSink);
@@ -246,9 +248,9 @@ _ROW_STRIDED_GEMV_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
 
     static const int M = {M}, N = {N}, ROW_STRIDE = {ROW_STRIDE};
 
-    namespace glass {{ namespace nvidia {{
+    namespace glass {{ namespace nvidia {{ namespace block {{   // block:: required since the 2026-07-30 namespace restructure
         DEFINE_NVIDIA_GEMV_BLOCKDIM(M, N, TC)
-    }}}}
+    }}}}}}
 
     __global__ void k_simt(float* A, float* x, float* y, volatile float* sink, int iters) {{
         for (int rep = 0; rep < iters; rep++) {{
@@ -276,8 +278,6 @@ _ROW_STRIDED_GEMV_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
         cudaMalloc(&dx, N   * sizeof(float));
         cudaMalloc(&dy, M   * sizeof(float));
         cudaMalloc(&dSink, 256 * sizeof(float));
-
-        struct timespec t0, t1;
         constexpr size_t smem =
             glass::nvidia::gemv_strided_scratch_bytes<float, M, N, ROW_STRIDE, TC>();
 
@@ -288,17 +288,11 @@ _ROW_STRIDED_GEMV_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
         bool cdx_ok = !leg_failed("cublasdx");
 
         if (simt_ok) {{
-            clock_gettime(CLOCK_MONOTONIC, &t0);
-            k_simt<<<1, TC>>>(dA, dx, dy, dSink, iters); cudaDeviceSynchronize();
-            clock_gettime(CLOCK_MONOTONIC, &t1);
-            printf("simt %.6f\\n", elapsed_us(t0, t1) / iters);
+            TIME3("simt", (k_simt<<<1, TC>>>(dA, dx, dy, dSink, iters)));
         }}
 
         if (cdx_ok) {{
-            clock_gettime(CLOCK_MONOTONIC, &t0);
-            k_cublasdx<<<1, TC, smem>>>(dA, dx, dy, dSink, iters); cudaDeviceSynchronize();
-            clock_gettime(CLOCK_MONOTONIC, &t1);
-            printf("cublasdx %.6f\\n", elapsed_us(t0, t1) / iters);
+            TIME3("cublasdx", (k_cublasdx<<<1, TC, smem>>>(dA, dx, dy, dSink, iters)));
         }}
 
         cudaFree(dA); cudaFree(dx); cudaFree(dy); cudaFree(dSink);
@@ -316,9 +310,9 @@ _ROW_STRIDED_GEMM_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
     static const int M = {M}, N = {N}, K = {K};
     static const int A_RS = {A_RS}, B_RS = {B_RS};
 
-    namespace glass {{ namespace nvidia {{
+    namespace glass {{ namespace nvidia {{ namespace block {{   // block:: required since the 2026-07-30 namespace restructure
         DEFINE_NVIDIA_GEMM_BLOCKDIM(M, N, K, TC)
-    }}}}
+    }}}}}}
 
     __global__ void k_simt(float* A, float* B, float* C, volatile float* sink, int iters) {{
         for (int rep = 0; rep < iters; rep++) {{
@@ -346,8 +340,6 @@ _ROW_STRIDED_GEMM_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
         cudaMalloc(&dB, B_RS * K * sizeof(float));
         cudaMalloc(&dC, M    * K * sizeof(float));
         cudaMalloc(&dSink, 256 * sizeof(float));
-
-        struct timespec t0, t1;
         constexpr size_t smem =
             glass::nvidia::gemm_strided_scratch_bytes<float, M, N, K, A_RS, B_RS, TC>();
 
@@ -358,17 +350,11 @@ _ROW_STRIDED_GEMM_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
         bool cdx_ok = !leg_failed("cublasdx");
 
         if (simt_ok) {{
-            clock_gettime(CLOCK_MONOTONIC, &t0);
-            k_simt<<<1, TC>>>(dA, dB, dC, dSink, iters); cudaDeviceSynchronize();
-            clock_gettime(CLOCK_MONOTONIC, &t1);
-            printf("simt %.6f\\n", elapsed_us(t0, t1) / iters);
+            TIME3("simt", (k_simt<<<1, TC>>>(dA, dB, dC, dSink, iters)));
         }}
 
         if (cdx_ok) {{
-            clock_gettime(CLOCK_MONOTONIC, &t0);
-            k_cublasdx<<<1, TC, smem>>>(dA, dB, dC, dSink, iters); cudaDeviceSynchronize();
-            clock_gettime(CLOCK_MONOTONIC, &t1);
-            printf("cublasdx %.6f\\n", elapsed_us(t0, t1) / iters);
+            TIME3("cublasdx", (k_cublasdx<<<1, TC, smem>>>(dA, dB, dC, dSink, iters)));
         }}
 
         cudaFree(dA); cudaFree(dB); cudaFree(dC); cudaFree(dSink);
@@ -392,10 +378,10 @@ _GEMM_BATCHED_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
     // silently — recorded as a bogus 0.000us before this cap + leg_failed().
     static const int BTC = (TC * BATCH > 1024) ? (1024 / BATCH) : TC;
 
-    namespace glass {{ namespace nvidia {{
+    namespace glass {{ namespace nvidia {{ namespace block {{   // block:: required since the 2026-07-30 namespace restructure
         DEFINE_NVIDIA_GEMM_BLOCKDIM(M, N, K, BTC)
         DEFINE_NVIDIA_GEMM_BATCHED_BLOCKDIM(M, N, K, BATCH, BTC)
-    }}}}
+    }}}}}}
 
     __global__ void k_simt(float** As, float** Bs, float** Cs, volatile float* sink, int iters) {{
         for (int rep = 0; rep < iters; rep++) {{
@@ -443,8 +429,6 @@ _GEMM_BATCHED_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
         cudaMemcpy(dAs, hAs, BATCH * sizeof(float*), cudaMemcpyHostToDevice);
         cudaMemcpy(dBs, hBs, BATCH * sizeof(float*), cudaMemcpyHostToDevice);
         cudaMemcpy(dCs, hCs, BATCH * sizeof(float*), cudaMemcpyHostToDevice);
-
-        struct timespec t0, t1;
         constexpr size_t smem =
             glass::nvidia::gemm_batched_scratch_bytes<float, M, N, K, BATCH, BTC>();
 
@@ -457,19 +441,11 @@ _GEMM_BATCHED_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
         bool cdx_ok = !leg_failed("cublasdx");
 
         if (simt_ok) {{
-            clock_gettime(CLOCK_MONOTONIC, &t0);
-            k_simt<<<1, BTC * BATCH>>>(dAs, dBs, dCs, dSink, iters);
-            cudaDeviceSynchronize();
-            clock_gettime(CLOCK_MONOTONIC, &t1);
-            printf("simt %.6f\\n", elapsed_us(t0, t1) / iters);
+            TIME3("simt", (k_simt<<<1, BTC * BATCH>>>(dAs, dBs, dCs, dSink, iters)));
         }}
 
         if (cdx_ok) {{
-            clock_gettime(CLOCK_MONOTONIC, &t0);
-            k_cublasdx<<<1, dim3(BTC, BATCH), smem>>>(dAs, dBs, dCs, dSink, iters);
-            cudaDeviceSynchronize();
-            clock_gettime(CLOCK_MONOTONIC, &t1);
-            printf("cublasdx %.6f\\n", elapsed_us(t0, t1) / iters);
+            TIME3("cublasdx", (k_cublasdx<<<1, dim3(BTC, BATCH), smem>>>(dAs, dBs, dCs, dSink, iters)));
         }}
 
         cudaFree(dA); cudaFree(dB); cudaFree(dC); cudaFree(dSink);
@@ -651,13 +627,20 @@ def measure_shape(api, shape, sms, iters, mathdx_root, build_dir):
 
     simt_us = cublasdx_us = None
     for line in res.stdout.splitlines():
-        m1 = re.match(r"^(simt|cublasdx)\s+([\d.]+)", line.strip())
+        m1 = re.match(r"^(simt|cublasdx)\s+([\d.]+)(?:\s+spread\s+([\d.]+))?",
+                      line.strip())
         if not m1:
             continue
         if m1.group(1) == "simt":
             simt_us = float(m1.group(2))
         else:
             cublasdx_us = float(m1.group(2))
+        # audit hook: a cell whose 3-trial spread exceeds the decision margin
+        # cannot cleanly resolve it — surface the jitter instead of hiding it.
+        if m1.group(3) is not None and float(m1.group(3)) > 5.0:
+            print(f"    !! [{api} {cfg['label_fmt'](shape)}] {m1.group(1)} "
+                  f"trial spread {m1.group(3)}% > 5% margin — verdict unreliable, "
+                  f"re-run on a quieter GPU", file=sys.stderr)
     return simt_us, cublasdx_us
 
 

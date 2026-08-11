@@ -224,15 +224,21 @@ def run_mega_sweep(binp, quick, prefix="mega_sweep", sched=None):
     # keeps all completed sections — hours of Orin data died to the old
     # write-at-the-end behavior (2026-07-31).
     path = BENCH_DIR / f"{prefix}_{time.strftime('%Y%m%d_%H%M')}.txt"
-    hdr = [f"# {prefix}  {time.strftime('%c')}  (bench/tune.py)"]
-    try:
-        smi = subprocess.check_output(
-            ["nvidia-smi", "--query-gpu=name,clocks.max.sm,clocks.sm,temperature.gpu",
-             "--format=csv,noheader"], text=True).strip()
-        hdr.append(smi)
-    except Exception:
-        pass
-    hdr.append("")
+
+    def _telemetry():
+        """One `# telemetry ...` line (SM clock + temp) — stamped per SECTION,
+        not just once per file, so thermal/clock drift across a multi-hour sweep
+        is visible in the capture itself (clocks are deliberately NOT locked:
+        users run at stock boost, so we tune at stock boost — see TUNING.md)."""
+        try:
+            smi = subprocess.check_output(
+                ["nvidia-smi", "--query-gpu=name,clocks.max.sm,clocks.sm,temperature.gpu",
+                 "--format=csv,noheader"], text=True).strip()
+            return f"# telemetry {smi}"
+        except Exception:
+            return "# telemetry n/a (no nvidia-smi query support on this host)"
+
+    hdr = [f"# {prefix}  {time.strftime('%c')}  (bench/tune.py)", _telemetry(), ""]
     path.write_text("\n".join(hdr) + "\n")
     for nprob, reps in sched:
         for dt in ("f32", "f64"):
@@ -241,7 +247,9 @@ def run_mega_sweep(binp, quick, prefix="mega_sweep", sched=None):
                                capture_output=True, cwd=BENCH_DIR)
             with open(path, "a") as f:
                 f.write(f"################ NPROB={nprob}  reps={reps}  dtype={dt} ################\n")
+                f.write(_telemetry() + "\n")
                 f.write(r.stdout)
+                f.write(_telemetry() + "  [section end]\n")
                 f.write("\n")
             print(f"     section saved -> {path.name}")
     print(f"==> wrote {path.relative_to(GLASS_DIR)}")
@@ -264,6 +272,29 @@ def _ladder_expr(winners, dtype, op):
         return f"backend::{runs[0][1]}"
     parts = [f"N <= {hi}u ? backend::{be}" for hi, be in runs[:-1]]
     return " : ".join(parts) + f" : backend::{runs[-1][1]}"
+
+
+_SPREAD_RE = re.compile(r"spread<=([\d.]+)%")
+
+
+def warn_jittery_rows(text, margin, label):
+    """Audit hook (2026-08-11): sweep rows carry `spread<=X%` — the worst
+    (max−min)/min over the timer's 3 trials across the row's cells. A row whose
+    spread exceeds the decision margin cannot cleanly resolve that margin, so
+    warn rather than silently bake jitter into a shipped table. Pre-2026-08
+    captures carry no spread tokens → nothing to check (replays stay valid)."""
+    jittery = []
+    for line in text.splitlines():
+        m = _SPREAD_RE.search(line)
+        if m and float(m.group(1)) > margin * 100.0:
+            jittery.append((float(m.group(1)), line.split("||")[0].strip()[:48]))
+    if jittery:
+        jittery.sort(reverse=True)
+        print(f"  !! {label}: {len(jittery)} row(s) with trial spread > "
+              f"{margin*100:.0f}% margin (worst {jittery[0][0]:.1f}% @ "
+              f"'{jittery[0][1]}') — treat those verdicts as unresolved; "
+              f"re-capture on a quieter GPU if any of them matters.")
+    return len(jittery)
 
 
 def winners_from_sweep(text, margin):
@@ -302,6 +333,7 @@ def regen_ladder(sweep_text, margin, src_name, sms):
     arch was swept before, insert after the last table block if it's new) and
     rebuild the SM dispatch case-list from every table block present."""
     arch = sms // 10
+    warn_jittery_rows(sweep_text, margin, "ladder")
     winners = winners_from_sweep(sweep_text, margin)
     if not winners:
         sys.exit("ERROR: no NPROB=8192 verdicts parsed from the sweep.")
@@ -389,6 +421,7 @@ def _rebuild_dispatch(text, dis_begin, dis_end, arches, fn_prefix, argstr):
 def regen_blas2_table(sweep_text, margin, src_name, sms):
     """Regenerate this arch's blas2_sm<A> block + dispatch in glass-defaults.cuh."""
     arch = sms // 10
+    warn_jittery_rows(sweep_text, margin, "blas2")
     cells = tp.parse_blas2(sweep_text, nprob=8192)
     winners = {}
     for (dt, op, N), times in cells.items():
@@ -437,6 +470,7 @@ def _emit_rect_fn(cells, op_name, fname, dims_names, margin):
 def regen_rect_table(sweep_text, margin, src_name, sms):
     """Regenerate this arch's rect_gemv/gemm_sm<A> blocks + dispatch cases."""
     arch = sms // 10
+    warn_jittery_rows(sweep_text, margin, "rect")
     cells = tp.parse_rect(sweep_text, nprob=8192)
     if not cells:
         sys.exit("ERROR: no NPROB=8192 rect rows parsed from the sweep.")
@@ -594,6 +628,7 @@ def regen_body(sweep_text, margin, src_name, sms):
     from every body table present. Mirrors regen_ladder's marker discipline;
     the dispatch block always exists (Phase-1 stub or a prior regen)."""
     arch = sms // 10
+    warn_jittery_rows(sweep_text, margin, "body")
     cells = parse_body_sweep(sweep_text)
     picks = body_picks(cells, margin)
     if not picks:

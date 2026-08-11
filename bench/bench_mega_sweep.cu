@@ -33,6 +33,7 @@
 #include <cstdint>
 #include <cstring>
 #include <ctime>
+#include "timing_common.cuh"
 #include <type_traits>
 
 #if defined(GLASS_BENCH_CUBLASDX)
@@ -52,9 +53,6 @@
 
 static int NPROB = 8192;
 
-static double elapsed_ms(struct timespec a, struct timespec b) {
-    return (double)(b.tv_sec - a.tv_sec) * 1e3 + (double)(b.tv_nsec - a.tv_nsec) * 1e-6;
-}
 
 // ─── BLOCK model: block b owns problem b ─────────────────────────────────────
 template<typename T,int N> __global__ void kb_dot (T* x, T* y) { int p=blockIdx.x; glass::block::dot<T,N>(x+p*N, y+p*N); }
@@ -273,26 +271,17 @@ template<typename T,int N> static constexpr bool nv_blas_ok()
 template<typename T,int N> static constexpr bool nv_lapack_ok()
 { return MEGA_NV_LAPACK && (std::is_same_v<T,float> ? N <= 128 : N <= 64); }
 
+// Measurement core lives in timing_common.cuh (min-of-3 + FAIL probe + trial
+// spread + the mutation invariant). g_row_spread accumulates the worst trial
+// spread across a row's cells; bench_size resets it and prints `spread<=X%`
+// per row so tune.py can flag captures where jitter exceeds the margin.
+static double g_row_spread = 0.0;
+
 template<typename F>
 static double time_ns_per_prob(F launch, int reps) {
-    cudaGetLastError();                          // clear any sticky prior error
-    launch(); cudaDeviceSynchronize();
-    // An infeasible config (e.g. tile4 register pressure x 1024 threads exceeds
-    // the per-block register file) fails to LAUNCH; without this check the empty
-    // launch times as ~350ns total and poisons the argmin as a fake sub-ns win
-    // (caught 2026-07-18: gemm N=16 w16/w32). FAIL is printed instead.
-    if (cudaGetLastError() != cudaSuccess) return 1e30;
-    double best = 1e30;
-    for (int t = 0; t < 3; t++) {
-        struct timespec t0, t1;
-        clock_gettime(CLOCK_MONOTONIC, &t0);
-        for (int r = 0; r < reps; r++) launch();
-        cudaDeviceSynchronize();
-        clock_gettime(CLOCK_MONOTONIC, &t1);
-        double ns = elapsed_ms(t0, t1) * 1e6 / ((double)reps * NPROB);
-        if (ns < best) best = ns;
-    }
-    return best;
+    double ns = tc_time_ns_per_prob(launch, reps, NPROB);
+    if (tc_last_spread_pct() > g_row_spread) g_row_spread = tc_last_spread_pct();
+    return ns;
 }
 
 static size_t g_optin_smem = 48 * 1024;   // device opt-in dynamic-smem cap (queried in main)
@@ -383,6 +372,7 @@ static void bench_size(Op op, int reps) {
 
     double best_block=1e30, best_warp=1e30, best_thread=1e30;
     int best_tb=0, best_wpb=0, best_tpb=0;
+    g_row_spread = 0.0;
     printf("%-5s N=%-3d | BLOCK", op_name(op), N);
     for (int TB : {32, 64, 128, 256}) {
         double ns = time_ns_per_prob([&]{ launch_block<T,N>(op, TB, A, B, C, x, y); }, reps);
@@ -427,7 +417,7 @@ static void bench_size(Op op, int reps) {
     printf("  || block tb%d=%.4f  warp w%d=%.4f", best_tb, best_block, best_wpb, best_warp);
     if (has_thread) printf("  thread t%d=%.4f", best_tpb, best_thread);
     if (nv > 0)     printf("  nv=%.4f", nv);
-    printf("  -> %s (%.2fx)\n", winner, margin);
+    printf("  spread<=%.1f%%  -> %s (%.2fx)\n", g_row_spread, winner, margin);
     cudaFree(A); cudaFree(B); cudaFree(C); cudaFree(x); cudaFree(y);
 }
 
@@ -450,6 +440,7 @@ int main(int argc, char** argv) {
     printf("# mega sweep | NPROB=%d reps=%d dtype=%s | ns/problem (lower=better) | optin_smem=%zuKB\n", NPROB, reps, f64 ? "f64" : "f32", g_optin_smem/1024);
     printf("# contenders: BLOCK(SIMT, TB swept) | WARP(WPB swept) | THREAD(SIMT, TPB swept) | NV(cuBLASDx/cuSOLVERDx, forced; f32<=128, f64<=64)\n");
     printf("# THREAD stages operands global->registers->global in the per-problem-contiguous layout (uncoalesced; the layout tax is IN the timing).\n");
+    tc_warm_gpu();                    // steady boost clocks before the first timed cell
     if (f64) run_all<double>(reps);
     else     run_all<float>(reps);
     return 0;

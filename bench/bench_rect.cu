@@ -28,29 +28,23 @@
 #include <cstdint>
 #include <cstring>
 #include <ctime>
+#include "timing_common.cuh"
 
 #include "../glass.cuh"
 
 static int NPROB = 8192;
 
-static double elapsed_ms(struct timespec a, struct timespec b) {
-    return (double)(b.tv_sec - a.tv_sec) * 1e3 + (double)(b.tv_nsec - a.tv_nsec) * 1e-6;
-}
+
+// Measurement core lives in timing_common.cuh (min-of-3 + trial spread +
+// mutation invariant). g_row_spread accumulates the worst trial spread across
+// a row; the row printer emits `spread<=X%` so tune.py can flag jittery rows.
+static double g_row_spread = 0.0;
 
 template<typename F>
 static double time_ns_per_prob(F launch, int reps) {
-    launch(); cudaDeviceSynchronize();
-    double best = 1e30;
-    for (int t = 0; t < 3; t++) {
-        struct timespec t0, t1;
-        clock_gettime(CLOCK_MONOTONIC, &t0);
-        for (int r = 0; r < reps; r++) launch();
-        cudaDeviceSynchronize();
-        clock_gettime(CLOCK_MONOTONIC, &t1);
-        double ns = elapsed_ms(t0, t1) * 1e6 / ((double)reps * NPROB);
-        if (ns < best) best = ns;
-    }
-    return best;
+    double ns = tc_time_ns_per_prob(launch, reps, NPROB);
+    if (tc_last_spread_pct() > g_row_spread) g_row_spread = tc_last_spread_pct();
+    return ns;
 }
 
 // ─── gemv: y(M) = A(MxN)·x(N), one problem per block / per warp ──────────────
@@ -78,6 +72,7 @@ template<typename T,int M,int K,int N> __global__ void kw_gemm(T* A, T* B, T* C,
 template<typename LB, typename LW>
 static void sweep_and_report(LB launch_block, LW launch_warp, int reps) {
     double best_block=1e30, best_warp=1e30; int best_tb=0, best_wpb=0;
+    g_row_spread = 0.0;
     printf(" | BLOCK");
     for (int TB : {32, 64, 128, 256}) {
         double ns = time_ns_per_prob([&]{ launch_block(TB); }, reps);
@@ -93,8 +88,8 @@ static void sweep_and_report(LB launch_block, LW launch_warp, int reps) {
     }
     const char* winner = best_warp < best_block ? "WARP" : "BLOCK";
     double margin = best_warp < best_block ? best_block/best_warp : best_warp/best_block;
-    printf("  || block tb%d=%.2f  warp w%d=%.2f  -> %s (%.2fx)\n",
-           best_tb, best_block, best_wpb, best_warp, winner, margin);
+    printf("  || block tb%d=%.2f  warp w%d=%.2f  spread<=%.1f%%  -> %s (%.2fx)\n",
+           best_tb, best_block, best_wpb, best_warp, g_row_spread, winner, margin);
 }
 
 // Fill dst with NPROB copies of a deterministic elems-long tile.
@@ -159,6 +154,7 @@ int main(int argc, char** argv) {
     bool f64 = (strcmp(dt, "f64") == 0 || strcmp(dt, "fp64") == 0 || strcmp(dt, "double") == 0);
     printf("# rect sweep | NPROB=%d reps=%d dtype=%s | ns/problem (lower=better)\n", NPROB, reps, f64 ? "f64" : "f32");
     printf("# contenders: BLOCK(SIMT, TB swept) | WARP(WPB swept) — nvidia leg skipped for rectangular shapes (see header)\n");
+    tc_warm_gpu();                    // steady boost clocks before the first timed cell
     if (f64) run_all<double>(reps);
     else     run_all<float>(reps);
     return 0;

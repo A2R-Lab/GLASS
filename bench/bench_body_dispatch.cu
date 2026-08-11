@@ -65,6 +65,7 @@
 #include <cstring>
 #include <cmath>
 #include <ctime>
+#include "timing_common.cuh"
 
 #include "../glass.cuh"
 
@@ -74,26 +75,17 @@ enum { BODY_BLOCK = 0, BODY_WARP = 1, BODY_THREAD = 2 };
 static const char* BODY_NAMES[3] = {"BLOCKBODY", "WARPBODY", "THREADBODY"};
 static const int TBS[4] = {32, 64, 128, 256};
 
-static double elapsed_ms(struct timespec a, struct timespec b) {
-    return (double)(b.tv_sec - a.tv_sec) * 1e3 + (double)(b.tv_nsec - a.tv_nsec) * 1e-6;
-}
+
+// Measurement core lives in timing_common.cuh (min-of-3 + FAIL probe + trial
+// spread + mutation invariant). g_row_spread accumulates the worst trial
+// spread across a row; run_row emits `spread<=X%` per row.
+static double g_row_spread = 0.0;
 
 template <typename F>
 static double time_ns_per_prob(F launch, int reps) {
-    cudaGetLastError();                          // clear any sticky prior error
-    launch(); cudaDeviceSynchronize();
-    if (cudaGetLastError() != cudaSuccess) return 1e30;   // FAIL guard
-    double best = 1e30;
-    for (int t = 0; t < 3; t++) {
-        struct timespec t0, t1;
-        clock_gettime(CLOCK_MONOTONIC, &t0);
-        for (int r = 0; r < reps; r++) launch();
-        cudaDeviceSynchronize();
-        clock_gettime(CLOCK_MONOTONIC, &t1);
-        double ns = elapsed_ms(t0, t1) * 1e6 / ((double)reps * NPROB);
-        if (ns < best) best = ns;
-    }
-    return best;
+    double ns = tc_time_ns_per_prob(launch, reps, NPROB);
+    if (tc_last_spread_pct() > g_row_spread) g_row_spread = tc_last_spread_pct();
+    return ns;
 }
 
 // ─── thread-body support gates ───────────────────────────────────────────────
@@ -271,6 +263,7 @@ static void run_row(const char* name, bool has_thread, LaunchF launch, RestoreF 
                     const T* d_out, size_t out_elems, int reps)
 {
     const bool present[3] = {true, true, has_thread};
+    g_row_spread = 0.0;
     bool pass[3][4];
     T* h[3];
     for (int b = 0; b < 3; b++) h[b] = (T*)malloc(out_elems * sizeof(T));
@@ -319,7 +312,7 @@ static void run_row(const char* name, bool has_thread, LaunchF launch, RestoreF 
     int win = -1; double wns = 1e30;
     for (int b = 0; b < 3; b++)
         if (best[b] < wns) { wns = best[b]; win = b; }
-    printf("|| -> %s\n", win >= 0 ? BODY_NAMES[win] : "NONE");
+    printf("|| spread<=%.1f%%  -> %s\n", g_row_spread, win >= 0 ? BODY_NAMES[win] : "NONE");
     fflush(stdout);
 }
 
@@ -503,6 +496,7 @@ int main(int argc, char** argv)
            NPROB, reps, f64 ? "f64" : "f32");
     printf("# fixed block-scope contract: one problem per BLOCK; bodies = block SIMT / warp0 / thread0.\n");
     printf("# TIMED RUNS REQUIRE A QUIET GPU (see file header).\n");
+    tc_warm_gpu();                    // steady boost clocks before the first timed cell
     if (f64) bench_all<double>(reps);
     else     bench_all<float>(reps);
     return 0;

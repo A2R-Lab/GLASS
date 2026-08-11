@@ -94,6 +94,44 @@ timing must be isolated from other CPU/GPU load. Use `--dry-run` first to confir
 a re-run only moves dispatch inside the tie band before committing a regenerated
 table. The `shapes` leg below is the per-shape engine `tune.py` drives.
 
+## Measurement methodology (and how to audit a capture)
+
+The ladder-grammar harnesses share one measurement core
+(`bench/timing_common.cuh`, audited 2026-08-11):
+
+- **Warmup**: each harness runs a ~0.7 s FMA busy-loop across all SMs before
+  the first timed cell (`tc_warm_gpu`) — one untimed launch is not enough to
+  bring an idle GPU to steady boost, and without this the first rows of a
+  sweep run measurably cooler than the last. The untimed probe launch before
+  each cell additionally catches launch failures (`FAIL`, never a fake time).
+- **Estimator**: 3 trials per cell, each = wall clock around `reps`
+  back-to-back async launches (default 500) over `NPROB` problems (default
+  8192), reported as **min of the 3** — on a quiet GPU noise is one-sided
+  additive, so the min estimates the clean time. The number is a
+  **throughput** metric (batch of 8192), which matches how consumers call
+  GLASS; it is not a single-launch latency.
+- **Spread**: every row records `spread<=X%` — the worst `(max−min)/min`
+  across its cells' 3-trial sets. `tune.py` **warns when a row's spread
+  exceeds the decision margin it is about to resolve** (`warn_jittery_rows`);
+  such verdicts are coin tosses and the capture should be re-run quieter.
+  Old captures without spread tokens still parse (the token is trailing and
+  optional).
+- **Telemetry**: `tune.py` stamps `# telemetry <name, max SM clock, SM clock,
+  temp>` into the capture at file start and at each section's start/end, so
+  thermal or clock drift across a multi-hour sweep is visible in the capture
+  itself. Clocks are deliberately **not locked** (`nvidia-smi -lgc`): users
+  run at stock boost, so the tables are tuned at stock boost — the telemetry
+  lines exist so a reviewer can verify the clocks were stable anyway.
+- **Mutation invariant**: reps run with no restore in the timed region, so
+  in-place ops re-factor their own output from rep 2 on. This is
+  timing-benign only for branch-free, data-independent ops (everything
+  currently laddered; GPU NaN/denormal arithmetic is full-speed). Never time
+  a `CHECK`-gated or pivoted op through this loop.
+- **Decisions absorb residual noise**: the 5% dependency margin, the ±2% SIMT
+  tie band, and the `noise_floor` override (sub-granularity cells refuse to
+  resolve a margin) all live in `tune_pick.py` — measured 4× on Jetson Orin
+  across power modes, the shipped tables regenerated **byte-identical**.
+
 ## The cuBLASDx-vs-SIMT table
 
 GLASS's `glass::nvidia::*` wrappers — `gemm`, `gemv`, `row_strided_*`,

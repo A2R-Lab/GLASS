@@ -30,14 +30,12 @@
 #include <cstdint>
 #include <cstring>
 #include <ctime>
+#include "timing_common.cuh"
 
 #include "../glass.cuh"
 
 static int NPROB = 8192;
 
-static double elapsed_ms(struct timespec a, struct timespec b) {
-    return (double)(b.tv_sec - a.tv_sec) * 1e3 + (double)(b.tv_nsec - a.tv_nsec) * 1e-6;
-}
 
 // ─── BLOCK model: block b owns problem b ─────────────────────────────────────
 template<typename T,int N> __global__ void kb_syrk (T* A, T* C) { int p=blockIdx.x; glass::block::syrk<T,N,N>((T)1, A+(size_t)p*N*N, (T)0, C+(size_t)p*N*N); }
@@ -88,20 +86,16 @@ static void launch_warp(Op op, int WPB, T* A, T* B, T* C, T* x) {
     }
 }
 
+// Measurement core lives in timing_common.cuh (min-of-3 + trial spread +
+// mutation invariant). g_row_spread accumulates the worst trial spread across
+// a row; the row printer emits `spread<=X%` so tune.py can flag jittery rows.
+static double g_row_spread = 0.0;
+
 template<typename F>
 static double time_ns_per_prob(F launch, int reps) {
-    launch(); cudaDeviceSynchronize();
-    double best = 1e30;
-    for (int t = 0; t < 3; t++) {
-        struct timespec t0, t1;
-        clock_gettime(CLOCK_MONOTONIC, &t0);
-        for (int r = 0; r < reps; r++) launch();
-        cudaDeviceSynchronize();
-        clock_gettime(CLOCK_MONOTONIC, &t1);
-        double ns = elapsed_ms(t0, t1) * 1e6 / ((double)reps * NPROB);
-        if (ns < best) best = ns;
-    }
-    return best;
+    double ns = tc_time_ns_per_prob(launch, reps, NPROB);
+    if (tc_last_spread_pct() > g_row_spread) g_row_spread = tc_last_spread_pct();
+    return ns;
 }
 
 template<typename T,int N>
@@ -129,6 +123,7 @@ static void bench_size(Op op, int reps) {
     free(hA);
 
     double best_block=1e30, best_warp=1e30; int best_tb=0, best_wpb=0;
+    g_row_spread = 0.0;
     printf("%-6s N=%-3d | BLOCK", op_name(op), N);
     for (int TB : {32, 64, 128, 256}) {
         double ns = time_ns_per_prob([&]{ launch_block<T,N>(op, TB, A, B, C, G, x, y); }, reps);
@@ -150,9 +145,9 @@ static void bench_size(Op op, int reps) {
         printf("  warp w%d=%.2f", best_wpb, best_warp);
         const char* winner = best_warp < best_block ? "WARP" : "BLOCK";
         double margin = best_warp < best_block ? best_block/best_warp : best_warp/best_block;
-        printf("  -> %s (%.2fx)\n", winner, margin);
+        printf("  spread<=%.1f%%  -> %s (%.2fx)\n", g_row_spread, winner, margin);
     } else {
-        printf("  -> BLOCK (1.00x)\n");
+        printf("  spread<=%.1f%%  -> BLOCK (1.00x)\n", g_row_spread);
     }
     cudaFree(A); cudaFree(B); cudaFree(C); cudaFree(x); cudaFree(y);
     if (G) cudaFree(G);
@@ -175,6 +170,7 @@ int main(int argc, char** argv) {
     bool f64 = (strcmp(dt, "f64") == 0 || strcmp(dt, "fp64") == 0 || strcmp(dt, "double") == 0);
     printf("# blas2 sweep | NPROB=%d reps=%d dtype=%s | ns/problem (lower=better)\n", NPROB, reps, f64 ? "f64" : "f32");
     printf("# contenders: BLOCK(SIMT, TB swept) | WARP(WPB swept; syrk/syr2k/ldlt/ldltsv only) — no glass::nvidia:: counterparts for these ops\n");
+    tc_warm_gpu();                    // steady boost clocks before the first timed cell
     if (f64) run_all<double>(reps);
     else     run_all<float>(reps);
     return 0;
