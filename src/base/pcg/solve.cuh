@@ -76,7 +76,7 @@ __device__ void pcg(T *x, T *S, T *Pinv, T *b, T *s_mem,
     T *s_scr = s_p  + VEC;            // warp-dot scratch: ceil(blockDim/32) elems
     __shared__ T s_rho, s_rho_new, s_alpha, s_beta, s_rho_init;
 
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
+    uint32_t rank = flat_rank();
 
     set_const<T, 5 * VEC>(static_cast<T>(0), s_mem);   // zero the 5 vectors incl. pads
     __syncthreads();

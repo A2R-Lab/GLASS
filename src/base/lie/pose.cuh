@@ -61,14 +61,14 @@ namespace lie_detail {
     // both shortest path (see quat_log_core), both from-desired-to-current.
     template <typename T, QuatLayout L, ErrorFrame F = ErrorFrame::LOCAL>
     __device__ __forceinline__ void quat_error_core(const T *q, const T *q_des, T *e) {
-        using QL = quat_detail::layout<L>;
+        using QL = lie_detail::layout<L>;
         T dc[4];
         dc[QL::X] = -q_des[QL::X]; dc[QL::Y] = -q_des[QL::Y];
         dc[QL::Z] = -q_des[QL::Z]; dc[QL::W] =  q_des[QL::W];
         T qe[4];
-        if constexpr (F == ErrorFrame::LOCAL) quat_detail::quat_mul_core<T, L>(dc, q, qe);
-        else                                  quat_detail::quat_mul_core<T, L>(q, dc, qe);
-        quat_detail::quat_log_core<T, L>(qe, e);
+        if constexpr (F == ErrorFrame::LOCAL) lie_detail::quat_mul_core<T, L>(dc, q, qe);
+        else                                  lie_detail::quat_mul_core<T, L>(q, dc, qe);
+        lie_detail::quat_log_core<T, L>(qe, e);
     }
 
     // serial core: e = [p − p_des ; quat_error] (linear-first).
@@ -108,10 +108,10 @@ template <typename T, QuatLayout L = QuatLayout::xyzw, ErrorFrame F = ErrorFrame
           bool TRAILING_SYNC = true>
 __device__ void quat_error(const T *q, const T *q_des, T *e)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     T tmp[3]; lie_detail::quat_error_core<T, L, F>(q, q_des, tmp);
-    quat_detail::copy_out<T, 3>(rank, size, tmp, e);
+    lie_detail::copy_out<T, 3>(rank, size, tmp, e);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -135,10 +135,10 @@ template <typename T, QuatLayout L = QuatLayout::xyzw, ErrorFrame F = ErrorFrame
           bool TRAILING_SYNC = true>
 __device__ void pose_error(const T *pose, const T *pose_des, T *e)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     T tmp[6]; lie_detail::pose_error_core<T, L, F>(pose, pose_des, tmp);
-    quat_detail::copy_out<T, 6>(rank, size, tmp, e);
+    lie_detail::copy_out<T, 6>(rank, size, tmp, e);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -163,17 +163,46 @@ __device__ void pose_error(const T *pose, const T *pose_des, T *e)
 template <typename T, QuatLayout L = QuatLayout::xyzw>
 __device__ __forceinline__ T quat_angle(const T *q, const T *q_des)
 {
-    using QL = quat_detail::layout<L>;
+    using QL = lie_detail::layout<L>;
     T dc[4];
     dc[QL::X] = -q_des[QL::X]; dc[QL::Y] = -q_des[QL::Y];
     dc[QL::Z] = -q_des[QL::Z]; dc[QL::W] =  q_des[QL::W];
-    T qe[4]; quat_detail::quat_mul_core<T, L>(dc, q, qe);
+    T qe[4]; lie_detail::quat_mul_core<T, L>(dc, q, qe);
     const T n = sqrt(qe[QL::X]*qe[QL::X] + qe[QL::Y]*qe[QL::Y] + qe[QL::Z]*qe[QL::Z]);
     const T w = (qe[QL::W] < static_cast<T>(0)) ? -qe[QL::W] : qe[QL::W];
     return static_cast<T>(2)*atan2(n, w);
 }
 
-// ─── single-thread pose errors ───────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace warp {
+    /** @brief Single-warp frame-tagged rotation error. See `glass::quat_error`. */
+    template <typename T, QuatLayout L = QuatLayout::xyzw, ErrorFrame F = ErrorFrame::LOCAL>
+    __device__ void quat_error(const T *q, const T *q_des, T *e)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        T tmp[3]; lie_detail::quat_error_core<T, L, F>(q, q_des, tmp);
+        lie_detail::copy_out<T, 3>(lane, 32u, tmp, e);
+        __syncwarp();
+    }
+
+    /** @brief Single-warp decoupled 6-D pose error. See `glass::pose_error`. */
+    template <typename T, QuatLayout L = QuatLayout::xyzw, ErrorFrame F = ErrorFrame::LOCAL>
+    __device__ void pose_error(const T *pose, const T *pose_des, T *e)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        T tmp[6]; lie_detail::pose_error_core<T, L, F>(pose, pose_des, tmp);
+        lie_detail::copy_out<T, 6>(lane, 32u, tmp, e);
+        __syncwarp();
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// thread:: — one problem per thread (serial, register-resident)
+// ═══════════════════════════════════════════════════════════════════════
+
 namespace thread {
     /** @brief Single-thread frame-tagged rotation error. See `glass::quat_error`. */
     template <typename T, QuatLayout L = QuatLayout::xyzw, ErrorFrame F = ErrorFrame::LOCAL>
@@ -189,28 +218,5 @@ namespace thread {
     {
         T tmp[6]; lie_detail::pose_error_core<T, L, F>(pose, pose_des, tmp);
         for (uint32_t i = 0; i < 6; i++) e[i] = tmp[i];
-    }
-}
-
-// ─── single-warp pose errors ─────────────────────────────────────────────────
-namespace warp {
-    /** @brief Single-warp frame-tagged rotation error. See `glass::quat_error`. */
-    template <typename T, QuatLayout L = QuatLayout::xyzw, ErrorFrame F = ErrorFrame::LOCAL>
-    __device__ void quat_error(const T *q, const T *q_des, T *e)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T tmp[3]; lie_detail::quat_error_core<T, L, F>(q, q_des, tmp);
-        quat_detail::copy_out<T, 3>(lane, 32u, tmp, e);
-        __syncwarp();
-    }
-
-    /** @brief Single-warp decoupled 6-D pose error. See `glass::pose_error`. */
-    template <typename T, QuatLayout L = QuatLayout::xyzw, ErrorFrame F = ErrorFrame::LOCAL>
-    __device__ void pose_error(const T *pose, const T *pose_des, T *e)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T tmp[6]; lie_detail::pose_error_core<T, L, F>(pose, pose_des, tmp);
-        quat_detail::copy_out<T, 6>(lane, 32u, tmp, e);
-        __syncwarp();
     }
 }

@@ -108,8 +108,8 @@ __device__ void syev_impl(SizeT n, const T *A, T *W, T *V, T *s_scratch)
 {
     static_assert(sizeof(uint32_t) <= sizeof(T),
                   "syev: the permutation slots assume sizeof(T) >= 4");
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     // Scratch layout — see syev_scratch_bytes: [0, n*n) working copy B (reused
     // as the V-permutation staging buffer at the end); [n*n, n*n + n) the sort
     // permutation (as uint32_t); then 4 control slots: [0]=c, [1]=s,
@@ -321,8 +321,8 @@ __host__ __device__ constexpr std::size_t eig_clamp_scratch_bytes(uint32_t n)
 template <typename T, typename SizeT>
 __device__ void eig_clamp_impl(SizeT n, T *A, T eps, T *s_scratch)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     // Scratch layout — see eig_clamp_scratch_bytes: W (n) | V (n*n) | syev scratch.
     T *s_W = s_scratch;
     T *s_V = s_scratch + n;

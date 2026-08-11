@@ -13,7 +13,7 @@
 // live once at `glass::` scope with no `warp::`/`thread::` mirrors; there is
 // nothing a tier could change.
 
-namespace angle_detail {
+namespace lie_detail {
     template <typename T> __device__ __forceinline__ T pi() {
         return static_cast<T>(3.14159265358979323846);
     }
@@ -33,7 +33,7 @@ namespace angle_detail {
 template <typename T>
 __host__ __device__ __forceinline__ T angle_wrap(T x)
 {
-    const T pi  = angle_detail::pi<T>();
+    const T pi  = lie_detail::pi<T>();
     const T two = static_cast<T>(2) * pi;
     x = x - two * floor((x + pi) / two);
     // floor puts x in [−π, π); move the open end so −π maps to +π.

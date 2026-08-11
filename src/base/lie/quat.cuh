@@ -40,7 +40,7 @@
  */
 enum class QuatLayout { xyzw, wxyz };
 
-namespace quat_detail {
+namespace lie_detail {
     // storage indices for a layout — formulas are written once against these.
     template <QuatLayout L> struct layout;
     template <> struct layout<QuatLayout::xyzw> {
@@ -207,7 +207,7 @@ namespace quat_detail {
         for (uint32_t i = rank; i < 9; i += size)
             out[(i/3)*LDA + (i%3)] = tmp[i];
     }
-} // namespace quat_detail
+} // namespace lie_detail
 
 /**
  * @brief Hamilton quaternion product: `out = a ⊗ b`.
@@ -227,10 +227,10 @@ namespace quat_detail {
 template <typename T, QuatLayout L = QuatLayout::xyzw, bool TRAILING_SYNC = true>
 __device__ void quat_mul(const T *a, const T *b, T *out)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    T tmp[4]; quat_detail::quat_mul_core<T, L>(a, b, tmp);
-    quat_detail::copy_out<T, 4>(rank, size, tmp, out);
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
+    T tmp[4]; lie_detail::quat_mul_core<T, L>(a, b, tmp);
+    lie_detail::copy_out<T, 4>(rank, size, tmp, out);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -246,13 +246,13 @@ __device__ void quat_mul(const T *a, const T *b, T *out)
 template <typename T, QuatLayout L = QuatLayout::xyzw, bool TRAILING_SYNC = true>
 __device__ void quat_conj(const T *a, T *out)
 {
-    using QL = quat_detail::layout<L>;
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    using QL = lie_detail::layout<L>;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     T tmp[4];
     tmp[QL::X] = -a[QL::X]; tmp[QL::Y] = -a[QL::Y]; tmp[QL::Z] = -a[QL::Z];
     tmp[QL::W] =  a[QL::W];
-    quat_detail::copy_out<T, 4>(rank, size, tmp, out);
+    lie_detail::copy_out<T, 4>(rank, size, tmp, out);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -273,10 +273,10 @@ template <typename T, QuatLayout L = QuatLayout::xyzw, bool CANONICAL = false,
           bool TRAILING_SYNC = true>
 __device__ void quat_normalize(const T *q, T *out)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    T tmp[4]; quat_detail::quat_normalize_core<T, L, CANONICAL>(q, tmp);
-    quat_detail::copy_out<T, 4>(rank, size, tmp, out);
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
+    T tmp[4]; lie_detail::quat_normalize_core<T, L, CANONICAL>(q, tmp);
+    lie_detail::copy_out<T, 4>(rank, size, tmp, out);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -295,10 +295,10 @@ __device__ void quat_normalize(const T *q, T *out)
 template <typename T, QuatLayout L = QuatLayout::xyzw, bool TRAILING_SYNC = true>
 __device__ void quat_exp(const T *phi, T *out)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    T tmp[4]; quat_detail::quat_exp_core<T, L>(phi, tmp);
-    quat_detail::copy_out<T, 4>(rank, size, tmp, out);
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
+    T tmp[4]; lie_detail::quat_exp_core<T, L>(phi, tmp);
+    lie_detail::copy_out<T, 4>(rank, size, tmp, out);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -319,10 +319,10 @@ __device__ void quat_exp(const T *phi, T *out)
 template <typename T, QuatLayout L = QuatLayout::xyzw, bool TRAILING_SYNC = true>
 __device__ void quat_log(const T *q, T *phi)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    T tmp[3]; quat_detail::quat_log_core<T, L>(q, tmp);
-    quat_detail::copy_out<T, 3>(rank, size, tmp, phi);
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
+    T tmp[3]; lie_detail::quat_log_core<T, L>(q, tmp);
+    lie_detail::copy_out<T, 3>(rank, size, tmp, phi);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -342,10 +342,10 @@ __device__ void quat_log(const T *q, T *phi)
 template <typename T, QuatLayout L = QuatLayout::xyzw, bool TRAILING_SYNC = true>
 __device__ void quat_rotate(const T *q, const T *p, T *out)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    T tmp[3]; quat_detail::quat_rotate_core<T, L>(q, p, tmp);
-    quat_detail::copy_out<T, 3>(rank, size, tmp, out);
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
+    T tmp[3]; lie_detail::quat_rotate_core<T, L>(q, p, tmp);
+    lie_detail::copy_out<T, 3>(rank, size, tmp, out);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -367,10 +367,10 @@ __device__ void quat_rotate(const T *q, const T *p, T *out)
 template <typename T, QuatLayout L = QuatLayout::xyzw, uint32_t LDA = 3, bool TRAILING_SYNC = true>
 __device__ void quat_to_rot(const T *q, T *R)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    T tmp[9]; quat_detail::quat_to_rot_core<T, L>(q, tmp);
-    quat_detail::copy_out_mat3<T, LDA>(rank, size, tmp, R);
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
+    T tmp[9]; lie_detail::quat_to_rot_core<T, L>(q, tmp);
+    lie_detail::copy_out_mat3<T, LDA>(rank, size, tmp, R);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -393,10 +393,10 @@ __device__ void quat_to_rot(const T *q, T *R)
 template <typename T, QuatLayout L = QuatLayout::xyzw, uint32_t LDA = 3, bool TRAILING_SYNC = true>
 __device__ void rot_to_quat(const T *R, T *q)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    T tmp[4]; quat_detail::rot_to_quat_core<T, L, LDA>(R, tmp);
-    quat_detail::copy_out<T, 4>(rank, size, tmp, q);
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
+    T tmp[4]; lie_detail::rot_to_quat_core<T, L, LDA>(R, tmp);
+    lie_detail::copy_out<T, 4>(rank, size, tmp, q);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -416,10 +416,10 @@ __device__ void rot_to_quat(const T *R, T *q)
 template <typename T, QuatLayout L = QuatLayout::xyzw, bool TRAILING_SYNC = true>
 __device__ void quat_to_basis(const T *q, T *u, T *v, T *w)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    T qn[4]; quat_detail::quat_normalize_core<T, L, false>(q, qn);
-    T R[9];  quat_detail::quat_to_rot_core<T, L>(qn, R);
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
+    T qn[4]; lie_detail::quat_normalize_core<T, L, false>(q, qn);
+    T R[9];  lie_detail::quat_to_rot_core<T, L>(qn, R);
     for (uint32_t i = rank; i < 9; i += size) {
         T *dst = (i < 3) ? u : (i < 6) ? v : w;
         dst[i % 3] = R[i];
@@ -444,105 +444,17 @@ __device__ void quat_to_basis(const T *q, T *u, T *v, T *w)
 template <typename T, QuatLayout L = QuatLayout::xyzw, bool TRAILING_SYNC = true>
 __device__ void quat_retract(const T *q, const T *phi, T *q_new)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    T tmp[4]; quat_detail::quat_retract_core<T, L>(q, phi, tmp);
-    quat_detail::copy_out<T, 4>(rank, size, tmp, q_new);
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
+    T tmp[4]; lie_detail::quat_retract_core<T, L>(q, phi, tmp);
+    lie_detail::copy_out<T, 4>(rank, size, tmp, q_new);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
-// ─── single-thread quaternion ops ────────────────────────────────────────────
-namespace thread {
-    // One thread owns the whole (4/9-element) result: the SAME serial cores as
-    // the block/warp tiers with a plain serial copy-out. No barriers, no
-    // shuffles, no threadIdx read; operands may be thread-local register
-    // arrays, and in-place aliasing is safe (the core buffers via registers).
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
 
-    /** @brief Single-thread `out = a ⊗ b`. See `glass::quat_mul`. */
-    template <typename T, QuatLayout L = QuatLayout::xyzw>
-    __device__ void quat_mul(const T *a, const T *b, T *out)
-    {
-        T tmp[4]; quat_detail::quat_mul_core<T, L>(a, b, tmp);
-        for (uint32_t i = 0; i < 4; i++) out[i] = tmp[i];
-    }
-
-    /** @brief Single-thread conjugate. See `glass::quat_conj`. */
-    template <typename T, QuatLayout L = QuatLayout::xyzw>
-    __device__ void quat_conj(const T *a, T *out)
-    {
-        using QL = quat_detail::layout<L>;
-        const T x = a[QL::X], y = a[QL::Y], z = a[QL::Z], w = a[QL::W];
-        out[QL::X] = -x; out[QL::Y] = -y; out[QL::Z] = -z; out[QL::W] = w;
-    }
-
-    /** @brief Single-thread normalize (optional `w>=0` canonicalization). See `glass::quat_normalize`. */
-    template <typename T, QuatLayout L = QuatLayout::xyzw, bool CANONICAL = false>
-    __device__ void quat_normalize(const T *q, T *out)
-    {
-        quat_detail::quat_normalize_core<T, L, CANONICAL>(q, out);
-    }
-
-    /** @brief Single-thread `exp([φ/2])`. See `glass::quat_exp`. */
-    template <typename T, QuatLayout L = QuatLayout::xyzw>
-    __device__ void quat_exp(const T *phi, T *out)
-    {
-        quat_detail::quat_exp_core<T, L>(phi, out);
-    }
-
-    /** @brief Single-thread quaternion logarithm. See `glass::quat_log`. */
-    template <typename T, QuatLayout L = QuatLayout::xyzw>
-    __device__ void quat_log(const T *q, T *phi)
-    {
-        T tmp[3]; quat_detail::quat_log_core<T, L>(q, tmp);
-        phi[0] = tmp[0]; phi[1] = tmp[1]; phi[2] = tmp[2];
-    }
-
-    /** @brief Single-thread `R(q)·p`. See `glass::quat_rotate`. */
-    template <typename T, QuatLayout L = QuatLayout::xyzw>
-    __device__ void quat_rotate(const T *q, const T *p, T *out)
-    {
-        T tmp[3]; quat_detail::quat_rotate_core<T, L>(q, p, tmp);
-        out[0] = tmp[0]; out[1] = tmp[1]; out[2] = tmp[2];
-    }
-
-    /** @brief Single-thread quaternion → column-major 3x3 (LDA-strided). See `glass::quat_to_rot`. */
-    template <typename T, QuatLayout L = QuatLayout::xyzw, uint32_t LDA = 3>
-    __device__ void quat_to_rot(const T *q, T *R)
-    {
-        if constexpr (LDA == 3) {
-            quat_detail::quat_to_rot_core<T, L>(q, R);
-        } else {
-            T tmp[9]; quat_detail::quat_to_rot_core<T, L>(q, tmp);
-            quat_detail::copy_out_mat3<T, LDA>(0u, 1u, tmp, R);
-        }
-    }
-
-    /** @brief Single-thread column-major 3x3 (LDA-strided) → quaternion (Shepperd). See `glass::rot_to_quat`. */
-    template <typename T, QuatLayout L = QuatLayout::xyzw, uint32_t LDA = 3>
-    __device__ void rot_to_quat(const T *R, T *q)
-    {
-        quat_detail::rot_to_quat_core<T, L, LDA>(R, q);
-    }
-
-    /** @brief Single-thread normalize + rotation columns. See `glass::quat_to_basis`. */
-    template <typename T, QuatLayout L = QuatLayout::xyzw>
-    __device__ void quat_to_basis(const T *q, T *u, T *v, T *w)
-    {
-        T qn[4]; quat_detail::quat_normalize_core<T, L, false>(q, qn);
-        T R[9];  quat_detail::quat_to_rot_core<T, L>(qn, R);
-        for (uint32_t i = 0; i < 3; i++) { u[i] = R[i]; v[i] = R[3+i]; w[i] = R[6+i]; }
-    }
-
-    /** @brief Single-thread SO(3) quaternion retract. See `glass::quat_retract`. */
-    template <typename T, QuatLayout L = QuatLayout::xyzw>
-    __device__ void quat_retract(const T *q, const T *phi, T *q_new)
-    {
-        T tmp[4]; quat_detail::quat_retract_core<T, L>(q, phi, tmp);
-        for (uint32_t i = 0; i < 4; i++) q_new[i] = tmp[i];
-    }
-}
-
-// ─── single-warp quaternion ops ──────────────────────────────────────────────
 namespace warp {
     // One 32-lane warp owns the result: the same serial cores, lane-strided
     // copy-out, `__syncwarp()` close. For warp-per-problem kernels. Outputs must
@@ -552,9 +464,9 @@ namespace warp {
     template <typename T, QuatLayout L = QuatLayout::xyzw>
     __device__ void quat_mul(const T *a, const T *b, T *out)
     {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T tmp[4]; quat_detail::quat_mul_core<T, L>(a, b, tmp);
-        quat_detail::copy_out<T, 4>(lane, 32u, tmp, out);
+        uint32_t lane = (flat_rank()) & 31;
+        T tmp[4]; lie_detail::quat_mul_core<T, L>(a, b, tmp);
+        lie_detail::copy_out<T, 4>(lane, 32u, tmp, out);
         __syncwarp();
     }
 
@@ -562,12 +474,12 @@ namespace warp {
     template <typename T, QuatLayout L = QuatLayout::xyzw>
     __device__ void quat_conj(const T *a, T *out)
     {
-        using QL = quat_detail::layout<L>;
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+        using QL = lie_detail::layout<L>;
+        uint32_t lane = (flat_rank()) & 31;
         T tmp[4];
         tmp[QL::X] = -a[QL::X]; tmp[QL::Y] = -a[QL::Y]; tmp[QL::Z] = -a[QL::Z];
         tmp[QL::W] =  a[QL::W];
-        quat_detail::copy_out<T, 4>(lane, 32u, tmp, out);
+        lie_detail::copy_out<T, 4>(lane, 32u, tmp, out);
         __syncwarp();
     }
 
@@ -575,9 +487,9 @@ namespace warp {
     template <typename T, QuatLayout L = QuatLayout::xyzw, bool CANONICAL = false>
     __device__ void quat_normalize(const T *q, T *out)
     {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T tmp[4]; quat_detail::quat_normalize_core<T, L, CANONICAL>(q, tmp);
-        quat_detail::copy_out<T, 4>(lane, 32u, tmp, out);
+        uint32_t lane = (flat_rank()) & 31;
+        T tmp[4]; lie_detail::quat_normalize_core<T, L, CANONICAL>(q, tmp);
+        lie_detail::copy_out<T, 4>(lane, 32u, tmp, out);
         __syncwarp();
     }
 
@@ -585,9 +497,9 @@ namespace warp {
     template <typename T, QuatLayout L = QuatLayout::xyzw>
     __device__ void quat_exp(const T *phi, T *out)
     {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T tmp[4]; quat_detail::quat_exp_core<T, L>(phi, tmp);
-        quat_detail::copy_out<T, 4>(lane, 32u, tmp, out);
+        uint32_t lane = (flat_rank()) & 31;
+        T tmp[4]; lie_detail::quat_exp_core<T, L>(phi, tmp);
+        lie_detail::copy_out<T, 4>(lane, 32u, tmp, out);
         __syncwarp();
     }
 
@@ -595,9 +507,9 @@ namespace warp {
     template <typename T, QuatLayout L = QuatLayout::xyzw>
     __device__ void quat_log(const T *q, T *phi)
     {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T tmp[3]; quat_detail::quat_log_core<T, L>(q, tmp);
-        quat_detail::copy_out<T, 3>(lane, 32u, tmp, phi);
+        uint32_t lane = (flat_rank()) & 31;
+        T tmp[3]; lie_detail::quat_log_core<T, L>(q, tmp);
+        lie_detail::copy_out<T, 3>(lane, 32u, tmp, phi);
         __syncwarp();
     }
 
@@ -605,9 +517,9 @@ namespace warp {
     template <typename T, QuatLayout L = QuatLayout::xyzw>
     __device__ void quat_rotate(const T *q, const T *p, T *out)
     {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T tmp[3]; quat_detail::quat_rotate_core<T, L>(q, p, tmp);
-        quat_detail::copy_out<T, 3>(lane, 32u, tmp, out);
+        uint32_t lane = (flat_rank()) & 31;
+        T tmp[3]; lie_detail::quat_rotate_core<T, L>(q, p, tmp);
+        lie_detail::copy_out<T, 3>(lane, 32u, tmp, out);
         __syncwarp();
     }
 
@@ -615,9 +527,9 @@ namespace warp {
     template <typename T, QuatLayout L = QuatLayout::xyzw, uint32_t LDA = 3>
     __device__ void quat_to_rot(const T *q, T *R)
     {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T tmp[9]; quat_detail::quat_to_rot_core<T, L>(q, tmp);
-        quat_detail::copy_out_mat3<T, LDA>(lane, 32u, tmp, R);
+        uint32_t lane = (flat_rank()) & 31;
+        T tmp[9]; lie_detail::quat_to_rot_core<T, L>(q, tmp);
+        lie_detail::copy_out_mat3<T, LDA>(lane, 32u, tmp, R);
         __syncwarp();
     }
 
@@ -625,9 +537,9 @@ namespace warp {
     template <typename T, QuatLayout L = QuatLayout::xyzw, uint32_t LDA = 3>
     __device__ void rot_to_quat(const T *R, T *q)
     {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T tmp[4]; quat_detail::rot_to_quat_core<T, L, LDA>(R, tmp);
-        quat_detail::copy_out<T, 4>(lane, 32u, tmp, q);
+        uint32_t lane = (flat_rank()) & 31;
+        T tmp[4]; lie_detail::rot_to_quat_core<T, L, LDA>(R, tmp);
+        lie_detail::copy_out<T, 4>(lane, 32u, tmp, q);
         __syncwarp();
     }
 
@@ -635,9 +547,9 @@ namespace warp {
     template <typename T, QuatLayout L = QuatLayout::xyzw>
     __device__ void quat_to_basis(const T *q, T *u, T *v, T *w)
     {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T qn[4]; quat_detail::quat_normalize_core<T, L, false>(q, qn);
-        T R[9];  quat_detail::quat_to_rot_core<T, L>(qn, R);
+        uint32_t lane = (flat_rank()) & 31;
+        T qn[4]; lie_detail::quat_normalize_core<T, L, false>(q, qn);
+        T R[9];  lie_detail::quat_to_rot_core<T, L>(qn, R);
         for (uint32_t i = lane; i < 9; i += 32u) {
             T *dst = (i < 3) ? u : (i < 6) ? v : w;
             dst[i % 3] = R[i];
@@ -649,9 +561,103 @@ namespace warp {
     template <typename T, QuatLayout L = QuatLayout::xyzw>
     __device__ void quat_retract(const T *q, const T *phi, T *q_new)
     {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T tmp[4]; quat_detail::quat_retract_core<T, L>(q, phi, tmp);
-        quat_detail::copy_out<T, 4>(lane, 32u, tmp, q_new);
+        uint32_t lane = (flat_rank()) & 31;
+        T tmp[4]; lie_detail::quat_retract_core<T, L>(q, phi, tmp);
+        lie_detail::copy_out<T, 4>(lane, 32u, tmp, q_new);
         __syncwarp();
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// thread:: — one problem per thread (serial, register-resident)
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace thread {
+    // One thread owns the whole (4/9-element) result: the SAME serial cores as
+    // the block/warp tiers with a plain serial copy-out. No barriers, no
+    // shuffles, no threadIdx read; operands may be thread-local register
+    // arrays, and in-place aliasing is safe (the core buffers via registers).
+
+    /** @brief Single-thread `out = a ⊗ b`. See `glass::quat_mul`. */
+    template <typename T, QuatLayout L = QuatLayout::xyzw>
+    __device__ void quat_mul(const T *a, const T *b, T *out)
+    {
+        T tmp[4]; lie_detail::quat_mul_core<T, L>(a, b, tmp);
+        for (uint32_t i = 0; i < 4; i++) out[i] = tmp[i];
+    }
+
+    /** @brief Single-thread conjugate. See `glass::quat_conj`. */
+    template <typename T, QuatLayout L = QuatLayout::xyzw>
+    __device__ void quat_conj(const T *a, T *out)
+    {
+        using QL = lie_detail::layout<L>;
+        const T x = a[QL::X], y = a[QL::Y], z = a[QL::Z], w = a[QL::W];
+        out[QL::X] = -x; out[QL::Y] = -y; out[QL::Z] = -z; out[QL::W] = w;
+    }
+
+    /** @brief Single-thread normalize (optional `w>=0` canonicalization). See `glass::quat_normalize`. */
+    template <typename T, QuatLayout L = QuatLayout::xyzw, bool CANONICAL = false>
+    __device__ void quat_normalize(const T *q, T *out)
+    {
+        lie_detail::quat_normalize_core<T, L, CANONICAL>(q, out);
+    }
+
+    /** @brief Single-thread `exp([φ/2])`. See `glass::quat_exp`. */
+    template <typename T, QuatLayout L = QuatLayout::xyzw>
+    __device__ void quat_exp(const T *phi, T *out)
+    {
+        lie_detail::quat_exp_core<T, L>(phi, out);
+    }
+
+    /** @brief Single-thread quaternion logarithm. See `glass::quat_log`. */
+    template <typename T, QuatLayout L = QuatLayout::xyzw>
+    __device__ void quat_log(const T *q, T *phi)
+    {
+        T tmp[3]; lie_detail::quat_log_core<T, L>(q, tmp);
+        phi[0] = tmp[0]; phi[1] = tmp[1]; phi[2] = tmp[2];
+    }
+
+    /** @brief Single-thread `R(q)·p`. See `glass::quat_rotate`. */
+    template <typename T, QuatLayout L = QuatLayout::xyzw>
+    __device__ void quat_rotate(const T *q, const T *p, T *out)
+    {
+        T tmp[3]; lie_detail::quat_rotate_core<T, L>(q, p, tmp);
+        out[0] = tmp[0]; out[1] = tmp[1]; out[2] = tmp[2];
+    }
+
+    /** @brief Single-thread quaternion → column-major 3x3 (LDA-strided). See `glass::quat_to_rot`. */
+    template <typename T, QuatLayout L = QuatLayout::xyzw, uint32_t LDA = 3>
+    __device__ void quat_to_rot(const T *q, T *R)
+    {
+        if constexpr (LDA == 3) {
+            lie_detail::quat_to_rot_core<T, L>(q, R);
+        } else {
+            T tmp[9]; lie_detail::quat_to_rot_core<T, L>(q, tmp);
+            lie_detail::copy_out_mat3<T, LDA>(0u, 1u, tmp, R);
+        }
+    }
+
+    /** @brief Single-thread column-major 3x3 (LDA-strided) → quaternion (Shepperd). See `glass::rot_to_quat`. */
+    template <typename T, QuatLayout L = QuatLayout::xyzw, uint32_t LDA = 3>
+    __device__ void rot_to_quat(const T *R, T *q)
+    {
+        lie_detail::rot_to_quat_core<T, L, LDA>(R, q);
+    }
+
+    /** @brief Single-thread normalize + rotation columns. See `glass::quat_to_basis`. */
+    template <typename T, QuatLayout L = QuatLayout::xyzw>
+    __device__ void quat_to_basis(const T *q, T *u, T *v, T *w)
+    {
+        T qn[4]; lie_detail::quat_normalize_core<T, L, false>(q, qn);
+        T R[9];  lie_detail::quat_to_rot_core<T, L>(qn, R);
+        for (uint32_t i = 0; i < 3; i++) { u[i] = R[i]; v[i] = R[3+i]; w[i] = R[6+i]; }
+    }
+
+    /** @brief Single-thread SO(3) quaternion retract. See `glass::quat_retract`. */
+    template <typename T, QuatLayout L = QuatLayout::xyzw>
+    __device__ void quat_retract(const T *q, const T *phi, T *q_new)
+    {
+        T tmp[4]; lie_detail::quat_retract_core<T, L>(q, phi, tmp);
+        for (uint32_t i = 0; i < 4; i++) q_new[i] = tmp[i];
     }
 }

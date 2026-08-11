@@ -17,11 +17,14 @@
 namespace iamax_detail {
 
 // Fold candidate (ckey,cidx) into the running best (key,idx) in place.
-// Strictly-greater |x| wins; equal |x| keeps the lower index. NaN candidates
-// compare false on both branches and are never selected (skip-NaN policy).
+// Since the 2026-08-11 dedup this FORWARDS to argreduce_detail::combine
+// (MINIMUM=false): on non-negative |x| keys the two rules are equivalent —
+// strictly-greater wins, equal keeps the lower index, NaN never selected.
+// iamax's array bodies below delegate wholesale to the argreduce_detail
+// engines with `AbsKey` (|x| keys + the all-empty -> 0 fallback).
 template <typename T>
 __device__ __forceinline__ void combine(T &key, uint32_t &idx, T ckey, uint32_t cidx) {
-    if (ckey > key || (ckey == key && cidx < idx)) { key = ckey; idx = cidx; }
+    argreduce_detail::combine<T, false>(key, idx, ckey, cidx);
 }
 
 } // namespace iamax_detail
@@ -58,34 +61,8 @@ __device__ __forceinline__ void combine(T &key, uint32_t &idx, T ckey, uint32_t 
  */
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void iamax(uint32_t n, const T *x, uint32_t *out, T *s_scratch) {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    // s_scratch layout: [0..size) abs-keys, then index lanes packed after.
-    T *s_key = s_scratch;
-    uint32_t *s_idx = reinterpret_cast<uint32_t *>(s_scratch + size);
-
-    // Per-thread local argmax over the strided range (deterministic tie-break).
-    T best_key = static_cast<T>(0);
-    uint32_t best_idx = UINT32_MAX;
-    for (uint32_t i = rank; i < n; i += size) {
-        iamax_detail::combine(best_key, best_idx, abs(x[i]), i);
-    }
-    s_key[rank] = best_key;
-    s_idx[rank] = best_idx;
-    __syncthreads();
-
-    // Thread 0 serially folds the per-thread winners (lower-index tie-break).
-    if (rank == 0) {
-        T key = s_key[0];
-        uint32_t idx = s_idx[0];
-        uint32_t lim = (size < n) ? size : n;
-        for (uint32_t i = 1; i < lim; i++) {
-            iamax_detail::combine(key, idx, s_key[i], s_idx[i]);
-        }
-        // All-zero (or fully inactive) vector → no element beat the (0,MAX) seed.
-        out[0] = (idx == UINT32_MAX) ? 0u : idx;
-    }
-    if constexpr (TRAILING_SYNC) __syncthreads();
+    argreduce_detail::argreduce<T, false, TRAILING_SYNC, argreduce_detail::AbsKey>(
+        n, x, out, nullptr, s_scratch);
 }
 
 /**
@@ -123,31 +100,8 @@ __device__ void iamax(const T *x, uint32_t *out, T *s_scratch) {
  */
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void iamax(uint32_t n, const T *x, uint32_t *out, T *out_val, T *s_scratch) {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    T *s_key = s_scratch;
-    uint32_t *s_idx = reinterpret_cast<uint32_t *>(s_scratch + size);
-
-    T best_key = static_cast<T>(0);
-    uint32_t best_idx = UINT32_MAX;
-    for (uint32_t i = rank; i < n; i += size) {
-        iamax_detail::combine(best_key, best_idx, abs(x[i]), i);
-    }
-    s_key[rank] = best_key;
-    s_idx[rank] = best_idx;
-    __syncthreads();
-
-    if (rank == 0) {
-        T key = s_key[0];
-        uint32_t idx = s_idx[0];
-        uint32_t lim = (size < n) ? size : n;
-        for (uint32_t i = 1; i < lim; i++) {
-            iamax_detail::combine(key, idx, s_key[i], s_idx[i]);
-        }
-        out[0] = (idx == UINT32_MAX) ? 0u : idx;
-        out_val[0] = key;
-    }
-    if constexpr (TRAILING_SYNC) __syncthreads();
+    argreduce_detail::argreduce<T, false, TRAILING_SYNC, argreduce_detail::AbsKey>(
+        n, x, out, out_val, s_scratch);
 }
 
 /**
@@ -311,40 +265,8 @@ __device__ void iamax_lowmem(const T *x, uint32_t *out, T *out_val) {
  */
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void iamax_fast(uint32_t n, const T *x, uint32_t *out, T *s_scratch) {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    uint32_t nw = (size + 31) / 32;
-    T *s_key = s_scratch;
-    uint32_t *s_idx = reinterpret_cast<uint32_t *>(s_scratch + nw);
-
-    // Per-thread strided argmax.
-    T key = static_cast<T>(0);
-    uint32_t idx = UINT32_MAX;
-    for (uint32_t i = rank; i < n; i += size) {
-        iamax_detail::combine(key, idx, abs(x[i]), i);
-    }
-    // Warp-shuffle fold of the (key,index) pair (lower-index tie-break).
-    for (int off = 16; off > 0; off >>= 1) {
-        T okey = __shfl_down_sync(0xffffffff, key, off);
-        uint32_t oidx = __shfl_down_sync(0xffffffff, idx, off);
-        iamax_detail::combine(key, idx, okey, oidx);
-    }
-    uint32_t lane = rank & 31, warp = rank >> 5;
-    if (lane == 0) { s_key[warp] = key; s_idx[warp] = idx; }
-    __syncthreads();
-
-    // Lane 0..nw-1 of warp 0 fold the per-warp winners.
-    if (rank < 32) {
-        key = (rank < nw) ? s_key[rank] : static_cast<T>(0);
-        idx = (rank < nw) ? s_idx[rank] : UINT32_MAX;
-        for (int off = 16; off > 0; off >>= 1) {
-            T okey = __shfl_down_sync(0xffffffff, key, off);
-            uint32_t oidx = __shfl_down_sync(0xffffffff, idx, off);
-            iamax_detail::combine(key, idx, okey, oidx);
-        }
-        if (rank == 0) out[0] = (idx == UINT32_MAX) ? 0u : idx;
-    }
-    if constexpr (TRAILING_SYNC) __syncthreads();
+    argreduce_detail::argreduce_fast<T, false, TRAILING_SYNC, argreduce_detail::AbsKey>(
+        n, x, out, nullptr, s_scratch);
 }
 
 /**
@@ -379,37 +301,8 @@ __device__ void iamax_fast(const T *x, uint32_t *out, T *s_scratch) {
  */
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void iamax_fast(uint32_t n, const T *x, uint32_t *out, T *out_val, T *s_scratch) {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    uint32_t nw = (size + 31) / 32;
-    T *s_key = s_scratch;
-    uint32_t *s_idx = reinterpret_cast<uint32_t *>(s_scratch + nw);
-
-    T key = static_cast<T>(0);
-    uint32_t idx = UINT32_MAX;
-    for (uint32_t i = rank; i < n; i += size) {
-        iamax_detail::combine(key, idx, abs(x[i]), i);
-    }
-    for (int off = 16; off > 0; off >>= 1) {
-        T okey = __shfl_down_sync(0xffffffff, key, off);
-        uint32_t oidx = __shfl_down_sync(0xffffffff, idx, off);
-        iamax_detail::combine(key, idx, okey, oidx);
-    }
-    uint32_t lane = rank & 31, warp = rank >> 5;
-    if (lane == 0) { s_key[warp] = key; s_idx[warp] = idx; }
-    __syncthreads();
-
-    if (rank < 32) {
-        key = (rank < nw) ? s_key[rank] : static_cast<T>(0);
-        idx = (rank < nw) ? s_idx[rank] : UINT32_MAX;
-        for (int off = 16; off > 0; off >>= 1) {
-            T okey = __shfl_down_sync(0xffffffff, key, off);
-            uint32_t oidx = __shfl_down_sync(0xffffffff, idx, off);
-            iamax_detail::combine(key, idx, okey, oidx);
-        }
-        if (rank == 0) { out[0] = (idx == UINT32_MAX) ? 0u : idx; out_val[0] = key; }
-    }
-    if constexpr (TRAILING_SYNC) __syncthreads();
+    argreduce_detail::argreduce_fast<T, false, TRAILING_SYNC, argreduce_detail::AbsKey>(
+        n, x, out, out_val, s_scratch);
 }
 
 /**
@@ -429,6 +322,11 @@ template <typename T, uint32_t N, bool TRAILING_SYNC = true>
 __device__ void iamax_fast(const T *x, uint32_t *out, T *out_val, T *s_scratch) {
     iamax_fast<T, TRAILING_SYNC>(N, x, out, out_val, s_scratch);
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
+
 namespace warp {
     // Single-warp i_amax: one 32-lane warp owns the argmax, the winning index is
     // reduced with __shfl_down_sync (carrying the (abskey,index) pair) and
@@ -473,23 +371,7 @@ namespace warp {
      */
     template <typename T>
     __device__ uint32_t iamax(uint32_t n, const T *x) {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        // Per-lane strided argmax over |x| (deterministic lower-index tie-break).
-        T key = static_cast<T>(0);
-        uint32_t idx = UINT32_MAX;
-        for (uint32_t i = lane; i < n; i += 32) {
-            iamax_detail::combine(key, idx, abs(x[i]), i);
-        }
-        // Warp-shuffle fold of the (key,index) pair (lower-index tie-break at each step).
-        for (int off = 16; off > 0; off >>= 1) {
-            T okey = __shfl_down_sync(0xffffffffu, key, off);
-            uint32_t oidx = __shfl_down_sync(0xffffffffu, idx, off);
-            iamax_detail::combine(key, idx, okey, oidx);
-        }
-        // All-zero / fully-inactive vector → no element beat the (0,MAX) seed.
-        idx = (idx == UINT32_MAX) ? 0u : idx;
-        // Broadcast lane 0's winning index to every lane (register broadcast, §1g).
-        return __shfl_sync(0xffffffffu, idx, 0);
+        return argreduce_detail::argreduce_warp<T, false, argreduce_detail::AbsKey>(n, x);
     }
 
     /**
@@ -510,3 +392,4 @@ namespace warp {
         return iamax<T>(N, x);
     }
 }
+

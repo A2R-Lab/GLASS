@@ -57,8 +57,8 @@
 template <typename T, uint32_t N, uint32_t SX = 1, uint32_t SY = 1, bool TRAILING_SYNC = true>
 __device__ void dot_strided_coalesced(const T* x, const T* y, T* out, T* s_scratch)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
 
     // Each thread accumulates a partial over its block-strided slice of i.
     // Consecutive ranks read consecutive (i*SX, i*SY) base addresses.
@@ -67,14 +67,14 @@ __device__ void dot_strided_coalesced(const T* x, const T* y, T* out, T* s_scrat
         val += x[i * SX] * y[i * SY];
 
     // Warp-level reduce, then inter-warp reduce via shared scratch.
-    for (int off = 16; off > 0; off >>= 1) val += __shfl_down_sync(0xffffffff, val, off);
+    val = shfl_detail::fold_sum(val);
     uint32_t lane = rank & 31, warp = rank >> 5;
     if (lane == 0) s_scratch[warp] = val;
     __syncthreads();
     uint32_t nw = (size + 31) / 32;
     if (rank < 32) {
         val = (rank < nw) ? s_scratch[rank] : static_cast<T>(0);
-        for (int off = 16; off > 0; off >>= 1) val += __shfl_down_sync(0xffffffff, val, off);
+        val = shfl_detail::fold_sum(val);
         if (rank == 0) *out = val;
     }
     if constexpr (TRAILING_SYNC) __syncthreads();

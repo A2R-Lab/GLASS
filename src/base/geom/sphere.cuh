@@ -155,7 +155,7 @@ template <typename T, QuatLayout L = QuatLayout::xyzw>
 __device__ __forceinline__ void transform_sphere(const T *q, const T *p,
                                                  const T *sph, T *out)
 {
-    T c[3]; quat_detail::quat_rotate_core<T, L>(q, sph, c);
+    T c[3]; lie_detail::quat_rotate_core<T, L>(q, sph, c);
     out[0] = c[0] + p[0];
     out[1] = c[1] + p[1];
     out[2] = c[2] + p[2];

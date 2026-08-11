@@ -149,13 +149,13 @@ namespace lie_detail {
 
     // serial core: φ = log(R), canonical branch |φ| ≤ π. Route through the
     // Shepperd quaternion (stable at EVERY rotation) then the quaternion log
-    // (quat_detail::quat_log_core) — no near-π axis loss, no trace clamping
+    // (lie_detail::quat_log_core) — no near-π axis loss, no trace clamping
     // games. Shepperd already yields w >= 0, so the log's cover fold is a no-op.
     template <typename T>
     __device__ __forceinline__ void so3_log_core(const T *R, T *phi) {
         T q[4];
-        quat_detail::rot_to_quat_core<T, QuatLayout::xyzw>(R, q);
-        quat_detail::quat_log_core<T, QuatLayout::xyzw>(q, phi);
+        lie_detail::rot_to_quat_core<T, QuatLayout::xyzw>(R, q);
+        lie_detail::quat_log_core<T, QuatLayout::xyzw>(q, phi);
     }
 } // namespace lie_detail
 
@@ -174,10 +174,10 @@ namespace lie_detail {
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void skew(const T *v, T *S)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     T tmp[9]; lie_detail::skew_core(v, tmp);
-    quat_detail::copy_out<T, 9>(rank, size, tmp, S);
+    lie_detail::copy_out<T, 9>(rank, size, tmp, S);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -195,10 +195,10 @@ __device__ void skew(const T *v, T *S)
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void so3_exp(const T *phi, T *R)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     T tmp[9]; lie_detail::so3_exp_core(phi, tmp);
-    quat_detail::copy_out<T, 9>(rank, size, tmp, R);
+    lie_detail::copy_out<T, 9>(rank, size, tmp, R);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -219,10 +219,10 @@ __device__ void so3_exp(const T *phi, T *R)
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void so3_log(const T *R, T *phi)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     T tmp[3]; lie_detail::so3_log_core(R, tmp);
-    quat_detail::copy_out<T, 3>(rank, size, tmp, phi);
+    lie_detail::copy_out<T, 3>(rank, size, tmp, phi);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -240,10 +240,10 @@ __device__ void so3_log(const T *R, T *phi)
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void so3_right_jacobian(const T *phi, T *J)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     T tmp[9]; lie_detail::so3_right_jacobian_core(phi, tmp);
-    quat_detail::copy_out<T, 9>(rank, size, tmp, J);
+    lie_detail::copy_out<T, 9>(rank, size, tmp, J);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -262,10 +262,10 @@ __device__ void so3_right_jacobian(const T *phi, T *J)
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void so3_right_jacobian_inv(const T *phi, T *J)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     T tmp[9]; lie_detail::so3_right_jacobian_inv_core(phi, tmp);
-    quat_detail::copy_out<T, 9>(rank, size, tmp, J);
+    lie_detail::copy_out<T, 9>(rank, size, tmp, J);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -283,10 +283,10 @@ __device__ void so3_right_jacobian_inv(const T *phi, T *J)
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void so3_left_jacobian(const T *phi, T *J)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     T tmp[9]; lie_detail::so3_left_jacobian_core(phi, tmp);
-    quat_detail::copy_out<T, 9>(rank, size, tmp, J);
+    lie_detail::copy_out<T, 9>(rank, size, tmp, J);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -303,14 +303,96 @@ __device__ void so3_left_jacobian(const T *phi, T *J)
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void so3_left_jacobian_inv(const T *phi, T *J)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     T tmp[9]; lie_detail::so3_left_jacobian_inv_core(phi, tmp);
-    quat_detail::copy_out<T, 9>(rank, size, tmp, J);
+    lie_detail::copy_out<T, 9>(rank, size, tmp, J);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
-// ─── single-thread SO(3) ops ─────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace warp {
+    // One 32-lane warp owns the result: same serial cores, lane-strided
+    // copy-out, `__syncwarp()` close. Outputs must not alias inputs.
+
+    /** @brief Single-warp hat map. See `glass::skew`. */
+    template <typename T>
+    __device__ void skew(const T *v, T *S)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        T tmp[9]; lie_detail::skew_core(v, tmp);
+        lie_detail::copy_out<T, 9>(lane, 32u, tmp, S);
+        __syncwarp();
+    }
+
+    /** @brief Single-warp Rodrigues exponential. See `glass::so3_exp`. */
+    template <typename T>
+    __device__ void so3_exp(const T *phi, T *R)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        T tmp[9]; lie_detail::so3_exp_core(phi, tmp);
+        lie_detail::copy_out<T, 9>(lane, 32u, tmp, R);
+        __syncwarp();
+    }
+
+    /** @brief Single-warp SO(3) log (canonical branch). See `glass::so3_log`. */
+    template <typename T>
+    __device__ void so3_log(const T *R, T *phi)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        T tmp[3]; lie_detail::so3_log_core(R, tmp);
+        lie_detail::copy_out<T, 3>(lane, 32u, tmp, phi);
+        __syncwarp();
+    }
+
+    /** @brief Single-warp right Jacobian. See `glass::so3_right_jacobian`. */
+    template <typename T>
+    __device__ void so3_right_jacobian(const T *phi, T *J)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        T tmp[9]; lie_detail::so3_right_jacobian_core(phi, tmp);
+        lie_detail::copy_out<T, 9>(lane, 32u, tmp, J);
+        __syncwarp();
+    }
+
+    /** @brief Single-warp inverse right Jacobian. See `glass::so3_right_jacobian_inv`. */
+    template <typename T>
+    __device__ void so3_right_jacobian_inv(const T *phi, T *J)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        T tmp[9]; lie_detail::so3_right_jacobian_inv_core(phi, tmp);
+        lie_detail::copy_out<T, 9>(lane, 32u, tmp, J);
+        __syncwarp();
+    }
+
+    /** @brief Single-warp left Jacobian (SE(3) "V matrix"). See `glass::so3_left_jacobian`. */
+    template <typename T>
+    __device__ void so3_left_jacobian(const T *phi, T *J)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        T tmp[9]; lie_detail::so3_left_jacobian_core(phi, tmp);
+        lie_detail::copy_out<T, 9>(lane, 32u, tmp, J);
+        __syncwarp();
+    }
+
+    /** @brief Single-warp inverse left Jacobian. See `glass::so3_left_jacobian_inv`. */
+    template <typename T>
+    __device__ void so3_left_jacobian_inv(const T *phi, T *J)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        T tmp[9]; lie_detail::so3_left_jacobian_inv_core(phi, tmp);
+        lie_detail::copy_out<T, 9>(lane, 32u, tmp, J);
+        __syncwarp();
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// thread:: — one problem per thread (serial, register-resident)
+// ═══════════════════════════════════════════════════════════════════════
+
 namespace thread {
     // One thread owns the whole 3x3/3-vector result — the same serial cores,
     // serial copy-out. No barriers, no threadIdx read; register operands fine.
@@ -350,80 +432,4 @@ namespace thread {
     template <typename T>
     __device__ void so3_left_jacobian_inv(const T *phi, T *J)
     { lie_detail::so3_left_jacobian_inv_core(phi, J); }
-}
-
-// ─── single-warp SO(3) ops ───────────────────────────────────────────────────
-namespace warp {
-    // One 32-lane warp owns the result: same serial cores, lane-strided
-    // copy-out, `__syncwarp()` close. Outputs must not alias inputs.
-
-    /** @brief Single-warp hat map. See `glass::skew`. */
-    template <typename T>
-    __device__ void skew(const T *v, T *S)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T tmp[9]; lie_detail::skew_core(v, tmp);
-        quat_detail::copy_out<T, 9>(lane, 32u, tmp, S);
-        __syncwarp();
-    }
-
-    /** @brief Single-warp Rodrigues exponential. See `glass::so3_exp`. */
-    template <typename T>
-    __device__ void so3_exp(const T *phi, T *R)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T tmp[9]; lie_detail::so3_exp_core(phi, tmp);
-        quat_detail::copy_out<T, 9>(lane, 32u, tmp, R);
-        __syncwarp();
-    }
-
-    /** @brief Single-warp SO(3) log (canonical branch). See `glass::so3_log`. */
-    template <typename T>
-    __device__ void so3_log(const T *R, T *phi)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T tmp[3]; lie_detail::so3_log_core(R, tmp);
-        quat_detail::copy_out<T, 3>(lane, 32u, tmp, phi);
-        __syncwarp();
-    }
-
-    /** @brief Single-warp right Jacobian. See `glass::so3_right_jacobian`. */
-    template <typename T>
-    __device__ void so3_right_jacobian(const T *phi, T *J)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T tmp[9]; lie_detail::so3_right_jacobian_core(phi, tmp);
-        quat_detail::copy_out<T, 9>(lane, 32u, tmp, J);
-        __syncwarp();
-    }
-
-    /** @brief Single-warp inverse right Jacobian. See `glass::so3_right_jacobian_inv`. */
-    template <typename T>
-    __device__ void so3_right_jacobian_inv(const T *phi, T *J)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T tmp[9]; lie_detail::so3_right_jacobian_inv_core(phi, tmp);
-        quat_detail::copy_out<T, 9>(lane, 32u, tmp, J);
-        __syncwarp();
-    }
-
-    /** @brief Single-warp left Jacobian (SE(3) "V matrix"). See `glass::so3_left_jacobian`. */
-    template <typename T>
-    __device__ void so3_left_jacobian(const T *phi, T *J)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T tmp[9]; lie_detail::so3_left_jacobian_core(phi, tmp);
-        quat_detail::copy_out<T, 9>(lane, 32u, tmp, J);
-        __syncwarp();
-    }
-
-    /** @brief Single-warp inverse left Jacobian. See `glass::so3_left_jacobian_inv`. */
-    template <typename T>
-    __device__ void so3_left_jacobian_inv(const T *phi, T *J)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T tmp[9]; lie_detail::so3_left_jacobian_inv_core(phi, tmp);
-        quat_detail::copy_out<T, 9>(lane, 32u, tmp, J);
-        __syncwarp();
-    }
 }

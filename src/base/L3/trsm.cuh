@@ -102,47 +102,9 @@ __device__ void trsm(const T *A, T *B)
     trsm_impl<BlockBarrier, T, FILL, DIAG, TRANSPOSE>(BlockBarrier{}, ct_size<N>{}, ct_size<NRHS>{}, A, B);
 }
 
-namespace thread {
-    /**
-     * @brief Single-thread triangular solve with multiple right-hand sides
-     *        `op(A) X = B`, in place (TRSM), compile-time size.
-     *
-     * ONE thread solves the `N×N` triangular system for all `NRHS` columns of
-     * `B` (`N×NRHS`, column-major), overwriting `B` with `X` — for
-     * thread-per-problem solvers that pack 32 independent low-DOF problems into
-     * a warp. `A` is column-major and read-only; only the triangle named by
-     * `FILL` is read; `TRANSPOSE=true` solves `Aᵀ X = B` against that same
-     * stored triangle; `DIAG=Diag::Unit` skips the diagonal divide. No shared
-     * scratch, no barriers, no `threadIdx` read; operands may be thread-local
-     * register arrays. SciPy equivalent:
-     * `X = scipy.linalg.solve_triangular(A, B, lower=(FILL==Lower), unit_diagonal=(DIAG==Unit), trans=(1 if TRANSPOSE else 0))`.
-     *
-     * Delegates to the same `trsm_impl` body the block surface uses, via
-     * `ThreadBarrier` (rank=0, size=1, no-op sync) — the same algorithm and
-     * operand order as `glass::trsm<T, N, NRHS, …>` on one thread, agreeing to a
-     * few ULP (FMA-contraction jitter; bit-identity across the two
-     * instantiations is NOT guaranteed — see test/test_thread.py).
-     *
-     * @tparam T     Scalar type.
-     * @tparam N     Dimension (`A` is `N×N`; each column of `B` has length `N`). N<=7 keeps a
-     *               `T[N*N]` operand register-resident (measured ceiling, both dtypes — see the
-     *               thread-tier constraints in CLAUDE.md); larger N — or a `B` wider than that
-     *               element budget — still computes correctly but spills to local memory,
-     *               forfeiting the tier's premise.
-     * @tparam NRHS  Number of right-hand sides (columns of `B`).
-     * @tparam FILL  Which triangle of `A` holds the data (default `FillMode::Lower`).
-     * @tparam DIAG  `Diag::Unit` for an implicit unit diagonal (default `Diag::NonUnit`).
-     * @tparam TRANSPOSE  When true solve `Aᵀ X = B` (default false).
-     * @param A  Triangular matrix (column-major, `N*N`; read-only).
-     * @param B  In/out right-hand sides (`N×NRHS`, column-major); on return holds `X`.
-     */
-    template <typename T, uint32_t N, uint32_t NRHS,
-              FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
-    __device__ void trsm(const T *A, T *B)
-    {
-        trsm_impl<ThreadBarrier, T, FILL, DIAG, TRANSPOSE>(ThreadBarrier{}, ct_size<N>{}, ct_size<NRHS>{}, A, B);
-    }
-}
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
 
 namespace warp {
     /**
@@ -175,7 +137,7 @@ namespace warp {
         constexpr bool LOWER   = (FILL == FillMode::Lower);
         constexpr bool UNIT    = (DIAG == Diag::Unit);
         constexpr bool FORWARD = (LOWER != TRANSPOSE);   // op(A) lower ⇒ forward sweep
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+        uint32_t lane = (flat_rank()) & 31;
         for (uint32_t step = 0; step < N; step++) {
             uint32_t k = FORWARD ? step : (N - 1 - step);
             // resolve pivot on lane 0's register, then broadcast (§1g) — never a
@@ -225,7 +187,7 @@ namespace warp {
         constexpr bool LOWER   = (FILL == FillMode::Lower);
         constexpr bool UNIT    = (DIAG == Diag::Unit);
         constexpr bool FORWARD = (LOWER != TRANSPOSE);
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+        uint32_t lane = (flat_rank()) & 31;
         for (uint32_t step = 0; step < N; step++) {
             uint32_t k = FORWARD ? step : (N - 1 - step);
             if constexpr (!UNIT) {
@@ -302,7 +264,7 @@ namespace warp {
     template <typename T, bool REG_DIAG = false, typename SizeT>
     __device__ void _posv_regularize(SizeT n, T *A, T rho)
     {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+        uint32_t lane = (flat_rank()) & 31;
         for (uint32_t i = lane; i < n; i += 32) {
             if constexpr (REG_DIAG) A[i*n + i] += rho * A[i*n + i];   // rho*diag(A)
             else                    A[i*n + i] += rho;                // rho*I
@@ -348,5 +310,51 @@ namespace warp {
         potrf<T, N, CHECK>(A, s_fail);
         trsm<T, N, NRHS>(A, B);                                                        // forward: L Y = B
         trsm<T, N, NRHS, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/true>(A, B);    // back:   Lᵀ X = Y
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// thread:: — one problem per thread (serial, register-resident)
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace thread {
+    /**
+     * @brief Single-thread triangular solve with multiple right-hand sides
+     *        `op(A) X = B`, in place (TRSM), compile-time size.
+     *
+     * ONE thread solves the `N×N` triangular system for all `NRHS` columns of
+     * `B` (`N×NRHS`, column-major), overwriting `B` with `X` — for
+     * thread-per-problem solvers that pack 32 independent low-DOF problems into
+     * a warp. `A` is column-major and read-only; only the triangle named by
+     * `FILL` is read; `TRANSPOSE=true` solves `Aᵀ X = B` against that same
+     * stored triangle; `DIAG=Diag::Unit` skips the diagonal divide. No shared
+     * scratch, no barriers, no `threadIdx` read; operands may be thread-local
+     * register arrays. SciPy equivalent:
+     * `X = scipy.linalg.solve_triangular(A, B, lower=(FILL==Lower), unit_diagonal=(DIAG==Unit), trans=(1 if TRANSPOSE else 0))`.
+     *
+     * Delegates to the same `trsm_impl` body the block surface uses, via
+     * `ThreadBarrier` (rank=0, size=1, no-op sync) — the same algorithm and
+     * operand order as `glass::trsm<T, N, NRHS, …>` on one thread, agreeing to a
+     * few ULP (FMA-contraction jitter; bit-identity across the two
+     * instantiations is NOT guaranteed — see test/test_thread.py).
+     *
+     * @tparam T     Scalar type.
+     * @tparam N     Dimension (`A` is `N×N`; each column of `B` has length `N`). N<=7 keeps a
+     *               `T[N*N]` operand register-resident (measured ceiling, both dtypes — see the
+     *               thread-tier constraints in CLAUDE.md); larger N — or a `B` wider than that
+     *               element budget — still computes correctly but spills to local memory,
+     *               forfeiting the tier's premise.
+     * @tparam NRHS  Number of right-hand sides (columns of `B`).
+     * @tparam FILL  Which triangle of `A` holds the data (default `FillMode::Lower`).
+     * @tparam DIAG  `Diag::Unit` for an implicit unit diagonal (default `Diag::NonUnit`).
+     * @tparam TRANSPOSE  When true solve `Aᵀ X = B` (default false).
+     * @param A  Triangular matrix (column-major, `N*N`; read-only).
+     * @param B  In/out right-hand sides (`N×NRHS`, column-major); on return holds `X`.
+     */
+    template <typename T, uint32_t N, uint32_t NRHS,
+              FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
+    __device__ void trsm(const T *A, T *B)
+    {
+        trsm_impl<ThreadBarrier, T, FILL, DIAG, TRANSPOSE>(ThreadBarrier{}, ct_size<N>{}, ct_size<NRHS>{}, A, B);
     }
 }

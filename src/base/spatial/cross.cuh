@@ -196,8 +196,8 @@ namespace spatial_detail {
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void motion_cross(const T *v, T *M)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     spatial_detail::motion_cross_impl(rank, size, v, M);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
@@ -228,8 +228,8 @@ __device__ void motion_cross(const T *v, T *M)
 template <typename T, int AXIS = -1, bool HAS_BETA = false, bool TRAILING_SYNC = true>
 __device__ void motion_cross_mul(T alpha, const T *v, const T *x, T beta, T *y)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     spatial_detail::motion_cross_mul_impl<T, AXIS, HAS_BETA>(rank, size, alpha, v, x, beta, y);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
@@ -248,8 +248,8 @@ __device__ void motion_cross_mul(T alpha, const T *v, const T *x, T beta, T *y)
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void force_cross(const T *v, T *M)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     spatial_detail::force_cross_impl(rank, size, v, M);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
@@ -271,8 +271,8 @@ __device__ void force_cross(const T *v, T *M)
 template <typename T, bool HAS_BETA = false, bool TRAILING_SYNC = true>
 __device__ void force_cross_mul(T alpha, const T *v, const T *f, T beta, T *y)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     spatial_detail::force_cross_mul_impl<T, HAS_BETA>(rank, size, alpha, v, f, beta, y);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
@@ -291,13 +291,70 @@ __device__ void force_cross_mul(T alpha, const T *v, const T *f, T beta, T *y)
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void force_cross_dual(const T *f, T *M)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     spatial_detail::force_cross_dual_impl(rank, size, f, M);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
-// ─── single-thread spatial cross ops ─────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace warp {
+    // One 32-lane warp owns the result: lane-strided over the outputs,
+    // `__syncwarp()` close. Outputs must not alias inputs.
+
+    /** @brief Single-warp motion cross matrix. See `glass::motion_cross`. */
+    template <typename T>
+    __device__ void motion_cross(const T *v, T *M)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        spatial_detail::motion_cross_impl(lane, 32u, v, M);
+        __syncwarp();
+    }
+
+    /** @brief Single-warp fused motion cross apply. See `glass::motion_cross_mul`. */
+    template <typename T, int AXIS = -1, bool HAS_BETA = false>
+    __device__ void motion_cross_mul(T alpha, const T *v, const T *x, T beta, T *y)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        spatial_detail::motion_cross_mul_impl<T, AXIS, HAS_BETA>(lane, 32u, alpha, v, x, beta, y);
+        __syncwarp();
+    }
+
+    /** @brief Single-warp force cross matrix. See `glass::force_cross`. */
+    template <typename T>
+    __device__ void force_cross(const T *v, T *M)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        spatial_detail::force_cross_impl(lane, 32u, v, M);
+        __syncwarp();
+    }
+
+    /** @brief Single-warp fused force cross apply. See `glass::force_cross_mul`. */
+    template <typename T, bool HAS_BETA = false>
+    __device__ void force_cross_mul(T alpha, const T *v, const T *f, T beta, T *y)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        spatial_detail::force_cross_mul_impl<T, HAS_BETA>(lane, 32u, alpha, v, f, beta, y);
+        __syncwarp();
+    }
+
+    /** @brief Single-warp operand-swapped force cross matrix. See `glass::force_cross_dual`. */
+    template <typename T>
+    __device__ void force_cross_dual(const T *f, T *M)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        spatial_detail::force_cross_dual_impl(lane, 32u, f, M);
+        __syncwarp();
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// thread:: — one problem per thread (serial, register-resident)
+// ═══════════════════════════════════════════════════════════════════════
+
 namespace thread {
     // One thread owns the whole 6-/36-element result: the SAME row/entry
     // formulas run serially. No barriers, no threadIdx read; register operands
@@ -327,55 +384,4 @@ namespace thread {
     template <typename T>
     __device__ void force_cross_dual(const T *f, T *M)
     { spatial_detail::force_cross_dual_impl(0u, 1u, f, M); }
-}
-
-// ─── single-warp spatial cross ops ───────────────────────────────────────────
-namespace warp {
-    // One 32-lane warp owns the result: lane-strided over the outputs,
-    // `__syncwarp()` close. Outputs must not alias inputs.
-
-    /** @brief Single-warp motion cross matrix. See `glass::motion_cross`. */
-    template <typename T>
-    __device__ void motion_cross(const T *v, T *M)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        spatial_detail::motion_cross_impl(lane, 32u, v, M);
-        __syncwarp();
-    }
-
-    /** @brief Single-warp fused motion cross apply. See `glass::motion_cross_mul`. */
-    template <typename T, int AXIS = -1, bool HAS_BETA = false>
-    __device__ void motion_cross_mul(T alpha, const T *v, const T *x, T beta, T *y)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        spatial_detail::motion_cross_mul_impl<T, AXIS, HAS_BETA>(lane, 32u, alpha, v, x, beta, y);
-        __syncwarp();
-    }
-
-    /** @brief Single-warp force cross matrix. See `glass::force_cross`. */
-    template <typename T>
-    __device__ void force_cross(const T *v, T *M)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        spatial_detail::force_cross_impl(lane, 32u, v, M);
-        __syncwarp();
-    }
-
-    /** @brief Single-warp fused force cross apply. See `glass::force_cross_mul`. */
-    template <typename T, bool HAS_BETA = false>
-    __device__ void force_cross_mul(T alpha, const T *v, const T *f, T beta, T *y)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        spatial_detail::force_cross_mul_impl<T, HAS_BETA>(lane, 32u, alpha, v, f, beta, y);
-        __syncwarp();
-    }
-
-    /** @brief Single-warp operand-swapped force cross matrix. See `glass::force_cross_dual`. */
-    template <typename T>
-    __device__ void force_cross_dual(const T *f, T *M)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        spatial_detail::force_cross_dual_impl(lane, 32u, f, M);
-        __syncwarp();
-    }
 }

@@ -21,6 +21,19 @@ namespace argreduce_detail {
 // Fold candidate (ckey, cidx) into the running best in place. MINIMUM picks
 // the comparison direction; empty slots (idx == UINT32_MAX) lose to any real
 // candidate; NaN candidates are skipped; equal keys keep the lower index.
+// Key policies: how a raw element becomes a comparison key, and what the
+// out_val fallback is when NO candidate survived (empty/all-NaN input).
+// IdKey  = signed argmax/argmin (fallback x[0], the historical behavior).
+// AbsKey = BLAS i_amax over |x| (fallback 0 — iamax's documented contract).
+struct IdKey {
+    template <typename T> __device__ __forceinline__ T operator()(T v) const { return v; }
+    template <typename T> __device__ __forceinline__ T empty(const T *x) const { return x[0]; }
+};
+struct AbsKey {
+    template <typename T> __device__ __forceinline__ T operator()(T v) const { return abs(v); }
+    template <typename T> __device__ __forceinline__ T empty(const T *) const { return static_cast<T>(0); }
+};
+
 template <typename T, bool MINIMUM>
 __device__ __forceinline__ void combine(T &key, uint32_t &idx, T ckey, uint32_t cidx) {
     if (cidx == UINT32_MAX || ckey != ckey) return;           // empty or NaN candidate
@@ -30,17 +43,17 @@ __device__ __forceinline__ void combine(T &key, uint32_t &idx, T ckey, uint32_t 
 
 // tier-shared body: default (per-thread strided scan + thread-0 serial fold
 // through scratch) — the iamax default variant's shape, signed and two-sided.
-template <typename T, bool MINIMUM, bool TRAILING_SYNC>
+template <typename T, bool MINIMUM, bool TRAILING_SYNC, typename Key = IdKey>
 __device__ void argreduce(uint32_t n, const T *x, uint32_t *out, T *out_val, T *s_scratch) {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     T *s_key = s_scratch;
     uint32_t *s_idx = reinterpret_cast<uint32_t *>(s_scratch + size);
 
     T best_key = static_cast<T>(0);
     uint32_t best_idx = UINT32_MAX;
     for (uint32_t i = rank; i < n; i += size)
-        combine<T, MINIMUM>(best_key, best_idx, x[i], i);
+        combine<T, MINIMUM>(best_key, best_idx, Key{}(x[i]), i);
     s_key[rank] = best_key;
     s_idx[rank] = best_idx;
     __syncthreads();
@@ -52,7 +65,7 @@ __device__ void argreduce(uint32_t n, const T *x, uint32_t *out, T *out_val, T *
         for (uint32_t i = 1; i < lim; i++)
             combine<T, MINIMUM>(key, idx, s_key[i], s_idx[i] == UINT32_MAX ? UINT32_MAX : s_idx[i]);
         out[0] = (idx == UINT32_MAX) ? 0u : idx;
-        if (out_val != nullptr) out_val[0] = (idx == UINT32_MAX) ? x[0] : key;
+        if (out_val != nullptr) out_val[0] = (idx == UINT32_MAX) ? Key{}.empty(x) : key;
     }
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
@@ -62,11 +75,11 @@ __device__ void argreduce(uint32_t n, const T *x, uint32_t *out, T *out_val, T *
 // combined through scratch by warp 0 — the argreduce twin of `iamax_fast`.
 // Same combine (lower-index tie-break at EVERY step) so the result is
 // bit-identical to the default variant at any block size.
-template <typename T, bool MINIMUM, bool TRAILING_SYNC>
+template <typename T, bool MINIMUM, bool TRAILING_SYNC, typename Key = IdKey>
 __device__ void argreduce_fast(uint32_t n, const T *x, uint32_t *out, T *out_val,
                                T *s_scratch) {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     uint32_t nw = (size + 31) / 32;
     T *s_key = s_scratch;
     uint32_t *s_idx = reinterpret_cast<uint32_t *>(s_scratch + nw);
@@ -74,7 +87,7 @@ __device__ void argreduce_fast(uint32_t n, const T *x, uint32_t *out, T *out_val
     T key = static_cast<T>(0);
     uint32_t idx = UINT32_MAX;
     for (uint32_t i = rank; i < n; i += size)
-        combine<T, MINIMUM>(key, idx, x[i], i);
+        combine<T, MINIMUM>(key, idx, Key{}(x[i]), i);
     for (int off = 16; off > 0; off >>= 1) {
         T okey = __shfl_down_sync(0xffffffffu, key, off);
         uint32_t oidx = __shfl_down_sync(0xffffffffu, idx, off);
@@ -94,20 +107,20 @@ __device__ void argreduce_fast(uint32_t n, const T *x, uint32_t *out, T *out_val
         }
         if (rank == 0) {
             out[0] = (idx == UINT32_MAX) ? 0u : idx;
-            if (out_val != nullptr) out_val[0] = (idx == UINT32_MAX) ? x[0] : key;
+            if (out_val != nullptr) out_val[0] = (idx == UINT32_MAX) ? Key{}.empty(x) : key;
         }
     }
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
 // single-warp body: strided per-lane scan + shuffle fold, index broadcast.
-template <typename T, bool MINIMUM>
+template <typename T, bool MINIMUM, typename Key = IdKey>
 __device__ uint32_t argreduce_warp(uint32_t n, const T *x) {
-    uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+    uint32_t lane = (flat_rank()) & 31;
     T key = static_cast<T>(0);
     uint32_t idx = UINT32_MAX;
     for (uint32_t i = lane; i < n; i += 32u)
-        combine<T, MINIMUM>(key, idx, x[i], i);
+        combine<T, MINIMUM>(key, idx, Key{}(x[i]), i);
     for (int off = 16; off > 0; off >>= 1) {
         T okey = __shfl_down_sync(0xffffffffu, key, off);
         uint32_t oidx = __shfl_down_sync(0xffffffffu, idx, off);
@@ -118,14 +131,31 @@ __device__ uint32_t argreduce_warp(uint32_t n, const T *x) {
 }
 
 // single-thread body: serial scan, register return.
-template <typename T, bool MINIMUM>
+template <typename T, bool MINIMUM, typename Key = IdKey>
 __device__ __forceinline__ uint32_t argreduce_serial(uint32_t n, const T *x) {
     T key = static_cast<T>(0);
     uint32_t idx = UINT32_MAX;
-    for (uint32_t i = 0; i < n; i++) combine<T, MINIMUM>(key, idx, x[i], i);
+    for (uint32_t i = 0; i < n; i++) combine<T, MINIMUM>(key, idx, Key{}(x[i]), i);
     return (idx == UINT32_MAX) ? 0u : idx;
 }
 
+
+// single-warp REGISTER-pair body: fold per-lane (key, idx) with the shuffle
+// ladder, broadcast the winning pair to every lane. The keyed twin of
+// `warp::reduce(T partial)` — no array walk, no scratch. Empty lanes pass
+// idx == UINT32_MAX (they can never win); if EVERY lane is empty the sentinel
+// itself is returned (there is no x[0] to fall back to, unlike the array form).
+template <typename T, bool MINIMUM>
+__device__ __forceinline__ uint32_t argreduce_pair(T key, uint32_t idx, T *win_key) {
+    for (int off = 16; off > 0; off >>= 1) {
+        T okey = __shfl_down_sync(0xffffffffu, key, off);
+        uint32_t oidx = __shfl_down_sync(0xffffffffu, idx, off);
+        combine<T, MINIMUM>(key, idx, okey, oidx);
+    }
+    idx = __shfl_sync(0xffffffffu, idx, 0);
+    if (win_key != nullptr) *win_key = __shfl_sync(0xffffffffu, key, 0);
+    return idx;
+}
 } // namespace argreduce_detail
 
 /**
@@ -279,39 +309,10 @@ __device__ void argmin_fast(uint32_t n, const T *x, uint32_t *out, T *out_val, T
     argreduce_detail::argreduce_fast<T, true, TRAILING_SYNC>(n, x, out, out_val, s_scratch);
 }
 
-// ─── single-thread argreductions ─────────────────────────────────────────────
-namespace thread {
-    /** @brief Single-thread argmax (register return). See `glass::argmax`. */
-    template <typename T>
-    __device__ uint32_t argmax(uint32_t n, const T *x)
-    { return argreduce_detail::argreduce_serial<T, false>(n, x); }
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
 
-    /** @brief Single-thread argmin (register return). See `glass::argmin`. */
-    template <typename T>
-    __device__ uint32_t argmin(uint32_t n, const T *x)
-    { return argreduce_detail::argreduce_serial<T, true>(n, x); }
-}
-
-namespace argreduce_detail {
-// single-warp REGISTER-pair body: fold per-lane (key, idx) with the shuffle
-// ladder, broadcast the winning pair to every lane. The keyed twin of
-// `warp::reduce(T partial)` — no array walk, no scratch. Empty lanes pass
-// idx == UINT32_MAX (they can never win); if EVERY lane is empty the sentinel
-// itself is returned (there is no x[0] to fall back to, unlike the array form).
-template <typename T, bool MINIMUM>
-__device__ __forceinline__ uint32_t argreduce_pair(T key, uint32_t idx, T *win_key) {
-    for (int off = 16; off > 0; off >>= 1) {
-        T okey = __shfl_down_sync(0xffffffffu, key, off);
-        uint32_t oidx = __shfl_down_sync(0xffffffffu, idx, off);
-        combine<T, MINIMUM>(key, idx, okey, oidx);
-    }
-    idx = __shfl_sync(0xffffffffu, idx, 0);
-    if (win_key != nullptr) *win_key = __shfl_sync(0xffffffffu, key, 0);
-    return idx;
-}
-} // namespace argreduce_detail
-
-// ─── single-warp argreductions ───────────────────────────────────────────────
 namespace warp {
     /**
      * @brief Warp argmax over PER-LANE register (key, index) pairs; winning
@@ -387,4 +388,20 @@ namespace warp {
     template <typename T>
     __device__ uint32_t argmin(uint32_t n, const T *x)
     { return argreduce_detail::argreduce_warp<T, true>(n, x); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// thread:: — one problem per thread (serial, register-resident)
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace thread {
+    /** @brief Single-thread argmax (register return). See `glass::argmax`. */
+    template <typename T>
+    __device__ uint32_t argmax(uint32_t n, const T *x)
+    { return argreduce_detail::argreduce_serial<T, false>(n, x); }
+
+    /** @brief Single-thread argmin (register return). See `glass::argmin`. */
+    template <typename T>
+    __device__ uint32_t argmin(uint32_t n, const T *x)
+    { return argreduce_detail::argreduce_serial<T, true>(n, x); }
 }

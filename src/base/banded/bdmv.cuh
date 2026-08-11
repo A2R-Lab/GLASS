@@ -38,8 +38,8 @@ template <typename T, uint32_t NumBlockRows, uint32_t BlockSize>
 __device__ void bdmv(T *s_output, const T *s_matrix, const T *s_vector)
 {
     constexpr uint32_t BRL = 3 * BlockSize;
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     for (uint32_t idx = rank; idx < NumBlockRows * BlockSize; idx += size) {
         uint32_t br  = idx / BlockSize;
         uint32_t row = idx % BlockSize;
@@ -71,8 +71,8 @@ template <typename T, uint32_t NumBlockRows, uint32_t BlockSize>
 __device__ void bdmv(T *s_output_1, T *s_output_2, const T *s_matrix, const T *s_vector)
 {
     constexpr uint32_t BRL = 3 * BlockSize;
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     for (uint32_t idx = rank; idx < NumBlockRows * BlockSize; idx += size) {
         uint32_t br  = idx / BlockSize;
         uint32_t row = idx % BlockSize;

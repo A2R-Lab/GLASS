@@ -29,8 +29,8 @@
 template <typename T, bool REG_DIAG = false, typename SizeT>
 __device__ void _posv_regularize(SizeT n, T *A, T rho)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     for (uint32_t i = rank; i < n; i += size) {
         if constexpr (REG_DIAG) A[i*n + i] += rho * A[i*n + i];   // rho*diag(A)
         else                    A[i*n + i] += rho;                // rho*I
@@ -66,8 +66,8 @@ template <typename T, typename SizeT>
 __device__ void posv_impl(SizeT n, T *A, T *b)
 {
     potrf_impl<BlockBarrier, T>(BlockBarrier{}, n, A, nullptr);   // A -> L (lower); trailing __syncthreads
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     trsv_impl<T, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/false>(rank, size, n, A, b);  // forward: L y = b
     trsv_impl<T, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/true >(rank, size, n, A, b);  // back:   Lᵀ x = y
 }
@@ -94,63 +94,6 @@ __device__ void posv(uint32_t n, T *A, T *b)
 template <typename T, uint32_t N>
 __device__ void posv(T *A, T *b) { posv_impl<T>(ct_size<N>{}, A, b); }
 
-namespace thread {
-    /**
-     * @brief Single-thread SPD solve `A x = b` via Cholesky (LAPACK posv), compile-time size.
-     *
-     * ONE thread factors `A = L Lᵀ` in place, then forward-solves `L y = b` and
-     * back-solves `Lᵀ x = y`. On return `A` holds its lower Cholesky factor `L`
-     * and `b` holds the solution `x`. For thread-per-problem solvers packing 32
-     * independent low-DOF systems into a warp (e.g. N≈7 IK normal equations, one
-     * seed per lane). No shared scratch, no barriers, no `threadIdx` read;
-     * operands may be thread-local register arrays. `A` must be SPD; behaviour on
-     * non-SPD input is undefined (the Cholesky step produces NaN, no info flag).
-     * NumPy equivalent: `x = np.linalg.solve(A, b)` (A SPD).
-     *
-     * Unlike the block `posv_impl` — which hardcodes `BlockBarrier` and reads
-     * `threadIdx` for the trsv legs — this composes `thread::potrf` with two
-     * `trsv_impl(0u, 1u, …)` calls directly, so no barrier or `threadIdx` read
-     * survives. Same algorithm and operand order as `glass::posv<T, N>` on one
-     * thread, agreeing to within FMA-contraction jitter (a few ULP — see
-     * test/test_thread.py; bit-identity across instantiations is not guaranteed).
-     *
-
-     *
-     * @tparam T  Scalar type (use `double` for stability on ill-conditioned A).
-     * @tparam N  Dimension (`A` is `N×N`, `b` has length `N`). N<=7 keeps `A` register-resident
-     *            (measured ceiling, both dtypes — see the thread-tier constraints in CLAUDE.md); larger N still
-     *            computes correctly but demotes `A` to local memory, forfeiting the tier's premise.
-     * @param A  In/out SPD matrix (column-major); overwritten with its factor `L`.
-     * @param b  In/out right-hand side; on return holds the solution `x`.
-     */
-    template <typename T, uint32_t N>
-    __device__ void posv(T *A, T *b)
-    {
-        potrf_impl<ThreadBarrier, T>(ThreadBarrier{}, ct_size<N>{}, A, nullptr);   // A -> L (lower)
-        trsv_impl<T, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/false, ThreadBarrier>(0u, 1u, ct_size<N>{}, A, b);  // forward: L y = b
-        trsv_impl<T, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/true , ThreadBarrier>(0u, 1u, ct_size<N>{}, A, b);  // back:   Lᵀ x = y
-    }
-
-    /**
-     * @brief Single-thread SPD solve from a precomputed Cholesky factor (LAPACK potrs), compile-time size.
-     *
-     * Given the lower factor `L` (e.g. from `thread::potrf`), solves `L Lᵀ x = b`
-     * by forward then back substitution — the reusable-factor path (no re-factor).
-     * `L` is read-only; `b` is overwritten with `x`. SciPy equivalent:
-     * `x = scipy.linalg.cho_solve((L, True), b)`.
-     *
-     * @tparam T  Scalar type.
-     * @tparam N  Dimension (`L` is `N×N`, `b` has length `N`).
-     * @param L  Lower Cholesky factor (column-major, `N*N`; read-only).
-     * @param b  In/out right-hand side; on return holds the solution `x`.
-     */
-    template <typename T, uint32_t N>
-    __device__ void potrs(const T *L, T *b)
-    {
-        trsv_impl<T, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/false, ThreadBarrier>(0u, 1u, ct_size<N>{}, L, b);  // forward: L y = b
-        trsv_impl<T, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/true , ThreadBarrier>(0u, 1u, ct_size<N>{}, L, b);  // back:   Lᵀ x = y
-    }
-}
 
 /**
  * @brief Solve the SPD system `A x = b` from a precomputed Cholesky factor (LAPACK potrs).
@@ -170,8 +113,8 @@ namespace thread {
 template <typename T, typename SizeT>
 __device__ void potrs_impl(SizeT n, const T *L, T *b)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     trsv_impl<T, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/false>(rank, size, n, L, b);  // forward: L y = b
     trsv_impl<T, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/true >(rank, size, n, L, b);  // back:   Lᵀ x = y
 }
@@ -331,3 +274,65 @@ __device__ void potrs(uint32_t n, uint32_t nrhs, const T *L, T *B)
  */
 template <typename T, uint32_t N, uint32_t NRHS>
 __device__ void potrs(const T *L, T *B) { potrs_impl<T>(ct_size<N>{}, ct_size<NRHS>{}, L, B); }
+
+// ═══════════════════════════════════════════════════════════════════════
+// thread:: — one problem per thread (serial, register-resident)
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace thread {
+    /**
+     * @brief Single-thread SPD solve `A x = b` via Cholesky (LAPACK posv), compile-time size.
+     *
+     * ONE thread factors `A = L Lᵀ` in place, then forward-solves `L y = b` and
+     * back-solves `Lᵀ x = y`. On return `A` holds its lower Cholesky factor `L`
+     * and `b` holds the solution `x`. For thread-per-problem solvers packing 32
+     * independent low-DOF systems into a warp (e.g. N≈7 IK normal equations, one
+     * seed per lane). No shared scratch, no barriers, no `threadIdx` read;
+     * operands may be thread-local register arrays. `A` must be SPD; behaviour on
+     * non-SPD input is undefined (the Cholesky step produces NaN, no info flag).
+     * NumPy equivalent: `x = np.linalg.solve(A, b)` (A SPD).
+     *
+     * Unlike the block `posv_impl` — which hardcodes `BlockBarrier` and reads
+     * `threadIdx` for the trsv legs — this composes `thread::potrf` with two
+     * `trsv_impl(0u, 1u, …)` calls directly, so no barrier or `threadIdx` read
+     * survives. Same algorithm and operand order as `glass::posv<T, N>` on one
+     * thread, agreeing to within FMA-contraction jitter (a few ULP — see
+     * test/test_thread.py; bit-identity across instantiations is not guaranteed).
+     *
+
+     *
+     * @tparam T  Scalar type (use `double` for stability on ill-conditioned A).
+     * @tparam N  Dimension (`A` is `N×N`, `b` has length `N`). N<=7 keeps `A` register-resident
+     *            (measured ceiling, both dtypes — see the thread-tier constraints in CLAUDE.md); larger N still
+     *            computes correctly but demotes `A` to local memory, forfeiting the tier's premise.
+     * @param A  In/out SPD matrix (column-major); overwritten with its factor `L`.
+     * @param b  In/out right-hand side; on return holds the solution `x`.
+     */
+    template <typename T, uint32_t N>
+    __device__ void posv(T *A, T *b)
+    {
+        potrf_impl<ThreadBarrier, T>(ThreadBarrier{}, ct_size<N>{}, A, nullptr);   // A -> L (lower)
+        trsv_impl<T, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/false, ThreadBarrier>(0u, 1u, ct_size<N>{}, A, b);  // forward: L y = b
+        trsv_impl<T, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/true , ThreadBarrier>(0u, 1u, ct_size<N>{}, A, b);  // back:   Lᵀ x = y
+    }
+
+    /**
+     * @brief Single-thread SPD solve from a precomputed Cholesky factor (LAPACK potrs), compile-time size.
+     *
+     * Given the lower factor `L` (e.g. from `thread::potrf`), solves `L Lᵀ x = b`
+     * by forward then back substitution — the reusable-factor path (no re-factor).
+     * `L` is read-only; `b` is overwritten with `x`. SciPy equivalent:
+     * `x = scipy.linalg.cho_solve((L, True), b)`.
+     *
+     * @tparam T  Scalar type.
+     * @tparam N  Dimension (`L` is `N×N`, `b` has length `N`).
+     * @param L  Lower Cholesky factor (column-major, `N*N`; read-only).
+     * @param b  In/out right-hand side; on return holds the solution `x`.
+     */
+    template <typename T, uint32_t N>
+    __device__ void potrs(const T *L, T *b)
+    {
+        trsv_impl<T, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/false, ThreadBarrier>(0u, 1u, ct_size<N>{}, L, b);  // forward: L y = b
+        trsv_impl<T, FillMode::Lower, Diag::NonUnit, /*TRANSPOSE=*/true , ThreadBarrier>(0u, 1u, ct_size<N>{}, L, b);  // back:   Lᵀ x = y
+    }
+}

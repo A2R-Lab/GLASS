@@ -279,7 +279,7 @@ template <typename T, uint32_t K, uint32_t A, uint32_t B,
 __device__ void tensor_vec_contract(const T* Tns, const T* v, T* Mout,
                                     cgrps::thread_group g = cgrps::this_thread_block())
 {
-    glass::detail::tvc_impl<T, CONTRACT, K, A, B, SYMMETRIC, ACCUMULATE, TIN_ROW_MAJOR>(
+    glass::tensor_detail::tvc_impl<T, CONTRACT, K, A, B, SYMMETRIC, ACCUMULATE, TIN_ROW_MAJOR>(
         g.thread_rank(), g.size(), Tns, v, Mout);
     if constexpr (TRAILING_SYNC) g.sync();
 }
@@ -299,7 +299,7 @@ template <typename T, uint32_t K, uint32_t A, uint32_t B,
 __device__ void vec_tensor_vec(const T* Tns, const T* u, const T* w, T* s,
                                cgrps::thread_group g = cgrps::this_thread_block())
 {
-    glass::detail::vtv_impl<T, K, A, B, ACCUMULATE, TIN_ROW_MAJOR>(
+    glass::tensor_detail::vtv_impl<T, K, A, B, ACCUMULATE, TIN_ROW_MAJOR>(
         g.thread_rank(), g.size(), Tns, u, w, s);
     if constexpr (TRAILING_SYNC) g.sync();
 }
@@ -325,7 +325,7 @@ __device__ void congruence_sym(T alpha, const T* X, const T* M, T beta, T* Q, T*
 {
     gemm(N, Kdim, N, static_cast<T>(1), const_cast<T*>(M), const_cast<T*>(X), s_scratch, g);
     g.sync();
-    glass::detail::xtY_impl<T, N, Kdim, Kdim, true, ACCUMULATE>(
+    glass::congruence_detail::xtY_impl<T, N, Kdim, Kdim, true, ACCUMULATE>(
         g.thread_rank(), g.size(), alpha, X, s_scratch, beta, Q);
     if constexpr (TRAILING_SYNC) g.sync();
 }
@@ -347,7 +347,7 @@ __device__ void bilinear(T alpha, const T* X, const T* M, const T* Y, T beta, T*
 {
     gemm(N, Qd, N, static_cast<T>(1), const_cast<T*>(M), const_cast<T*>(Y), s_scratch, g);
     g.sync();
-    glass::detail::xtY_impl<T, N, P, Qd, false, ACCUMULATE>(
+    glass::congruence_detail::xtY_impl<T, N, P, Qd, false, ACCUMULATE>(
         g.thread_rank(), g.size(), alpha, X, s_scratch, beta, R);
     if constexpr (TRAILING_SYNC) g.sync();
 }
@@ -368,7 +368,7 @@ template <typename T, uint32_t ROWS, uint32_t COLS, bool TRANSPOSE = false, bool
 __device__ void syrk_reduced(T alpha, const T* A, T beta, T* C,
                              cgrps::thread_group g = cgrps::this_thread_block())
 {
-    glass::detail::syrk_reduced_impl<T, ROWS, COLS, TRANSPOSE, true>(g.thread_rank(), g.size(), alpha, A, beta, C);
+    glass::syrk_reduced_detail::syrk_reduced_impl<T, ROWS, COLS, TRANSPOSE, true>(g.thread_rank(), g.size(), alpha, A, beta, C);
     if constexpr (TRAILING_SYNC) g.sync();
 }
 
@@ -382,6 +382,6 @@ template <typename T, uint32_t ROWS, uint32_t COLS, bool TRANSPOSE = false, bool
 __device__ void syrk_reduced(T alpha, const T* A, T* C,
                              cgrps::thread_group g = cgrps::this_thread_block())
 {
-    glass::detail::syrk_reduced_impl<T, ROWS, COLS, TRANSPOSE, false>(g.thread_rank(), g.size(), alpha, A, static_cast<T>(0), C);
+    glass::syrk_reduced_detail::syrk_reduced_impl<T, ROWS, COLS, TRANSPOSE, false>(g.thread_rank(), g.size(), alpha, A, static_cast<T>(0), C);
     if constexpr (TRAILING_SYNC) g.sync();
 }

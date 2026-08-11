@@ -29,8 +29,8 @@
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void nrm1_diff_lowmem(uint32_t n, const T *x, const T *y, T *out)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     for (uint32_t i = rank; i < n; i += size) out[i] = abs(x[i] - y[i]);
     __syncthreads();
     if (rank == 0) { for (uint32_t i = 1; i < n; i++) out[0] += out[i]; }
@@ -53,18 +53,18 @@ __device__ void nrm1_diff_lowmem(uint32_t n, const T *x, const T *y, T *out)
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void nrm1_diff_fast(uint32_t n, const T *x, const T *y, T *out, T *s_scratch)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     T val = static_cast<T>(0);
     for (uint32_t i = rank; i < n; i += size) val += abs(x[i] - y[i]);
-    for (int off = 16; off > 0; off >>= 1) val += __shfl_down_sync(0xffffffff, val, off);
+    val = shfl_detail::fold_sum(val);
     uint32_t lane = rank & 31, warp = rank >> 5;
     if (lane == 0) s_scratch[warp] = val;
     __syncthreads();
     uint32_t nw = (size + 31) / 32;
     if (rank < 32) {
         val = (rank < nw) ? s_scratch[rank] : static_cast<T>(0);
-        for (int off = 16; off > 0; off >>= 1) val += __shfl_down_sync(0xffffffff, val, off);
+        val = shfl_detail::fold_sum(val);
         if (rank == 0) out[0] = val;
     }
     if constexpr (TRAILING_SYNC) __syncthreads();
@@ -86,22 +86,81 @@ __device__ void nrm1_diff_fast(uint32_t n, const T *x, const T *y, T *out, T *s_
 template <typename T, uint32_t N, bool TRAILING_SYNC = true>
 __device__ void nrm1_diff_fast(const T *x, const T *y, T *out, T *s_scratch)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     T val = static_cast<T>(0);
     for (uint32_t i = rank; i < N; i += size) val += abs(x[i] - y[i]);
-    for (int off = 16; off > 0; off >>= 1) val += __shfl_down_sync(0xffffffff, val, off);
+    val = shfl_detail::fold_sum(val);
     uint32_t lane = rank & 31, warp = rank >> 5;
     if (lane == 0) s_scratch[warp] = val;
     __syncthreads();
     uint32_t nw = (size + 31) / 32;
     if (rank < 32) {
         val = (rank < nw) ? s_scratch[rank] : static_cast<T>(0);
-        for (int off = 16; off > 0; off >>= 1) val += __shfl_down_sync(0xffffffff, val, off);
+        val = shfl_detail::fold_sum(val);
         if (rank == 0) out[0] = val;
     }
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace warp {
+    /**
+     * @brief `‖x − y‖₁` within one warp: returns `Σ|x[i] − y[i]|` on every lane.
+     *
+     * One 32-lane warp forms the absolute differences and reduces with
+     * `__shfl_down_sync`, then BROADCASTS the scalar total back to all 32 lanes via
+     * `__shfl_sync` (from a register, never a shared re-read — immune to the
+     * `__restrict__` stale-cache miscompile). `x`/`y` untouched; no shared scratch,
+     * no `__syncthreads`. Full 32 lanes required; independent warps may run distinct
+     * problems concurrently. NumPy equivalent: `np.sum(np.abs(x - y))`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param n  Number of elements.
+     * @param x  Input vector of length `n` (read-only).
+     * @param y  Input vector of length `n` (read-only).
+     * @return `‖x − y‖₁`, identical on every lane.
+     */
+    template <typename T>
+    __device__ T nrm1_diff(uint32_t n, const T *x, const T *y)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        T val = static_cast<T>(0);
+        for (uint32_t i = lane; i < n; i += 32) val += abs(x[i] - y[i]);
+        val = shfl_detail::fold_sum(val);
+        return __shfl_sync(0xffffffffu, val, 0);
+    }
+
+    /**
+     * @brief `‖x − y‖₁` within one warp, compile-time size (returns it on every lane).
+     *
+     * Compile-time-`N` overload of the single-warp `nrm1_diff`. No shared scratch,
+     * no `__syncthreads`. NumPy equivalent: `np.sum(np.abs(x - y))`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @tparam N  Number of elements (compile-time constant).
+     * @param x  Input vector of length `N` (read-only).
+     * @param y  Input vector of length `N` (read-only).
+     * @return `‖x − y‖₁`, identical on every lane.
+     */
+    template <typename T, uint32_t N>
+    __device__ T nrm1_diff(const T *x, const T *y)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        T val = static_cast<T>(0);
+        for (uint32_t i = lane; i < N; i += 32) val += abs(x[i] - y[i]);
+        val = shfl_detail::fold_sum(val);
+        return __shfl_sync(0xffffffffu, val, 0);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// thread:: — one problem per thread (serial, register-resident)
+// ═══════════════════════════════════════════════════════════════════════
+
 namespace thread {
     /**
      * @brief `‖x − y‖₁` on one thread: returns `Σ|x[i] − y[i]|`, single-thread.
@@ -146,55 +205,5 @@ namespace thread {
         T val = static_cast<T>(0);
         for (uint32_t i = 0; i < N; i++) val += abs(x[i] - y[i]);
         return val;
-    }
-}
-
-namespace warp {
-    /**
-     * @brief `‖x − y‖₁` within one warp: returns `Σ|x[i] − y[i]|` on every lane.
-     *
-     * One 32-lane warp forms the absolute differences and reduces with
-     * `__shfl_down_sync`, then BROADCASTS the scalar total back to all 32 lanes via
-     * `__shfl_sync` (from a register, never a shared re-read — immune to the
-     * `__restrict__` stale-cache miscompile). `x`/`y` untouched; no shared scratch,
-     * no `__syncthreads`. Full 32 lanes required; independent warps may run distinct
-     * problems concurrently. NumPy equivalent: `np.sum(np.abs(x - y))`.
-     *
-     * @tparam T  Scalar type (e.g. `float`, `double`).
-     * @param n  Number of elements.
-     * @param x  Input vector of length `n` (read-only).
-     * @param y  Input vector of length `n` (read-only).
-     * @return `‖x − y‖₁`, identical on every lane.
-     */
-    template <typename T>
-    __device__ T nrm1_diff(uint32_t n, const T *x, const T *y)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T val = static_cast<T>(0);
-        for (uint32_t i = lane; i < n; i += 32) val += abs(x[i] - y[i]);
-        for (int off = 16; off > 0; off >>= 1) val += __shfl_down_sync(0xffffffffu, val, off);
-        return __shfl_sync(0xffffffffu, val, 0);
-    }
-
-    /**
-     * @brief `‖x − y‖₁` within one warp, compile-time size (returns it on every lane).
-     *
-     * Compile-time-`N` overload of the single-warp `nrm1_diff`. No shared scratch,
-     * no `__syncthreads`. NumPy equivalent: `np.sum(np.abs(x - y))`.
-     *
-     * @tparam T  Scalar type (e.g. `float`, `double`).
-     * @tparam N  Number of elements (compile-time constant).
-     * @param x  Input vector of length `N` (read-only).
-     * @param y  Input vector of length `N` (read-only).
-     * @return `‖x − y‖₁`, identical on every lane.
-     */
-    template <typename T, uint32_t N>
-    __device__ T nrm1_diff(const T *x, const T *y)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T val = static_cast<T>(0);
-        for (uint32_t i = lane; i < N; i += 32) val += abs(x[i] - y[i]);
-        for (int off = 16; off > 0; off >>= 1) val += __shfl_down_sync(0xffffffffu, val, off);
-        return __shfl_sync(0xffffffffu, val, 0);
     }
 }

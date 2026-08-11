@@ -37,8 +37,8 @@ template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t A_RS = M, uint32_t B_RS = K>
 __device__ void gemm_strided(T alpha, const T* A, const T* B, T beta, T* C)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     for (uint32_t el = rank; el < M * N; el += size) {
         uint32_t m = el % M, n = el / M;
         T res = static_cast<T>(0);
@@ -67,8 +67,8 @@ template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t A_RS = M, uint32_t B_RS = K>
 __device__ void gemm_strided(T alpha, const T* A, const T* B, T* C)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     for (uint32_t el = rank; el < M * N; el += size) {
         uint32_t m = el % M, n = el / M;
         T res = static_cast<T>(0);

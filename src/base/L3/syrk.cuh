@@ -317,8 +317,8 @@ __device__ void syr2k_impl_ct(uint32_t rank, uint32_t size,
 template <typename T, FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
 __device__ void syrk(uint32_t n, uint32_t k, T alpha, const T *A, T beta, T *C)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     syrk_impl<T, FILL, TRANSPOSE, ROW_MAJOR>(rank, size, n, k, alpha, A, beta, C);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
@@ -347,8 +347,8 @@ __device__ void syrk(uint32_t n, uint32_t k, T alpha, const T *A, T beta, T *C)
 template <typename T, FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
 __device__ void syrk(uint32_t n, uint32_t k, T alpha, const T *A, T *C)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     syrk_impl<T, FILL, TRANSPOSE, ROW_MAJOR>(rank, size, n, k, alpha, A, C);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
@@ -382,8 +382,8 @@ template <typename T, uint32_t N, uint32_t K,
           FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
 __device__ void syrk(T alpha, const T *A, T beta, T *C)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     syrk_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(rank, size, alpha, A, beta, C);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
@@ -411,8 +411,8 @@ template <typename T, uint32_t N, uint32_t K,
           FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
 __device__ void syrk(T alpha, const T *A, T *C)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     syrk_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(rank, size, alpha, A, C);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
@@ -444,8 +444,8 @@ __device__ void syrk(T alpha, const T *A, T *C)
 template <typename T, FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
 __device__ void syr2k(uint32_t n, uint32_t k, T alpha, const T *A, const T *B, T beta, T *C)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     syr2k_impl<T, FILL, TRANSPOSE, ROW_MAJOR>(rank, size, n, k, alpha, A, B, beta, C);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
@@ -473,8 +473,8 @@ __device__ void syr2k(uint32_t n, uint32_t k, T alpha, const T *A, const T *B, T
 template <typename T, FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
 __device__ void syr2k(uint32_t n, uint32_t k, T alpha, const T *A, const T *B, T *C)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     syr2k_impl<T, FILL, TRANSPOSE, ROW_MAJOR>(rank, size, n, k, alpha, A, B, C);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
@@ -507,8 +507,8 @@ template <typename T, uint32_t N, uint32_t K,
           FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
 __device__ void syr2k(T alpha, const T *A, const T *B, T beta, T *C)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     syr2k_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(rank, size, alpha, A, B, beta, C);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
@@ -537,13 +537,79 @@ template <typename T, uint32_t N, uint32_t K,
           FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
 __device__ void syr2k(T alpha, const T *A, const T *B, T *C)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     syr2k_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(rank, size, alpha, A, B, C);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
-// ─── single-thread SYRK / SYR2K ──────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace warp {
+    // Single-warp SYRK / SYR2K: one 32-lane warp owns the symmetric output via the
+    // SAME validated `syrk_impl_ct` / `syr2k_impl_ct` flat-element kernels, just
+    // dispatched with (lane, 32) instead of (rank, blockDim). Each output element is
+    // written once (no cross-lane reduction — the K contraction is a per-lane serial
+    // loop), so this is bit-identical to the block form restricted to one warp. For
+    // warp-per-problem normal-equation builds (e.g. HJCD's JᵀJ). Full 32 lanes
+    // required; independent warps may run distinct problems. No `__syncwarp` needed
+    // (no inter-lane dependency); compile-time size only, mirroring `warp::gemm`.
+
+    /**
+     * @brief Single-warp SYRK `C = alpha*op(A)*op(A)ᵀ + beta*C` (compile-time size).
+     * @see ::syrk  (block form; identical math, `(lane,32)` element striping)
+     */
+    template <typename T, uint32_t N, uint32_t K,
+              FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false>
+    __device__ void syrk(T alpha, const T *A, T beta, T *C)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        syrk_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(lane, 32, alpha, A, beta, C);
+    }
+
+    /**
+     * @brief Single-warp SYRK with implicit `beta = 0`: `C = alpha*op(A)*op(A)ᵀ` (overwrite).
+     * @see ::syrk
+     */
+    template <typename T, uint32_t N, uint32_t K,
+              FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false>
+    __device__ void syrk(T alpha, const T *A, T *C)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        syrk_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(lane, 32, alpha, A, C);
+    }
+
+    /**
+     * @brief Single-warp SYR2K `C = alpha*(op(A)op(B)ᵀ + op(B)op(A)ᵀ) + beta*C` (compile-time size).
+     * @see ::syr2k
+     */
+    template <typename T, uint32_t N, uint32_t K,
+              FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false>
+    __device__ void syr2k(T alpha, const T *A, const T *B, T beta, T *C)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        syr2k_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(lane, 32, alpha, A, B, beta, C);
+    }
+
+    /**
+     * @brief Single-warp SYR2K with implicit `beta = 0` (overwrite).
+     * @see ::syr2k
+     */
+    template <typename T, uint32_t N, uint32_t K,
+              FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false>
+    __device__ void syr2k(T alpha, const T *A, const T *B, T *C)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        syr2k_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(lane, 32, alpha, A, B, C);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// thread:: — one problem per thread (serial, register-resident)
+// ═══════════════════════════════════════════════════════════════════════
+
 namespace thread {
     // Single-thread SYRK / SYR2K: ONE thread owns the whole symmetric update via
     // the SAME validated `syrk_impl_ct` / `syr2k_impl_ct` flat-element bodies,
@@ -646,64 +712,5 @@ namespace thread {
     __device__ void syr2k(T alpha, const T *A, const T *B, T *C)
     {
         syr2k_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(0u, 1u, alpha, A, B, C);
-    }
-}
-
-namespace warp {
-    // Single-warp SYRK / SYR2K: one 32-lane warp owns the symmetric output via the
-    // SAME validated `syrk_impl_ct` / `syr2k_impl_ct` flat-element kernels, just
-    // dispatched with (lane, 32) instead of (rank, blockDim). Each output element is
-    // written once (no cross-lane reduction — the K contraction is a per-lane serial
-    // loop), so this is bit-identical to the block form restricted to one warp. For
-    // warp-per-problem normal-equation builds (e.g. HJCD's JᵀJ). Full 32 lanes
-    // required; independent warps may run distinct problems. No `__syncwarp` needed
-    // (no inter-lane dependency); compile-time size only, mirroring `warp::gemm`.
-
-    /**
-     * @brief Single-warp SYRK `C = alpha*op(A)*op(A)ᵀ + beta*C` (compile-time size).
-     * @see ::syrk  (block form; identical math, `(lane,32)` element striping)
-     */
-    template <typename T, uint32_t N, uint32_t K,
-              FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false>
-    __device__ void syrk(T alpha, const T *A, T beta, T *C)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        syrk_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(lane, 32, alpha, A, beta, C);
-    }
-
-    /**
-     * @brief Single-warp SYRK with implicit `beta = 0`: `C = alpha*op(A)*op(A)ᵀ` (overwrite).
-     * @see ::syrk
-     */
-    template <typename T, uint32_t N, uint32_t K,
-              FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false>
-    __device__ void syrk(T alpha, const T *A, T *C)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        syrk_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(lane, 32, alpha, A, C);
-    }
-
-    /**
-     * @brief Single-warp SYR2K `C = alpha*(op(A)op(B)ᵀ + op(B)op(A)ᵀ) + beta*C` (compile-time size).
-     * @see ::syr2k
-     */
-    template <typename T, uint32_t N, uint32_t K,
-              FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false>
-    __device__ void syr2k(T alpha, const T *A, const T *B, T beta, T *C)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        syr2k_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(lane, 32, alpha, A, B, beta, C);
-    }
-
-    /**
-     * @brief Single-warp SYR2K with implicit `beta = 0` (overwrite).
-     * @see ::syr2k
-     */
-    template <typename T, uint32_t N, uint32_t K,
-              FillMode FILL = FillMode::Full, bool TRANSPOSE = false, bool ROW_MAJOR = false>
-    __device__ void syr2k(T alpha, const T *A, const T *B, T *C)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        syr2k_impl_ct<T, N, K, FILL, TRANSPOSE, ROW_MAJOR>(lane, 32, alpha, A, B, C);
     }
 }

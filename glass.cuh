@@ -68,6 +68,7 @@ namespace block {
     #include "./src/base/L1/norm.cuh"
     #include "./src/base/L1/nrm2.cuh"
     #include "./src/base/L1/infnorm.cuh"
+    #include "./src/base/L1/argreduce.cuh"
     #include "./src/base/L1/iamax.cuh"
     #include "./src/base/L1/clip.cuh"
     #include "./src/base/L1/set_const.cuh"
@@ -76,7 +77,6 @@ namespace block {
     #include "./src/base/L1/axpy_strided.cuh"
     #include "./src/base/L1/copy_strided.cuh"
     #include "./src/base/L1/softmax.cuh"
-    #include "./src/base/L1/argreduce.cuh"
 
     /*      L2      */
     #include "./src/base/L2/gemv.cuh"

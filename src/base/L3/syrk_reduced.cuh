@@ -15,7 +15,7 @@
 // tolerance — the compiler may fuse the `a*a` accumulation's FMA differently per
 // instantiation (both correct).
 
-namespace detail {
+namespace syrk_reduced_detail {
     // C = alpha * A op(A) (+ beta*C), A is ROWS×COLS column-major.
     // TRANSPOSE=false (A·Aᵀ): C is ROWS×ROWS, contract c over COLS, A[i + c*ROWS].
     // TRANSPOSE=true  (Aᵀ·A): C is COLS×COLS, contract c over ROWS, A[c + i*ROWS].
@@ -76,7 +76,7 @@ namespace detail {
             }
         }
     }
-} // namespace detail
+} // namespace syrk_reduced_detail
 
 /**
  * @brief Contraction-parallel symmetric rank-k update: `C = alpha * A·op(A) + beta * C`.
@@ -98,9 +98,9 @@ namespace detail {
 template <typename T, uint32_t ROWS, uint32_t COLS, bool TRANSPOSE = false, bool TRAILING_SYNC = true>
 __device__ void syrk_reduced(T alpha, const T* A, T beta, T* C)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    detail::syrk_reduced_impl<T, ROWS, COLS, TRANSPOSE, true>(rank, size, alpha, A, beta, C);
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
+    syrk_reduced_detail::syrk_reduced_impl<T, ROWS, COLS, TRANSPOSE, true>(rank, size, alpha, A, beta, C);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -116,11 +116,15 @@ __device__ void syrk_reduced(T alpha, const T* A, T beta, T* C)
 template <typename T, uint32_t ROWS, uint32_t COLS, bool TRANSPOSE = false, bool TRAILING_SYNC = true>
 __device__ void syrk_reduced(T alpha, const T* A, T* C)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    detail::syrk_reduced_impl<T, ROWS, COLS, TRANSPOSE, false>(rank, size, alpha, A, static_cast<T>(0), C);
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
+    syrk_reduced_detail::syrk_reduced_impl<T, ROWS, COLS, TRANSPOSE, false>(rank, size, alpha, A, static_cast<T>(0), C);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
 
 namespace warp {
     /**
@@ -135,8 +139,8 @@ namespace warp {
     template <typename T, uint32_t ROWS, uint32_t COLS, bool TRANSPOSE = false, bool TRAILING_SYNC = true>
     __device__ void syrk_reduced(T alpha, const T* A, T beta, T* C)
     {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31u;
-        detail::syrk_reduced_impl<T, ROWS, COLS, TRANSPOSE, true>(lane, 32u, alpha, A, beta, C);
+        uint32_t lane = (flat_rank()) & 31u;
+        syrk_reduced_detail::syrk_reduced_impl<T, ROWS, COLS, TRANSPOSE, true>(lane, 32u, alpha, A, beta, C);
         if constexpr (TRAILING_SYNC) __syncwarp();
     }
 
@@ -149,8 +153,9 @@ namespace warp {
     template <typename T, uint32_t ROWS, uint32_t COLS, bool TRANSPOSE = false, bool TRAILING_SYNC = true>
     __device__ void syrk_reduced(T alpha, const T* A, T* C)
     {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31u;
-        detail::syrk_reduced_impl<T, ROWS, COLS, TRANSPOSE, false>(lane, 32u, alpha, A, static_cast<T>(0), C);
+        uint32_t lane = (flat_rank()) & 31u;
+        syrk_reduced_detail::syrk_reduced_impl<T, ROWS, COLS, TRANSPOSE, false>(lane, 32u, alpha, A, static_cast<T>(0), C);
         if constexpr (TRAILING_SYNC) __syncwarp();
     }
 }
+

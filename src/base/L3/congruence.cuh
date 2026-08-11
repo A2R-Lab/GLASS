@@ -21,7 +21,7 @@
 // Requires gemm_reduced.cuh (reduced_tree32 + warp::reduce) and gemm.cuh,
 // included first by glass.cuh.
 
-namespace detail {
+namespace congruence_detail {
     // R = alpha * X^T * Y + beta*R, X is N×ROWS, Y is N×COLS (both column-major),
     // R is ROWS×COLS column-major. Contraction over the shared leading dim N. When
     // SYMM (ROWS==COLS, Y a congruence partner of X so the product is symmetric)
@@ -78,7 +78,7 @@ namespace detail {
             }
         }
     }
-} // namespace detail
+} // namespace congruence_detail
 
 /**
  * @brief Shared-memory bytes needed by congruence_sym / bilinear scratch (`M·X`).
@@ -122,9 +122,9 @@ __device__ void congruence_sym(T alpha, const T* X, const T* M, T beta, T* Q, T*
     // step 1: MX = M * X  (N x N times N x Kdim -> N x Kdim), overwrite scratch.
     gemm<T, N, Kdim, N>(static_cast<T>(1), const_cast<T*>(M), const_cast<T*>(X), s_scratch);
     __syncthreads();                         // MX visible before the Xᵀ·MX contraction
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    detail::xtY_impl<T, N, Kdim, Kdim, true, ACCUMULATE>(rank, size, alpha, X, s_scratch, beta, Q);
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
+    congruence_detail::xtY_impl<T, N, Kdim, Kdim, true, ACCUMULATE>(rank, size, alpha, X, s_scratch, beta, Q);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -155,9 +155,9 @@ __device__ void bilinear(T alpha, const T* X, const T* M, const T* Y, T beta, T*
 {
     gemm<T, N, Qd, N>(static_cast<T>(1), const_cast<T*>(M), const_cast<T*>(Y), s_scratch);
     __syncthreads();
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    detail::xtY_impl<T, N, P, Qd, false, ACCUMULATE>(rank, size, alpha, X, s_scratch, beta, R);
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
+    congruence_detail::xtY_impl<T, N, P, Qd, false, ACCUMULATE>(rank, size, alpha, X, s_scratch, beta, R);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -202,8 +202,8 @@ __device__ void congruence_accum(T alpha, const T* G, const T* M, T beta, T* C, 
 {
     T* Gt  = s_scratch;            // Q×P transpose of G (column-major)
     T* scr = s_scratch + Q * P;    // congruence_sym scratch (M·Gᵀ), Q×P
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     for (uint32_t k = rank; k < P * Q; k += size) {
         uint32_t p = k % P, q = k / P;       // G col-major P×Q: G[q*P + p] = G(p,q)
         Gt[p * Q + q] = G[q * P + p];        // Gt col-major Q×P: Gt(q,p) = G(p,q)
@@ -212,12 +212,88 @@ __device__ void congruence_accum(T alpha, const T* G, const T* M, T beta, T* C, 
     congruence_sym<T, Q, P, ACCUMULATE, TRAILING_SYNC>(alpha, Gt, M, beta, C, scr);
 }
 
-// ─── single-thread congruence / bilinear ─────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace warp {
+    /**
+     * @brief Single-warp symmetric congruence: `Q = alpha * Xᵀ·M·X + beta * Q`.
+     *
+     * Warp-per-problem analogue of `glass::congruence_sym`; one full 32-lane warp
+     * forms `M·X` and the `Xᵀ·MX` contraction. See the block version for semantics.
+     *
+     * @tparam T,N,Kdim,ACCUMULATE  See glass::congruence_sym.
+     * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
+     * @param alpha,X,M,beta,Q,s_scratch  See glass::congruence_sym.
+     */
+    template <typename T, uint32_t N, uint32_t Kdim,
+              bool ACCUMULATE = false, bool TRAILING_SYNC = true>
+    __device__ void congruence_sym(T alpha, const T* X, const T* M, T beta, T* Q, T* s_scratch)
+    {
+        warp::gemm<T, N, Kdim, N>(static_cast<T>(1), const_cast<T*>(M), const_cast<T*>(X), s_scratch);
+        __syncwarp();
+        uint32_t lane = (flat_rank()) & 31u;
+        congruence_detail::xtY_impl<T, N, Kdim, Kdim, true, ACCUMULATE>(lane, 32u, alpha, X, s_scratch, beta, Q);
+        if constexpr (TRAILING_SYNC) __syncwarp();
+    }
+
+    /**
+     * @brief Single-warp general bilinear form: `R = alpha * Xᵀ·M·Y + beta * R`.
+     *
+     * Warp-per-problem analogue of `glass::bilinear`.
+     *
+     * @tparam T,N,P,Qd,ACCUMULATE  See glass::bilinear.
+     * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
+     * @param alpha,X,M,Y,beta,R,s_scratch  See glass::bilinear.
+     */
+    template <typename T, uint32_t N, uint32_t P, uint32_t Qd,
+              bool ACCUMULATE = false, bool TRAILING_SYNC = true>
+    __device__ void bilinear(T alpha, const T* X, const T* M, const T* Y, T beta, T* R, T* s_scratch)
+    {
+        warp::gemm<T, N, Qd, N>(static_cast<T>(1), const_cast<T*>(M), const_cast<T*>(Y), s_scratch);
+        __syncwarp();
+        uint32_t lane = (flat_rank()) & 31u;
+        congruence_detail::xtY_impl<T, N, P, Qd, false, ACCUMULATE>(lane, 32u, alpha, X, s_scratch, beta, R);
+        if constexpr (TRAILING_SYNC) __syncwarp();
+    }
+
+    /**
+     * @brief Single-warp accumulating congruence `C = alpha*G*M*Gᵀ + beta*C` (G is P×Q).
+     *
+     * Warp-per-problem analogue of `glass::congruence_accum`: one 32-lane warp
+     * transposes `G` into scratch and defers to `warp::congruence_sym<Q,P>`.
+     * See the block version for semantics.
+     *
+     * @tparam T,P,Q,ACCUMULATE  See glass::congruence_accum.
+     * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
+     * @param alpha,G,M,beta,C,s_scratch  See glass::congruence_accum.
+     */
+    template <typename T, uint32_t P, uint32_t Q,
+              bool ACCUMULATE = false, bool TRAILING_SYNC = true>
+    __device__ void congruence_accum(T alpha, const T* G, const T* M, T beta, T* C, T* s_scratch)
+    {
+        T* Gt  = s_scratch;
+        T* scr = s_scratch + Q * P;
+        uint32_t lane = (flat_rank()) & 31u;
+        for (uint32_t k = lane; k < P * Q; k += 32u) {
+            uint32_t p = k % P, q = k / P;
+            Gt[p * Q + q] = G[q * P + p];
+        }
+        __syncwarp();
+        warp::congruence_sym<T, Q, P, ACCUMULATE, TRAILING_SYNC>(alpha, Gt, M, beta, C, scr);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// thread:: — one problem per thread (serial, register-resident)
+// ═══════════════════════════════════════════════════════════════════════
+
 namespace thread {
     // Single-thread congruence forms: ONE thread runs the same two-step
     // algorithm as the block/warp surfaces — `thread::gemm` (the shared
     // `gemm_impl_ct` at rank=0/size=1) forms M·X into `scratch`, then the SAME
-    // validated `detail::xtY_impl` engine (whose size=1 path is barrier-free
+    // validated `congruence_detail::xtY_impl` engine (whose size=1 path is barrier-free
     // and shuffle-free, reducing through the register-only `reduced_tree32`)
     // contracts Xᵀ·(MX). The inter-step barrier the block/warp glue needs is
     // gone: on one thread, sequential program order already makes MX visible.
@@ -252,7 +328,7 @@ namespace thread {
     __device__ void congruence_sym(T alpha, const T* X, const T* M, T beta, T* Q, T* scratch)
     {
         thread::gemm<T, N, Kdim, N>(static_cast<T>(1), M, X, scratch);   // MX = M·X
-        detail::xtY_impl<T, N, Kdim, Kdim, true, ACCUMULATE>(0u, 1u, alpha, X, scratch, beta, Q);
+        congruence_detail::xtY_impl<T, N, Kdim, Kdim, true, ACCUMULATE>(0u, 1u, alpha, X, scratch, beta, Q);
     }
 
     /**
@@ -274,7 +350,7 @@ namespace thread {
     __device__ void bilinear(T alpha, const T* X, const T* M, const T* Y, T beta, T* R, T* scratch)
     {
         thread::gemm<T, N, Qd, N>(static_cast<T>(1), M, Y, scratch);     // MY = M·Y
-        detail::xtY_impl<T, N, P, Qd, false, ACCUMULATE>(0u, 1u, alpha, X, scratch, beta, R);
+        congruence_detail::xtY_impl<T, N, P, Qd, false, ACCUMULATE>(0u, 1u, alpha, X, scratch, beta, R);
     }
 
     /**
@@ -305,75 +381,5 @@ namespace thread {
             Gt[p * Q + q] = G[q * P + p];        // Gt col-major Q×P: Gt(q,p) = G(p,q)
         }
         thread::congruence_sym<T, Q, P, ACCUMULATE>(alpha, Gt, M, beta, C, scr);
-    }
-}
-
-// ─── single-warp congruence / bilinear ───────────────────────────────────────
-namespace warp {
-    /**
-     * @brief Single-warp symmetric congruence: `Q = alpha * Xᵀ·M·X + beta * Q`.
-     *
-     * Warp-per-problem analogue of `glass::congruence_sym`; one full 32-lane warp
-     * forms `M·X` and the `Xᵀ·MX` contraction. See the block version for semantics.
-     *
-     * @tparam T,N,Kdim,ACCUMULATE  See glass::congruence_sym.
-     * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
-     * @param alpha,X,M,beta,Q,s_scratch  See glass::congruence_sym.
-     */
-    template <typename T, uint32_t N, uint32_t Kdim,
-              bool ACCUMULATE = false, bool TRAILING_SYNC = true>
-    __device__ void congruence_sym(T alpha, const T* X, const T* M, T beta, T* Q, T* s_scratch)
-    {
-        warp::gemm<T, N, Kdim, N>(static_cast<T>(1), const_cast<T*>(M), const_cast<T*>(X), s_scratch);
-        __syncwarp();
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31u;
-        detail::xtY_impl<T, N, Kdim, Kdim, true, ACCUMULATE>(lane, 32u, alpha, X, s_scratch, beta, Q);
-        if constexpr (TRAILING_SYNC) __syncwarp();
-    }
-
-    /**
-     * @brief Single-warp general bilinear form: `R = alpha * Xᵀ·M·Y + beta * R`.
-     *
-     * Warp-per-problem analogue of `glass::bilinear`.
-     *
-     * @tparam T,N,P,Qd,ACCUMULATE  See glass::bilinear.
-     * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
-     * @param alpha,X,M,Y,beta,R,s_scratch  See glass::bilinear.
-     */
-    template <typename T, uint32_t N, uint32_t P, uint32_t Qd,
-              bool ACCUMULATE = false, bool TRAILING_SYNC = true>
-    __device__ void bilinear(T alpha, const T* X, const T* M, const T* Y, T beta, T* R, T* s_scratch)
-    {
-        warp::gemm<T, N, Qd, N>(static_cast<T>(1), const_cast<T*>(M), const_cast<T*>(Y), s_scratch);
-        __syncwarp();
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31u;
-        detail::xtY_impl<T, N, P, Qd, false, ACCUMULATE>(lane, 32u, alpha, X, s_scratch, beta, R);
-        if constexpr (TRAILING_SYNC) __syncwarp();
-    }
-
-    /**
-     * @brief Single-warp accumulating congruence `C = alpha*G*M*Gᵀ + beta*C` (G is P×Q).
-     *
-     * Warp-per-problem analogue of `glass::congruence_accum`: one 32-lane warp
-     * transposes `G` into scratch and defers to `warp::congruence_sym<Q,P>`.
-     * See the block version for semantics.
-     *
-     * @tparam T,P,Q,ACCUMULATE  See glass::congruence_accum.
-     * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
-     * @param alpha,G,M,beta,C,s_scratch  See glass::congruence_accum.
-     */
-    template <typename T, uint32_t P, uint32_t Q,
-              bool ACCUMULATE = false, bool TRAILING_SYNC = true>
-    __device__ void congruence_accum(T alpha, const T* G, const T* M, T beta, T* C, T* s_scratch)
-    {
-        T* Gt  = s_scratch;
-        T* scr = s_scratch + Q * P;
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31u;
-        for (uint32_t k = lane; k < P * Q; k += 32u) {
-            uint32_t p = k % P, q = k / P;
-            Gt[p * Q + q] = G[q * P + p];
-        }
-        __syncwarp();
-        warp::congruence_sym<T, Q, P, ACCUMULATE, TRAILING_SYNC>(alpha, Gt, M, beta, C, scr);
     }
 }

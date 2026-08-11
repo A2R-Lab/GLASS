@@ -141,8 +141,8 @@ template <typename T, uint32_t M, uint32_t N, uint32_t K,
           bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
 __device__ void gemm_reduced(T alpha, T *A, T *B, T beta, T *C)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     gemm_reduced_impl_ct<T, M, N, K, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C, true>(
         rank, size, alpha, A, B, beta, C);
     if constexpr (TRAILING_SYNC) __syncthreads();
@@ -168,14 +168,17 @@ template <typename T, uint32_t M, uint32_t N, uint32_t K,
           bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
 __device__ void gemm_reduced(T alpha, T *A, T *B, T *C)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     gemm_reduced_impl_ct<T, M, N, K, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C, false>(
         rank, size, alpha, A, B, static_cast<T>(0), C);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
-// ─── single-warp contraction-parallel GEMM ───────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
+
 namespace warp {
     /**
      * @brief Single-warp contraction-parallel GEMM: `C = alpha * A * op(B) + beta * C`.
@@ -200,7 +203,7 @@ namespace warp {
               bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
     __device__ void gemm_reduced(T alpha, T *A, T *B, T beta, T *C)
     {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31u;
+        uint32_t lane = (flat_rank()) & 31u;
         gemm_reduced_impl_ct<T, M, N, K, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C, true>(
             lane, 32u, alpha, A, B, beta, C);
         if constexpr (TRAILING_SYNC) __syncwarp();
@@ -226,9 +229,10 @@ namespace warp {
               bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
     __device__ void gemm_reduced(T alpha, T *A, T *B, T *C)
     {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31u;
+        uint32_t lane = (flat_rank()) & 31u;
         gemm_reduced_impl_ct<T, M, N, K, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C, false>(
             lane, 32u, alpha, A, B, static_cast<T>(0), C);
         if constexpr (TRAILING_SYNC) __syncwarp();
     }
 }
+

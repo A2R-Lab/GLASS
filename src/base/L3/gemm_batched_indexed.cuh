@@ -93,8 +93,8 @@ __device__ void gemm_batched_indexed(
     uint32_t pairs, const IDX_T* a_idx, const IDX_T* b_idx, const IDX_T* c_idx,
     const T* A_base, const T* B_base, T* C_base)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     constexpr uint32_t MAT = DIM * DIM;
     uint32_t total = pairs * MAT;
     for (uint32_t e = rank; e < total; e += size) {

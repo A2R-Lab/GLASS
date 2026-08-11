@@ -172,7 +172,7 @@ template <typename T, uint32_t M, uint32_t N, bool TRANSPOSE = false, bool TRAIL
 __device__ void gemv_reduced(T alpha, const T* A, const T* x, T beta, T* y,
                              cgrps::thread_group g = cgrps::this_thread_block())
 {
-    glass::detail::gemv_reduced_impl<T, M, N, TRANSPOSE, true>(g.thread_rank(), g.size(), alpha, A, x, beta, y);
+    glass::gemv_reduced_detail::gemv_reduced_impl<T, M, N, TRANSPOSE, true>(g.thread_rank(), g.size(), alpha, A, x, beta, y);
     if constexpr (TRAILING_SYNC) g.sync();
 }
 
@@ -186,6 +186,6 @@ template <typename T, uint32_t M, uint32_t N, bool TRANSPOSE = false, bool TRAIL
 __device__ void gemv_reduced(T alpha, const T* A, const T* x, T* y,
                              cgrps::thread_group g = cgrps::this_thread_block())
 {
-    glass::detail::gemv_reduced_impl<T, M, N, TRANSPOSE, false>(g.thread_rank(), g.size(), alpha, A, x, static_cast<T>(0), y);
+    glass::gemv_reduced_detail::gemv_reduced_impl<T, M, N, TRANSPOSE, false>(g.thread_rank(), g.size(), alpha, A, x, static_cast<T>(0), y);
     if constexpr (TRAILING_SYNC) g.sync();
 }

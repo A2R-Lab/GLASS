@@ -23,6 +23,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include "../base/L1/reduce.cuh"   // shfl_detail ladders (used by dot.cuh)
 #include "../base/L1/clip.cuh"
 #include "../base/L1/copy.cuh"
 #include "../base/L1/dot.cuh"

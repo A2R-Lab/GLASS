@@ -30,6 +30,23 @@
 // consumer forms it. Block/thread forms are a mechanical addition if a
 // consumer materializes.
 
+/**
+ * @brief Scratch size in bytes for `warp::gn_step`'s normal-matrix buffer.
+ *
+ * @tparam T  Scalar type.
+ * @tparam N  Parameter count (columns of J).
+ * @return Bytes to allocate for `s_A`.
+ */
+template <typename T, uint32_t N>
+__host__ __device__ constexpr std::size_t gn_step_scratch_bytes()
+{
+    return static_cast<std::size_t>(N) * N * sizeof(T);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
+
 namespace warp {
     /**
      * @brief Single-warp fused GN/LM step: form and solve
@@ -70,17 +87,4 @@ namespace warp {
         gemv<T, M, N, /*TRANSPOSE=*/true>(static_cast<T>(1), J, r, static_cast<T>(0), dq);
         posv<T, N, 1, REGULARIZE, CHECK, REG_DIAG>(s_A, dq, lambda, s_fail);
     }
-}
-
-/**
- * @brief Scratch size in bytes for `warp::gn_step`'s normal-matrix buffer.
- *
- * @tparam T  Scalar type.
- * @tparam N  Parameter count (columns of J).
- * @return Bytes to allocate for `s_A`.
- */
-template <typename T, uint32_t N>
-__host__ __device__ constexpr std::size_t gn_step_scratch_bytes()
-{
-    return static_cast<std::size_t>(N) * N * sizeof(T);
 }

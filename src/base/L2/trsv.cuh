@@ -95,8 +95,8 @@ __device__ void trsv_impl(uint32_t rank, uint32_t size, SizeT n, const T* A, T* 
 template <typename T, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
 __device__ void trsv(uint32_t n, const T* A, T* x)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     trsv_impl<T, FILL, DIAG, TRANSPOSE>(rank, size, n, A, x);
 }
 
@@ -120,41 +120,11 @@ __device__ void trsv(uint32_t n, const T* A, T* x)
 template <typename T, uint32_t N, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
 __device__ void trsv(const T* A, T* x)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     trsv_impl<T, FILL, DIAG, TRANSPOSE>(rank, size, ct_size<N>{}, A, x);
 }
 
-namespace thread {
-    // Single-thread triangular solve: one THREAD owns the whole substitution,
-    // reusing the block impl `trsv_impl(0u, 1u, …)`. Unlike `warp::trsv` (which
-    // lives in trsm.cuh, next to the `warp::trsm` it shares a body with), this
-    // composes nothing, so it sits beside `trsv_impl` itself.
-
-
-    /**
-     * @brief Triangular solve on one thread: `A x = b` in place, compile-time size.
-     *
-     * One thread solves the `N×N` triangular system by forward or back
-     * substitution (direction set by `FILL` and `TRANSPOSE`). `A` is column-major
-     * and read-only; `x` is overwritten with the solution. No shared scratch, no
-     * barriers, no `threadIdx` read; operands may be thread-local register arrays.
-     * SciPy equivalent: `x = scipy.linalg.solve_triangular(A, b, lower=...)`.
-     *
-     * @tparam T     Scalar type (e.g. `float`, `double`).
-     * @tparam N     Dimension (`A` is `N×N`, `x` has length `N`).
-     * @tparam FILL  Which triangle of `A` holds the data (default `FillMode::Lower`).
-     * @tparam DIAG  `Diag::Unit` for an implicit unit diagonal (default `Diag::NonUnit`).
-     * @tparam TRANSPOSE  When true solve `Aᵀx = b` (default false).
-     * @param A  Triangular matrix (column-major, `N*N` elements; read-only).
-     * @param x  In/out right-hand side; on return holds the solution.
-     */
-    template <typename T, uint32_t N, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
-    __device__ void trsv(const T* A, T* x)
-    {
-        trsv_impl<T, FILL, DIAG, TRANSPOSE, ThreadBarrier>(0u, 1u, ct_size<N>{}, A, x);
-    }
-}
 
 // ─── trmv: out-of-place core ──────────────────────────────────────────────────
 
@@ -211,8 +181,8 @@ __device__ void trmv_impl(uint32_t rank, uint32_t size, SizeT n,
 template <typename T, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
 __device__ void trmv(uint32_t n, const T* A, const T* x, T* y)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     trmv_impl<T, FILL, DIAG, TRANSPOSE>(rank, size, n, A, x, y);
 }
 
@@ -234,8 +204,8 @@ __device__ void trmv(uint32_t n, const T* A, const T* x, T* y)
 template <typename T, uint32_t N, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
 __device__ void trmv(const T* A, const T* x, T* y)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     trmv_impl<T, FILL, DIAG, TRANSPOSE>(rank, size, ct_size<N>{}, A, x, y);
 }
 
@@ -274,8 +244,8 @@ __host__ __device__ inline constexpr std::size_t trmv_scratch_bytes(uint32_t n) 
 template <typename T, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
 __device__ void trmv(uint32_t n, const T* A, T* x, T* scratch)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     trmv_impl<T, FILL, DIAG, TRANSPOSE>(rank, size, n, A, x, scratch);
     __syncthreads();                              // scratch fully written before read-back
     for (uint32_t i = rank; i < n; i += size) x[i] = scratch[i];
@@ -300,10 +270,45 @@ __device__ void trmv(uint32_t n, const T* A, T* x, T* scratch)
 template <typename T, uint32_t N, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
 __device__ void trmv(const T* A, T* x, T* scratch)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     trmv_impl<T, FILL, DIAG, TRANSPOSE>(rank, size, ct_size<N>{}, A, x, scratch);
     __syncthreads();
     for (uint32_t i = rank; i < N; i += size) x[i] = scratch[i];
     __syncthreads();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// thread:: — one problem per thread (serial, register-resident)
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace thread {
+    // Single-thread triangular solve: one THREAD owns the whole substitution,
+    // reusing the block impl `trsv_impl(0u, 1u, …)`. Unlike `warp::trsv` (which
+    // lives in trsm.cuh, next to the `warp::trsm` it shares a body with), this
+    // composes nothing, so it sits beside `trsv_impl` itself.
+
+
+    /**
+     * @brief Triangular solve on one thread: `A x = b` in place, compile-time size.
+     *
+     * One thread solves the `N×N` triangular system by forward or back
+     * substitution (direction set by `FILL` and `TRANSPOSE`). `A` is column-major
+     * and read-only; `x` is overwritten with the solution. No shared scratch, no
+     * barriers, no `threadIdx` read; operands may be thread-local register arrays.
+     * SciPy equivalent: `x = scipy.linalg.solve_triangular(A, b, lower=...)`.
+     *
+     * @tparam T     Scalar type (e.g. `float`, `double`).
+     * @tparam N     Dimension (`A` is `N×N`, `x` has length `N`).
+     * @tparam FILL  Which triangle of `A` holds the data (default `FillMode::Lower`).
+     * @tparam DIAG  `Diag::Unit` for an implicit unit diagonal (default `Diag::NonUnit`).
+     * @tparam TRANSPOSE  When true solve `Aᵀx = b` (default false).
+     * @param A  Triangular matrix (column-major, `N*N` elements; read-only).
+     * @param x  In/out right-hand side; on return holds the solution.
+     */
+    template <typename T, uint32_t N, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
+    __device__ void trsv(const T* A, T* x)
+    {
+        trsv_impl<T, FILL, DIAG, TRANSPOSE, ThreadBarrier>(0u, 1u, ct_size<N>{}, A, x);
+    }
 }

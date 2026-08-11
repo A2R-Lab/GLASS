@@ -98,8 +98,8 @@ namespace proj_detail {
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void soc_project(const T *w, T *p, int32_t m)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     proj_detail::soc_project_impl(rank, size, w, p, m);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
@@ -142,21 +142,28 @@ __device__ __forceinline__ T al_soc_value(const T *g, const T *lam, T rho, int32
     return (p_sq - lam_sq) / (static_cast<T>(2)*rho);
 }
 
-// ─── single-thread / single-warp soc_project ─────────────────────────────────
-namespace thread {
-    /** @brief Single-thread SOC projection (aliasing-safe). See `glass::soc_project`. */
-    template <typename T>
-    __device__ void soc_project(const T *w, T *p, int32_t m)
-    { proj_detail::soc_project_impl(0u, 1u, w, p, m); }
-}
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
 
 namespace warp {
     /** @brief Single-warp SOC projection. See `glass::soc_project`. */
     template <typename T>
     __device__ void soc_project(const T *w, T *p, int32_t m)
     {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+        uint32_t lane = (flat_rank()) & 31;
         proj_detail::soc_project_impl(lane, 32u, w, p, m);
         __syncwarp();
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// thread:: — one problem per thread (serial, register-resident)
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace thread {
+    /** @brief Single-thread SOC projection (aliasing-safe). See `glass::soc_project`. */
+    template <typename T>
+    __device__ void soc_project(const T *w, T *p, int32_t m)
+    { proj_detail::soc_project_impl(0u, 1u, w, p, m); }
 }

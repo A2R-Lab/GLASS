@@ -50,8 +50,8 @@ template <typename T, uint32_t d, uint32_t band_width = 3 * d,
           bool TRANSPOSE = false, bool TRAILING_SYNC = true>
 __device__ void store_block(T* dst_strip, BandSlot slot, const T* src, T scale = T(1))
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     const uint32_t off = static_cast<uint32_t>(slot) * d;
     for (uint32_t k = rank; k < d * d; k += size) {
         uint32_t x = k % d, y = k / d;
@@ -78,8 +78,8 @@ template <typename T, uint32_t d, uint32_t band_width = 3 * d,
           bool TRANSPOSE = false, bool TRAILING_SYNC = true>
 __device__ void load_block(T* dst, const T* src_strip, BandSlot slot, T scale = T(1))
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     const uint32_t off = static_cast<uint32_t>(slot) * d;
     for (uint32_t k = rank; k < d * d; k += size) {
         uint32_t x = k % d, y = k / d;
@@ -87,6 +87,10 @@ __device__ void load_block(T* dst, const T* src_strip, BandSlot slot, T scale = 
     }
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
 
 namespace warp {
     /**
@@ -100,7 +104,7 @@ namespace warp {
               bool TRANSPOSE = false, bool TRAILING_SYNC = true>
     __device__ void store_block(T* dst_strip, BandSlot slot, const T* src, T scale = T(1))
     {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+        uint32_t lane = (flat_rank()) & 31;
         const uint32_t off = static_cast<uint32_t>(slot) * d;
         for (uint32_t k = lane; k < d * d; k += 32) {
             uint32_t x = k % d, y = k / d;
@@ -120,7 +124,7 @@ namespace warp {
               bool TRANSPOSE = false, bool TRAILING_SYNC = true>
     __device__ void load_block(T* dst, const T* src_strip, BandSlot slot, T scale = T(1))
     {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
+        uint32_t lane = (flat_rank()) & 31;
         const uint32_t off = static_cast<uint32_t>(slot) * d;
         for (uint32_t k = lane; k < d * d; k += 32) {
             uint32_t x = k % d, y = k / d;
@@ -129,3 +133,4 @@ namespace warp {
         if constexpr (TRAILING_SYNC) __syncwarp();
     }
 }
+

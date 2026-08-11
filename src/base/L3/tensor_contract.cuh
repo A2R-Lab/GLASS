@@ -16,7 +16,7 @@
 // Which tensor axis is contracted away by tensor_vec_contract.
 enum class TensorAxis { K, A, B };
 
-namespace detail {
+namespace tensor_detail {
     // Output / contraction dims for a (K,A,B) tensor contracted on CONTRACT.
     template <TensorAxis C, uint32_t K, uint32_t A, uint32_t B>
     struct tvc_dims {
@@ -136,7 +136,7 @@ namespace detail {
             }
         }
     }
-} // namespace detail
+} // namespace tensor_detail
 
 /**
  * @brief Tensor ⊗ vector contraction: `Mout (+)= Σ_c v[c] · T[..c..]`.
@@ -164,9 +164,9 @@ template <typename T, uint32_t K, uint32_t A, uint32_t B,
           bool ACCUMULATE = true, bool TIN_ROW_MAJOR = false, bool TRAILING_SYNC = true>
 __device__ void tensor_vec_contract(const T* Tns, const T* v, T* Mout)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    detail::tvc_impl<T, CONTRACT, K, A, B, SYMMETRIC, ACCUMULATE, TIN_ROW_MAJOR>(rank, size, Tns, v, Mout);
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
+    tensor_detail::tvc_impl<T, CONTRACT, K, A, B, SYMMETRIC, ACCUMULATE, TIN_ROW_MAJOR>(rank, size, Tns, v, Mout);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -192,16 +192,63 @@ template <typename T, uint32_t K, uint32_t A, uint32_t B,
           bool ACCUMULATE = false, bool TIN_ROW_MAJOR = false, bool TRAILING_SYNC = true>
 __device__ void vec_tensor_vec(const T* Tns, const T* u, const T* w, T* s)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
-    detail::vtv_impl<T, K, A, B, ACCUMULATE, TIN_ROW_MAJOR>(rank, size, Tns, u, w, s);
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
+    tensor_detail::vtv_impl<T, K, A, B, ACCUMULATE, TIN_ROW_MAJOR>(rank, size, Tns, u, w, s);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
-// ─── single-thread tensor contractions ───────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace warp {
+    /**
+     * @brief Single-warp tensor ⊗ vector contraction: `Mout (+)= Σ_c v[c] · T[..c..]`.
+     *
+     * Warp-per-problem analogue of `glass::tensor_vec_contract`; one full 32-lane
+     * warp performs the whole contraction. See the block version for semantics.
+     *
+     * @tparam T,K,A,B,CONTRACT,SYMMETRIC,ACCUMULATE,TIN_ROW_MAJOR  See glass::tensor_vec_contract.
+     * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
+     * @param Tns,v,Mout  See glass::tensor_vec_contract.
+     */
+    template <typename T, uint32_t K, uint32_t A, uint32_t B,
+              TensorAxis CONTRACT = TensorAxis::K, bool SYMMETRIC = false,
+              bool ACCUMULATE = true, bool TIN_ROW_MAJOR = false, bool TRAILING_SYNC = true>
+    __device__ void tensor_vec_contract(const T* Tns, const T* v, T* Mout)
+    {
+        uint32_t lane = (flat_rank()) & 31u;
+        tensor_detail::tvc_impl<T, CONTRACT, K, A, B, SYMMETRIC, ACCUMULATE, TIN_ROW_MAJOR>(lane, 32u, Tns, v, Mout);
+        if constexpr (TRAILING_SYNC) __syncwarp();
+    }
+
+    /**
+     * @brief Single-warp vector–tensor–vector triple product: `s[k] (+)= u^T · T_k · w`.
+     *
+     * Warp-per-problem analogue of `glass::vec_tensor_vec`.
+     *
+     * @tparam T,K,A,B,ACCUMULATE,TIN_ROW_MAJOR  See glass::vec_tensor_vec.
+     * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
+     * @param Tns,u,w,s  See glass::vec_tensor_vec.
+     */
+    template <typename T, uint32_t K, uint32_t A, uint32_t B,
+              bool ACCUMULATE = false, bool TIN_ROW_MAJOR = false, bool TRAILING_SYNC = true>
+    __device__ void vec_tensor_vec(const T* Tns, const T* u, const T* w, T* s)
+    {
+        uint32_t lane = (flat_rank()) & 31u;
+        tensor_detail::vtv_impl<T, K, A, B, ACCUMULATE, TIN_ROW_MAJOR>(lane, 32u, Tns, u, w, s);
+        if constexpr (TRAILING_SYNC) __syncwarp();
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// thread:: — one problem per thread (serial, register-resident)
+// ═══════════════════════════════════════════════════════════════════════
+
 namespace thread {
     // Single-thread tensor contractions: ONE thread owns the whole contraction
-    // via the SAME validated `detail::tvc_impl` / `detail::vtv_impl` engines,
+    // via the SAME validated `tensor_detail::tvc_impl` / `tensor_detail::vtv_impl` engines,
     // dispatched with (rank=0, size=1). At size=1 the engine takes its sub-warp
     // path, which is barrier-free and shuffle-free (partials combine through the
     // register-only `reduced_tree32`), so nothing block- or warp-scoped survives
@@ -235,7 +282,7 @@ namespace thread {
               bool ACCUMULATE = true, bool TIN_ROW_MAJOR = false>
     __device__ void tensor_vec_contract(const T* Tns, const T* v, T* Mout)
     {
-        detail::tvc_impl<T, CONTRACT, K, A, B, SYMMETRIC, ACCUMULATE, TIN_ROW_MAJOR>(0u, 1u, Tns, v, Mout);
+        tensor_detail::tvc_impl<T, CONTRACT, K, A, B, SYMMETRIC, ACCUMULATE, TIN_ROW_MAJOR>(0u, 1u, Tns, v, Mout);
     }
 
     /**
@@ -255,47 +302,6 @@ namespace thread {
               bool ACCUMULATE = false, bool TIN_ROW_MAJOR = false>
     __device__ void vec_tensor_vec(const T* Tns, const T* u, const T* w, T* s)
     {
-        detail::vtv_impl<T, K, A, B, ACCUMULATE, TIN_ROW_MAJOR>(0u, 1u, Tns, u, w, s);
-    }
-}
-
-// ─── single-warp tensor contractions ─────────────────────────────────────────
-namespace warp {
-    /**
-     * @brief Single-warp tensor ⊗ vector contraction: `Mout (+)= Σ_c v[c] · T[..c..]`.
-     *
-     * Warp-per-problem analogue of `glass::tensor_vec_contract`; one full 32-lane
-     * warp performs the whole contraction. See the block version for semantics.
-     *
-     * @tparam T,K,A,B,CONTRACT,SYMMETRIC,ACCUMULATE,TIN_ROW_MAJOR  See glass::tensor_vec_contract.
-     * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
-     * @param Tns,v,Mout  See glass::tensor_vec_contract.
-     */
-    template <typename T, uint32_t K, uint32_t A, uint32_t B,
-              TensorAxis CONTRACT = TensorAxis::K, bool SYMMETRIC = false,
-              bool ACCUMULATE = true, bool TIN_ROW_MAJOR = false, bool TRAILING_SYNC = true>
-    __device__ void tensor_vec_contract(const T* Tns, const T* v, T* Mout)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31u;
-        detail::tvc_impl<T, CONTRACT, K, A, B, SYMMETRIC, ACCUMULATE, TIN_ROW_MAJOR>(lane, 32u, Tns, v, Mout);
-        if constexpr (TRAILING_SYNC) __syncwarp();
-    }
-
-    /**
-     * @brief Single-warp vector–tensor–vector triple product: `s[k] (+)= u^T · T_k · w`.
-     *
-     * Warp-per-problem analogue of `glass::vec_tensor_vec`.
-     *
-     * @tparam T,K,A,B,ACCUMULATE,TIN_ROW_MAJOR  See glass::vec_tensor_vec.
-     * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
-     * @param Tns,u,w,s  See glass::vec_tensor_vec.
-     */
-    template <typename T, uint32_t K, uint32_t A, uint32_t B,
-              bool ACCUMULATE = false, bool TIN_ROW_MAJOR = false, bool TRAILING_SYNC = true>
-    __device__ void vec_tensor_vec(const T* Tns, const T* u, const T* w, T* s)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31u;
-        detail::vtv_impl<T, K, A, B, ACCUMULATE, TIN_ROW_MAJOR>(lane, 32u, Tns, u, w, s);
-        if constexpr (TRAILING_SYNC) __syncwarp();
+        tensor_detail::vtv_impl<T, K, A, B, ACCUMULATE, TIN_ROW_MAJOR>(0u, 1u, Tns, u, w, s);
     }
 }

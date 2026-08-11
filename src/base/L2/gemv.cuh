@@ -85,8 +85,8 @@ __device__ void gemv_impl(uint32_t rank, uint32_t size,
 template <typename T, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
 __device__ void gemv(uint32_t m, uint32_t n, T alpha, const T *A, const T *x, T beta, T *y)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     gemv_impl<T, TRANSPOSE, ROW_MAJOR>(rank, size, m, n, alpha, A, x, beta, y);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
@@ -111,8 +111,8 @@ __device__ void gemv(uint32_t m, uint32_t n, T alpha, const T *A, const T *x, T 
 template <typename T, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
 __device__ void gemv(uint32_t m, uint32_t n, T alpha, const T *A, const T *x, T *y)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     gemv_impl<T, TRANSPOSE, ROW_MAJOR>(rank, size, m, n, alpha, A, x, y);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
@@ -191,8 +191,8 @@ __device__ void gemv_impl_ct(uint32_t rank, uint32_t size,
 template <typename T, uint32_t M, uint32_t N, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
 __device__ void gemv(T alpha, const T *A, const T *x, T beta, T *y)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     gemv_impl_ct<T, M, N, TRANSPOSE, ROW_MAJOR>(rank, size, alpha, A, x, beta, y);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
@@ -216,11 +216,85 @@ __device__ void gemv(T alpha, const T *A, const T *x, T beta, T *y)
 template <typename T, uint32_t M, uint32_t N, bool TRANSPOSE = false, bool ROW_MAJOR = false, bool TRAILING_SYNC = true>
 __device__ void gemv(T alpha, const T *A, const T *x, T *y)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     gemv_impl_ct<T, M, N, TRANSPOSE, ROW_MAJOR>(rank, size, alpha, A, x, y);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace warp {
+    // Single-warp GEMV: one 32-lane warp computes the matvec, lanes striding over
+    // the output rows (lane i owns output rows i, i+32, …). Each lane's row is an
+    // independent inner product — no cross-lane communication, no shared scratch,
+    // no `__syncthreads`. Reuses the block impl `gemv_impl_ct(lane, 32u, …)` exactly
+    // as `warp::gemm` reuses `gemm_impl_ct`. For warp-per-problem kernels packing
+    // many small matvecs into one block via independent warps. Full 32 lanes
+    // required.
+
+    /**
+     * @brief Matrix-vector product within one warp: `y = alpha * A * x + beta * y` (GEMV), single-warp, compile-time size.
+     *
+     * One 32-lane warp computes the matvec with lanes striding over the output rows
+     * of the `M×N` matrix `A` (each row an independent inner product). Set
+     * `TRANSPOSE=true` for `Aᵀ * x` and `ROW_MAJOR=true` for row-major `A`. No shared
+     * scratch, no `__syncthreads`; independent warps may run distinct problems
+     * concurrently. Full 32 lanes required. `y` is read only when `beta != 0`
+     * (BLAS semantics: `beta == 0` treats `y` as write-only). NumPy
+     * equivalent: `y = alpha*A@x + beta*y` (or `alpha*A.T@x + beta*y` when transposed).
+     *
+     * @tparam T          Scalar type (e.g. `float`, `double`).
+     * @tparam M          Number of rows of `A` (compile-time constant).
+     * @tparam N          Number of columns of `A` (compile-time constant).
+     * @tparam TRANSPOSE  When true, multiply by `Aᵀ` instead of `A` (default false).
+     * @tparam ROW_MAJOR  When true, `A` is stored row-major (default false = column-major).
+     * @param alpha  Scalar multiplier on the product.
+     * @param A      Input matrix of `M*N` elements.
+     * @param x      Input vector (length `N`, or `M` when transposed).
+     * @param beta   Scalar multiplier on the prior `y`.
+     * @param y      In/out vector (length `M`, or `N` when transposed).
+     */
+    template <typename T, uint32_t M, uint32_t N, bool TRANSPOSE = false, bool ROW_MAJOR = false>
+    __device__ void gemv(T alpha, const T *A, const T *x, T beta, T *y)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        gemv_impl_ct<T, M, N, TRANSPOSE, ROW_MAJOR>(lane, 32u, alpha, A, x, beta, y);
+        __syncwarp();
+    }
+
+    /**
+     * @brief Matrix-vector product within one warp: `y = alpha * A * x` (GEMV), single-warp, compile-time size, implicit beta = 0.
+     *
+     * Overwrites `y` (no `beta * y` term — `y` is never read, so it is safe to write
+     * into cold/uninitialized scratch). Otherwise identical to the beta overload
+     * above. No shared scratch, no `__syncthreads`. Full 32 lanes required. NumPy
+     * equivalent: `y = alpha*A@x` (or `alpha*A.T@x` when transposed).
+     *
+     * @tparam T          Scalar type (e.g. `float`, `double`).
+     * @tparam M          Number of rows of `A` (compile-time constant).
+     * @tparam N          Number of columns of `A` (compile-time constant).
+     * @tparam TRANSPOSE  When true, multiply by `Aᵀ` instead of `A` (default false).
+     * @tparam ROW_MAJOR  When true, `A` is stored row-major (default false = column-major).
+     * @param alpha  Scalar multiplier on the product.
+     * @param A      Input matrix of `M*N` elements.
+     * @param x      Input vector (length `N`, or `M` when transposed).
+     * @param y      Output vector (length `M`, or `N` when transposed; overwritten).
+     */
+    template <typename T, uint32_t M, uint32_t N, bool TRANSPOSE = false, bool ROW_MAJOR = false>
+    __device__ void gemv(T alpha, const T *A, const T *x, T *y)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        gemv_impl_ct<T, M, N, TRANSPOSE, ROW_MAJOR>(lane, 32u, alpha, A, x, y);
+        __syncwarp();
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// thread:: — one problem per thread (serial, register-resident)
+// ═══════════════════════════════════════════════════════════════════════
 
 namespace thread {
     // Single-thread GEMV: one THREAD computes the whole matvec, walking the output
@@ -288,71 +362,5 @@ namespace thread {
     __device__ void gemv(T alpha, const T *A, const T *x, T *y)
     {
         gemv_impl_ct<T, M, N, TRANSPOSE, ROW_MAJOR>(0u, 1u, alpha, A, x, y);
-    }
-}
-
-namespace warp {
-    // Single-warp GEMV: one 32-lane warp computes the matvec, lanes striding over
-    // the output rows (lane i owns output rows i, i+32, …). Each lane's row is an
-    // independent inner product — no cross-lane communication, no shared scratch,
-    // no `__syncthreads`. Reuses the block impl `gemv_impl_ct(lane, 32u, …)` exactly
-    // as `warp::gemm` reuses `gemm_impl_ct`. For warp-per-problem kernels packing
-    // many small matvecs into one block via independent warps. Full 32 lanes
-    // required.
-
-    /**
-     * @brief Matrix-vector product within one warp: `y = alpha * A * x + beta * y` (GEMV), single-warp, compile-time size.
-     *
-     * One 32-lane warp computes the matvec with lanes striding over the output rows
-     * of the `M×N` matrix `A` (each row an independent inner product). Set
-     * `TRANSPOSE=true` for `Aᵀ * x` and `ROW_MAJOR=true` for row-major `A`. No shared
-     * scratch, no `__syncthreads`; independent warps may run distinct problems
-     * concurrently. Full 32 lanes required. `y` is read only when `beta != 0`
-     * (BLAS semantics: `beta == 0` treats `y` as write-only). NumPy
-     * equivalent: `y = alpha*A@x + beta*y` (or `alpha*A.T@x + beta*y` when transposed).
-     *
-     * @tparam T          Scalar type (e.g. `float`, `double`).
-     * @tparam M          Number of rows of `A` (compile-time constant).
-     * @tparam N          Number of columns of `A` (compile-time constant).
-     * @tparam TRANSPOSE  When true, multiply by `Aᵀ` instead of `A` (default false).
-     * @tparam ROW_MAJOR  When true, `A` is stored row-major (default false = column-major).
-     * @param alpha  Scalar multiplier on the product.
-     * @param A      Input matrix of `M*N` elements.
-     * @param x      Input vector (length `N`, or `M` when transposed).
-     * @param beta   Scalar multiplier on the prior `y`.
-     * @param y      In/out vector (length `M`, or `N` when transposed).
-     */
-    template <typename T, uint32_t M, uint32_t N, bool TRANSPOSE = false, bool ROW_MAJOR = false>
-    __device__ void gemv(T alpha, const T *A, const T *x, T beta, T *y)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        gemv_impl_ct<T, M, N, TRANSPOSE, ROW_MAJOR>(lane, 32u, alpha, A, x, beta, y);
-        __syncwarp();
-    }
-
-    /**
-     * @brief Matrix-vector product within one warp: `y = alpha * A * x` (GEMV), single-warp, compile-time size, implicit beta = 0.
-     *
-     * Overwrites `y` (no `beta * y` term — `y` is never read, so it is safe to write
-     * into cold/uninitialized scratch). Otherwise identical to the beta overload
-     * above. No shared scratch, no `__syncthreads`. Full 32 lanes required. NumPy
-     * equivalent: `y = alpha*A@x` (or `alpha*A.T@x` when transposed).
-     *
-     * @tparam T          Scalar type (e.g. `float`, `double`).
-     * @tparam M          Number of rows of `A` (compile-time constant).
-     * @tparam N          Number of columns of `A` (compile-time constant).
-     * @tparam TRANSPOSE  When true, multiply by `Aᵀ` instead of `A` (default false).
-     * @tparam ROW_MAJOR  When true, `A` is stored row-major (default false = column-major).
-     * @param alpha  Scalar multiplier on the product.
-     * @param A      Input matrix of `M*N` elements.
-     * @param x      Input vector (length `N`, or `M` when transposed).
-     * @param y      Output vector (length `M`, or `N` when transposed; overwritten).
-     */
-    template <typename T, uint32_t M, uint32_t N, bool TRANSPOSE = false, bool ROW_MAJOR = false>
-    __device__ void gemv(T alpha, const T *A, const T *x, T *y)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        gemv_impl_ct<T, M, N, TRANSPOSE, ROW_MAJOR>(lane, 32u, alpha, A, x, y);
-        __syncwarp();
     }
 }

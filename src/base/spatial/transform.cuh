@@ -151,8 +151,8 @@ namespace spatial_detail {
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void motion_transform(const T *E, const T *r, T *X)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     spatial_detail::xform_mat_impl<T, false>(rank, size, E, r, X);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
@@ -170,8 +170,8 @@ __device__ void motion_transform(const T *E, const T *r, T *X)
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void force_transform(const T *E, const T *r, T *X)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     spatial_detail::xform_mat_impl<T, true>(rank, size, E, r, X);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
@@ -201,8 +201,8 @@ template <typename T, bool INVERSE = false, bool HAS_BETA = false, bool TRAILING
 __device__ void motion_transform_mul(T alpha, const T *E, const T *r,
                                      const T *v, T beta, T *y)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     T tmp[6]; spatial_detail::motion_transform_mul_core<T, INVERSE>(E, r, v, tmp);
     spatial_detail::blend_out<T, 6, HAS_BETA>(rank, size, alpha, tmp, beta, y);
     if constexpr (TRAILING_SYNC) __syncthreads();
@@ -229,14 +229,63 @@ template <typename T, bool INVERSE = false, bool HAS_BETA = false, bool TRAILING
 __device__ void force_transform_mul(T alpha, const T *E, const T *r,
                                     const T *f, T beta, T *y)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     T tmp[6]; spatial_detail::force_transform_mul_core<T, INVERSE>(E, r, f, tmp);
     spatial_detail::blend_out<T, 6, HAS_BETA>(rank, size, alpha, tmp, beta, y);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
-// ─── single-thread spatial transforms ────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace warp {
+    /** @brief Single-warp motion transform matrix. See `glass::motion_transform`. */
+    template <typename T>
+    __device__ void motion_transform(const T *E, const T *r, T *X)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        spatial_detail::xform_mat_impl<T, false>(lane, 32u, E, r, X);
+        __syncwarp();
+    }
+
+    /** @brief Single-warp force transform matrix. See `glass::force_transform`. */
+    template <typename T>
+    __device__ void force_transform(const T *E, const T *r, T *X)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        spatial_detail::xform_mat_impl<T, true>(lane, 32u, E, r, X);
+        __syncwarp();
+    }
+
+    /** @brief Single-warp fused motion transform apply. See `glass::motion_transform_mul`. */
+    template <typename T, bool INVERSE = false, bool HAS_BETA = false>
+    __device__ void motion_transform_mul(T alpha, const T *E, const T *r,
+                                         const T *v, T beta, T *y)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        T tmp[6]; spatial_detail::motion_transform_mul_core<T, INVERSE>(E, r, v, tmp);
+        spatial_detail::blend_out<T, 6, HAS_BETA>(lane, 32u, alpha, tmp, beta, y);
+        __syncwarp();
+    }
+
+    /** @brief Single-warp fused force transform apply. See `glass::force_transform_mul`. */
+    template <typename T, bool INVERSE = false, bool HAS_BETA = false>
+    __device__ void force_transform_mul(T alpha, const T *E, const T *r,
+                                        const T *f, T beta, T *y)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        T tmp[6]; spatial_detail::force_transform_mul_core<T, INVERSE>(E, r, f, tmp);
+        spatial_detail::blend_out<T, 6, HAS_BETA>(lane, 32u, alpha, tmp, beta, y);
+        __syncwarp();
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// thread:: — one problem per thread (serial, register-resident)
+// ═══════════════════════════════════════════════════════════════════════
+
 namespace thread {
     /** @brief Single-thread motion transform matrix. See `glass::motion_transform`. */
     template <typename T>
@@ -264,48 +313,5 @@ namespace thread {
     {
         T tmp[6]; spatial_detail::force_transform_mul_core<T, INVERSE>(E, r, f, tmp);
         spatial_detail::blend_out<T, 6, HAS_BETA>(0u, 1u, alpha, tmp, beta, y);
-    }
-}
-
-// ─── single-warp spatial transforms ──────────────────────────────────────────
-namespace warp {
-    /** @brief Single-warp motion transform matrix. See `glass::motion_transform`. */
-    template <typename T>
-    __device__ void motion_transform(const T *E, const T *r, T *X)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        spatial_detail::xform_mat_impl<T, false>(lane, 32u, E, r, X);
-        __syncwarp();
-    }
-
-    /** @brief Single-warp force transform matrix. See `glass::force_transform`. */
-    template <typename T>
-    __device__ void force_transform(const T *E, const T *r, T *X)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        spatial_detail::xform_mat_impl<T, true>(lane, 32u, E, r, X);
-        __syncwarp();
-    }
-
-    /** @brief Single-warp fused motion transform apply. See `glass::motion_transform_mul`. */
-    template <typename T, bool INVERSE = false, bool HAS_BETA = false>
-    __device__ void motion_transform_mul(T alpha, const T *E, const T *r,
-                                         const T *v, T beta, T *y)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T tmp[6]; spatial_detail::motion_transform_mul_core<T, INVERSE>(E, r, v, tmp);
-        spatial_detail::blend_out<T, 6, HAS_BETA>(lane, 32u, alpha, tmp, beta, y);
-        __syncwarp();
-    }
-
-    /** @brief Single-warp fused force transform apply. See `glass::force_transform_mul`. */
-    template <typename T, bool INVERSE = false, bool HAS_BETA = false>
-    __device__ void force_transform_mul(T alpha, const T *E, const T *r,
-                                        const T *f, T beta, T *y)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T tmp[6]; spatial_detail::force_transform_mul_core<T, INVERSE>(E, r, f, tmp);
-        spatial_detail::blend_out<T, 6, HAS_BETA>(lane, 32u, alpha, tmp, beta, y);
-        __syncwarp();
     }
 }

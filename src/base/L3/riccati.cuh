@@ -57,8 +57,8 @@ __device__ void riccati_gain(const T* P, const T* A, const T* B, const T* R,
     T* S   = s_scratch;                 // NU x NU control Hessian
     T* scr = s_scratch + NU*NU;         // congruence/bilinear product scratch
 
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     for (uint32_t i = rank; i < NU*NU; i += size) S[i] = R[i];   // S = R
     __syncthreads();
 
@@ -71,6 +71,56 @@ __device__ void riccati_gain(const T* P, const T* A, const T* B, const T* R,
 
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace warp {
+    /**
+     * @brief Single-warp LQR/iLQR feedback gain `K = (R + BᵀPB)⁻¹ (BᵀPA)`.
+     *
+     * Warp-per-knot parity with the block `glass::riccati_gain`: one 32-lane warp
+     * forms `S = R + BᵀPB` (`warp::congruence_sym`), `G = BᵀPA` (`warp::bilinear`),
+     * then solves `S·K = G` for the `NU×NX` gain with the checked, optionally
+     * regularized `warp::posv` (NRHS=NX). Every sub-op is `__syncwarp`-scoped, so
+     * independent warps may run distinct knots of a batched backward pass
+     * concurrently in one block. On return `Kgain` holds `K`; `P,A,B,R` unchanged.
+     *
+     * @tparam T  Scalar type (prefer `double` for ill-conditioned `S`).
+     * @tparam NX  State dimension (`P`,`A` are NX×NX, `B` is NX×NU).
+     * @tparam NU  Control dimension (`R` is NU×NU, `K` is NU×NX). Assumes `NX >= NU`.
+     * @tparam REGULARIZE  If true, add `rho·I` to `S` before the solve (default false).
+     * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
+     * @param P,A,B,R  Inputs (column-major; see the block overload).
+     * @param Kgain  Out gain `K` (NU×NX, column-major).
+     * @param s_scratch Shared scratch of `riccati_scratch_bytes<T,NX,NU>()` bytes (per warp).
+     * @param rho    Diagonal shift on `S` when REGULARIZE (ignored otherwise).
+     * @param s_fail Optional flag: set to 1 if `S` (after the shift) is not PD, else 0.
+     */
+    template <typename T, uint32_t NX, uint32_t NU,
+              bool REGULARIZE = false, bool TRAILING_SYNC = true>
+    __device__ void riccati_gain(const T* P, const T* A, const T* B, const T* R,
+                                 T* Kgain, T* s_scratch, T rho = T(0), int* s_fail = nullptr)
+    {
+        T* S   = s_scratch;                 // NU x NU control Hessian
+        T* scr = s_scratch + NU*NU;         // congruence/bilinear product scratch
+
+        uint32_t lane = (flat_rank()) & 31;
+        for (uint32_t i = lane; i < NU*NU; i += 32) S[i] = R[i];   // S = R
+        __syncwarp();
+
+        congruence_sym<T, NX, NU, /*ACCUMULATE=*/true>(static_cast<T>(1), B, P, static_cast<T>(1), S, scr);
+        bilinear<T, NX, NU, NX>(static_cast<T>(1), B, P, A, static_cast<T>(0), Kgain, scr);
+        posv<T, NU, NX, REGULARIZE, /*CHECK=*/true>(S, Kgain, rho, s_fail);
+
+        if constexpr (TRAILING_SYNC) __syncwarp();
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// thread:: — one problem per thread (serial, register-resident)
+// ═══════════════════════════════════════════════════════════════════════
 
 namespace thread {
     /**
@@ -131,47 +181,5 @@ namespace thread {
         thread::potrf<T, NU, /*CHECK=*/true>(S, s_fail);                // S -> L (lower)
         for (uint32_t c = 0; c < NX; ++c)
             thread::potrs<T, NU>(S, Kgain + c*NU);                      // per-column L Lᵀ x = g
-    }
-}
-
-namespace warp {
-    /**
-     * @brief Single-warp LQR/iLQR feedback gain `K = (R + BᵀPB)⁻¹ (BᵀPA)`.
-     *
-     * Warp-per-knot parity with the block `glass::riccati_gain`: one 32-lane warp
-     * forms `S = R + BᵀPB` (`warp::congruence_sym`), `G = BᵀPA` (`warp::bilinear`),
-     * then solves `S·K = G` for the `NU×NX` gain with the checked, optionally
-     * regularized `warp::posv` (NRHS=NX). Every sub-op is `__syncwarp`-scoped, so
-     * independent warps may run distinct knots of a batched backward pass
-     * concurrently in one block. On return `Kgain` holds `K`; `P,A,B,R` unchanged.
-     *
-     * @tparam T  Scalar type (prefer `double` for ill-conditioned `S`).
-     * @tparam NX  State dimension (`P`,`A` are NX×NX, `B` is NX×NU).
-     * @tparam NU  Control dimension (`R` is NU×NU, `K` is NU×NX). Assumes `NX >= NU`.
-     * @tparam REGULARIZE  If true, add `rho·I` to `S` before the solve (default false).
-     * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
-     * @param P,A,B,R  Inputs (column-major; see the block overload).
-     * @param Kgain  Out gain `K` (NU×NX, column-major).
-     * @param s_scratch Shared scratch of `riccati_scratch_bytes<T,NX,NU>()` bytes (per warp).
-     * @param rho    Diagonal shift on `S` when REGULARIZE (ignored otherwise).
-     * @param s_fail Optional flag: set to 1 if `S` (after the shift) is not PD, else 0.
-     */
-    template <typename T, uint32_t NX, uint32_t NU,
-              bool REGULARIZE = false, bool TRAILING_SYNC = true>
-    __device__ void riccati_gain(const T* P, const T* A, const T* B, const T* R,
-                                 T* Kgain, T* s_scratch, T rho = T(0), int* s_fail = nullptr)
-    {
-        T* S   = s_scratch;                 // NU x NU control Hessian
-        T* scr = s_scratch + NU*NU;         // congruence/bilinear product scratch
-
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        for (uint32_t i = lane; i < NU*NU; i += 32) S[i] = R[i];   // S = R
-        __syncwarp();
-
-        congruence_sym<T, NX, NU, /*ACCUMULATE=*/true>(static_cast<T>(1), B, P, static_cast<T>(1), S, scr);
-        bilinear<T, NX, NU, NX>(static_cast<T>(1), B, P, A, static_cast<T>(0), Kgain, scr);
-        posv<T, NU, NX, REGULARIZE, /*CHECK=*/true>(S, Kgain, rho, s_fail);
-
-        if constexpr (TRAILING_SYNC) __syncwarp();
     }
 }

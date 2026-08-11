@@ -154,8 +154,8 @@ __host__ __device__ constexpr std::size_t inv_pivoted_scratch_bytes(uint32_t dim
 template <typename T, typename SizeT>
 __device__ void inv_pivoted_impl(SizeT dimA, T *A, T *s_scratch)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     const unsigned W = 2*dimA;          // augmented width
     // s_scratch layout (3*dimA + 1 slots):
     //   [0 .. dimA)       pivot column
@@ -287,8 +287,8 @@ __host__ __device__ constexpr std::size_t inv_fused_scratch_bytes(uint32_t K, co
 template <typename T>
 __device__ void inv(uint32_t K, const uint32_t *dims, uint32_t MAX_DIM, T **mats, T *s_scratch)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     for (unsigned pivRC = 0; pivRC < MAX_DIM; pivRC++) {
         // Phase 1: save each active matrix's pivot row + column into its scratch span.
         // Strided over the union of work; per-matrix scratch base = prefix sum of (2*dim+1).
@@ -423,8 +423,8 @@ __host__ __device__ constexpr std::size_t inv_dense_scratch_bytes(uint32_t dimA)
 template <typename T, typename SizeT>
 __device__ void inv_dense_impl(SizeT dimA, T *A, T *Ainv, T *s_scratch)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     // Seed Ainv = I (parallel over dimA*dimA cells).
     for (uint32_t ind = rank; ind < dimA*dimA; ind += size) {
         uint32_t row = ind % dimA, col = ind / dimA;
@@ -484,6 +484,74 @@ __device__ void inv_dense(T *A, T *Ainv, T *s_scratch)
     inv_dense_impl<T>(ct_size<N>{}, A, Ainv, s_scratch);
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace warp {
+    /**
+     * @brief Single-warp in-place matrix inverse (unpivoted Gauss-Jordan, augmented `[A | I]`), compile-time size.
+     *
+     * One 32-lane warp reduces a column-major augmented `N x 2*N` `[A | I]`
+     * buffer so that on return columns `N..2*N-1` hold `A^-1` — the same
+     * layout, phases, and arithmetic as the block `glass::inv`, scoped to a
+     * warp for warp-per-problem kernels (e.g. packing many small Schur-block
+     * inversions from GATO/MPCGPU into one block, one warp each). Per pivot:
+     * a lane-strided SAVE of the pivot column + active pivot-row window into
+     * `s_scratch`, `__syncwarp()`, then a lane-strided Gauss-Jordan cell
+     * UPDATE over the `N x (N+1)` active window, `__syncwarp()` — mirroring
+     * `inv_impl`'s two-phase structure exactly. The pivot reciprocal is
+     * computed redundantly by every lane from the SAVED shared value
+     * (`1 / s_scratch[pivRC]`, the same bits every lane) — deterministic, and
+     * never a lane-0-register broadcast, so there is nothing for the
+     * `__restrict__` stale-shared-reread miscompile (guide §1g) to bite.
+     * No `__syncthreads`. Unpivoted: like the block `inv`, it divides by the
+     * leading pivots as-is (no row exchange) — use the block `inv_pivoted`
+     * when robustness to small/zero leading pivots is needed. Fused K-way and
+     * pivoted warp forms are deliberately not provided (future work).
+     *
+     * NumPy equivalent: `Ainv = np.linalg.inv(A)`.
+     *
+     * @tparam T  Scalar type.
+     * @tparam N  Matrix dimension (A is N x N).
+     * @param A          In/out augmented `[A | I]` buffer (column-major, N x 2*N);
+     *                   on return its right half holds `A^-1`.
+     * @param s_scratch  Scratch of `2*N + 1` elements of `T`
+     *                   (= `inv_scratch_bytes<T>(N)` bytes), shared or global.
+     *                   Each warp needs its OWN `2*N + 1` span — when packing W
+     *                   warps into a block, give warp `w` `s_scratch + w*(2*N+1)`.
+     */
+    template <typename T, uint32_t N>
+    __device__ void inv(T *A, T *s_scratch)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        for (unsigned pivRC = 0; pivRC < N; pivRC++) {
+            unsigned pivOff = pivRC * N;
+            // SAVE: pivot column (N entries) + active pivot-row window (N+1 entries).
+            for (unsigned ind = lane; ind < 2*N+1; ind += 32) {
+                unsigned AInd = (ind < N) ? (ind + pivOff) : (pivRC + pivOff + (ind-N)*N);
+                s_scratch[ind] = A[AInd];
+            }
+            __syncwarp();
+            // UPDATE: every lane recomputes the pivot reciprocal from the saved
+            // pivot value — same bits on all lanes (s_scratch[pivRC] == the
+            // pre-save A[pivRC + pivOff] the block impl reads), so the result
+            // is deterministic and matches the block path bit-for-bit.
+            T pvInv = static_cast<T>(1) / s_scratch[pivRC];
+            for (unsigned ind = lane; ind < N*(N+1); ind += 32) {
+                unsigned row = ind % N, col = ind / N, coff = ind - row;
+                if (row == pivRC) A[row + pivOff + coff] *= pvInv;
+                else A[row + pivOff + coff] -= s_scratch[row]*pvInv*s_scratch[N+col];
+            }
+            __syncwarp();
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// thread:: — one problem per thread (serial, register-resident)
+// ═══════════════════════════════════════════════════════════════════════
+
 namespace thread {
     /**
      * @brief Single-thread in-place matrix inverse (unpivoted Gauss-Jordan,
@@ -529,65 +597,5 @@ namespace thread {
     __device__ void inv(T *A, T *s_scratch)
     {
         inv_impl<ThreadBarrier, T>(ThreadBarrier{}, ct_size<N>{}, A, s_scratch);
-    }
-}
-
-namespace warp {
-    /**
-     * @brief Single-warp in-place matrix inverse (unpivoted Gauss-Jordan, augmented `[A | I]`), compile-time size.
-     *
-     * One 32-lane warp reduces a column-major augmented `N x 2*N` `[A | I]`
-     * buffer so that on return columns `N..2*N-1` hold `A^-1` — the same
-     * layout, phases, and arithmetic as the block `glass::inv`, scoped to a
-     * warp for warp-per-problem kernels (e.g. packing many small Schur-block
-     * inversions from GATO/MPCGPU into one block, one warp each). Per pivot:
-     * a lane-strided SAVE of the pivot column + active pivot-row window into
-     * `s_scratch`, `__syncwarp()`, then a lane-strided Gauss-Jordan cell
-     * UPDATE over the `N x (N+1)` active window, `__syncwarp()` — mirroring
-     * `inv_impl`'s two-phase structure exactly. The pivot reciprocal is
-     * computed redundantly by every lane from the SAVED shared value
-     * (`1 / s_scratch[pivRC]`, the same bits every lane) — deterministic, and
-     * never a lane-0-register broadcast, so there is nothing for the
-     * `__restrict__` stale-shared-reread miscompile (guide §1g) to bite.
-     * No `__syncthreads`. Unpivoted: like the block `inv`, it divides by the
-     * leading pivots as-is (no row exchange) — use the block `inv_pivoted`
-     * when robustness to small/zero leading pivots is needed. Fused K-way and
-     * pivoted warp forms are deliberately not provided (future work).
-     *
-     * NumPy equivalent: `Ainv = np.linalg.inv(A)`.
-     *
-     * @tparam T  Scalar type.
-     * @tparam N  Matrix dimension (A is N x N).
-     * @param A          In/out augmented `[A | I]` buffer (column-major, N x 2*N);
-     *                   on return its right half holds `A^-1`.
-     * @param s_scratch  Scratch of `2*N + 1` elements of `T`
-     *                   (= `inv_scratch_bytes<T>(N)` bytes), shared or global.
-     *                   Each warp needs its OWN `2*N + 1` span — when packing W
-     *                   warps into a block, give warp `w` `s_scratch + w*(2*N+1)`.
-     */
-    template <typename T, uint32_t N>
-    __device__ void inv(T *A, T *s_scratch)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        for (unsigned pivRC = 0; pivRC < N; pivRC++) {
-            unsigned pivOff = pivRC * N;
-            // SAVE: pivot column (N entries) + active pivot-row window (N+1 entries).
-            for (unsigned ind = lane; ind < 2*N+1; ind += 32) {
-                unsigned AInd = (ind < N) ? (ind + pivOff) : (pivRC + pivOff + (ind-N)*N);
-                s_scratch[ind] = A[AInd];
-            }
-            __syncwarp();
-            // UPDATE: every lane recomputes the pivot reciprocal from the saved
-            // pivot value — same bits on all lanes (s_scratch[pivRC] == the
-            // pre-save A[pivRC + pivOff] the block impl reads), so the result
-            // is deterministic and matches the block path bit-for-bit.
-            T pvInv = static_cast<T>(1) / s_scratch[pivRC];
-            for (unsigned ind = lane; ind < N*(N+1); ind += 32) {
-                unsigned row = ind % N, col = ind / N, coff = ind - row;
-                if (row == pivRC) A[row + pivOff + coff] *= pvInv;
-                else A[row + pivOff + coff] -= s_scratch[row]*pvInv*s_scratch[N+col];
-            }
-            __syncwarp();
-        }
     }
 }

@@ -94,8 +94,8 @@ namespace spatial_detail {
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void spatial_inertia(const T *pi, T *M)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     spatial_detail::inertia_mat_impl(rank, size, pi, M);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
@@ -121,14 +121,42 @@ __device__ void spatial_inertia(const T *pi, T *M)
 template <typename T, bool HAS_BETA = false, bool TRAILING_SYNC = true>
 __device__ void spatial_inertia_mul(T alpha, const T *pi, const T *v, T beta, T *f)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     T tmp[6]; spatial_detail::spatial_inertia_mul_core(pi, v, tmp);
     spatial_detail::blend_out<T, 6, HAS_BETA>(rank, size, alpha, tmp, beta, f);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
-// ─── single-thread spatial inertia ───────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace warp {
+    /** @brief Single-warp spatial inertia matrix. See `glass::spatial_inertia`. */
+    template <typename T>
+    __device__ void spatial_inertia(const T *pi, T *M)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        spatial_detail::inertia_mat_impl(lane, 32u, pi, M);
+        __syncwarp();
+    }
+
+    /** @brief Single-warp fused spatial inertia apply. See `glass::spatial_inertia_mul`. */
+    template <typename T, bool HAS_BETA = false>
+    __device__ void spatial_inertia_mul(T alpha, const T *pi, const T *v, T beta, T *f)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        T tmp[6]; spatial_detail::spatial_inertia_mul_core(pi, v, tmp);
+        spatial_detail::blend_out<T, 6, HAS_BETA>(lane, 32u, alpha, tmp, beta, f);
+        __syncwarp();
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// thread:: — one problem per thread (serial, register-resident)
+// ═══════════════════════════════════════════════════════════════════════
+
 namespace thread {
     /** @brief Single-thread spatial inertia matrix. See `glass::spatial_inertia`. */
     template <typename T>
@@ -141,27 +169,5 @@ namespace thread {
     {
         T tmp[6]; spatial_detail::spatial_inertia_mul_core(pi, v, tmp);
         spatial_detail::blend_out<T, 6, HAS_BETA>(0u, 1u, alpha, tmp, beta, f);
-    }
-}
-
-// ─── single-warp spatial inertia ─────────────────────────────────────────────
-namespace warp {
-    /** @brief Single-warp spatial inertia matrix. See `glass::spatial_inertia`. */
-    template <typename T>
-    __device__ void spatial_inertia(const T *pi, T *M)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        spatial_detail::inertia_mat_impl(lane, 32u, pi, M);
-        __syncwarp();
-    }
-
-    /** @brief Single-warp fused spatial inertia apply. See `glass::spatial_inertia_mul`. */
-    template <typename T, bool HAS_BETA = false>
-    __device__ void spatial_inertia_mul(T alpha, const T *pi, const T *v, T beta, T *f)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T tmp[6]; spatial_detail::spatial_inertia_mul_core(pi, v, tmp);
-        spatial_detail::blend_out<T, 6, HAS_BETA>(lane, 32u, alpha, tmp, beta, f);
-        __syncwarp();
     }
 }

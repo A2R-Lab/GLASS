@@ -19,8 +19,8 @@
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void ger(uint32_t m, uint32_t n, T alpha, const T *x, const T *y, T *A)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     for (uint32_t col = 0; col < n; col++) {
         T ay = alpha * y[col];
         for (uint32_t row = rank; row < m; row += size)
@@ -46,8 +46,8 @@ __device__ void ger(uint32_t m, uint32_t n, T alpha, const T *x, const T *y, T *
 template <typename T, uint32_t M, uint32_t N, bool TRAILING_SYNC = true>
 __device__ void ger(T alpha, const T *x, const T *y, T *A)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     for (uint32_t col = 0; col < N; col++) {
         T ay = alpha * y[col];
         for (uint32_t row = rank; row < M; row += size)

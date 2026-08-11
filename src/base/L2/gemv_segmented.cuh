@@ -109,8 +109,8 @@ __device__ void gemv_segmented(
                   "FUSE_SCALED_ADD folds into a non-atomic store; not available under ATOMIC_Y");
     constexpr uint32_t OUT_ROWS = TRANSPOSE ? N : M;   // output rows per segment
     constexpr uint32_t CONTRACT = TRANSPOSE ? M : N;   // contracted dimension
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     uint32_t total = segments * OUT_ROWS;
     for (uint32_t r = rank; r < total; r += size) {
         uint32_t seg = r / OUT_ROWS;
@@ -182,8 +182,8 @@ __device__ void gemv_segmented(
                   "FUSE_SCALED_ADD folds into a non-atomic store; not available under ATOMIC_Y");
     constexpr uint32_t OUT_ROWS = TRANSPOSE ? N : M;
     constexpr uint32_t CONTRACT = TRANSPOSE ? M : N;
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     uint32_t total = segments * OUT_ROWS;
     for (uint32_t r = rank; r < total; r += size) {
         uint32_t seg = r / OUT_ROWS;

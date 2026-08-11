@@ -31,7 +31,7 @@
  * sized by the consumer's stage blocks, n = 12..21 today).
  */
 
-namespace detail {
+namespace eigh_detail {
 
 /// Circle-method round-robin schedule for N indices: M-1 rounds (M = N padded
 /// even) of M/2 disjoint (p<q) pairs; slots touching the pad index hold the
@@ -72,7 +72,7 @@ __host__ __device__ constexpr EighSchedule<N> eigh_schedule()
     return S;
 }
 
-}  // namespace detail
+}  // namespace eigh_detail
 
 /**
  * @brief Default sweep count for `eigh` by scalar width.
@@ -133,12 +133,12 @@ __host__ __device__ constexpr std::size_t eigh_scratch_bytes()
 template <typename T, uint32_t N, uint32_t SWEEPS = eigh_sweeps<T>()>
 __device__ void eigh(const T *A, T *W, T *V, T *s_scratch)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     constexpr uint32_t M      = N + (N & 1u);
     constexpr uint32_t ROUNDS = M - 1u;
     constexpr uint32_t KMAX   = M / 2u;
-    static constexpr detail::EighSchedule<N> sched = detail::eigh_schedule<N>();
+    static constexpr eigh_detail::EighSchedule<N> sched = eigh_detail::eigh_schedule<N>();
     // Scratch layout — see eigh_scratch_bytes: [0, N*N) working copy B; then
     // KMAX c's; then KMAX s's.
     T *s_B = s_scratch;
@@ -266,8 +266,8 @@ __host__ __device__ constexpr std::size_t psd_project_scratch_bytes()
 template <typename T, uint32_t N, uint32_t SWEEPS = eigh_sweeps<T>()>
 __device__ void psd_project(T *A, T eps, T *s_scratch)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     // Scratch layout — see psd_project_scratch_bytes: W (N) | V (N*N) | eigh scratch.
     T *s_W = s_scratch;
     T *s_V = s_scratch + N;

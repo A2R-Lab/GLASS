@@ -137,8 +137,8 @@ template <typename T, bool CHECK = false, typename SizeT>
 __device__ void ldlt_impl(SizeT n, T *A, T *s_scratch, bool pivot, int32_t *piv,
                           int *s_fail, int *s_inertia)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     if constexpr (CHECK) {       // only rank 0 writes the reporting outputs
         if (rank == 0) {
             if (s_fail) *s_fail = 0;
@@ -418,8 +418,8 @@ __device__ void ldlt(T *A, T *s_scratch, bool pivot = false, int32_t *piv = null
 template <typename T, typename SizeT>
 __device__ void ldlt_solve_impl(SizeT n, const T *LD, T *b, const int32_t *piv)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     // P b: forward sweep of the recorded interchanges.
     if (piv != nullptr) {
         if (rank == 0)
@@ -546,6 +546,117 @@ __device__ void ldlt_solve(const T *LD, T *b, const int32_t *piv = nullptr)
     ldlt_solve_impl<T>(ct_size<N>{}, LD, b, piv);
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace warp {
+    /**
+     * @brief Single-warp in-place LDLᵀ factorization (LAPACK `sytrf`, lower, NON-pivoted).
+     *
+     * Warp-per-problem parity with the block `glass::ldlt`: one 32-lane warp factors
+     * the symmetric (possibly INDEFINITE) `A = L D Lᵀ` in place — lane 0 runs the
+     * serial diagonal recurrence `D_j = A_jj − Σ_{k<j} L_jk² D_k` (broadcasting `D_j`
+     * from its register via `__shfl_sync`, never a shared re-read — immune to the
+     * `__restrict__` stale-cache miscompile), lanes fill the trailing column
+     * `L_ij = (A_ij − Σ_{k<j} L_ik D_k L_jk)/D_j` strided by 32. On return the diagonal
+     * slots hold `D`, the strict lower triangle holds unit-`L`. No square root, so it
+     * factors KKT / saddle-point systems Cholesky cannot. No shared scratch, no
+     * `__syncthreads`. **Non-pivoted** (pivoting on the warp surface is deferred — it
+     * needs a `warp::iamax` over the working column; the block path covers the
+     * pivoted / Bunch–Kaufman case).
+     *
+     * `CHECK` (compile-out) reports a zero/NaN pivot via `s_fail` and the inertia
+     * `{n_pos, n_neg, n_zero}` via `s_inertia` (lane 0 writes both). NumPy:
+     * `lu, d, _ = scipy.linalg.ldl(A, lower=True)` ⇒ `A == lu @ np.diag(d) @ lu.T`.
+     *
+     * @tparam T      Scalar type (use `double` for ill-conditioned A).
+     * @tparam N      Dimension (A is N x N).
+     * @tparam CHECK  If true, report zero/NaN pivot + inertia (default false, compiles out).
+     * @param A         In/out N x N symmetric matrix (column-major, lower); on return holds L (strict-lower, unit) and D (diagonal).
+     * @param s_fail    Optional flag (CHECK only): set to 1 on a zero/NaN pivot, else 0.
+     * @param s_inertia Optional length-3 `{n_pos, n_neg, n_zero}` pivot-sign counts (CHECK only).
+     */
+    template <typename T, uint32_t N, bool CHECK = false>
+    __device__ void ldlt(T *A, int *s_fail = nullptr, int *s_inertia = nullptr)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        if constexpr (CHECK) {
+            if (lane == 0) {
+                if (s_fail) *s_fail = 0;
+                if (s_inertia) { s_inertia[0] = 0; s_inertia[1] = 0; s_inertia[2] = 0; }
+            }
+        }
+        for (uint32_t j = 0; j < N; j++) {
+            T Dj = static_cast<T>(0);
+            if (lane == 0) {                          // serial diagonal pivot D_j
+                T sum = static_cast<T>(0);
+                for (uint32_t k = 0; k < j; k++) {
+                    T Ljk = A[k*N + j];               // L_jk (strict-lower, row j, col k)
+                    sum += Ljk * Ljk * A[k*N + k];    // * D_k
+                }
+                A[j*N + j] -= sum;                    // overwrite diagonal with D_j
+                Dj = A[j*N + j];
+                if constexpr (CHECK) {
+                    if (s_fail && (Dj == static_cast<T>(0) || isnan(Dj))) *s_fail = 1;
+                    if (s_inertia) {
+                        if (Dj > static_cast<T>(0)) s_inertia[0]++;
+                        else if (Dj < static_cast<T>(0)) s_inertia[1]++;
+                        else s_inertia[2]++;
+                    }
+                }
+            }
+            Dj = __shfl_sync(0xffffffffu, Dj, 0);     // broadcast finished D_j from lane 0's register
+            for (uint32_t i = j + 1 + lane; i < N; i += 32) {   // parallel trailing column
+                T sum = static_cast<T>(0);
+                for (uint32_t k = 0; k < j; k++)
+                    sum += A[k*N + i] * A[k*N + k] * A[k*N + j];  // L_ik * D_k * L_jk
+                A[j*N + i] = (A[j*N + i] - sum) / Dj;
+            }
+            __syncwarp();
+        }
+    }
+
+    /**
+     * @brief Single-warp LDLᵀ solve `A x = b` in place from an `ldlt` factor (NON-pivoted).
+     *
+     * Warp parity with block `glass::ldlt_solve`: one 32-lane warp runs the three
+     * sweeps — forward unit-`L` (`L y = b`), diagonal scale (`z = y / D`), back
+     * unit-`Lᵀ` (`Lᵀ x = z`) — over the factor `LD` from `warp::ldlt`. `b` is
+     * overwritten with `x`. No shared scratch; `__syncwarp` between dependent sweeps.
+     * Non-pivoted (matches the non-pivoted `warp::ldlt`). NumPy: `x = np.linalg.solve(A, b)`.
+     *
+     * @tparam T  Scalar type.
+     * @tparam N  Dimension (LD is N x N, b length N).
+     * @param LD  LDLᵀ factor from `warp::ldlt` (column-major; unit-L strict-lower, D diagonal).
+     * @param b   In/out right-hand side; on return holds the solution x.
+     */
+    template <typename T, uint32_t N>
+    __device__ void ldlt_solve(const T *LD, T *b)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        for (uint32_t col = 0; col < N; col++) {               // forward: L y = b (unit L)
+            T factor = b[col];
+            for (uint32_t row = col + 1 + lane; row < N; row += 32)
+                b[row] -= LD[col*N + row] * factor;            // L_{row,col}
+            __syncwarp();
+        }
+        for (uint32_t i = lane; i < N; i += 32)                // diagonal scale z = y / D
+            b[i] /= LD[i*N + i];
+        __syncwarp();
+        for (int32_t col = (int32_t)N - 1; col >= 0; col--) {  // back: Lᵀ x = z (unit Lᵀ)
+            T factor = b[col];
+            for (uint32_t i = lane; i < (uint32_t)col; i += 32)
+                b[i] -= LD[i*N + col] * factor;                // (Lᵀ)_{i,col} = L_{col,i}
+            __syncwarp();
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// thread:: — one problem per thread (serial, register-resident)
+// ═══════════════════════════════════════════════════════════════════════
+
 namespace thread {
     /**
      * @brief Single-thread in-place LDLᵀ factorization (LAPACK `sytrf`, lower,
@@ -661,109 +772,6 @@ namespace thread {
             T factor = b[col];
             for (uint32_t i = 0; i < (uint32_t)col; i++)
                 b[i] -= LD[i*N + col] * factor;                // (Lᵀ)_{i,col} = L_{col,i}
-        }
-    }
-}
-
-namespace warp {
-    /**
-     * @brief Single-warp in-place LDLᵀ factorization (LAPACK `sytrf`, lower, NON-pivoted).
-     *
-     * Warp-per-problem parity with the block `glass::ldlt`: one 32-lane warp factors
-     * the symmetric (possibly INDEFINITE) `A = L D Lᵀ` in place — lane 0 runs the
-     * serial diagonal recurrence `D_j = A_jj − Σ_{k<j} L_jk² D_k` (broadcasting `D_j`
-     * from its register via `__shfl_sync`, never a shared re-read — immune to the
-     * `__restrict__` stale-cache miscompile), lanes fill the trailing column
-     * `L_ij = (A_ij − Σ_{k<j} L_ik D_k L_jk)/D_j` strided by 32. On return the diagonal
-     * slots hold `D`, the strict lower triangle holds unit-`L`. No square root, so it
-     * factors KKT / saddle-point systems Cholesky cannot. No shared scratch, no
-     * `__syncthreads`. **Non-pivoted** (pivoting on the warp surface is deferred — it
-     * needs a `warp::iamax` over the working column; the block path covers the
-     * pivoted / Bunch–Kaufman case).
-     *
-     * `CHECK` (compile-out) reports a zero/NaN pivot via `s_fail` and the inertia
-     * `{n_pos, n_neg, n_zero}` via `s_inertia` (lane 0 writes both). NumPy:
-     * `lu, d, _ = scipy.linalg.ldl(A, lower=True)` ⇒ `A == lu @ np.diag(d) @ lu.T`.
-     *
-     * @tparam T      Scalar type (use `double` for ill-conditioned A).
-     * @tparam N      Dimension (A is N x N).
-     * @tparam CHECK  If true, report zero/NaN pivot + inertia (default false, compiles out).
-     * @param A         In/out N x N symmetric matrix (column-major, lower); on return holds L (strict-lower, unit) and D (diagonal).
-     * @param s_fail    Optional flag (CHECK only): set to 1 on a zero/NaN pivot, else 0.
-     * @param s_inertia Optional length-3 `{n_pos, n_neg, n_zero}` pivot-sign counts (CHECK only).
-     */
-    template <typename T, uint32_t N, bool CHECK = false>
-    __device__ void ldlt(T *A, int *s_fail = nullptr, int *s_inertia = nullptr)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        if constexpr (CHECK) {
-            if (lane == 0) {
-                if (s_fail) *s_fail = 0;
-                if (s_inertia) { s_inertia[0] = 0; s_inertia[1] = 0; s_inertia[2] = 0; }
-            }
-        }
-        for (uint32_t j = 0; j < N; j++) {
-            T Dj = static_cast<T>(0);
-            if (lane == 0) {                          // serial diagonal pivot D_j
-                T sum = static_cast<T>(0);
-                for (uint32_t k = 0; k < j; k++) {
-                    T Ljk = A[k*N + j];               // L_jk (strict-lower, row j, col k)
-                    sum += Ljk * Ljk * A[k*N + k];    // * D_k
-                }
-                A[j*N + j] -= sum;                    // overwrite diagonal with D_j
-                Dj = A[j*N + j];
-                if constexpr (CHECK) {
-                    if (s_fail && (Dj == static_cast<T>(0) || isnan(Dj))) *s_fail = 1;
-                    if (s_inertia) {
-                        if (Dj > static_cast<T>(0)) s_inertia[0]++;
-                        else if (Dj < static_cast<T>(0)) s_inertia[1]++;
-                        else s_inertia[2]++;
-                    }
-                }
-            }
-            Dj = __shfl_sync(0xffffffffu, Dj, 0);     // broadcast finished D_j from lane 0's register
-            for (uint32_t i = j + 1 + lane; i < N; i += 32) {   // parallel trailing column
-                T sum = static_cast<T>(0);
-                for (uint32_t k = 0; k < j; k++)
-                    sum += A[k*N + i] * A[k*N + k] * A[k*N + j];  // L_ik * D_k * L_jk
-                A[j*N + i] = (A[j*N + i] - sum) / Dj;
-            }
-            __syncwarp();
-        }
-    }
-
-    /**
-     * @brief Single-warp LDLᵀ solve `A x = b` in place from an `ldlt` factor (NON-pivoted).
-     *
-     * Warp parity with block `glass::ldlt_solve`: one 32-lane warp runs the three
-     * sweeps — forward unit-`L` (`L y = b`), diagonal scale (`z = y / D`), back
-     * unit-`Lᵀ` (`Lᵀ x = z`) — over the factor `LD` from `warp::ldlt`. `b` is
-     * overwritten with `x`. No shared scratch; `__syncwarp` between dependent sweeps.
-     * Non-pivoted (matches the non-pivoted `warp::ldlt`). NumPy: `x = np.linalg.solve(A, b)`.
-     *
-     * @tparam T  Scalar type.
-     * @tparam N  Dimension (LD is N x N, b length N).
-     * @param LD  LDLᵀ factor from `warp::ldlt` (column-major; unit-L strict-lower, D diagonal).
-     * @param b   In/out right-hand side; on return holds the solution x.
-     */
-    template <typename T, uint32_t N>
-    __device__ void ldlt_solve(const T *LD, T *b)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        for (uint32_t col = 0; col < N; col++) {               // forward: L y = b (unit L)
-            T factor = b[col];
-            for (uint32_t row = col + 1 + lane; row < N; row += 32)
-                b[row] -= LD[col*N + row] * factor;            // L_{row,col}
-            __syncwarp();
-        }
-        for (uint32_t i = lane; i < N; i += 32)                // diagonal scale z = y / D
-            b[i] /= LD[i*N + i];
-        __syncwarp();
-        for (int32_t col = (int32_t)N - 1; col >= 0; col--) {  // back: Lᵀ x = z (unit Lᵀ)
-            T factor = b[col];
-            for (uint32_t i = lane; i < (uint32_t)col; i += 32)
-                b[i] -= LD[i*N + col] * factor;                // (Lᵀ)_{i,col} = L_{col,i}
-            __syncwarp();
         }
     }
 }

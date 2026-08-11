@@ -225,12 +225,12 @@ namespace est_detail {
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void eig3(const T *A, T *W, T *V)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     T tw[3], tv[9];
     est_detail::eig3_core(A, tw, tv);
-    quat_detail::copy_out<T, 3>(rank, size, tw, W);
-    quat_detail::copy_out<T, 9>(rank, size, tv, V);
+    lie_detail::copy_out<T, 3>(rank, size, tw, W);
+    lie_detail::copy_out<T, 9>(rank, size, tv, V);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -254,13 +254,13 @@ __device__ void eig3(const T *A, T *W, T *V)
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void svd3(const T *A, T *U, T *S, T *V)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     T tu[9], ts[3], tv[9];
     est_detail::svd3_core(A, tu, ts, tv);
-    quat_detail::copy_out<T, 9>(rank, size, tu, U);
-    quat_detail::copy_out<T, 3>(rank, size, ts, S);
-    quat_detail::copy_out<T, 9>(rank, size, tv, V);
+    lie_detail::copy_out<T, 9>(rank, size, tu, U);
+    lie_detail::copy_out<T, 3>(rank, size, ts, S);
+    lie_detail::copy_out<T, 9>(rank, size, tv, V);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -287,15 +287,60 @@ __device__ void svd3(const T *A, T *U, T *S, T *V)
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void closest_rotation(const T *A, T *R)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     T tr[9];
     est_detail::closest_rotation_core(A, tr);
-    quat_detail::copy_out<T, 9>(rank, size, tr, R);
+    lie_detail::copy_out<T, 9>(rank, size, tr, R);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
-// ─── single-thread 3x3 spectral ops ──────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace warp {
+    /** @brief Single-warp symmetric 3x3 eigendecomposition. See `glass::eig3`. */
+    template <typename T>
+    __device__ void eig3(const T *A, T *W, T *V)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        T tw[3], tv[9];
+        est_detail::eig3_core(A, tw, tv);
+        lie_detail::copy_out<T, 3>(lane, 32u, tw, W);
+        lie_detail::copy_out<T, 9>(lane, 32u, tv, V);
+        __syncwarp();
+    }
+
+    /** @brief Single-warp 3x3 SVD. See `glass::svd3`. */
+    template <typename T>
+    __device__ void svd3(const T *A, T *U, T *S, T *V)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        T tu[9], ts[3], tv[9];
+        est_detail::svd3_core(A, tu, ts, tv);
+        lie_detail::copy_out<T, 9>(lane, 32u, tu, U);
+        lie_detail::copy_out<T, 3>(lane, 32u, ts, S);
+        lie_detail::copy_out<T, 9>(lane, 32u, tv, V);
+        __syncwarp();
+    }
+
+    /** @brief Single-warp closest proper rotation. See `glass::closest_rotation`. */
+    template <typename T>
+    __device__ void closest_rotation(const T *A, T *R)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        T tr[9];
+        est_detail::closest_rotation_core(A, tr);
+        lie_detail::copy_out<T, 9>(lane, 32u, tr, R);
+        __syncwarp();
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// thread:: — one problem per thread (serial, register-resident)
+// ═══════════════════════════════════════════════════════════════════════
+
 namespace thread {
     /** @brief Single-thread symmetric 3x3 eigendecomposition. See `glass::eig3`. */
     template <typename T>
@@ -325,44 +370,5 @@ namespace thread {
         T tr[9];
         est_detail::closest_rotation_core(A, tr);
         for (uint32_t i = 0; i < 9; i++) R[i] = tr[i];
-    }
-}
-
-// ─── single-warp 3x3 spectral ops ────────────────────────────────────────────
-namespace warp {
-    /** @brief Single-warp symmetric 3x3 eigendecomposition. See `glass::eig3`. */
-    template <typename T>
-    __device__ void eig3(const T *A, T *W, T *V)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T tw[3], tv[9];
-        est_detail::eig3_core(A, tw, tv);
-        quat_detail::copy_out<T, 3>(lane, 32u, tw, W);
-        quat_detail::copy_out<T, 9>(lane, 32u, tv, V);
-        __syncwarp();
-    }
-
-    /** @brief Single-warp 3x3 SVD. See `glass::svd3`. */
-    template <typename T>
-    __device__ void svd3(const T *A, T *U, T *S, T *V)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T tu[9], ts[3], tv[9];
-        est_detail::svd3_core(A, tu, ts, tv);
-        quat_detail::copy_out<T, 9>(lane, 32u, tu, U);
-        quat_detail::copy_out<T, 3>(lane, 32u, ts, S);
-        quat_detail::copy_out<T, 9>(lane, 32u, tv, V);
-        __syncwarp();
-    }
-
-    /** @brief Single-warp closest proper rotation. See `glass::closest_rotation`. */
-    template <typename T>
-    __device__ void closest_rotation(const T *A, T *R)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T tr[9];
-        est_detail::closest_rotation_core(A, tr);
-        quat_detail::copy_out<T, 9>(lane, 32u, tr, R);
-        __syncwarp();
     }
 }

@@ -86,11 +86,11 @@ namespace lie_detail {
     __device__ __forceinline__ void se3_retract_core(const T *pose, const T *rho,
                                                      const T *phi, T *out) {
         // orientation: q_new = normalize(q ⊗ exp([φ/2]))
-        quat_detail::quat_retract_core<T, L>(pose + 3, phi, out + 3);
+        lie_detail::quat_retract_core<T, L>(pose + 3, phi, out + 3);
         // position: p_new = p + R(q)·(Jl(φ)·ρ)   (body-frame tangent)
         T V[9];  so3_left_jacobian_core(phi, V);
         T pl[3]; mat3_vec_core(V, rho, pl);
-        T R[9];  quat_detail::quat_to_rot_core<T, L>(pose + 3, R);
+        T R[9];  lie_detail::quat_to_rot_core<T, L>(pose + 3, R);
         T pw[3]; mat3_vec_core(R, pl, pw);
         out[0] = pose[0] + pw[0];
         out[1] = pose[1] + pw[1];
@@ -105,19 +105,19 @@ namespace lie_detail {
     template <typename T, QuatLayout L>
     __device__ __forceinline__ void se3_difference_core(const T *pose_from, const T *pose_to,
                                                         T *rho, T *phi) {
-        using QL = quat_detail::layout<L>;
+        using QL = lie_detail::layout<L>;
         // φ = log(q_from⁻¹ ⊗ q_to)
         const T *qf = pose_from + 3;
         T qf_conj[4];
         qf_conj[QL::X] = -qf[QL::X]; qf_conj[QL::Y] = -qf[QL::Y];
         qf_conj[QL::Z] = -qf[QL::Z]; qf_conj[QL::W] =  qf[QL::W];
-        T q_rel[4]; quat_detail::quat_mul_core<T, L>(qf_conj, pose_to + 3, q_rel);
-        quat_detail::quat_log_core<T, L>(q_rel, phi);
+        T q_rel[4]; lie_detail::quat_mul_core<T, L>(qf_conj, pose_to + 3, q_rel);
+        lie_detail::quat_log_core<T, L>(q_rel, phi);
         // ρ = Jl(φ)⁻¹ · R(q_from)ᵀ · (p_to − p_from)   (undo the body-frame V·ρ)
         const T dp[3] = {pose_to[0] - pose_from[0],
                          pose_to[1] - pose_from[1],
                          pose_to[2] - pose_from[2]};
-        T R[9];  quat_detail::quat_to_rot_core<T, L>(qf, R);
+        T R[9];  lie_detail::quat_to_rot_core<T, L>(qf, R);
         T pl[3];   // Rᵀ·dp (R column-major: row i of Rᵀ = column i of R)
         #pragma unroll
         for (uint32_t i = 0; i < 3; ++i)
@@ -405,10 +405,10 @@ namespace lie_detail {
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void se3_Q_block(const T *rho, const T *phi, T *Q)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     T tmp[9]; lie_detail::se3_Q_block_core(rho, phi, tmp);
-    quat_detail::copy_out<T, 9>(rank, size, tmp, Q);
+    lie_detail::copy_out<T, 9>(rank, size, tmp, Q);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -435,10 +435,10 @@ __device__ void se3_Q_block(const T *rho, const T *phi, T *Q)
 template <typename T, QuatLayout L = QuatLayout::xyzw, bool TRAILING_SYNC = true>
 __device__ void se3_retract(const T *pose, const T *rho, const T *phi, T *pose_new)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     T tmp[7]; lie_detail::se3_retract_core<T, L>(pose, rho, phi, tmp);
-    quat_detail::copy_out<T, 7>(rank, size, tmp, pose_new);
+    lie_detail::copy_out<T, 7>(rank, size, tmp, pose_new);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -462,11 +462,11 @@ __device__ void se3_retract(const T *pose, const T *rho, const T *phi, T *pose_n
 template <typename T, QuatLayout L = QuatLayout::xyzw, bool TRAILING_SYNC = true>
 __device__ void se3_difference(const T *pose_from, const T *pose_to, T *rho, T *phi)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     T tr[3], tp[3]; lie_detail::se3_difference_core<T, L>(pose_from, pose_to, tr, tp);
-    quat_detail::copy_out<T, 3>(rank, size, tr, rho);
-    quat_detail::copy_out<T, 3>(rank, size, tp, phi);
+    lie_detail::copy_out<T, 3>(rank, size, tr, rho);
+    lie_detail::copy_out<T, 3>(rank, size, tp, phi);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -485,10 +485,10 @@ __device__ void se3_difference(const T *pose_from, const T *pose_to, T *rho, T *
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void se3_retract_jacobian_q(const T *rho, const T *phi, T *J)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     T tmp[36]; lie_detail::se3_retract_jacobian_q_core(rho, phi, tmp);
-    quat_detail::copy_out<T, 36>(rank, size, tmp, J);
+    lie_detail::copy_out<T, 36>(rank, size, tmp, J);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -507,10 +507,10 @@ __device__ void se3_retract_jacobian_q(const T *rho, const T *phi, T *J)
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void se3_retract_jacobian_v(const T *rho, const T *phi, T *J)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     T tmp[36]; lie_detail::se3_retract_jacobian_v_core(rho, phi, tmp);
-    quat_detail::copy_out<T, 36>(rank, size, tmp, J);
+    lie_detail::copy_out<T, 36>(rank, size, tmp, J);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
@@ -540,13 +540,82 @@ __device__ void se3_retract_jacobian_v(const T *rho, const T *phi, T *J)
 template <typename T, bool IS_Q, bool TRAILING_SYNC = true>
 __device__ void se3_retract_hessian(const T *rho, const T *phi, T *J2)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     lie_detail::se3_retract_hessian_impl<T, IS_Q>(rank, size, rho, phi, J2);
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
-// ─── single-thread SE(3) ops ─────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace warp {
+    /** @brief Single-warp Barfoot Q block. See `glass::se3_Q_block`. */
+    template <typename T>
+    __device__ void se3_Q_block(const T *rho, const T *phi, T *Q)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        T tmp[9]; lie_detail::se3_Q_block_core(rho, phi, tmp);
+        lie_detail::copy_out<T, 9>(lane, 32u, tmp, Q);
+        __syncwarp();
+    }
+
+    /** @brief Single-warp SE(3) retract. See `glass::se3_retract`. */
+    template <typename T, QuatLayout L = QuatLayout::xyzw>
+    __device__ void se3_retract(const T *pose, const T *rho, const T *phi, T *pose_new)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        T tmp[7]; lie_detail::se3_retract_core<T, L>(pose, rho, phi, tmp);
+        lie_detail::copy_out<T, 7>(lane, 32u, tmp, pose_new);
+        __syncwarp();
+    }
+
+    /** @brief Single-warp SE(3) difference (boxminus). See `glass::se3_difference`. */
+    template <typename T, QuatLayout L = QuatLayout::xyzw>
+    __device__ void se3_difference(const T *pose_from, const T *pose_to, T *rho, T *phi)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        T tr[3], tp[3]; lie_detail::se3_difference_core<T, L>(pose_from, pose_to, tr, tp);
+        lie_detail::copy_out<T, 3>(lane, 32u, tr, rho);
+        lie_detail::copy_out<T, 3>(lane, 32u, tp, phi);
+        __syncwarp();
+    }
+
+    /** @brief Single-warp retract Jacobian w.r.t. the base pose. See `glass::se3_retract_jacobian_q`. */
+    template <typename T>
+    __device__ void se3_retract_jacobian_q(const T *rho, const T *phi, T *J)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        T tmp[36]; lie_detail::se3_retract_jacobian_q_core(rho, phi, tmp);
+        lie_detail::copy_out<T, 36>(lane, 32u, tmp, J);
+        __syncwarp();
+    }
+
+    /** @brief Single-warp retract Jacobian w.r.t. the tangent. See `glass::se3_retract_jacobian_v`. */
+    template <typename T>
+    __device__ void se3_retract_jacobian_v(const T *rho, const T *phi, T *J)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        T tmp[36]; lie_detail::se3_retract_jacobian_v_core(rho, phi, tmp);
+        lie_detail::copy_out<T, 36>(lane, 32u, tmp, J);
+        __syncwarp();
+    }
+
+    /** @brief Single-warp retract Hessian (double internals). See `glass::se3_retract_hessian`. */
+    template <typename T, bool IS_Q>
+    __device__ void se3_retract_hessian(const T *rho, const T *phi, T *J2)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        lie_detail::se3_retract_hessian_impl<T, IS_Q>(lane, 32u, rho, phi, J2);
+        __syncwarp();
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// thread:: — one problem per thread (serial, register-resident)
+// ═══════════════════════════════════════════════════════════════════════
+
 namespace thread {
     /** @brief Single-thread Barfoot Q block. See `glass::se3_Q_block`. */
     template <typename T>
@@ -580,67 +649,4 @@ namespace thread {
     template <typename T, bool IS_Q>
     __device__ void se3_retract_hessian(const T *rho, const T *phi, T *J2)
     { lie_detail::se3_retract_hessian_impl<T, IS_Q>(0u, 1u, rho, phi, J2); }
-}
-
-// ─── single-warp SE(3) ops ───────────────────────────────────────────────────
-namespace warp {
-    /** @brief Single-warp Barfoot Q block. See `glass::se3_Q_block`. */
-    template <typename T>
-    __device__ void se3_Q_block(const T *rho, const T *phi, T *Q)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T tmp[9]; lie_detail::se3_Q_block_core(rho, phi, tmp);
-        quat_detail::copy_out<T, 9>(lane, 32u, tmp, Q);
-        __syncwarp();
-    }
-
-    /** @brief Single-warp SE(3) retract. See `glass::se3_retract`. */
-    template <typename T, QuatLayout L = QuatLayout::xyzw>
-    __device__ void se3_retract(const T *pose, const T *rho, const T *phi, T *pose_new)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T tmp[7]; lie_detail::se3_retract_core<T, L>(pose, rho, phi, tmp);
-        quat_detail::copy_out<T, 7>(lane, 32u, tmp, pose_new);
-        __syncwarp();
-    }
-
-    /** @brief Single-warp SE(3) difference (boxminus). See `glass::se3_difference`. */
-    template <typename T, QuatLayout L = QuatLayout::xyzw>
-    __device__ void se3_difference(const T *pose_from, const T *pose_to, T *rho, T *phi)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T tr[3], tp[3]; lie_detail::se3_difference_core<T, L>(pose_from, pose_to, tr, tp);
-        quat_detail::copy_out<T, 3>(lane, 32u, tr, rho);
-        quat_detail::copy_out<T, 3>(lane, 32u, tp, phi);
-        __syncwarp();
-    }
-
-    /** @brief Single-warp retract Jacobian w.r.t. the base pose. See `glass::se3_retract_jacobian_q`. */
-    template <typename T>
-    __device__ void se3_retract_jacobian_q(const T *rho, const T *phi, T *J)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T tmp[36]; lie_detail::se3_retract_jacobian_q_core(rho, phi, tmp);
-        quat_detail::copy_out<T, 36>(lane, 32u, tmp, J);
-        __syncwarp();
-    }
-
-    /** @brief Single-warp retract Jacobian w.r.t. the tangent. See `glass::se3_retract_jacobian_v`. */
-    template <typename T>
-    __device__ void se3_retract_jacobian_v(const T *rho, const T *phi, T *J)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T tmp[36]; lie_detail::se3_retract_jacobian_v_core(rho, phi, tmp);
-        quat_detail::copy_out<T, 36>(lane, 32u, tmp, J);
-        __syncwarp();
-    }
-
-    /** @brief Single-warp retract Hessian (double internals). See `glass::se3_retract_hessian`. */
-    template <typename T, bool IS_Q>
-    __device__ void se3_retract_hessian(const T *rho, const T *phi, T *J2)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        lie_detail::se3_retract_hessian_impl<T, IS_Q>(lane, 32u, rho, phi, J2);
-        __syncwarp();
-    }
 }

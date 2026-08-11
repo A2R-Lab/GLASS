@@ -33,14 +33,52 @@
 template <typename T, uint32_t M, uint32_t N, uint32_t Y_RS, uint32_t X_RS = M, bool TRAILING_SYNC = true>
 __device__ void axpy_strided(T alpha, const T* X, T* Y)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     for (uint32_t k = rank; k < M * N; k += size) {
         uint32_t r = k % M, c = k / M;
         Y[r + c * Y_RS] += alpha * X[r + c * X_RS];
     }
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace warp {
+    /**
+     * @brief Row-strided AXPY within one warp: `Y[r + c*Y_RS] += alpha * X[r + c*X_RS]`.
+     *
+     * Single-warp form of `axpy_strided`: one 32-lane warp strides over the
+     * `M*N` block elements. Each element written once; no inter-lane comms, no
+     * shared scratch. `TRAILING_SYNC` gates a closing `__syncwarp()`. Full 32 lanes
+     * required; independent warps may run distinct problems concurrently.
+     *
+     * @tparam T             Scalar type.
+     * @tparam M,N           Block shape.
+     * @tparam Y_RS          Leading dimension of `Y`.
+     * @tparam X_RS          Leading dimension of `X` (default `M`).
+     * @tparam TRAILING_SYNC Emit a trailing `__syncwarp()` (default true).
+     * @param alpha  Scalar multiplier on `X`.
+     * @param X      Input block, addressed at `X[r + c*X_RS]` (read-only).
+     * @param Y      In/out block, addressed at `Y[r + c*Y_RS]`.
+     */
+    template <typename T, uint32_t M, uint32_t N, uint32_t Y_RS, uint32_t X_RS = M, bool TRAILING_SYNC = true>
+    __device__ void axpy_strided(T alpha, const T* X, T* Y)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        for (uint32_t k = lane; k < M * N; k += 32) {
+            uint32_t r = k % M, c = k / M;
+            Y[r + c * Y_RS] += alpha * X[r + c * X_RS];
+        }
+        if constexpr (TRAILING_SYNC) __syncwarp();
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// thread:: — one problem per thread (serial, register-resident)
+// ═══════════════════════════════════════════════════════════════════════
 
 namespace thread {
     // Single-thread strided AXPY: one THREAD walks the M×N block serially
@@ -75,35 +113,5 @@ namespace thread {
         for (uint32_t c = 0; c < N; c++)
             for (uint32_t r = 0; r < M; r++)
                 Y[r + c * Y_RS] += alpha * X[r + c * X_RS];
-    }
-}
-
-namespace warp {
-    /**
-     * @brief Row-strided AXPY within one warp: `Y[r + c*Y_RS] += alpha * X[r + c*X_RS]`.
-     *
-     * Single-warp form of `axpy_strided`: one 32-lane warp strides over the
-     * `M*N` block elements. Each element written once; no inter-lane comms, no
-     * shared scratch. `TRAILING_SYNC` gates a closing `__syncwarp()`. Full 32 lanes
-     * required; independent warps may run distinct problems concurrently.
-     *
-     * @tparam T             Scalar type.
-     * @tparam M,N           Block shape.
-     * @tparam Y_RS          Leading dimension of `Y`.
-     * @tparam X_RS          Leading dimension of `X` (default `M`).
-     * @tparam TRAILING_SYNC Emit a trailing `__syncwarp()` (default true).
-     * @param alpha  Scalar multiplier on `X`.
-     * @param X      Input block, addressed at `X[r + c*X_RS]` (read-only).
-     * @param Y      In/out block, addressed at `Y[r + c*Y_RS]`.
-     */
-    template <typename T, uint32_t M, uint32_t N, uint32_t Y_RS, uint32_t X_RS = M, bool TRAILING_SYNC = true>
-    __device__ void axpy_strided(T alpha, const T* X, T* Y)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        for (uint32_t k = lane; k < M * N; k += 32) {
-            uint32_t r = k % M, c = k / M;
-            Y[r + c * Y_RS] += alpha * X[r + c * X_RS];
-        }
-        if constexpr (TRAILING_SYNC) __syncwarp();
     }
 }

@@ -86,8 +86,8 @@ __device__ void potrf(uint32_t n, T *s_A, int *s_fail = nullptr)
 template <typename T>
 __device__ void potrf(uint32_t K, const uint32_t *dims, uint32_t MAX_DIM, T **mats)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     for (uint32_t row = 0; row < MAX_DIM; row++) {
         // Phase 1: diagonal of each active matrix — distribute the K diagonals across threads.
         for (uint32_t m = rank; m < K; m += size) {
@@ -181,6 +181,70 @@ __device__ void potrf(T *s_A, int *s_fail = nullptr)
     potrf_impl<BlockBarrier, T, CHECK>(BlockBarrier{}, ct_size<N>{}, s_A, s_fail);
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace warp {
+    /**
+     * @brief Single-warp in-place Cholesky factorization (LAPACK potrf, lower), compile-time size.
+     *
+     * One 32-lane warp factors the SPD matrix `A = L * L^T` in place, writing only
+     * the lower triangle (column-major). For warp-per-problem solvers on small
+     * systems (e.g. N≈7 normal equations). Lane 0 computes each diagonal; the
+     * remaining sub-diagonal entries of the column are filled by the warp's lanes
+     * (stride 32), synchronized with `__syncwarp`. No shared scratch, no
+     * `__syncthreads`. `A` must be SPD. NumPy equivalent:
+     * `L = np.linalg.cholesky(A)`.
+     *
+     * When `CHECK` is true and `s_fail` is non-null, reports a non-PD / NaN pivot
+     * via `*s_fail` (lane 0 writes it, mirroring the block overload). `CHECK`
+     * defaults false and compiles out, so the unchecked instantiation is
+     * byte-identical to the original.
+     *
+     * @tparam T  Scalar type (use `double` for stability on ill-conditioned A).
+     * @tparam N  Matrix dimension (A is N x N).
+     * @tparam CHECK  If true, detect a non-PD pivot and report it via `s_fail` (default false, compiles out).
+     * @param s_A     In/out N x N matrix (column-major); on return its lower triangle holds L.
+     * @param s_fail  Optional flag (CHECK only): set to 1 on a non-PD / NaN pivot, else 0. Ignored when null.
+     */
+    template <typename T, uint32_t N, bool CHECK = false>
+    __device__ void potrf(T *s_A, int *s_fail = nullptr)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        if constexpr (CHECK) { if (lane == 0 && s_fail) *s_fail = 0; }
+        for (uint32_t k = 0; k < N; k++) {
+            T diag = static_cast<T>(0);
+            if (lane == 0) {
+                T sum = static_cast<T>(0);
+                T val = s_A[k*N + k];
+                for (uint32_t r = 0; r < k; r++) sum += s_A[r*N + k]*s_A[r*N + k];
+                T d = val - sum;
+                if constexpr (CHECK) { if (s_fail && (d <= static_cast<T>(0) || isnan(d))) *s_fail = 1; }
+                diag = sqrt(d);
+                s_A[k*N + k] = diag;
+            }
+            // Broadcast the pivot from lane 0's REGISTER via __shfl_sync rather than having
+            // every lane re-read s_A[k*N+k] from shared. The shared re-read is the same
+            // write-then-read-same-location pattern that nvcc can cache stale when the buffer
+            // is reached through a caller `__restrict__` pointer (observed: in-place warp solve
+            // gave wrong results for ~10% of inputs under -restrict; shfl broadcast is immune
+            // and matches glass::warp::reduce's own shfl-based design).
+            diag = __shfl_sync(0xffffffffu, diag, 0);
+            for (uint32_t row = lane + k + 1; row < N; row += 32) {
+                T sum = static_cast<T>(0);
+                for (uint32_t kk = 0; kk < k; kk++) sum += s_A[kk*N + row]*s_A[kk*N + k];
+                s_A[k*N + row] = (s_A[k*N + row] - sum) / diag;
+            }
+            __syncwarp();
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// thread:: — one problem per thread (serial, register-resident)
+// ═══════════════════════════════════════════════════════════════════════
+
 namespace thread {
     /**
      * @brief Single-thread in-place Cholesky factorization (LAPACK potrf, lower), compile-time size.
@@ -216,61 +280,5 @@ namespace thread {
     __device__ void potrf(T *s_A, int *s_fail = nullptr)
     {
         potrf_impl<ThreadBarrier, T, CHECK>(ThreadBarrier{}, ct_size<N>{}, s_A, s_fail);
-    }
-}
-
-namespace warp {
-    /**
-     * @brief Single-warp in-place Cholesky factorization (LAPACK potrf, lower), compile-time size.
-     *
-     * One 32-lane warp factors the SPD matrix `A = L * L^T` in place, writing only
-     * the lower triangle (column-major). For warp-per-problem solvers on small
-     * systems (e.g. N≈7 normal equations). Lane 0 computes each diagonal; the
-     * remaining sub-diagonal entries of the column are filled by the warp's lanes
-     * (stride 32), synchronized with `__syncwarp`. No shared scratch, no
-     * `__syncthreads`. `A` must be SPD. NumPy equivalent:
-     * `L = np.linalg.cholesky(A)`.
-     *
-     * When `CHECK` is true and `s_fail` is non-null, reports a non-PD / NaN pivot
-     * via `*s_fail` (lane 0 writes it, mirroring the block overload). `CHECK`
-     * defaults false and compiles out, so the unchecked instantiation is
-     * byte-identical to the original.
-     *
-     * @tparam T  Scalar type (use `double` for stability on ill-conditioned A).
-     * @tparam N  Matrix dimension (A is N x N).
-     * @tparam CHECK  If true, detect a non-PD pivot and report it via `s_fail` (default false, compiles out).
-     * @param s_A     In/out N x N matrix (column-major); on return its lower triangle holds L.
-     * @param s_fail  Optional flag (CHECK only): set to 1 on a non-PD / NaN pivot, else 0. Ignored when null.
-     */
-    template <typename T, uint32_t N, bool CHECK = false>
-    __device__ void potrf(T *s_A, int *s_fail = nullptr)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        if constexpr (CHECK) { if (lane == 0 && s_fail) *s_fail = 0; }
-        for (uint32_t k = 0; k < N; k++) {
-            T diag = static_cast<T>(0);
-            if (lane == 0) {
-                T sum = static_cast<T>(0);
-                T val = s_A[k*N + k];
-                for (uint32_t r = 0; r < k; r++) sum += s_A[r*N + k]*s_A[r*N + k];
-                T d = val - sum;
-                if constexpr (CHECK) { if (s_fail && (d <= static_cast<T>(0) || isnan(d))) *s_fail = 1; }
-                diag = sqrt(d);
-                s_A[k*N + k] = diag;
-            }
-            // Broadcast the pivot from lane 0's REGISTER via __shfl_sync rather than having
-            // every lane re-read s_A[k*N+k] from shared. The shared re-read is the same
-            // write-then-read-same-location pattern that nvcc can cache stale when the buffer
-            // is reached through a caller `__restrict__` pointer (observed: in-place warp solve
-            // gave wrong results for ~10% of inputs under -restrict; shfl broadcast is immune
-            // and matches glass::warp::reduce's own shfl-based design).
-            diag = __shfl_sync(0xffffffffu, diag, 0);
-            for (uint32_t row = lane + k + 1; row < N; row += 32) {
-                T sum = static_cast<T>(0);
-                for (uint32_t kk = 0; kk < k; kk++) sum += s_A[kk*N + row]*s_A[kk*N + k];
-                s_A[k*N + row] = (s_A[k*N + row] - sum) / diag;
-            }
-            __syncwarp();
-        }
     }
 }

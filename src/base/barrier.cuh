@@ -47,6 +47,12 @@ struct ThreadBarrier {
     __device__ __forceinline__ void sync() const { }
 };
 
+// Flat block rank/size — THE prologue for every public block-face op. One
+// definition instead of the hand-written threadIdx arithmetic at each site
+// (233 copies removed 2026-08-11); identical instructions after inlining.
+__device__ __forceinline__ uint32_t flat_rank() { return BlockBarrier{}.rank(); }
+__device__ __forceinline__ uint32_t flat_size() { return BlockBarrier{}.size(); }
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ct_size — compile-time size carrier for the factor/solve `*_impl` bodies.
 //

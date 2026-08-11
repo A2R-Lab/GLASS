@@ -70,6 +70,64 @@ __device__ void symmetrize(T *A)
     symmetrize_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, N, A);
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace warp {
+    // Single-warp SYMMETRIZE: one 32-lane warp strides the n*n index space
+    // (lane k handles flat indices k, k+32, …) acting on strictly-lower entries.
+    // Each mirror pair has a single owning lane, so no inter-lane communication
+    // is needed; a trailing __syncwarp() orders the writes for the caller.
+    // Full 32 lanes required.
+
+    /**
+     * @brief Symmetrize within one warp: `A = 0.5*(A + Aᵀ)`, single-warp.
+     *
+     * One 32-lane warp averages the mirror pairs of the `n×n` column-major
+     * matrix in place; the diagonal is untouched. Each pair owned by exactly
+     * one lane; trailing `__syncwarp()`. NumPy equivalent: `A = 0.5*(A + A.T)`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @param n  Matrix dimension (number of rows/columns).
+     * @param A  In/out matrix of `n*n` elements (column-major).
+     */
+    template <typename T>
+    __device__ void symmetrize(uint32_t n, T *A)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        for (uint32_t idx = lane; idx < n*n; idx += 32) {
+            uint32_t r = idx % n, c = idx / n;
+            if (r > c) {
+                T v = static_cast<T>(0.5) * (A[idx] + A[c + r*n]);
+                A[idx] = v;
+                A[c + r*n] = v;
+            }
+        }
+        __syncwarp();
+    }
+
+    /**
+     * @brief Symmetrize within one warp: `A = 0.5*(A + Aᵀ)`, compile-time size.
+     *
+     * Compile-time-`N` overload of the single-warp symmetrize. NumPy
+     * equivalent: `A = 0.5*(A + A.T)`.
+     *
+     * @tparam T  Scalar type (e.g. `float`, `double`).
+     * @tparam N  Matrix dimension (compile-time constant).
+     * @param A  In/out matrix of `N*N` elements (column-major).
+     */
+    template <typename T, uint32_t N>
+    __device__ void symmetrize(T *A)
+    {
+        symmetrize<T>(N, A);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// thread:: — one problem per thread (serial, register-resident)
+// ═══════════════════════════════════════════════════════════════════════
+
 namespace thread {
     // Single-thread SYMMETRIZE: one THREAD averages every mirror pair, reusing
     // the shared `symmetrize_impl` body with ThreadBarrier{rank=0, size=1, no-op
@@ -108,55 +166,5 @@ namespace thread {
     __device__ void symmetrize(T *A)
     {
         symmetrize_impl<ThreadBarrier, T>(ThreadBarrier{}, N, A);
-    }
-}
-
-namespace warp {
-    // Single-warp SYMMETRIZE: one 32-lane warp strides the n*n index space
-    // (lane k handles flat indices k, k+32, …) acting on strictly-lower entries.
-    // Each mirror pair has a single owning lane, so no inter-lane communication
-    // is needed; a trailing __syncwarp() orders the writes for the caller.
-    // Full 32 lanes required.
-
-    /**
-     * @brief Symmetrize within one warp: `A = 0.5*(A + Aᵀ)`, single-warp.
-     *
-     * One 32-lane warp averages the mirror pairs of the `n×n` column-major
-     * matrix in place; the diagonal is untouched. Each pair owned by exactly
-     * one lane; trailing `__syncwarp()`. NumPy equivalent: `A = 0.5*(A + A.T)`.
-     *
-     * @tparam T  Scalar type (e.g. `float`, `double`).
-     * @param n  Matrix dimension (number of rows/columns).
-     * @param A  In/out matrix of `n*n` elements (column-major).
-     */
-    template <typename T>
-    __device__ void symmetrize(uint32_t n, T *A)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        for (uint32_t idx = lane; idx < n*n; idx += 32) {
-            uint32_t r = idx % n, c = idx / n;
-            if (r > c) {
-                T v = static_cast<T>(0.5) * (A[idx] + A[c + r*n]);
-                A[idx] = v;
-                A[c + r*n] = v;
-            }
-        }
-        __syncwarp();
-    }
-
-    /**
-     * @brief Symmetrize within one warp: `A = 0.5*(A + Aᵀ)`, compile-time size.
-     *
-     * Compile-time-`N` overload of the single-warp symmetrize. NumPy
-     * equivalent: `A = 0.5*(A + A.T)`.
-     *
-     * @tparam T  Scalar type (e.g. `float`, `double`).
-     * @tparam N  Matrix dimension (compile-time constant).
-     * @param A  In/out matrix of `N*N` elements (column-major).
-     */
-    template <typename T, uint32_t N>
-    __device__ void symmetrize(T *A)
-    {
-        symmetrize<T>(N, A);
     }
 }

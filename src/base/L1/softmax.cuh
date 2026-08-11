@@ -43,6 +43,17 @@ namespace softmax_detail {
         }
         if constexpr (TRAILING_SYNC) bar.sync();
     }
+
+    // full-warp butterfly max / sum — every lane ends with the result
+    // (fixed shuffle pattern → deterministic).
+    template <typename T>
+    __device__ __forceinline__ T butterfly_max(T v) {
+    return shfl_detail::butterfly(v, shfl_detail::MaxOp{});
+}
+    template <typename T>
+    __device__ __forceinline__ T butterfly_sum(T v) {
+    return shfl_detail::butterfly_sum(v);
+}
 } // namespace softmax_detail
 
 /**
@@ -81,8 +92,8 @@ __host__ __device__ constexpr std::size_t softmax_scratch_bytes(uint32_t n) {
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void softmax(uint32_t n, T alpha, const T *x, T *y, T *s_scratch)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     for (uint32_t i = rank; i < n; i += size) s_scratch[i] = alpha*x[i];
     __syncthreads();
     softmax_detail::max_tree_impl<BlockBarrier, T>(BlockBarrier{}, n, s_scratch);
@@ -122,8 +133,8 @@ __device__ void softmax(uint32_t n, T alpha, const T *x, T *y, T *s_scratch)
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void logsumexp(uint32_t n, T alpha, const T *x, T *out, T *s_scratch)
 {
-    uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
-    uint32_t size = blockDim.x * blockDim.y * blockDim.z;
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
     for (uint32_t i = rank; i < n; i += size) s_scratch[i] = alpha*x[i];
     __syncthreads();
     softmax_detail::max_tree_impl<BlockBarrier, T>(BlockBarrier{}, n, s_scratch);
@@ -137,7 +148,58 @@ __device__ void logsumexp(uint32_t n, T alpha, const T *x, T *out, T *s_scratch)
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
-// ─── single-thread softmax / logsumexp ───────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace warp {
+
+    /**
+     * @brief Single-warp max-shifted softmax (no scratch). See `glass::softmax`.
+     *
+     * One full 32-lane warp; lanes stride the vector, the max and the sum fold
+     * through xor-butterfly shuffles (every lane holds the result — no shared
+     * memory, no `__syncthreads`). `y` may alias `x`. Full 32 lanes required.
+     */
+    template <typename T>
+    __device__ void softmax(uint32_t n, T alpha, const T *x, T *y)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        T m = static_cast<T>(-1e30);   // empty-lane seed; beaten by any real value's shift
+        for (uint32_t i = lane; i < n; i += 32u) { const T v = alpha*x[i]; if (v > m) m = v; }
+        m = softmax_detail::butterfly_max(m);
+        T partial = static_cast<T>(0);
+        for (uint32_t i = lane; i < n; i += 32u) {
+            const T e = exp(alpha*x[i] - m);
+            y[i] = e;
+            partial += e;
+        }
+        const T inv = static_cast<T>(1)/softmax_detail::butterfly_sum(partial);
+        for (uint32_t i = lane; i < n; i += 32u) y[i] *= inv;
+        __syncwarp();
+    }
+
+    /**
+     * @brief Single-warp stable log-sum-exp (register return on every lane).
+     *        See `glass::logsumexp`. Full 32 lanes required.
+     */
+    template <typename T>
+    __device__ T logsumexp(uint32_t n, T alpha, const T *x)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        T m = static_cast<T>(-1e30);
+        for (uint32_t i = lane; i < n; i += 32u) { const T v = alpha*x[i]; if (v > m) m = v; }
+        m = softmax_detail::butterfly_max(m);
+        T partial = static_cast<T>(0);
+        for (uint32_t i = lane; i < n; i += 32u) partial += exp(alpha*x[i] - m);
+        return m + log(softmax_detail::butterfly_sum(partial));
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// thread:: — one problem per thread (serial, register-resident)
+// ═══════════════════════════════════════════════════════════════════════
+
 namespace thread {
     // One thread, serial two-pass, NO scratch — the register-resident tier.
 
@@ -162,70 +224,5 @@ namespace thread {
         T s = static_cast<T>(0);
         for (uint32_t i = 0; i < n; i++) s += exp(alpha*x[i] - m);
         return m + log(s);
-    }
-}
-
-// ─── single-warp softmax / logsumexp ─────────────────────────────────────────
-namespace warp {
-    namespace softmax_detail_warp {
-        // full-warp butterfly max / sum — every lane ends with the result
-        // (fixed shuffle pattern → deterministic).
-        template <typename T>
-        __device__ __forceinline__ T butterfly_max(T v) {
-            #pragma unroll
-            for (int off = 16; off > 0; off >>= 1) {
-                const T o = __shfl_xor_sync(0xffffffffu, v, off);
-                v = (o > v) ? o : v;
-            }
-            return v;
-        }
-        template <typename T>
-        __device__ __forceinline__ T butterfly_sum(T v) {
-            #pragma unroll
-            for (int off = 16; off > 0; off >>= 1)
-                v += __shfl_xor_sync(0xffffffffu, v, off);
-            return v;
-        }
-    }
-
-    /**
-     * @brief Single-warp max-shifted softmax (no scratch). See `glass::softmax`.
-     *
-     * One full 32-lane warp; lanes stride the vector, the max and the sum fold
-     * through xor-butterfly shuffles (every lane holds the result — no shared
-     * memory, no `__syncthreads`). `y` may alias `x`. Full 32 lanes required.
-     */
-    template <typename T>
-    __device__ void softmax(uint32_t n, T alpha, const T *x, T *y)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T m = static_cast<T>(-1e30);   // empty-lane seed; beaten by any real value's shift
-        for (uint32_t i = lane; i < n; i += 32u) { const T v = alpha*x[i]; if (v > m) m = v; }
-        m = softmax_detail_warp::butterfly_max(m);
-        T partial = static_cast<T>(0);
-        for (uint32_t i = lane; i < n; i += 32u) {
-            const T e = exp(alpha*x[i] - m);
-            y[i] = e;
-            partial += e;
-        }
-        const T inv = static_cast<T>(1)/softmax_detail_warp::butterfly_sum(partial);
-        for (uint32_t i = lane; i < n; i += 32u) y[i] *= inv;
-        __syncwarp();
-    }
-
-    /**
-     * @brief Single-warp stable log-sum-exp (register return on every lane).
-     *        See `glass::logsumexp`. Full 32 lanes required.
-     */
-    template <typename T>
-    __device__ T logsumexp(uint32_t n, T alpha, const T *x)
-    {
-        uint32_t lane = (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y) & 31;
-        T m = static_cast<T>(-1e30);
-        for (uint32_t i = lane; i < n; i += 32u) { const T v = alpha*x[i]; if (v > m) m = v; }
-        m = softmax_detail_warp::butterfly_max(m);
-        T partial = static_cast<T>(0);
-        for (uint32_t i = lane; i < n; i += 32u) partial += exp(alpha*x[i] - m);
-        return m + log(softmax_detail_warp::butterfly_sum(partial));
     }
 }
