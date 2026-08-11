@@ -1,5 +1,10 @@
 # Benchmark Dependencies
 
+> Sync note: the MathDx download/install/verify steps here are mirrored in
+> `docs/source/user_guide/getting_started/installation.rst` (the hosted docs).
+> Edit BOTH when changing MathDx guidance; this file is the offline/runtime-
+> error target, the rst is the website copy.
+
 The GLASS benchmark suite uses up to three external libraries. CUB is mandatory
 (comes with CUDA); cuBLASDx and cuSOLVERDx are optional but unlock most of the
 benches. All three are auto-detected by `bench/run_bench.py`.

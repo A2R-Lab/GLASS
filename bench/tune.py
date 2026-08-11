@@ -26,17 +26,17 @@ the same tables. The legs:
   shapes   bench/autotune.py    → per-(M,N,K) cuBLASDx-vs-SIMT table in
                                   src/nvidia/tuning_table.cuh  (needs MATHDX_ROOT)
   reduced  bench_reduced.cu     → validates serial-vs-reduced crossover against
-                                  suggested_use_reduced<>; rewrites REDUCED_SWEEP_RESULTS.md
+                                  suggested_use_reduced<>; rewrites the reduced section of RESULTS.md
   blas2    bench_blas2.cu       → warp/block sweep of the ops the ladder misses
                                   (syrk/syr2k/ldlt/ldltsv/inv/trmv/ger); reports picks
-                                  into BLAS2_SWEEP_RESULTS.md + regenerates the
+                                  into RESULTS.md (blas2 section) + regenerates the
                                   per-arch blas2_sm* table (2-impl ops only)
   rect     bench_rect.cu        → warp/block sweep of rectangular gemv/gemm shapes;
-                                  reports picks into RECT_SWEEP_RESULTS.md +
+                                  reports picks into RESULTS.md (rect section) +
                                   regenerates the exact-shape rect_*_sm* pickers
   solvers  bench_solvers.cu     → solver characterization (bdsv-vs-pcg crossover,
                                   gesv/posv/inv-solve on SPD, syev/eig_clamp) into
-                                  SOLVERS_SWEEP_RESULTS.md — measured, never picked
+                                  RESULTS.md (solvers section) — measured, never picked
                                   (the bdsv/pcg choice is conditioning-dependent)
   figures  export_sweep_figures → docs _static/*.png ladders + sweep_winners.txt
 
@@ -70,10 +70,11 @@ GLASS_DIR = BENCH_DIR.parent
 DEFAULTS  = GLASS_DIR / "glass-defaults.cuh"
 DISPATCH_HDR = GLASS_DIR / "glass-dispatch.cuh"
 STATIC    = GLASS_DIR / "docs" / "source" / "_static"
-REDUCED_MD = BENCH_DIR / "REDUCED_SWEEP_RESULTS.md"
-BLAS2_MD   = BENCH_DIR / "BLAS2_SWEEP_RESULTS.md"
-RECT_MD    = BENCH_DIR / "RECT_SWEEP_RESULTS.md"
-SOLVERS_MD = BENCH_DIR / "SOLVERS_SWEEP_RESULTS.md"
+# Single measured-results archive (consolidated 2026-08-11): every leg's
+# "latest measured run" splices into its own marker-delimited section of
+# bench/RESULTS.md. Curated analysis lives on the docs site; raw captures in
+# the glass-paper repo.
+RESULTS_MD = BENCH_DIR / "RESULTS.md"
 CACHE_ROOT = BENCH_DIR / ".tune_cache"
 
 ALL_LEGS = ("ladder", "body", "shapes", "reduced", "blas2", "rect", "solvers",
@@ -714,15 +715,19 @@ def analyze_reduced(text, margin):
     return rows, wins, mism
 
 
-_RED_BEGIN = "<!-- BEGIN tune.py: latest measured run -->"
-_RED_END   = "<!-- END tune.py -->"
+def _md_begin(leg):
+    return f"<!-- BEGIN tune.py {leg} -->"
+
+
+def _md_end(leg):
+    return f"<!-- END tune.py {leg} -->"
 
 
 def gen_reduced_block(rows, wins, mism, margin, src):
     """The auto-refreshed measured-data block (between markers). The surrounding
-    curated narrative in REDUCED_SWEEP_RESULTS.md is preserved."""
-    L = [_RED_BEGIN,
-         f"## Latest measured run (auto-refreshed by `bench/tune.py`)", "",
+    curated narrative in RESULTS.md is preserved."""
+    L = [_md_begin("reduced"),
+         f"### Latest measured run (auto-refreshed by `bench/tune.py`)", "",
          f"_Source: `{src}` · tie margin ±{margin*100:.0f}% (reduced must clear "
          f"it) · {len(wins)} of {len(rows)} configs pick reduced._", ""]
     if wins:
@@ -746,16 +751,18 @@ def gen_reduced_block(rows, wins, mism, margin, src):
     else:
         L += ["", "✅ Measurement matches the predicate for every swept config — "
               "the formula needs no change."]
-    L += ["", _RED_END]
+    L += ["", _md_end("reduced")]
     return "\n".join(L)
 
 
-def splice_reduced_md(existing, block):
-    """Replace the marker region in `existing` with `block`; if absent, insert it
-    just before '## Reproduce' (else append). Curated prose stays intact."""
-    if _RED_BEGIN in existing and _RED_END in existing:
-        pre, _, rest = existing.partition(_RED_BEGIN)
-        _, _, post = rest.partition(_RED_END)
+def splice_results_md(existing, block, leg):
+    """Replace `leg`'s marker region in `existing` with `block`; if the leg has
+    no markers yet, insert before '## Reproduce' (else append). Curated prose
+    stays intact; each leg owns its own marker pair in bench/RESULTS.md."""
+    begin, end = _md_begin(leg), _md_end(leg)
+    if begin in existing and end in existing:
+        pre, _, rest = existing.partition(begin)
+        _, _, post = rest.partition(end)
         return pre + block + post
     anchor = "## Reproduce"
     if anchor in existing:
@@ -770,7 +777,7 @@ def splice_reduced_md(existing, block):
 # counterparts, so 2-way), rect covers rectangular gemv/gemm (nvidia skipped —
 # per-shape cuBLASDx decisions live in the `shapes` leg). Verdicts route through
 # tune_pick just like the tables; the results land in a marker-delimited block
-# of BLAS2_SWEEP_RESULTS.md / RECT_SWEEP_RESULTS.md until the defaults-table
+# of bench/RESULTS.md until the defaults-table
 # extension is designed.
 
 def _build_simt_harness(label, cu_name, sms):
@@ -811,7 +818,7 @@ def _cell_key(key):
             (shape,) if isinstance(shape, int) else tuple(shape), dt)
 
 
-def gen_pick_block(cells, margin, src, block_only_note=""):
+def gen_pick_block(leg, cells, margin, src, block_only_note=""):
     """Marker-delimited measured-run block for the blas2/rect legs.
 
     ``cells``: ``(dtype, op, shape) -> {block[, warp]}`` ns/problem. warp and
@@ -820,8 +827,8 @@ def gen_pick_block(cells, margin, src, block_only_note=""):
     """
     warp_wins = sum(1 for t in cells.values()
                     if tp.pick(t, margin) == "warp")
-    L = [_RED_BEGIN,
-         "## Latest measured run (auto-refreshed by `bench/tune.py`)", "",
+    L = [_md_begin(leg),
+         "### Latest measured run (auto-refreshed by `bench/tune.py`)", "",
          f"_Source: `{src}` · NPROB=8192 ns/problem · margin ±{margin*100:.0f}% "
          f"(warp/block are both dependency-free; pick = cheapest, note flags "
          f"sub-margin gaps) · warp picked in {warp_wins} of {len(cells)} cells._", ""]
@@ -835,7 +842,7 @@ def gen_pick_block(cells, margin, src, block_only_note=""):
         warp_s = f"{t['warp']:.2f}" if "warp" in t else "—"
         L.append(f"| {op} | {_shape_str(shape)} | {dt} | {t['block']:.2f} | "
                  f"{warp_s} | **{win}** | {note} |")
-    L += ["", _RED_END]
+    L += ["", _md_end(leg)]
     return "\n".join(L)
 
 
@@ -847,9 +854,9 @@ def report_pick_leg(name, txt, txt_name, md_path, margin, parse, dry_run,
         print(f"  ⚠️ no NPROB=8192 rows parsed from {txt_name}; nothing written.")
         return
     print(f"  {len(cells)} (dtype,op,shape) cells parsed")
-    block = gen_pick_block(cells, margin, txt_name, block_only_note)
-    existing = md_path.read_text() if md_path.exists() else f"# {name} sweep — measured results\n"
-    md = splice_reduced_md(existing, block)
+    block = gen_pick_block(name, cells, margin, txt_name, block_only_note)
+    existing = md_path.read_text() if md_path.exists() else f"# measured results\n"
+    md = splice_results_md(existing, block, name)
     if dry_run:
         changed[name] = show_diff(md_path, md, md_path.name)
     else:
@@ -938,9 +945,9 @@ def parse_solvers(text, nprob=8192):
 
 
 def gen_solvers_block(data, src):
-    """Marker-delimited measured block for SOLVERS_SWEEP_RESULTS.md (no picks)."""
-    L = [_RED_BEGIN,
-         "## Latest measured run (auto-refreshed by `bench/tune.py`)", "",
+    """Marker-delimited measured block for RESULTS.md, solvers section (no picks)."""
+    L = [_md_begin("solvers"),
+         "### Latest measured run (auto-refreshed by `bench/tune.py`)", "",
          f"_Source: `{src}` · NPROB=8192 ns/problem (best swept TB, min of 3 "
          f"trials, restore-outside-timing protocol) · characterization only — "
          f"no dispatch table is regenerated._", ""]
@@ -1001,7 +1008,7 @@ def gen_solvers_block(data, src):
             ec = f"{v['eig_clamp']:.2f}" if "eig_clamp" in v else "—"
             L.append(f"| {key[1]} | {key[0]} | {sy} | {ec} |")
         L.append("")
-    L.append(_RED_END)
+    L.append(_md_end("solvers"))
     return "\n".join(L)
 
 
@@ -1221,21 +1228,21 @@ def main():
             print(f"  {len(rows)} configs, reduced wins {len(wins)}, "
                   f"predicate mismatches {len(mism)}")
             if mism:
-                print("  ⚠️ predicate disagrees with measurement — see REDUCED_SWEEP_RESULTS.md")
+                print("  ⚠️ predicate disagrees with measurement — see bench/RESULTS.md")
             block = gen_reduced_block(rows, wins, mism, args.margin, rtxt_path.name)
-            md = splice_reduced_md(REDUCED_MD.read_text(), block)
+            md = splice_results_md(RESULTS_MD.read_text(), block, "reduced")
             if args.dry_run:
-                changed["reduced"] = show_diff(REDUCED_MD, md, "REDUCED_SWEEP_RESULTS.md")
+                changed["reduced"] = show_diff(RESULTS_MD, md, "RESULTS.md")
             else:
-                REDUCED_MD.write_text(md)
-                print(f"  wrote {REDUCED_MD.relative_to(GLASS_DIR)}")
+                RESULTS_MD.write_text(md)
+                print(f"  wrote {RESULTS_MD.relative_to(GLASS_DIR)}")
 
     # ── blas2 / rect (warp-vs-block picks → md report + header table) ──
     for leg, from_arg, builder, prefix, md_path, parse, note, regen in (
             ("blas2", args.from_blas2, build_blas2, "blas2_sweep",
-             BLAS2_MD, tp.parse_blas2, _BLAS2_NOTE, regen_blas2_table),
+             RESULTS_MD, tp.parse_blas2, _BLAS2_NOTE, regen_blas2_table),
             ("rect", args.from_rect, build_rect, "rect_sweep",
-             RECT_MD, tp.parse_rect, _RECT_NOTE, regen_rect_table)):
+             RESULTS_MD, tp.parse_rect, _RECT_NOTE, regen_rect_table)):
         if leg not in legs:
             continue
         print(f"── {leg} (warp vs block, ns/problem) ─────────────────────")
@@ -1289,14 +1296,14 @@ def main():
                       f"{len(data['spdsv'])} spd-solve, {len(data['eig'])} "
                       "syev/eig_clamp cells")
                 block = gen_solvers_block(data, txt_path.name)
-                existing = (SOLVERS_MD.read_text() if SOLVERS_MD.exists()
-                            else "# solvers sweep — measured results\n")
-                md = splice_reduced_md(existing, block)
+                existing = (RESULTS_MD.read_text() if RESULTS_MD.exists()
+                            else "# measured results\n")
+                md = splice_results_md(existing, block, "solvers")
                 if args.dry_run:
-                    changed["solvers"] = show_diff(SOLVERS_MD, md, SOLVERS_MD.name)
+                    changed["solvers"] = show_diff(RESULTS_MD, md, RESULTS_MD.name)
                 else:
-                    SOLVERS_MD.write_text(md)
-                    print(f"  wrote {SOLVERS_MD.relative_to(GLASS_DIR)}")
+                    RESULTS_MD.write_text(md)
+                    print(f"  wrote {RESULTS_MD.relative_to(GLASS_DIR)}")
 
     # ── figures ──
     if "figures" in legs:

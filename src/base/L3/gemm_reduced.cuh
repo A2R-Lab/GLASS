@@ -31,7 +31,7 @@
  * @brief Should a contraction-parallel `*_reduced` op be preferred over the serial one?
  *
  * Codegen / launch-time picker seeded by the measured crossover sweep
- * (`bench/REDUCED_SWEEP_RESULTS.md`). **On sm_120 the measured answer is NO
+ * (`bench/RESULTS.md`, reduced section). **On sm_120 the measured answer is NO
  * everywhere**: the quiet-GPU resweep of 2026-07-08 found 0 of 48
  * configurations where `*_reduced` beats serial by more than the ±5% tie
  * margin — the family pays a warp-shuffle latency per output and idles most

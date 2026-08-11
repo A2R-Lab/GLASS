@@ -4,7 +4,7 @@
 //   nvcc -std=c++17 -arch=sm_75 -I.. 09_backend_picker.cu -o picker && ./picker
 //   (to make the `nvidia` tier eligible, include glass-nvidia.cuh first + link MathDx.)
 //
-// glass-defaults.cuh exposes the measured thread/warp/block/nvidia ladder (bench/MEGA_SWEEP_RESULTS.md)
+// glass-defaults.cuh exposes the measured thread/warp/block/nvidia ladder (bench/RESULTS.md)
 // as constexpr helpers. The pick is host-/codegen-side because warp, block, and nvidia need
 // DIFFERENT <<<grid,block>>> launches — so you query at compile time and branch the launch.
 // With no MathDx linked (as here), the `nvidia` tier collapses to its warp/block runner-up.

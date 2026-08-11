@@ -17,3 +17,7 @@ warp_block_sweep_*.txt
 *.log
 # Persistent build cache (bench/tune.py --prebuild). Hash-keyed compiled binaries.
 .tune_cache/
+robotics_sweep_*.txt
+body_dispatch_sweep_*.txt
+paper_hostblas_*.txt
+paper_fusion_*.txt

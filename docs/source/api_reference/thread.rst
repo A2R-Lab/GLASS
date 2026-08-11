@@ -49,5 +49,5 @@ tier exists to avoid.
 The dispatch ladder (:doc:`defaults`) contends the tier alongside warp / block /
 nvidia, and the sm_120 tables ship thread verdicts (2026-07-18 sweep): thread
 takes the low-DOF corner of every op except ``gemm`` — up to 7.5× on ``posv``
-f64 at N≤6 (``bench/THREAD_SWEEP_RESULTS.md``). Run ``bench/tune.py --sm auto``
+f64 at N≤6 (docs sweep-results page + ``bench/RESULTS.md``). Run ``bench/tune.py --sm auto``
 to contend it on your own GPU.

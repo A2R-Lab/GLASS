@@ -33,3 +33,6 @@ test/sanitizer-logs/*
 # Jetson capture landing zone — raw sweep data lives in the paper repo, not here
 bench/jetson_captures/
 test/receipts/
+
+# Agent-only onboarding primer (internal, not for the public repo)
+docs/STARTUP_PROMPT.md

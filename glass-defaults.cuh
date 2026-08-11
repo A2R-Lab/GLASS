@@ -2,7 +2,7 @@
 /**
  * @file glass-defaults.cuh
  * @brief Queryable backend-selection defaults — the measured warp/block/nvidia ladder
- *        (bench/MEGA_SWEEP_RESULTS.md) exposed as `constexpr` so callers and GRiD-style
+ *        (bench/RESULTS.md) exposed as `constexpr` so callers and GRiD-style
  *        codegen pick a backend + launch config instead of hand-copying a table.
  *
  * The pick CANNOT be a device function: warp / block / nvidia need different
@@ -17,7 +17,7 @@
  *
  * NOTE ON `thread`: measured and shipped for sm_120 (2026-07-18 sweep) — the tier
  * takes the low-DOF corner of every op except gemm (up to 7.5x on posv f64 at
- * N<=6; see bench/THREAD_SWEEP_RESULTS.md). `ideal_generic` and `without_nvidia`
+ * N<=6; see the docs sweep-results page). `ideal_generic` and `without_nvidia`
  * still predate the tier (warp/block/nvidia only) — a thread verdict appears on an
  * arch once `bench/tune.py --sm auto` sweeps it there. A `backend::thread` pick
  * means a thread-per-problem launch: <<<ceil(P/TPB), TPB>>> with
@@ -75,7 +75,7 @@ constexpr bool nv_available(op o) {
 // inserts a new block + dispatch case for a first-time arch), leaving the rest alone. ───
 
 // === BEGIN tune.py ladder sm_120 ===
-// Source sweep: mega_sweep_20260719_0234.txt   tie margin: ±5% (nvidia must clear it; SIMT ties ±2% prefer thread>warp>block)
+// Source sweep: mega_sweep_20260719_0234.txt (archived: glass-paper repo, data/desktop/)   tie margin: ±5% (nvidia must clear it; SIMT ties ±2% prefer thread>warp>block)
 // Returns the *ideal* tier assuming nvidia is linked; nv_available() filters after.
 constexpr backend ideal_sm120(op o, uint32_t N, bool f64) {
     switch (o) {
@@ -199,15 +199,19 @@ constexpr backend rect_gemm_sm120(uint32_t M, uint32_t K, uint32_t N, bool f64) 
         if (M == 16u && K == 64u && N == 16u) return backend::block;
         if (M == 32u && K == 8u && N == 32u) return backend::warp;
         if (M == 64u && K == 6u && N == 6u) return backend::warp;
-        if (M == 64u && K == 16u && N == 16u) return backend::warp;
+        // 64x16x16 f32 + the four f64 warp cells below were POISONED picks:
+        // the 2026-07-18 rect capture predates bench_rect's launch-FAIL guard
+        // and timed empty launches at 0.04 ns (audit 2026-08-11). Conservative
+        // block until the staged FAIL-guarded re-measure lands.
+        if (M == 64u && K == 16u && N == 16u) return backend::block;
     }
     if (f64) {
         if (M == 6u && K == 6u && N == 64u) return backend::block;
-        if (M == 8u && K == 32u && N == 8u) return backend::warp;
+        if (M == 8u && K == 32u && N == 8u) return backend::block;
         if (M == 16u && K == 64u && N == 16u) return backend::block;
-        if (M == 32u && K == 8u && N == 32u) return backend::warp;
-        if (M == 64u && K == 6u && N == 6u) return backend::warp;
-        if (M == 64u && K == 16u && N == 16u) return backend::warp;
+        if (M == 32u && K == 8u && N == 32u) return backend::block;
+        if (M == 64u && K == 6u && N == 6u) return backend::block;
+        if (M == 64u && K == 16u && N == 16u) return backend::block;
     }
     return backend::block;
 }

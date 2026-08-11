@@ -2,7 +2,7 @@ Backend Picker (``glass-defaults.cuh``)
 =======================================
 
 Queryable backend-selection defaults — the measured thread / warp / block / nvidia
-ladder (``bench/MEGA_SWEEP_RESULTS.md``) exposed as ``constexpr`` helpers, so callers
+ladder (``bench/RESULTS.md``) exposed as ``constexpr`` helpers, so callers
 and GRiD-style codegen pick a backend + launch config instead of hand-copying a table.
 
 The pick **cannot** be a device function: the tiers need different
@@ -20,7 +20,7 @@ wrappers in ``src/base/dispatch.cuh`` under a *fixed* launch. See
 
    ``backend::thread`` is **measured and shipped for sm_120** (2026-07-18 quiet-GPU
    sweep): the thread tier takes the low-DOF corner of every op except ``gemm`` —
-   up to 7.5× on ``posv`` f64 at N≤6 (``bench/THREAD_SWEEP_RESULTS.md`` has the
+   up to 7.5× on ``posv`` f64 at N≤6 (the docs sweep-results page has the
    full verdicts). A ``thread`` pick means a thread-per-problem launch:
    ``<<<ceil(P/TPB), TPB>>>`` with ``suggested_threads_per_block<>()``. The
    ``ideal_generic`` fallback for unswept arches remains warp/block/nvidia-only.

@@ -2,7 +2,7 @@
 
 The helpers are constexpr, so correctness is enforced by static_asserts in
 test/cuda/test_defaults.cu — if the binary compiled, the picks match the sweep
-(bench/MEGA_SWEEP_RESULTS.md). This just confirms it built and runs.
+(bench/RESULTS.md). This just confirms it built and runs.
 """
 import subprocess
 

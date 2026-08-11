@@ -17,7 +17,7 @@
 #include <cstring>
 #include <cuda_runtime.h>
 
-#include "../../src/L3/box_qp.cuh"
+#include "../../src/internal/box_qp.cuh"
 
 // --- local dtype-generic IO helpers (helpers.cuh is float32-only) -----------
 template <typename T>

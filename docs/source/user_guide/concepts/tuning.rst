@@ -65,7 +65,7 @@ Picking a backend: measured defaults
 
 Before the nvidia dispatch table (below), the higher-level question is *warp vs
 block vs nvidia* for your op and size. The three-contender sweep
-(``bench/tune.py --legs ladder`` → ``bench/MEGA_SWEEP_RESULTS.md``) measures all three on
+(``bench/tune.py --legs ladder`` → ``bench/RESULTS.md``) measures all three on
 one ns/problem axis. Numbers below are **RTX 5090 / sm_120**; breakevens shift on other
 GPUs, so re-run the sweep on yours.
 
@@ -105,7 +105,7 @@ serial pivot and TB>32 *hurts*.
 N≥16 through 128 (cuSOLVERDx, 1.5–2.7×), ``trsv`` only N≈16–32 (warp wins above). In
 **f64** the band is narrower (≈ N=16–64; the double descriptors hit the ~99 KB opt-in
 smem cap at 64). For a *single* large problem (batch≈1), the vendor path wins
-factor/solve/gemm from N≈32 (up to ~8×). See ``bench/MEGA_SWEEP_RESULTS.md`` for the full
+factor/solve/gemm from N≈32 (up to ~8×). See ``bench/RESULTS.md`` for the full
 per-op × per-precision tables.
 
 These defaults are also exposed as ``constexpr`` helpers in ``glass-defaults.cuh`` —
@@ -246,41 +246,16 @@ For shapes well-covered by the in-tree table this is "free perf". For unmeasured
 shapes you trust the heuristic; once you bench it, you can specialize it and
 either keep it local or PR it upstream.
 
-Quick start
------------
+Running a tune (the operational runbook)
+----------------------------------------
 
-.. code-block:: bash
-
-   cd GLASS
-   python3 bench/autotune.py
-   # → measures all 5 auto-dispatching primaries (gemm, gemv, gemv_strided,
-   #   gemm_strided, gemm_batched_1d) across each one's default shape grid
-   # → writes bench/tuning/<hostname>.cuh with the per-host specializations
-
-The script:
-
-1. Detects your local SM via ``nvidia-smi``.
-2. For each requested API, measures both backends across that API's shape grid.
-3. Picks the faster path per (shape, SM).
-4. Emits one explicit specialization per measured shape into
-   ``bench/tuning/<hostname>.cuh``, plus a human-readable ``*_results.md``.
-
-Ties (within ``--margin``, default ±5 %) default to SIMT. ``MATHDX_ROOT`` must
-be set. The shipped ``src/nvidia/tuning_table.cuh`` is **never** overwritten by
-the default flow — it carries the per-API primaries, default heuristics, and a
-curated set of in-tree specializations, and stays stable as the baseline.
-
-Restricting the run:
-
-.. code-block:: bash
-
-   python3 bench/autotune.py --apis gemm,gemv
-   python3 bench/autotune.py --apis gemv_strided --shapes "6,6,8;14,14,16"
-   python3 bench/autotune.py --apis gemv --shapes '6,6;14,14;32,32' --iters 20000 --dry-run
-
-``--shapes`` takes a ``;``-separated tuple list; the arity must match the chosen
-API (3 values for ``gemm``, 2 for ``gemv``, etc.). ``--dry-run`` reports without
-writing.
+The step-by-step commands — per-leg invocations, prebuild/quiet-window
+separation, the measurement methodology (min-of-3, spread capture, warmup,
+telemetry), per-API shape grids, and the contribution checklist — live in the
+repository runbook `bench/TUNING.md
+<https://github.com/A2R-Lab/GLASS/blob/main/bench/TUNING.md>`_. This page
+stays conceptual so the two never drift: the runbook says *how to run*, this
+page says *what the machinery is and what a retune changes*.
 
 Consuming your per-host overrides
 ---------------------------------
@@ -314,41 +289,10 @@ Debugging dispatch decisions
 These are ``__host__ __device__`` so you can call them from ``main`` for
 build-time confirmation or drop one into a kernel for runtime diagnostics.
 
-Contributing upstream
----------------------
+Contributing measurements upstream
+----------------------------------
 
-If your measurements would meaningfully improve the shipped table (a new SM, or
-a shape range the curated entries miss), contribute back. Two routes:
-
-**Option A — submit your per-host file unchanged.** Rerun autotune and attach
-the contents of ``bench/tuning/<hostname>.cuh`` to a PR. Reviewers spot-check
-and merge specific specializations into ``src/nvidia/tuning_table.cuh``.
-
-**Option B — update the shipped table directly:**
-
-.. code-block:: bash
-
-   python3 bench/autotune.py --sm AUTO --in-tree
-
-``--in-tree`` writes the new specializations into a marker-delimited section
-inside ``src/nvidia/tuning_table.cuh`` while preserving the primary templates,
-default heuristics, and the ``GLASS_TUNING_TABLE_LOCAL`` hook. The markers are:
-
-.. code-block:: text
-
-   // === BEGIN: autotune-generated specializations ===
-   // ...
-   // === END: autotune-generated specializations ===
-
-Re-running ``--in-tree`` replaces the section in place; running without it
-writes only to ``bench/tuning/<hostname>.cuh``.
-
-What **not** to contribute:
-
-* Entries within 5 % of each other (autotune marks these "tie within ±5 % →
-  SIMT default" — don't second-guess that filter).
-* Measurements from a thermally throttled GPU. Run ``nvidia-smi -q -d CLOCK``
-  first; you want the GPU at peak boost.
-* Measurements with ``--iters`` below ~5000 (high variance for sub-microsecond
-  ops).
-* Entries for shapes that aren't realistic for any workload (``M=N=K=2`` etc.).
+See the "Contributing upstream" section of `bench/TUNING.md
+<https://github.com/A2R-Lab/GLASS/blob/main/bench/TUNING.md>`_ for the two
+routes (per-host override file vs ``--in-tree``) and the what-not-to-contribute
+checklist.

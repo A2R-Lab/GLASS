@@ -1,7 +1,7 @@
 # Paper sweeps — GLASS vs host-batched vendor + fusion case study
 
-Harnesses feeding the GLASS paper's evaluation figures (outline + full evidence
-plan: `docs/open-tasks/paper_glass_smallblock_2026-07-06.md`). These are
+Harnesses feeding the GLASS paper's evaluation figures (the paper lives in the
+sibling `glass-paper` repository, which also archives all raw captures). These are
 **characterization only** — nothing here regenerates library dispatch tables
 (that is `bench/tune.py`'s job).
 
@@ -12,7 +12,7 @@ plan: `docs/open-tasks/paper_glass_smallblock_2026-07-06.md`). These are
 
 The nvidia-interface (cuBLASDx/cuSOLVERDx) curves for F1 come from the
 existing mega-sweep leg (`bench/tune.py --legs ladder`, results in
-`MEGA_SWEEP_RESULTS.md`) — the paper harnesses deliberately need **no MathDx**
+`RESULTS.md`) — the paper harnesses deliberately need **no MathDx**
 so they build anywhere (Jetson included) with just the CUDA toolkit.
 
 ## Running

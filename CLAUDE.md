@@ -159,7 +159,7 @@ and split the contraction across its lanes; **tensor** ops `tensor_vec_contract`
 `posv` (the fused regularize→factor→solve). **Naming rule:** namespace = scope,
 different decomposition = a name suffix (`_reduced`), additive behavior = a
 compile-out flag (see `concepts/namespaces.rst`). **Perf caveat (measured, sm_120,
-`bench/REDUCED_SWEEP_RESULTS.md`):** `*_reduced` is *slower* than serial in almost
+`bench/RESULTS.md` reduced section):** `*_reduced` is *slower* than serial in almost
 every shape — `glass::suggested_use_reduced<n_out,K,blockDim>()` returns true only
 in a narrow corner. The tensor/congruence families are for **expressiveness +
 fusion**, not for beating a tight serial loop. The shared 32-way invariance
@@ -178,7 +178,7 @@ primitive `reduced_tree32` lives in `L1/reduce.cuh`.
 - `src/nvidia/*.cuh` — vendor-backed paths + host-side query/size helpers.
 - `src/L1`, `src/L2`, `src/L3` (non-base) were **removed** as legacy duplicates
   (superseded by the May-2026 `base/` refactor). Do not reintroduce them.
-- `src/L3/box_qp.cuh` is a **validated but INTERNAL** box-constrained QP solver
+- `src/internal/box_qp.cuh` is a **validated but INTERNAL** box-constrained QP solver
   (`glass::internal::box_qp`) — deliberately NOT in `glass.cuh` or the public API
   (QP is optimization, not linear algebra). Tested by `test/test_qp.py`. See
   `docs/open-tasks/qp_solver_scope.md`.

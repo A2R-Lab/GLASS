@@ -48,7 +48,7 @@ SHARD_FILES[core]="test/test_l1.py test/test_l1_round2.py test/test_l2.py test/t
 SHARD_PATHS[core]="$CORE_SCOPE"
 
 SHARD_FILES[solvers]="test/test_banded.py test/test_bdsv.py test/test_pcg.py test/test_qp.py"
-SHARD_PATHS[solvers]="$CORE_SCOPE,src/base/banded,src/base/pcg,src/L3/box_qp.cuh"
+SHARD_PATHS[solvers]="$CORE_SCOPE,src/base/banded,src/base/pcg,src/internal/box_qp.cuh"
 
 SHARD_FILES[robotics]="test/test_robotics.py"
 SHARD_PATHS[robotics]="$CORE_SCOPE,src/base/spatial,src/base/lie,src/base/proj,src/base/geom,src/base/est"

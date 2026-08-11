@@ -1,5 +1,5 @@
 """Validation tests for the internal box-constrained QP solver
-(``glass::internal::box_qp`` in ``src/L3/box_qp.cuh``).
+(``glass::internal::box_qp`` in ``src/internal/box_qp.cuh``).
 
 Problem:  minimize 0.5 xᵀP x + qᵀx   subject to   l ≤ x ≤ u.
 

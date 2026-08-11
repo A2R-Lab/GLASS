@@ -1,6 +1,6 @@
 // test_defaults.cu — compile-time validation of glass-defaults.cuh. The helpers are
 // constexpr, so the static_asserts ARE the test: if this compiles, the picks match the
-// sweep (bench/MEGA_SWEEP_RESULTS.md). No MathDx needed — this TU links no vendor lib, so
+// sweep (bench/RESULTS.md). No MathDx needed — this TU links no vendor lib, so
 // suggested_backend<> exercises the no-nvidia COLLAPSE, while ideal_sm120() is checked
 // directly for the nvidia-tier picks (it's availability-independent).
 #include <cstdio>
@@ -91,7 +91,7 @@ static_assert(glass::suggested_backend_rect_gemv<64, 8, float, 870u>() == backen
 
 // ── bare-namespace face: Phase-2 pins (2026-07-30 body sweep, sm_120) ──
 // dispatch_body() now carries the measured body_sm120 table
-// (bench/body_dispatch_sweep_20260730_2041.txt; rule = never worse than block
+// (body_dispatch_sweep_20260730_2041.txt, archived in the glass-paper repo; rule = never worse than block
 // by >5% at any measured (NPROB, TB), >5% faster at >=1 TB @ NPROB=8192,
 // bounded at the largest measured N). Spot-pin the moved cells + the rule's
 // conservative refusals:
@@ -108,7 +108,7 @@ static_assert(glass::dispatch_body(op::eig3,  3, false) == body::block,         
 static_assert(glass::dispatch_body(op::softmax, 16, false) == body::warp_in_block, "softmax16 f32 -> warp body");
 static_assert(glass::dispatch_body(op::softmax, 4096, false) == body::block,      "softmax large-n BOUNDED -> block");
 static_assert(glass::dispatch_body(op::gemm, 16, false) == body::block,           "gemm never moves");
-// sm_87 body table (body_dispatch_sweep_20260803_0936.txt, 50W): the same rule
+// sm_87 body table (body_dispatch_sweep_20260803_0936.txt, 50W, archived in the glass-paper repo): the same rule
 // moves 23 cells there; softmax/eig3 land identically, dot's warp band runs wider.
 static_assert(glass::dispatch_body(op::dot,   8, false, 870u) == body::thread_in_block, "sm_87 dot8 -> thread body");
 static_assert(glass::dispatch_body(op::dot,  32, false, 870u) == body::warp_in_block,   "sm_87 dot32 -> warp body");
@@ -158,6 +158,6 @@ constexpr uint32_t k_inv_dims[] = {4u, 6u};
 static_assert(glass::inv_fused_scratch_bytes<float>(2, k_inv_dims) > 0, "K-way fused inv scratch positive");
 static_assert(glass::eigh_sweeps<double>() > glass::eigh_sweeps<float>(), "f64 needs more Jacobi sweeps");
 static_assert(glass::syev_eps<float>() > 0 && glass::syev_eps<double>() < glass::syev_eps<float>(), "syev eps ordered by precision");
-static_assert(!glass::suggested_use_reduced<4, 8, 128>(), "reduced corner empty on sm_120 (REDUCED_SWEEP_RESULTS)");
+static_assert(!glass::suggested_use_reduced<4, 8, 128>(), "reduced corner empty on sm_120 (bench/RESULTS.md reduced section)");
 
 int main() { printf("ok\n"); return 0; }

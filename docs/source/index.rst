@@ -114,7 +114,7 @@ The **contraction-parallel + fused family** (``gemm_reduced`` / ``gemv_reduced``
 robustness flags on ``potrf`` / ``ldlt`` / ``posv``) is there for
 **expressiveness and fusion only**: on a quiet GPU the ``*_reduced``
 decomposition measured slower than the plain serial in-thread contraction in
-**48 of 48 swept shapes** (±5% margin, ``bench/REDUCED_SWEEP_RESULTS.md``), and
+**48 of 48 swept shapes** (±5% margin, ``bench/RESULTS.md``), and
 the ``suggested_use_reduced<>`` picker now declines it everywhere — **prefer
 the plain ops for throughput**. See
 :doc:`user_guide/concepts/contraction_parallel` for the measurement and

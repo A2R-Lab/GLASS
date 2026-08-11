@@ -30,7 +30,7 @@ Lower is faster. Each subplot is one op; the curves are ``warp`` (green),
 per warp), and ``nvidia`` / MathDx (red). The crossover points are where
 ``suggested_backend`` switches tiers — the 2026-07-18 sweep hands thread the
 low-DOF corner of every op except ``gemm`` (up to 7.5× on ``posv`` f64 at N≤6;
-verdict tables in ``bench/THREAD_SWEEP_RESULTS.md``). Where a ``thread`` curve
+verdict tables in the thread-tier section below). Where a ``thread`` curve
 stops short of N=128 the remaining launches are *infeasible*, not unmeasured —
 the per-thread local-memory footprint exceeds the launch limit (those cells are
 ``FAIL``-marked in the capture); the ``nvidia`` f64 curves cap at N=64 for the
@@ -91,7 +91,7 @@ single ``cublas<t>gemmStridedBatched`` / ``cusolverDn<t>potrfBatched``
 (+ ``potrsBatched``) call over the whole batch.
 ``bench/bench_paper_hostblas.cu`` measures exactly that: gemm / potrf / posv,
 ``N`` = 4–64, batch ``B`` = 1–8192, both precisions (raw capture committed as
-``bench/paper_hostblas_20260708_0054.txt``; RTX 5090 / sm_120, quiet GPU).
+``paper_hostblas_20260708_0054.txt`` (archived in the glass-paper repo); RTX 5090 / sm_120, quiet GPU).
 
 .. image:: /_static/hostblas_speedup.png
    :alt: host-batched vendor time divided by best GLASS time, vs batch size
@@ -119,7 +119,7 @@ Fusion: ``riccati_gain`` vs. a 7-call vendor chain
 memory; the host-batched equivalent is seven vendor calls (four gemms, a
 batched Cholesky, two triangular solves) with intermediates in global memory.
 ``bench/bench_paper_fusion.cu`` compares them (capture
-``bench/paper_fusion_20260708_0055.txt``):
+``paper_fusion_20260708_0055.txt`` (archived in the glass-paper repo)):
 
 .. image:: /_static/fusion_speedup.png
    :alt: fused riccati_gain vs 7-call host-batched vendor chain
@@ -153,7 +153,7 @@ GLASS deliberately ships **no** auto-dispatch between its linear-system
 solvers — the right choice depends on structure and conditioning, which a
 compile-time table cannot see. Instead, ``bench/tune.py --legs solvers``
 measures the trade-offs on your GPU and records them in
-``bench/SOLVERS_SWEEP_RESULTS.md``. The RTX 5090 numbers (NPROB=8192,
+``bench/RESULTS.md`` (solvers section). The RTX 5090 numbers (NPROB=8192,
 ns/problem):
 
 **SPD single solve — use ``posv``; the alternatives price as follows.**
@@ -180,24 +180,121 @@ generalizing, or measure with your actual matrices.
 same as the bare eigensolve (the clamp epilogue is free); budget ~0.9 µs
 fp32 / ~8.8 µs fp64 per 32×32 problem at saturation.
 
+The thread tier — where one-problem-per-thread wins
+---------------------------------------------------
+
+The 2026-07-19 full-domain sweep (quiet RTX 5090) added the ``thread``
+contender at every ``(op, N)`` point. Throughput regime (NPROB=8192), thread
+vs the best other tier (ratio > 1 = thread faster; **bold** cells shipped):
+
+.. list-table::
+   :header-rows: 1
+
+   * - op / dtype
+     - N=4
+     - N=6
+     - N=8
+     - N=12
+     - N=16
+     - N=24
+     - shipped band
+   * - posv f64
+     - **6.17×**
+     - **7.46×**
+     - **5.03×**
+     - **3.05×**
+     - **2.26×**
+     - **1.19×**
+     - thread ≤ 24
+   * - chol f64
+     - **5.61×**
+     - **5.79×**
+     - **2.88×**
+     - **2.18×**
+     - **1.71×**
+     - **1.04×**
+     - thread ≤ 24
+   * - trsv f32/f64
+     - **1.5/4.6×**
+     - **2.2/4.6×**
+     - **2.0/2.0×**
+     - **2.3/1.5×**
+     - **1.7/1.2×**
+     - 0.2×
+     - thread ≤ 16
+   * - dot f64
+     - **2.32×**
+     - **2.33×**
+     - **2.31×**
+     - **1.96×**
+     - **1.53×**
+     - **1.30×**
+     - thread ≤ 32
+   * - posv f32
+     - **3.21×**
+     - **3.44×**
+     - **1.73×**
+     - **1.16×**
+     - 0.66×
+     - 0.35×
+     - thread ≤ 12
+   * - gemm (both)
+     - 0.6–0.9×
+     - 0.4–0.5×
+     - —
+     - —
+     - —
+     - —
+     - never
+
+The factor/solve chain is where the tier earns its keep — a warp-per-problem
+``potrf`` at N ≤ 7 idles most lanes on the serial pivot; one-problem-per-thread
+keeps all 32 busy. f64 amplifies and extends the win past the register ceiling
+(even the spilled thread path beats the alternatives through N=24). ``gemm``
+is the anti-case: enough work per element that the parallel tiers always win.
+Columns past the ceiling price the local-memory spill honestly (down to 0.1× —
+measured, never shipped).
+
+Warp-scope vendor A/B (why nvidia stops at block scope)
+-------------------------------------------------------
+
+``bench_nvwarp_l1.cu`` A/Bs ``glass::warp::`` against ``glass::nvidia::warp::``
+(CUB WarpReduce) for the three ops the vendor warp tier ships (reduce/dot/nrm2)
+at identical launch shape, correctness-gated. **sm_87 (Jetson Orin, 50 W):
+110/126 cells tie within ±2%; sm_120 (RTX 5090): 119/126.** Every non-tie is
+≤10% and clustered where one implementation skips a shuffle the other pays.
+Verdict on both measured architectures: the two warp tiers are the same
+algorithm and measure like it — the measured justification for the dispatch
+ladder not descending below block scope for the ``nvidia`` tier.
+
+Robotics micro-ops — tier packing and fusion (measured)
+-------------------------------------------------------
+
+The 2026-07-29 robotics sweep (quiet sm_120; noise floor median 0.40%/p90
+0.87% from a full repeat pass) settled three questions:
+
+- **Fused vs composed spatial ops is a wash at the best tier** — at block
+  scope the fused forms win modestly (materializing the 6×6 costs shared
+  memory + a barrier); at thread scope they are identical. Their value is
+  correctness economics (no 36-element scratch, one fewer barrier, pinned
+  convention), exactly as the paper argues.
+- **The thread tier dominates every fixed-size robotics op at batch**:
+  4.5–7.9× vs block for quat/SE(3)/spatial ops, 21.5× for ``eig3``. The
+  redundant-core construction makes this mechanical — wider tiers only stride
+  the copy-out. **Exception:** ``softmax`` (a genuine n-length reduction) →
+  use ``warp::softmax``.
+- ``argmax_fast`` pays off only at ≥128-thread blocks (~10–13%); keep the
+  default for narrow blocks.
+
 The full measured-results archive
 ----------------------------------
 
-Every measured family keeps its spliced verdict tables in a results file under
-``bench/`` in the repo:
-
-- ``MEGA_SWEEP_RESULTS.md`` — the thread/warp/block/nvidia ladder (feeds
-  ``glass-defaults.cuh``).
-- ``THREAD_SWEEP_RESULTS.md`` — the thread-tier contender verdicts.
-- ``BLAS2_SWEEP_RESULTS.md`` — warp-vs-block for syrk/syr2k/ldlt/ldltsv/inv/
-  trmv/ger.
-- ``RECT_SWEEP_RESULTS.md`` — warp-vs-block for rectangular gemv/gemm shapes.
-- ``SOLVERS_SWEEP_RESULTS.md`` — bdsv-vs-pcg, gesv/posv/inv-solve, syev
-  (characterization, never auto-picked).
-- ``REDUCED_SWEEP_RESULTS.md`` — the serial-vs-``*_reduced`` corner.
-- ``NVWARP_SWEEP_RESULTS.md`` — ``glass::warp`` vs the CUB warp tier (the
-  measured case for a block-scope-only vendor dispatch).
-- ``PAPER_SWEEPS.md`` — the hostblas/fusion/latency paper harnesses.
+The machine-refreshed verdict tables for every sweep live in one file,
+``bench/RESULTS.md`` (sections: ladder, blas2, rect, solvers, reduced, nvwarp,
+robotics — the marker-delimited blocks are rewritten by ``bench/tune.py``).
+Raw captures are archived in the ``glass-paper`` repository (``data/desktop/``,
+``data/jetson/``, ``data/sm120/``); the paper harnesses are documented in
+``bench/PAPER_SWEEPS.md``.
 
 See :doc:`../concepts/tuning` for how to emit a per-host override table from a
 sweep, and :doc:`../../api_reference/defaults` for the picker API.

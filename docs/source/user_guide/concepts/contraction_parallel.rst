@@ -26,7 +26,7 @@ All ship in the three SIMT surfaces (``glass::`` block, ``glass::warp::``,
    **Expressiveness / fusion only — not a throughput path.** Measured on a quiet
    RTX 5090 (sm_120), the contraction-parallel decomposition is **slower than the
    plain serial in-thread contraction in 47 of 48 swept shapes**, often by
-   10–100× (full table: ``bench/REDUCED_SWEEP_RESULTS.md``), and the
+   10–100× (full table: ``bench/RESULTS.md`` (reduced section)), and the
    :cpp:func:`glass::suggested_use_reduced` picker now declines it everywhere
    (retired to constant ``false`` after the 2026-07-08 quiet resweep measured
    0/48 wins under the ±5% tie margin).
@@ -58,7 +58,7 @@ What the measurement actually says
 ----------------------------------
 
 The crossover sweep (``bench/bench_reduced.cu``, full table in
-``bench/REDUCED_SWEEP_RESULTS.md``) was run on a quiet **RTX 5090 / sm_120**. The
+``bench/RESULTS.md`` (reduced section)) was run on a quiet **RTX 5090 / sm_120**. The
 result is blunt: **the contraction-parallel path is slower than serial in almost
 every configuration** — 47 of 48 swept shapes lose, often by 10–100×. The serial
 ``gemm`` over shared-resident data is a tight per-thread loop that is very hard to

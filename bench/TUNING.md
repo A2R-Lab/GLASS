@@ -78,7 +78,7 @@ on one SPD system (pricing the pivoted-LU fallback and the invert-then-multiply
 anti-pattern), and `syev`/`eig_clamp` timing. Because these ops mutate their
 input, the harness restores pristine device copies between reps **outside** the
 `cudaEvent` window (per-launch event timing; see the methodology section of
-`bench/SOLVERS_SWEEP_RESULTS.md`, where the measured block is spliced), and a
+the solvers section of `bench/RESULTS.md`, where the measured block is spliced), and a
 CPU-checked correctness guard per shape aborts on any solver/reference mismatch.
 Prebuild-cached like the other legs; offline hook `--from-solvers <txt>`.
 
