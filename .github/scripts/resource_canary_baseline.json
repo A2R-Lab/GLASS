@@ -1,0 +1,264 @@
+{
+  "sm_120": {
+    "kernels": {
+      "canary_block_gemm_f32": {
+        "regs": 34,
+        "smem": 768,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_block_gemm_f64": {
+        "regs": 32,
+        "smem": 1536,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_block_gemv_f32": {
+        "regs": 30,
+        "smem": 320,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_block_gemv_f64": {
+        "regs": 34,
+        "smem": 640,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_block_posv_f32": {
+        "regs": 26,
+        "smem": 288,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_block_posv_f64": {
+        "regs": 30,
+        "smem": 576,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_block_potrf_f32": {
+        "regs": 32,
+        "smem": 256,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_block_potrf_f64": {
+        "regs": 32,
+        "smem": 512,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_block_trsv_f32": {
+        "regs": 24,
+        "smem": 288,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_block_trsv_f64": {
+        "regs": 28,
+        "smem": 576,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_thread_gemm_f32": {
+        "regs": 48,
+        "smem": 0,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_thread_gemm_f64": {
+        "regs": 64,
+        "smem": 0,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_thread_posv_f32": {
+        "regs": 40,
+        "smem": 0,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_thread_posv_f64": {
+        "regs": 78,
+        "smem": 0,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_warp_gemv_f32": {
+        "regs": 24,
+        "smem": 320,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_warp_gemv_f64": {
+        "regs": 24,
+        "smem": 640,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_warp_potrf_f32": {
+        "regs": 26,
+        "smem": 256,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_warp_potrf_f64": {
+        "regs": 32,
+        "smem": 512,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      }
+    },
+    "nvcc": "13.2"
+  },
+  "sm_90": {
+    "kernels": {
+      "canary_block_gemm_f32": {
+        "regs": 30,
+        "smem": 768,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_block_gemm_f64": {
+        "regs": 30,
+        "smem": 1536,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_block_gemv_f32": {
+        "regs": 26,
+        "smem": 320,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_block_gemv_f64": {
+        "regs": 37,
+        "smem": 640,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_block_posv_f32": {
+        "regs": 31,
+        "smem": 288,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_block_posv_f64": {
+        "regs": 31,
+        "smem": 576,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_block_potrf_f32": {
+        "regs": 31,
+        "smem": 256,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_block_potrf_f64": {
+        "regs": 31,
+        "smem": 512,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_block_trsv_f32": {
+        "regs": 17,
+        "smem": 288,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_block_trsv_f64": {
+        "regs": 27,
+        "smem": 576,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_thread_gemm_f32": {
+        "regs": 40,
+        "smem": 0,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_thread_gemm_f64": {
+        "regs": 64,
+        "smem": 0,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_thread_posv_f32": {
+        "regs": 40,
+        "smem": 0,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_thread_posv_f64": {
+        "regs": 76,
+        "smem": 0,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_warp_gemv_f32": {
+        "regs": 22,
+        "smem": 320,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_warp_gemv_f64": {
+        "regs": 28,
+        "smem": 640,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_warp_potrf_f32": {
+        "regs": 32,
+        "smem": 256,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      },
+      "canary_warp_potrf_f64": {
+        "regs": 28,
+        "smem": 512,
+        "spill_loads": 0,
+        "spill_stores": 0,
+        "stack": 0
+      }
+    },
+    "nvcc": "13.2"
+  }
+}

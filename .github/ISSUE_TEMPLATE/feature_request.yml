@@ -1,0 +1,36 @@
+name: Feature request
+description: Propose a new routine, tier variant, or tuning-table contribution.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What routine or capability?
+      description: >
+        Name the operation (BLAS/LAPACK name if it has one) and the tier(s)
+        you need — block / warp / thread / nvidia. GLASS convention: namespace
+        = scope, function name = operation; robustness = compile-out bool
+        flags; reduction strategy = `_fast`/`_lowmem` suffix.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Use case
+      description: >
+        What solver/pipeline needs it, at what sizes (N, batch), and why the
+        existing surface (or a composition of it) doesn't cover it.
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options:
+        - New operation
+        - New tier variant of an existing op
+        - Tuning table for a new GPU architecture
+        - Performance improvement to an existing op
+        - Documentation
+    validations:
+      required: true

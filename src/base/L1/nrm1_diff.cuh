@@ -48,7 +48,8 @@ __device__ void nrm1_diff_lowmem(uint32_t n, const T *x, const T *y, T *out)
  * @param x          Input vector of length `n` (read-only).
  * @param y          Input vector of length `n` (read-only).
  * @param out        Output; the result lands in `out[0]`.
- * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per warp).
+ * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per
+ *                   warp) — size with `reduce_fast_scratch_bytes<T>(blockDim)`.
  */
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void nrm1_diff_fast(uint32_t n, const T *x, const T *y, T *out, T *s_scratch)
@@ -81,7 +82,8 @@ __device__ void nrm1_diff_fast(uint32_t n, const T *x, const T *y, T *out, T *s_
  * @param x          Input vector of length `N` (read-only).
  * @param y          Input vector of length `N` (read-only).
  * @param out        Output; the result lands in `out[0]`.
- * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per warp).
+ * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per
+ *                   warp) — size with `reduce_fast_scratch_bytes<T>(blockDim)`.
  */
 template <typename T, uint32_t N, bool TRAILING_SYNC = true>
 __device__ void nrm1_diff_fast(const T *x, const T *y, T *out, T *s_scratch)

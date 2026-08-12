@@ -18,12 +18,20 @@
  * dependency-free; the `GroupBarrier` twin is only compiled when a caller
  * includes `<cooperative_groups.h>` via `glass-cgrps.cuh`.
  *
- * Uniformity rule (project-wide): every public op takes `bool TRAILING_SYNC=true`
- * and ends on `if constexpr (TRAILING_SYNC) bar.sync();`, so the result is valid
- * for ALL threads by default. Callers that own the following barrier pass
- * `false` to elide it. For ops that already ended on a barrier this is
- * byte-identical; for the elementwise/reduce-tail ops it adds a strictly-safer
- * trailing barrier.
+ * Uniformity rule (for NEW ops): a public op that can end on a barrier takes
+ * `bool TRAILING_SYNC = true` and ends on `if constexpr (TRAILING_SYNC)
+ * bar.sync();`, so the result is valid for ALL threads by default; callers
+ * that own the following barrier pass `false` to elide it. For ops that
+ * already ended on a barrier this is byte-identical; for the elementwise/
+ * reduce-tail ops it adds a strictly-safer trailing barrier.
+ *
+ * COVERAGE (honest, audited 2026-08-11): the L1 reduction/vector family and
+ * the newer robotics/L3 additions carry the parameter; the pre-rule factor/
+ * solve chain (`potrf`/`posv`/`getrf`/`ldlt`/`inv`/`trsv`/`trsm`/`syev`/
+ * `eigh`/…), the gemm/gemv variants, and `bdsv`/`pcg` do NOT yet — they
+ * unconditionally end synced (the safe default; you just can't elide it).
+ * An additive retrofit (defaulted parameter, non-breaking) is staged as a
+ * post-launch item.
  */
 struct BlockBarrier {
     __device__ __forceinline__ uint32_t rank() const {

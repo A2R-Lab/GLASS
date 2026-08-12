@@ -1,0 +1,53 @@
+name: Bug report
+description: A GLASS routine produced a wrong result, crashed, or failed to compile.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: >
+        What did you call, what did you expect, and what did you get? A wrong
+        numeric result, a race, a compile error, a hang?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproducer
+      description: >
+        A self-contained kernel + launch that shows the problem (the
+        `examples/` files are a good skeleton). Include the exact launch
+        geometry — many block-scope bugs only appear at 64+ threads or at
+        ragged, non-multiple-of-32 block sizes.
+      render: cuda
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: "GPU + arch, CUDA toolkit version, driver, OS, GLASS commit."
+      placeholder: "RTX 4090 (sm_89), CUDA 12.4, 550.54, Ubuntu 22.04, GLASS <sha>"
+    validations:
+      required: true
+  - type: dropdown
+    id: tier
+    attributes:
+      label: Which interface?
+      options:
+        - glass::block (or bare glass::)
+        - glass::warp
+        - glass::thread
+        - glass::nvidia (MathDx-backed)
+        - glass::cgrps
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: >
+        e.g. does it reproduce at 1 thread and 32 threads but fail at 64+
+        (classic missing-barrier signature)? Does compute-sanitizer --tool
+        racecheck flag it?

@@ -8,7 +8,8 @@
 // exposes only the low_memory/high_speed/warp variants). Barrier policy supplies
 // rank/size + the internal/trailing sync. The inner reduce skips its trailing
 // barrier (rank 0 already holds the sum for the sqrt); the one trailing barrier
-// rides on TRAILING_SYNC.
+// rides on TRAILING_SYNC. Naive sum of squares (no snrm2-style scaling) —
+// see the range contract in the public doc-comments below.
 template <typename Bar, typename T, bool TRAILING_SYNC = true>
 __device__ void nrm2_impl(Bar bar, uint32_t n, T *x)
 {
@@ -26,6 +27,10 @@ __device__ void nrm2_impl(Bar bar, uint32_t n, T *x)
  * Squares each element in place, then thread 0 serially sums them and takes
  * the square root, leaving the result in `x[0]` (the input is overwritten).
  * NumPy equivalent: `np.linalg.norm(x)`.
+ *
+ * Range contract: naive sum of squares (no LAPACK-style `snrm2` scaling),
+ * so the intermediate sum overflows to `inf` for `‖x‖ ≳ 1e19` (f32) /
+ * `‖x‖ ≳ 1e154` (f64) and loses tiny components to underflow.
  *
  * @tparam T  Scalar type (e.g. `float`, `double`).
  * @param n  Number of elements.
@@ -51,10 +56,15 @@ __device__ void nrm2_lowmem(uint32_t n, T *x)
  * inter-warp reduction through shared scratch, then takes the square root;
  * the result lands in `x[0]`. NumPy equivalent: `np.linalg.norm(x)`.
  *
+ * Range contract: naive sum of squares (no LAPACK-style `snrm2` scaling),
+ * so the intermediate sum overflows to `inf` for `‖x‖ ≳ 1e19` (f32) /
+ * `‖x‖ ≳ 1e154` (f64) and loses tiny components to underflow.
+ *
  * @tparam T  Scalar type (e.g. `float`, `double`).
  * @param n          Number of elements.
  * @param x          In/out vector of length `n`; the result lands in `x[0]`.
- * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per warp).
+ * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per
+ *                   warp) — size with `reduce_fast_scratch_bytes<T>(blockDim)`.
  */
 template <typename T, bool TRAILING_SYNC = true>
 __device__ void nrm2_fast(uint32_t n, T *x, T *s_scratch)
@@ -82,10 +92,15 @@ __device__ void nrm2_fast(uint32_t n, T *x, T *s_scratch)
  * Compile-time-`N` overload of the warp-shuffle L2 norm. NumPy equivalent:
  * `np.linalg.norm(x)`.
  *
+ * Range contract: naive sum of squares (no LAPACK-style `snrm2` scaling),
+ * so the intermediate sum overflows to `inf` for `‖x‖ ≳ 1e19` (f32) /
+ * `‖x‖ ≳ 1e154` (f64) and loses tiny components to underflow.
+ *
  * @tparam T  Scalar type (e.g. `float`, `double`).
  * @tparam N  Number of elements (compile-time constant).
  * @param x          In/out vector of length `N`; the result lands in `x[0]`.
- * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per warp).
+ * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per
+ *                   warp) — size with `reduce_fast_scratch_bytes<T>(blockDim)`.
  */
 template <typename T, uint32_t N, bool TRAILING_SYNC = true>
 __device__ void nrm2_fast(T *x, T *s_scratch)
@@ -123,6 +138,10 @@ namespace warp {
      * `sqrt`, like every tier (the block forms' float-only `sqrtf` was fixed
      * 2026-07-17). Full 32 lanes required. NumPy equivalent: `np.linalg.norm(x)`.
      *
+     * Range contract: naive sum of squares (no LAPACK-style `snrm2` scaling),
+     * so the intermediate sum overflows to `inf` for `‖x‖ ≳ 1e19` (f32) /
+     * `‖x‖ ≳ 1e154` (f64) and loses tiny components to underflow.
+     *
      * @tparam T  Scalar type (e.g. `float`, `double`).
      * @param n  Number of elements.
      * @param x  Input vector of length `n` (read-only).
@@ -144,6 +163,10 @@ namespace warp {
      * Compile-time-`N` overload of the single-warp L2 norm. Non-destructive, no
      * shared scratch, no `__syncthreads`; type-generic `sqrt`. NumPy equivalent:
      * `np.linalg.norm(x)`.
+     *
+     * Range contract: naive sum of squares (no LAPACK-style `snrm2` scaling),
+     * so the intermediate sum overflows to `inf` for `‖x‖ ≳ 1e19` (f32) /
+     * `‖x‖ ≳ 1e154` (f64) and loses tiny components to underflow.
      *
      * @tparam T  Scalar type (e.g. `float`, `double`).
      * @tparam N  Number of elements (compile-time constant).
@@ -177,6 +200,10 @@ namespace thread {
      * no barriers, no `threadIdx` read; operands may be thread-local register
      * arrays. NumPy equivalent: `np.linalg.norm(x)`.
      *
+     * Range contract: naive sum of squares (no LAPACK-style `snrm2` scaling),
+     * so the intermediate sum overflows to `inf` for `‖x‖ ≳ 1e19` (f32) /
+     * `‖x‖ ≳ 1e154` (f64) and loses tiny components to underflow.
+     *
      * @tparam T  Scalar type (e.g. `float`, `double`).
      * @param n  Number of elements.
      * @param x  Input vector of length `n` (read-only).
@@ -196,6 +223,10 @@ namespace thread {
      * Compile-time-`N` overload; the trip count folds and the loop unrolls, so
      * `x` may be a thread-local register array. Non-destructive; type-generic
      * `sqrt`. NumPy equivalent: `np.linalg.norm(x)`.
+     *
+     * Range contract: naive sum of squares (no LAPACK-style `snrm2` scaling),
+     * so the intermediate sum overflows to `inf` for `‖x‖ ≳ 1e19` (f32) /
+     * `‖x‖ ≳ 1e154` (f64) and loses tiny components to underflow.
      *
      * @tparam T  Scalar type (e.g. `float`, `double`).
      * @tparam N  Number of elements (compile-time constant).

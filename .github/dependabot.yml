@@ -1,0 +1,16 @@
+# Keep pinned actions + pip deps fresh. Actions are SHA-pinned in the
+# workflows; dependabot PRs bump the SHA and the trailing version comment.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+  - package-ecosystem: pip
+    directory: /test
+    schedule:
+      interval: monthly
+  - package-ecosystem: pip
+    directory: /docs
+    schedule:
+      interval: monthly

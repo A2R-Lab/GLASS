@@ -154,7 +154,8 @@ __host__ __device__ constexpr std::size_t reduce_fast_scratch_bytes(uint32_t blo
  * @tparam T  Scalar type (e.g. `float`, `double`).
  * @param n          Number of elements.
  * @param x          In/out vector of length `n`; the sum lands in `x[0]`.
- * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per warp).
+ * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per
+ *                   warp) — size with `reduce_fast_scratch_bytes<T>(blockDim)`.
  */
 // warp-shuffle + inter-warp reduce; s_scratch: ceil(blockDim/32)*sizeof(T); result in x[0]
 template <typename T, bool TRAILING_SYNC = true>
@@ -186,7 +187,8 @@ __device__ void reduce_fast(uint32_t n, T *x, T *s_scratch)
  * @tparam T  Scalar type (e.g. `float`, `double`).
  * @tparam N  Number of elements (compile-time constant).
  * @param x          In/out vector of length `N`; the sum lands in `x[0]`.
- * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per warp).
+ * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per
+ *                   warp) — size with `reduce_fast_scratch_bytes<T>(blockDim)`.
  */
 template <typename T, uint32_t N, bool TRAILING_SYNC = true>
 __device__ void reduce_fast(T *x, T *s_scratch)
@@ -233,7 +235,8 @@ __device__ void reduce_fast(T *x, T *s_scratch)
  *
  * @tparam T  Scalar type (e.g. `float`, `double`).
  * @param partial    This thread's contribution to the block sum.
- * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per warp);
+ * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per
+ *                   warp) — size with `reduce_fast_scratch_bytes<T>(blockDim)`;
  *                   on return `s_scratch[0]` holds the total.
  * @return The block-wide total `Σ partial`, identical on every thread.
  */
@@ -275,7 +278,8 @@ __device__ T reduce_fast(T partial, T *s_scratch)
  *
  * @tparam T  Scalar type (e.g. `float`, `double`).
  * @param partial    This thread's contribution to the block min.
- * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per warp);
+ * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per
+ *                   warp) — size with `reduce_fast_scratch_bytes<T>(blockDim)`;
  *                   on return `s_scratch[0]` holds the minimum.
  * @return The block-wide minimum, identical on every thread.
  */

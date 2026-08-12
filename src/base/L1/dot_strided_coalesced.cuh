@@ -52,7 +52,8 @@
  * @param x          Input vector, accessed at indices `0, SX, 2*SX, …`.
  * @param y          Input vector, accessed at indices `0, SY, 2*SY, …`.
  * @param out        Destination for the scalar result (broadcast to all threads).
- * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per warp).
+ * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per
+ *                   warp) — size with `reduce_fast_scratch_bytes<T>(blockDim)`.
  */
 template <typename T, uint32_t N, uint32_t SX = 1, uint32_t SY = 1, bool TRAILING_SYNC = true>
 __device__ void dot_strided_coalesced(const T* x, const T* y, T* out, T* s_scratch)

@@ -3,6 +3,9 @@
 # actual GPU test suite runs on the lab box — see verify-gpu-proof.yml for the
 # signed-receipt attestation that those tests passed.
 name: CI
+
+permissions:
+  contents: read
 on:
   push:
     branches: [main]
@@ -15,10 +18,10 @@ jobs:
       matrix:
         arch: [sm_90, sm_120]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install CUDA toolkit (nvcc only, no GPU needed)
-        uses: Jimver/cuda-toolkit@v0.2.35
+        uses: Jimver/cuda-toolkit@3d45d157f327c09c04b50ee6ccdea2d9d017ec76 # v0.2.35
         with:
           cuda: '13.2.0'
           method: network
@@ -43,3 +46,6 @@ jobs:
 
       - name: Compile all examples (MathDx-less set)
         run: make -C examples -j2 ARCH=${{ matrix.arch }}
+
+      - name: Static resource canary (regs/spill/smem vs committed baseline)
+        run: python3 .github/scripts/resource_canary.py --arch ${{ matrix.arch }}

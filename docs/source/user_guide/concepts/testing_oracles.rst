@@ -131,6 +131,12 @@ These hold regardless of oracle class and are what make the suite hard to fool:
   (residual-based checks — backward stability is asserted, forward error at
   ``cond·eps`` is not penalized), and the Lie-series branch points listed
   above.
+- **Documented range contracts** — where GLASS intentionally trades
+  robustness for speed, the boundary is documented rather than tested around:
+  the ``nrm2``/``vector_norm`` family uses a naive sum of squares (no
+  LAPACK-style ``snrm2`` scaling), so its intermediate overflows for
+  ``‖x‖ ≳ 1e19`` (f32) / ``1e154`` (f64); the test suite exercises inputs
+  well inside that contract, matching the header doc-comments.
 - **No-read guarantees** — ``beta = 0`` paths run against NaN-poisoned
   buffers; triangular ops run with NaN-poisoned dead triangles, so any stray
   read fails loudly.

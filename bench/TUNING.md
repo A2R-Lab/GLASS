@@ -131,6 +131,16 @@ The ladder-grammar harnesses share one measurement core
   tie band, and the `noise_floor` override (sub-granularity cells refuse to
   resolve a margin) all live in `tune_pick.py` — measured 4× on Jetson Orin
   across power modes, the shipped tables regenerated **byte-identical**.
+- **Static resource canary (compile-time, no GPU)**: CI compiles
+  `.github/scripts/resource_canary.cu` (18 representative kernels across the
+  block/warp/thread tiers, f32+f64) with `-Xptxas -v` and diffs per-kernel
+  registers/stack/spill/smem against the committed
+  `resource_canary_baseline.json` — an **exact** match is required, and spill
+  or stack bytes above zero fail regardless of the baseline. This catches
+  silent register-pressure regressions (the kind that later shows up as a
+  mysterious timing cliff) at PR time, before any re-timing. Intentional
+  changes regenerate the baseline in the same PR:
+  `python3 .github/scripts/resource_canary.py --arch sm_120 --update`.
 
 ## The cuBLASDx-vs-SIMT table
 

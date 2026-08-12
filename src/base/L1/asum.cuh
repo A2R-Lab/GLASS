@@ -48,7 +48,8 @@ __device__ void asum_lowmem(uint32_t n, T *x, T *out)
  * @tparam T  Scalar type (e.g. `float`, `double`).
  * @param n          Number of elements.
  * @param x          In/out vector of length `n`; result lands in `x[0]`.
- * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per warp).
+ * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per
+ *                   warp) — size with `reduce_fast_scratch_bytes<T>(blockDim)`.
  */
 // s_scratch: ceil(blockDim/32)*sizeof(T); result in x[0] (overwrites input!)
 template <typename T, bool TRAILING_SYNC = true>
@@ -80,7 +81,8 @@ __device__ void asum_fast(uint32_t n, T *x, T *s_scratch)
  * @tparam T  Scalar type (e.g. `float`, `double`).
  * @tparam N  Number of elements (compile-time constant).
  * @param x          In/out vector of length `N`; result lands in `x[0]`.
- * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per warp).
+ * @param s_scratch  Shared scratch of `ceil(blockDim/32)` elements (one per
+ *                   warp) — size with `reduce_fast_scratch_bytes<T>(blockDim)`.
  */
 template <typename T, uint32_t N, bool TRAILING_SYNC = true>
 __device__ void asum_fast(T *x, T *s_scratch)
