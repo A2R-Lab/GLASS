@@ -75,7 +75,7 @@ constexpr bool nv_available(op o) {
 // inserts a new block + dispatch case for a first-time arch), leaving the rest alone. ───
 
 // === BEGIN tune.py ladder sm_120 ===
-// Source sweep: mega_sweep_20260719_0234.txt (archived: glass-paper repo, data/desktop/)   tie margin: ±5% (nvidia must clear it; SIMT ties ±2% prefer thread>warp>block)
+// Source sweep: mega_sweep_20260811_2323.txt (archived: glass-paper repo, data/desktop/)   tie margin: ±5% (nvidia must clear it; SIMT ties ±2% prefer thread>warp>block)
 // Returns the *ideal* tier assuming nvidia is linked; nv_available() filters after.
 constexpr backend ideal_sm120(op o, uint32_t N, bool f64) {
     switch (o) {
@@ -84,7 +84,7 @@ constexpr backend ideal_sm120(op o, uint32_t N, bool f64) {
             else      return N <= 32u ? backend::thread : backend::warp;
         case op::gemv:
             if (!f64) return N <= 6u ? backend::thread : N <= 32u ? backend::warp : N <= 48u ? backend::block : backend::warp;
-            else      return N <= 6u ? backend::thread : N <= 64u ? backend::warp : backend::block;
+            else      return N <= 6u ? backend::thread : N <= 96u ? backend::warp : backend::block;
         case op::gemm:
             if (!f64) return N <= 16u ? backend::warp : N <= 24u ? backend::block : N <= 32u ? backend::nvidia : backend::block;
             else      return N <= 8u ? backend::warp : backend::block;
@@ -137,13 +137,15 @@ constexpr backend ideal_sm87(op o, uint32_t N, bool f64) {
 // and deliberately have no table — measured and reported, never picked. ───
 
 // === BEGIN tune.py blas2 sm_120 ===
-// Source sweep: blas2_sweep_20260718_0327.txt   tie margin: ±5% (SIMT ties ±2% prefer the simpler tier)
+// Source sweep: blas2_sweep_20260812_0134.txt (archived: glass-paper repo, data/desktop/)   tie margin: ±5% (SIMT ties ±2% prefer the simpler tier)
 constexpr backend blas2_sm120(op o, uint32_t N, bool f64) {
     switch (o) {
-        case op::syrk: return N <= 16u ? backend::warp : backend::block;
+        case op::syrk:
+            if (!f64) return N <= 12u ? backend::warp : backend::block;
+            else      return N <= 8u ? backend::warp : backend::block;
         case op::syr2k:
             if (!f64) return N <= 8u ? backend::warp : backend::block;
-            else      return N <= 4u ? backend::warp : N <= 6u ? backend::block : N <= 8u ? backend::warp : backend::block;
+            else      return N <= 6u ? backend::warp : backend::block;
         case op::ldlt:
             if (!f64) return N <= 64u ? backend::warp : backend::block;
             else      return backend::block;
@@ -172,7 +174,7 @@ constexpr backend blas2_ideal(op o, uint32_t N, bool f64, uint32_t sm) {
 // `shapes` table). Unmeasured shapes stay block. ───
 
 // === BEGIN tune.py rect sm_120 ===
-// Source sweep: rect_sweep_20260718_0328.txt   tie margin: ±5% (SIMT ties ±2% prefer the simpler tier); exact shapes only
+// Source sweep: rect_sweep_20260812_0331.txt (archived: glass-paper repo, data/desktop/)   tie margin: ±5% (SIMT ties ±2% prefer the simpler tier); exact shapes only
 constexpr backend rect_gemv_sm120(uint32_t M, uint32_t N, bool f64) {
     if (!f64) {
         if (M == 8u && N == 64u) return backend::warp;
@@ -199,18 +201,14 @@ constexpr backend rect_gemm_sm120(uint32_t M, uint32_t K, uint32_t N, bool f64) 
         if (M == 16u && K == 64u && N == 16u) return backend::block;
         if (M == 32u && K == 8u && N == 32u) return backend::warp;
         if (M == 64u && K == 6u && N == 6u) return backend::warp;
-        // 64x16x16 f32 + the four f64 warp cells below were POISONED picks:
-        // the 2026-07-18 rect capture predates bench_rect's launch-FAIL guard
-        // and timed empty launches at 0.04 ns (audit 2026-08-11). Conservative
-        // block until the staged FAIL-guarded re-measure lands.
-        if (M == 64u && K == 16u && N == 16u) return backend::block;
+        if (M == 64u && K == 16u && N == 16u) return backend::warp;
     }
     if (f64) {
         if (M == 6u && K == 6u && N == 64u) return backend::block;
         if (M == 8u && K == 32u && N == 8u) return backend::block;
         if (M == 16u && K == 64u && N == 16u) return backend::block;
         if (M == 32u && K == 8u && N == 32u) return backend::block;
-        if (M == 64u && K == 6u && N == 6u) return backend::block;
+        if (M == 64u && K == 6u && N == 6u) return backend::warp;
         if (M == 64u && K == 16u && N == 16u) return backend::block;
     }
     return backend::block;

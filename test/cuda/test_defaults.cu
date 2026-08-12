@@ -70,11 +70,11 @@ static_assert(gd::ideal(op::gemm, 32, false, 0u) == gd::ideal_generic(op::gemm, 
 static_assert(gd::ideal(op::chol, 24, false, 1u) == gd::ideal_generic(op::chol, 24, false), "unmeasured SM falls to generic");
 
 // ── blas2 family (warp-vs-block; tune.py blas2 leg, blas2_sweep_20260718_0327) ──
-static_assert(gd::blas2_sm120(op::syrk,  16, false) == backend::warp,  "syrk16 f32 -> warp");
+static_assert(gd::blas2_sm120(op::syrk,  16, false) == backend::block, "syrk16 f32 -> block (2.2% gap just outside SIMT tie band, 2026-08-12 capture; band-edge cell)");
 static_assert(gd::blas2_sm120(op::syrk,  24, false) == backend::block, "syrk24 f32 -> block");
 static_assert(gd::blas2_sm120(op::ldlt,  32, false) == backend::warp,  "ldlt32 f32 -> warp");
 static_assert(gd::blas2_sm120(op::ldlt,  32, true)  == backend::block, "ldlt32 f64 -> block");
-static_assert(gd::blas2_sm120(op::syr2k,  8, true)  == backend::warp,  "syr2k8 f64 (2.0% gap inside SIMT tie band -> simpler tier)");
+static_assert(gd::blas2_sm120(op::syr2k,  8, true)  == backend::block, "syr2k8 f64 -> block (2.5% gap just outside SIMT tie band, 2026-08-12 capture; band-edge cell)");
 static_assert(gd::ideal(op::syrk, 16, false, 1200u) == gd::blas2_sm120(op::syrk, 16, false), "blas2 ops route through ideal()");
 static_assert(gd::ideal(op::ldltsv, 32, false, 870u) == backend::block, "blas2 unmeasured arch -> block incumbent");
 static_assert(glass::suggested_backend<op::ldlt, 32, float, 1200u>() == backend::warp, "public picker reaches blas2 table");
