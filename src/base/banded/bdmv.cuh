@@ -34,7 +34,7 @@
  * @param s_matrix  Block-tridiagonal strips, `[L|D|R]` row-major per block-row.
  * @param s_vector  Padded input, length `(NumBlockRows+2)*BlockSize`.
  */
-template <typename T, uint32_t NumBlockRows, uint32_t BlockSize>
+template <typename T, uint32_t NumBlockRows, uint32_t BlockSize, bool TRAILING_SYNC = true>
 __device__ void bdmv(T *s_output, const T *s_matrix, const T *s_vector)
 {
     constexpr uint32_t BRL = 3 * BlockSize;
@@ -50,6 +50,7 @@ __device__ void bdmv(T *s_output, const T *s_matrix, const T *s_vector)
             sum += blk[row * BRL + col] * vec[col];
         s_output[(br + 1) * BlockSize + row] = sum;
     }
+    if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
 /**
@@ -67,7 +68,7 @@ __device__ void bdmv(T *s_output, const T *s_matrix, const T *s_vector)
  * @param s_matrix    Block-tridiagonal strips, `[L|D|R]` row-major per block-row.
  * @param s_vector    Padded input, length `(NumBlockRows+2)*BlockSize`.
  */
-template <typename T, uint32_t NumBlockRows, uint32_t BlockSize>
+template <typename T, uint32_t NumBlockRows, uint32_t BlockSize, bool TRAILING_SYNC = true>
 __device__ void bdmv(T *s_output_1, T *s_output_2, const T *s_matrix, const T *s_vector)
 {
     constexpr uint32_t BRL = 3 * BlockSize;
@@ -85,4 +86,5 @@ __device__ void bdmv(T *s_output_1, T *s_output_2, const T *s_matrix, const T *s
         s_output_1[o] = sum;
         s_output_2[o] = sum;
     }
+    if constexpr (TRAILING_SYNC) __syncthreads();
 }

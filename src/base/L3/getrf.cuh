@@ -215,7 +215,9 @@ __device__ void getrf_impl(Bar bar, uint32_t n, T *A, uint32_t *piv, int *s_fail
  * @param piv     Output pivot indices, length `n` (`piv[k]` = row swapped with row `k`; 0-based).
  * @param s_fail  Optional flag (CHECK only): set to 1 on a zero/non-finite pivot, else 0. Ignored when null.
  */
-template <typename T, bool CHECK = false>
+// TRAILING_SYNC: accepted for uniformity, documented NO-OP here (the pivot
+// broadcast/elimination tail is fused into the final column step).
+template <typename T, bool CHECK = false, bool TRAILING_SYNC = true>
 __device__ void getrf(uint32_t n, T *A, uint32_t *piv, int *s_fail = nullptr)
 {
     getrf_impl<BlockBarrier, T, CHECK>(BlockBarrier{}, n, A, piv, s_fail);
@@ -235,7 +237,7 @@ __device__ void getrf(uint32_t n, T *A, uint32_t *piv, int *s_fail = nullptr)
  * @param piv     Output pivot indices, length `N` (0-based LAPACK ipiv).
  * @param s_fail  Optional flag (CHECK only): set to 1 on a zero/non-finite pivot, else 0. Ignored when null.
  */
-template <typename T, uint32_t N, bool CHECK = false>
+template <typename T, uint32_t N, bool CHECK = false, bool TRAILING_SYNC = true>
 __device__ void getrf(T *A, uint32_t *piv, int *s_fail = nullptr)
 {
     getrf_impl<BlockBarrier, T, CHECK>(BlockBarrier{}, N, A, piv, s_fail);
@@ -246,18 +248,18 @@ __device__ void getrf(T *A, uint32_t *piv, int *s_fail = nullptr)
 //   TRANSPOSE=false: apply P to B, then L·Y = P·B (unit forward), U·X = Y (backward).
 //   TRANSPOSE=true : Uᵀ·Z = B (forward), Lᵀ·W = Z (unit backward), X = Pᵀ·W
 //                    (piv applied LAST, in REVERSE order = inverse permutation).
-template <typename Bar, typename T, bool TRANSPOSE>
+template <typename Bar, typename T, bool TRANSPOSE, bool TRAILING_SYNC = true>
 __device__ void getrs_impl(Bar bar, uint32_t n, uint32_t nrhs,
                            const T *LU, const uint32_t *piv, T *B)
 {
     if constexpr (!TRANSPOSE) {
         laswp_impl<Bar, T, /*REVERSE=*/false, /*TRAILING_SYNC=*/true>(bar, n, nrhs, B, piv, 0, n);
         trsm_impl<Bar, T, FillMode::Lower, Diag::Unit,    /*TRANSPOSE=*/false>(bar, n, nrhs, LU, B);
-        trsm_impl<Bar, T, FillMode::Upper, Diag::NonUnit, /*TRANSPOSE=*/false>(bar, n, nrhs, LU, B);
+        trsm_impl<Bar, T, FillMode::Upper, Diag::NonUnit, /*TRANSPOSE=*/false, TRAILING_SYNC>(bar, n, nrhs, LU, B);
     } else {
         trsm_impl<Bar, T, FillMode::Upper, Diag::NonUnit, /*TRANSPOSE=*/true>(bar, n, nrhs, LU, B);
         trsm_impl<Bar, T, FillMode::Lower, Diag::Unit,    /*TRANSPOSE=*/true>(bar, n, nrhs, LU, B);
-        laswp_impl<Bar, T, /*REVERSE=*/true, /*TRAILING_SYNC=*/true>(bar, n, nrhs, B, piv, 0, n);
+        laswp_impl<Bar, T, /*REVERSE=*/true, TRAILING_SYNC>(bar, n, nrhs, B, piv, 0, n);
     }
 }
 
@@ -282,10 +284,10 @@ __device__ void getrs_impl(Bar bar, uint32_t n, uint32_t nrhs,
  * @param piv   Pivot indices from `getrf` (0-based LAPACK ipiv; read-only).
  * @param B     In/out right-hand sides (`n×nrhs`, column-major); on return holds `X`.
  */
-template <typename T, bool TRANSPOSE = false>
+template <typename T, bool TRANSPOSE = false, bool TRAILING_SYNC = true>
 __device__ void getrs(uint32_t n, uint32_t nrhs, const T *LU, const uint32_t *piv, T *B)
 {
-    getrs_impl<BlockBarrier, T, TRANSPOSE>(BlockBarrier{}, n, nrhs, LU, piv, B);
+    getrs_impl<BlockBarrier, T, TRANSPOSE, TRAILING_SYNC>(BlockBarrier{}, n, nrhs, LU, piv, B);
 }
 
 /**
@@ -303,10 +305,10 @@ __device__ void getrs(uint32_t n, uint32_t nrhs, const T *LU, const uint32_t *pi
  * @param piv  Pivot indices from `getrf` (0-based LAPACK ipiv; read-only).
  * @param B    In/out right-hand sides (`N×NRHS`, column-major); on return holds `X`.
  */
-template <typename T, uint32_t N, uint32_t NRHS, bool TRANSPOSE = false>
+template <typename T, uint32_t N, uint32_t NRHS, bool TRANSPOSE = false, bool TRAILING_SYNC = true>
 __device__ void getrs(const T *LU, const uint32_t *piv, T *B)
 {
-    getrs_impl<BlockBarrier, T, TRANSPOSE>(BlockBarrier{}, N, NRHS, LU, piv, B);
+    getrs_impl<BlockBarrier, T, TRANSPOSE, TRAILING_SYNC>(BlockBarrier{}, N, NRHS, LU, piv, B);
 }
 
 /**
@@ -334,11 +336,11 @@ __device__ void getrs(const T *LU, const uint32_t *piv, T *B)
  * @param B       In/out right-hand sides (`n×nrhs`, column-major); on return holds `X`.
  * @param s_fail  Optional flag (CHECK only): set to 1 on a zero/non-finite pivot, else 0. Ignored when null.
  */
-template <typename T, bool CHECK = false>
+template <typename T, bool CHECK = false, bool TRAILING_SYNC = true>
 __device__ void gesv(uint32_t n, uint32_t nrhs, T *A, uint32_t *piv, T *B, int *s_fail = nullptr)
 {
     getrf_impl<BlockBarrier, T, CHECK>(BlockBarrier{}, n, A, piv, s_fail);
-    getrs_impl<BlockBarrier, T, /*TRANSPOSE=*/false>(BlockBarrier{}, n, nrhs, A, piv, B);
+    getrs_impl<BlockBarrier, T, /*TRANSPOSE=*/false, TRAILING_SYNC>(BlockBarrier{}, n, nrhs, A, piv, B);
 }
 
 /**
@@ -357,8 +359,8 @@ __device__ void gesv(uint32_t n, uint32_t nrhs, T *A, uint32_t *piv, T *B, int *
  * @param B       In/out right-hand sides (`N×NRHS`, column-major); on return holds `X`.
  * @param s_fail  Optional flag (CHECK only): set to 1 on a zero/non-finite pivot, else 0. Ignored when null.
  */
-template <typename T, uint32_t N, uint32_t NRHS, bool CHECK = false>
+template <typename T, uint32_t N, uint32_t NRHS, bool CHECK = false, bool TRAILING_SYNC = true>
 __device__ void gesv(T *A, uint32_t *piv, T *B, int *s_fail = nullptr)
 {
-    gesv<T, CHECK>(N, NRHS, A, piv, B, s_fail);
+    gesv<T, CHECK, TRAILING_SYNC>(N, NRHS, A, piv, B, s_fail);
 }

@@ -343,6 +343,100 @@ static int op_l3_cublasdx_gemm()
 }
 #endif
 
+
+// ─── L3 factor/solve chain (uniform retrofit 2026-08-12) ─────────────────────
+//
+// Runs the retrofitted block ops — posv(multi-RHS), trsv, trsm, potrf, inv,
+// trmv, syev, eigh, bdmv — each with TRAILING_SYNC as given; when false the
+// kernel emits the caller-owned __syncthreads() after each call (the
+// contract). true/false outputs must match exactly.
+
+template <bool TS>
+__global__ void k_l3_factor_solve(const float* in, float* out)
+{
+    constexpr uint32_t N = 8;
+    __shared__ float sA[N*N], sB[N*2], sL[N*N], sb[N], sT[N*N], sBt[N*2];
+    __shared__ float sP[N*N], sAug[N*2*N], sScr[2*N + 1];
+    __shared__ float sE[N*N], sW[N], sV[N*N];
+    __shared__ float sSy[N*N + 2*N + N*N];             // >= syev_scratch_bytes<f>(8)/4
+    __shared__ float sM[2 * (3*4) * 4], sVec[(2+2)*4], sOut[(2+2)*4];
+    __shared__ float sX[N], sY[N];
+    const uint32_t rank = threadIdx.x, size = blockDim.x;
+    for (uint32_t i = rank; i < N*N; i += size) {
+        sA[i] = in[i]; sL[i] = in[N*N + i]; sT[i] = in[N*N + i];
+        sP[i] = in[i]; sE[i] = in[2*N*N + i];
+    }
+    for (uint32_t i = rank; i < N*2; i += size) { sB[i] = in[3*N*N + i]; sBt[i] = in[3*N*N + i]; }
+    for (uint32_t i = rank; i < N; i += size)   { sb[i] = in[3*N*N + i]; sX[i] = in[3*N*N + i]; }
+    for (uint32_t i = rank; i < 2*N*N; i += size) sAug[i] = (i < N*N) ? in[i] : ((i - N*N) % (N+1) == 0 ? 1.f : 0.f);
+    for (uint32_t i = rank; i < 2*(3*4)*4; i += size) sM[i] = in[i % (N*N)];
+    for (uint32_t i = rank; i < (2+2)*4; i += size) sVec[i] = in[3*N*N + (i % (2*N))];
+    __syncthreads();
+
+    glass::block::posv<float, N, 2, false, false, false, TS>(sA, sB);
+    if constexpr (!TS) __syncthreads();
+    glass::block::trsv<float, N, glass::FillMode::Lower, glass::Diag::NonUnit, false, TS>(sL, sb);
+    if constexpr (!TS) __syncthreads();
+    glass::block::trsm<float, N, 2, glass::FillMode::Lower, glass::Diag::NonUnit, false, TS>(sT, sBt);
+    if constexpr (!TS) __syncthreads();
+    glass::block::potrf<float, N, false, TS>(sP);
+    if constexpr (!TS) __syncthreads();
+    glass::block::inv<float, N, TS>(sAug, sScr);
+    if constexpr (!TS) __syncthreads();
+    glass::block::trmv<float, N, glass::FillMode::Lower, glass::Diag::NonUnit, false, TS>(sL, sX, sY);
+    if constexpr (!TS) __syncthreads();
+    glass::block::syev<float, TS>(N, sE, sW, sV, sSy);
+    if constexpr (!TS) __syncthreads();
+    glass::block::bdmv<float, 2, 4, TS>(sOut, sM, sVec);
+    if constexpr (!TS) __syncthreads();
+
+    float* o = out;
+    for (uint32_t i = rank; i < N*2;  i += size) o[i] = sB[i];          o += N*2;
+    for (uint32_t i = rank; i < N;    i += size) o[i] = sb[i];          o += N;
+    for (uint32_t i = rank; i < N*2;  i += size) o[i] = sBt[i];         o += N*2;
+    for (uint32_t i = rank; i < N*N;  i += size) o[i] = sP[i];          o += N*N;
+    for (uint32_t i = rank; i < N;    i += size) o[i] = sAug[N*N + i];  o += N;
+    for (uint32_t i = rank; i < N;    i += size) o[i] = sY[i];          o += N;
+    for (uint32_t i = rank; i < N;    i += size) o[i] = sW[i];          o += N;
+    for (uint32_t i = rank; i < (2+2)*4; i += size) o[i] = sOut[i];
+}
+
+static int op_l3_factor_solve()
+{
+    constexpr uint32_t N = 8;
+    constexpr size_t IN = 3*N*N + N*2;
+    constexpr size_t OUT = N*2 + N + N*2 + N*N + N + N + N + (2+2)*4;
+    std::vector<float> h_in(IN);
+    // deterministic SPD-ish inputs: diag-dominant symmetric for slot 0, unit
+    // lower-triangular magnitudes for slot 1, symmetric for slot 2, rhs after.
+    for (size_t i = 0; i < IN; i++) h_in[i] = 0.02f * float((i * 2654435761u >> 16) & 0xff) - 2.5f;
+    for (uint32_t r = 0; r < N; r++)
+        for (uint32_t c = 0; c <= r; c++) {
+            float v = h_in[r + c*N];
+            h_in[c + r*N] = v;                     // symmetrize slot 0
+            float w = h_in[2*N*N + r + c*N];
+            h_in[2*N*N + c + r*N] = w;             // symmetrize slot 2
+        }
+    for (uint32_t d = 0; d < N; d++) {
+        h_in[d + d*N] += 24.f;                     // SPD slot 0
+        h_in[N*N + d + d*N] = 3.f + 0.1f * d;      // safe trsv/trsm diagonal
+    }
+    float *d_in, *d_out_t, *d_out_f;
+    CUDA_CHECK(cudaMalloc(&d_in, IN * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_out_t, OUT * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_out_f, OUT * sizeof(float)));
+    CUDA_CHECK(cudaMemcpy(d_in, h_in.data(), IN * sizeof(float), cudaMemcpyHostToDevice));
+    k_l3_factor_solve<true ><<<1, 128>>>(d_in, d_out_t);
+    k_l3_factor_solve<false><<<1, 128>>>(d_in, d_out_f);
+    CUDA_CHECK(cudaDeviceSynchronize());
+    std::vector<float> a(OUT), b(OUT);
+    CUDA_CHECK(cudaMemcpy(a.data(), d_out_t, OUT * sizeof(float), cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(b.data(), d_out_f, OUT * sizeof(float), cudaMemcpyDeviceToHost));
+    float d = max_abs_diff(a, b);
+    std::printf("l3_factor_solve max_abs_diff=%.3e %s\n", d, d == 0.f ? "PASS" : "FAIL");
+    return d == 0.f ? 0 : 1;
+}
+
 int main(int argc, char** argv)
 {
     if (argc < 2) {
@@ -355,6 +449,7 @@ int main(int argc, char** argv)
     if (std::strcmp(op, "l1_warp_f64") == 0)               return op_l1_warp<double>("f64");
     if (std::strcmp(op, "l3_simt_batched") == 0)           return op_l3_simt_batched();
     if (std::strcmp(op, "l3_simt_strided_batched") == 0)   return op_l3_simt_strided_batched();
+    if (std::strcmp(op, "l3_factor_solve") == 0)           return op_l3_factor_solve();
 #ifdef GLASS_BENCH_CUBLASDX
     if (std::strcmp(op, "l3_cublasdx_gemm") == 0)          return op_l3_cublasdx_gemm();
 #else

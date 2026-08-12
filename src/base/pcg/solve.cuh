@@ -62,7 +62,7 @@ __host__ __device__ inline constexpr std::size_t pcg_scratch_bytes(uint32_t thre
  *                   only if the caller guarantees a valid pointer; pass a valid
  *                   device address).
  */
-template <typename T, uint32_t state_size, uint32_t knot_points>
+template <typename T, uint32_t state_size, uint32_t knot_points, bool TRAILING_SYNC = true>
 __device__ void pcg(T *x, T *S, T *Pinv, T *b, T *s_mem,
                     uint32_t max_iters, T rel_tol, T abs_tol, uint32_t *iters)
 {
@@ -84,12 +84,12 @@ __device__ void pcg(T *x, T *S, T *Pinv, T *b, T *s_mem,
     copy<T, VEC>(x, s_x);                              // s_x = x (initial guess)
     __syncthreads();
 
-    bdmv<T, knot_points, state_size>(s_r, S, s_x);             // r = S x
+    bdmv<T, knot_points, state_size, /*TRAILING_SYNC=*/false>(s_r, S, s_x);             // r = S x
     __syncthreads();
     axpby<T, VEC>(static_cast<T>(1), b, static_cast<T>(-1), s_r, s_r); // r = b - S x
     __syncthreads();
 
-    bdmv<T, knot_points, state_size>(s_z, s_p, Pinv, s_r);     // z = p = Pinv r
+    bdmv<T, knot_points, state_size, /*TRAILING_SYNC=*/false>(s_z, s_p, Pinv, s_r);     // z = p = Pinv r
     __syncthreads();
 
     dot_fast<T, VEC>(s_r, s_z, &s_rho, s_scr);                  // rho = rᵀ z
@@ -99,7 +99,7 @@ __device__ void pcg(T *x, T *S, T *Pinv, T *b, T *s_mem,
     if (arho < abs_tol) {
         if (rank == 0) *iters = 0;
         copy<T, VEC>(s_x, x);
-        __syncthreads();
+        if constexpr (TRAILING_SYNC) __syncthreads();
         return;
     }
     __syncthreads();  // scalar-bank reads above complete before rank 0 writes s_rho_init
@@ -110,7 +110,7 @@ __device__ void pcg(T *x, T *S, T *Pinv, T *b, T *s_mem,
     for (uint32_t i = 0; i < max_iters; i++) {
         it = i + 1;
 
-        bdmv<T, knot_points, state_size>(s_Ap, S, s_p);        // Ap = S p
+        bdmv<T, knot_points, state_size, /*TRAILING_SYNC=*/false>(s_Ap, S, s_p);        // Ap = S p
         __syncthreads();
 
         dot_fast<T, VEC>(s_p, s_Ap, &s_alpha, s_scr);          // pᵀ Ap
@@ -122,7 +122,7 @@ __device__ void pcg(T *x, T *S, T *Pinv, T *b, T *s_mem,
         axpy<T, VEC>(-s_alpha, s_Ap, s_r);                           // r -= alpha Ap
         __syncthreads();
 
-        bdmv<T, knot_points, state_size>(s_z, Pinv, s_r);     // z = Pinv r
+        bdmv<T, knot_points, state_size, /*TRAILING_SYNC=*/false>(s_z, Pinv, s_r);     // z = Pinv r
         __syncthreads();
 
         dot_fast<T, VEC>(s_r, s_z, &s_rho_new, s_scr);        // rho_new = rᵀ z
@@ -141,6 +141,6 @@ __device__ void pcg(T *x, T *S, T *Pinv, T *b, T *s_mem,
 
     if (rank == 0) *iters = it;
     copy<T, VEC>(s_x, x);                                             // write solution back
-    __syncthreads();
+    if constexpr (TRAILING_SYNC) __syncthreads();
 }
 

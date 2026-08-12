@@ -130,7 +130,7 @@ __host__ __device__ constexpr std::size_t eigh_scratch_bytes()
  * @param V          Out: `N x N` eigenvectors (column-major; column i ↔ W[i]).
  * @param s_scratch  Shared scratch of `eigh_scratch_bytes<T, N>()` bytes.
  */
-template <typename T, uint32_t N, uint32_t SWEEPS = eigh_sweeps<T>()>
+template <typename T, uint32_t N, uint32_t SWEEPS = eigh_sweeps<T>(), bool TRAILING_SYNC = true>
 __device__ void eigh(const T *A, T *W, T *V, T *s_scratch)
 {
     uint32_t rank = flat_rank();
@@ -221,7 +221,8 @@ __device__ void eigh(const T *A, T *W, T *V, T *s_scratch)
 
     // W := diag(B), unsorted.
     for (uint32_t i = rank; i < N; i += size) W[i] = s_B[i + i*N];
-    __syncthreads();                         // outputs valid for every thread on return
+    if constexpr (TRAILING_SYNC)
+        __syncthreads();                     // outputs valid for every thread on return
 }
 
 /**
@@ -263,7 +264,7 @@ __host__ __device__ constexpr std::size_t psd_project_scratch_bytes()
  * @param eps        Eigenvalue floor (runtime scalar; >= 0).
  * @param s_scratch  Shared scratch of `psd_project_scratch_bytes<T, N>()` bytes.
  */
-template <typename T, uint32_t N, uint32_t SWEEPS = eigh_sweeps<T>()>
+template <typename T, uint32_t N, uint32_t SWEEPS = eigh_sweeps<T>(), bool TRAILING_SYNC = true>
 __device__ void psd_project(T *A, T eps, T *s_scratch)
 {
     uint32_t rank = flat_rank();
@@ -287,5 +288,6 @@ __device__ void psd_project(T *A, T eps, T *s_scratch)
         }
         A[idx] = sum;
     }
-    __syncthreads();                       // projected A valid for every thread on return
+    if constexpr (TRAILING_SYNC)
+        __syncthreads();                   // projected A valid for every thread on return
 }

@@ -39,7 +39,7 @@
 // and `size` stay explicit params rather than coming from Bar: callers like
 // posv_impl already have them in hand, and the warp surface's trsv is a separate
 // __syncwarp-based body in trsm.cuh, not a Bar instantiation of this one.)
-template <typename T, FillMode FILL, Diag DIAG, bool TRANSPOSE, typename Bar = BlockBarrier, typename SizeT>
+template <typename T, FillMode FILL, Diag DIAG, bool TRANSPOSE, typename Bar = BlockBarrier, bool TRAILING_SYNC = true, typename SizeT>
 __device__ void trsv_impl(uint32_t rank, uint32_t size, SizeT n, const T* A, T* x)
 {
     static_assert(FILL != FillMode::Full, "trsv: FILL must name a triangle (Lower or Upper)");
@@ -64,7 +64,9 @@ __device__ void trsv_impl(uint32_t rank, uint32_t size, SizeT n, const T* A, T* 
             for (uint32_t i = rank; i < k; i += size)
                 x[i] -= (TRANSPOSE ? A[k + i * n] : A[i + k * n]) * xk;
         }
-        Bar{}.sync();                  // pivot column consumed before next step
+        // Mid-loop this barrier is mandatory (pivot column consumed before the
+        // next step); on the FINAL step it is the separable publish barrier.
+        if (TRAILING_SYNC || step + 1 < n) Bar{}.sync();
     }
 }
 
@@ -92,12 +94,12 @@ __device__ void trsv_impl(uint32_t rank, uint32_t size, SizeT n, const T* A, T* 
  * @param A  Triangular matrix (column-major, `n*n` elements; read-only).
  * @param x  In/out right-hand side; on return holds the solution.
  */
-template <typename T, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
+template <typename T, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false, bool TRAILING_SYNC = true>
 __device__ void trsv(uint32_t n, const T* A, T* x)
 {
     uint32_t rank = flat_rank();
     uint32_t size = flat_size();
-    trsv_impl<T, FILL, DIAG, TRANSPOSE>(rank, size, n, A, x);
+    trsv_impl<T, FILL, DIAG, TRANSPOSE, BlockBarrier, TRAILING_SYNC>(rank, size, n, A, x);
 }
 
 // ─── trsv: compile-time size ──────────────────────────────────────────────────
@@ -117,12 +119,12 @@ __device__ void trsv(uint32_t n, const T* A, T* x)
  * @param A  Triangular matrix (column-major, `N*N` elements; read-only).
  * @param x  In/out right-hand side; on return holds the solution.
  */
-template <typename T, uint32_t N, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
+template <typename T, uint32_t N, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false, bool TRAILING_SYNC = true>
 __device__ void trsv(const T* A, T* x)
 {
     uint32_t rank = flat_rank();
     uint32_t size = flat_size();
-    trsv_impl<T, FILL, DIAG, TRANSPOSE>(rank, size, ct_size<N>{}, A, x);
+    trsv_impl<T, FILL, DIAG, TRANSPOSE, BlockBarrier, TRAILING_SYNC>(rank, size, ct_size<N>{}, A, x);
 }
 
 
@@ -178,12 +180,13 @@ __device__ void trmv_impl(uint32_t rank, uint32_t size, SizeT n,
  * @param x  Input vector (length `n`; read-only).
  * @param y  Output vector (length `n`); must not alias `x`.
  */
-template <typename T, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
+template <typename T, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false, bool TRAILING_SYNC = true>
 __device__ void trmv(uint32_t n, const T* A, const T* x, T* y)
 {
     uint32_t rank = flat_rank();
     uint32_t size = flat_size();
     trmv_impl<T, FILL, DIAG, TRANSPOSE>(rank, size, n, A, x, y);
+    if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
 /**
@@ -201,12 +204,13 @@ __device__ void trmv(uint32_t n, const T* A, const T* x, T* y)
  * @param x  Input vector (length `N`; read-only).
  * @param y  Output vector (length `N`); must not alias `x`.
  */
-template <typename T, uint32_t N, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
+template <typename T, uint32_t N, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false, bool TRAILING_SYNC = true>
 __device__ void trmv(const T* A, const T* x, T* y)
 {
     uint32_t rank = flat_rank();
     uint32_t size = flat_size();
     trmv_impl<T, FILL, DIAG, TRANSPOSE>(rank, size, ct_size<N>{}, A, x, y);
+    if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
 // ─── trmv: in-place wrapper (needs scratch) ──────────────────────────────────
@@ -241,7 +245,7 @@ __host__ __device__ inline constexpr std::size_t trmv_scratch_bytes(uint32_t n) 
  * @param x        In/out vector (length `n`); on return holds `op(A) x`.
  * @param scratch  Workspace of length `n` (see `trmv_scratch_bytes`).
  */
-template <typename T, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
+template <typename T, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false, bool TRAILING_SYNC = true>
 __device__ void trmv(uint32_t n, const T* A, T* x, T* scratch)
 {
     uint32_t rank = flat_rank();
@@ -249,7 +253,7 @@ __device__ void trmv(uint32_t n, const T* A, T* x, T* scratch)
     trmv_impl<T, FILL, DIAG, TRANSPOSE>(rank, size, n, A, x, scratch);
     __syncthreads();                              // scratch fully written before read-back
     for (uint32_t i = rank; i < n; i += size) x[i] = scratch[i];
-    __syncthreads();
+    if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
 /**
@@ -267,7 +271,7 @@ __device__ void trmv(uint32_t n, const T* A, T* x, T* scratch)
  * @param x        In/out vector (length `N`); on return holds `op(A) x`.
  * @param scratch  Workspace of length `N` (see `trmv_scratch_bytes`).
  */
-template <typename T, uint32_t N, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
+template <typename T, uint32_t N, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false, bool TRAILING_SYNC = true>
 __device__ void trmv(const T* A, T* x, T* scratch)
 {
     uint32_t rank = flat_rank();
@@ -275,7 +279,7 @@ __device__ void trmv(const T* A, T* x, T* scratch)
     trmv_impl<T, FILL, DIAG, TRANSPOSE>(rank, size, ct_size<N>{}, A, x, scratch);
     __syncthreads();
     for (uint32_t i = rank; i < N; i += size) x[i] = scratch[i];
-    __syncthreads();
+    if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
 // ═══════════════════════════════════════════════════════════════════════

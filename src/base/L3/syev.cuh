@@ -103,7 +103,7 @@ __host__ __device__ constexpr std::size_t syev_scratch_bytes(uint32_t n)
  */
 // Shared body (runtime + compile-time overloads): SizeT deduced — uint32_t or
 // ct_size<N> (constant-folds the trip counts / indexing).
-template <typename T, typename SizeT>
+template <typename T, bool TRAILING_SYNC = true, typename SizeT = uint32_t>
 __device__ void syev_impl(SizeT n, const T *A, T *W, T *V, T *s_scratch)
 {
     static_assert(sizeof(uint32_t) <= sizeof(T),
@@ -242,13 +242,14 @@ __device__ void syev_impl(SizeT n, const T *A, T *W, T *V, T *s_scratch)
         uint32_t r = idx % n, c = idx / n;
         V[idx] = s_B[r + s_perm[c]*n];
     }
-    __syncthreads();                             // outputs valid for every thread on return
+    if constexpr (TRAILING_SYNC)
+        __syncthreads();                         // outputs valid for every thread on return
 }
 
-template <typename T>
+template <typename T, bool TRAILING_SYNC = true>
 __device__ void syev(uint32_t n, const T *A, T *W, T *V, T *s_scratch)
 {
-    syev_impl<T>(n, A, W, V, s_scratch);
+    syev_impl<T, TRAILING_SYNC>(n, A, W, V, s_scratch);
 }
 
 /**
@@ -266,10 +267,10 @@ __device__ void syev(uint32_t n, const T *A, T *W, T *V, T *s_scratch)
  * @param V          Out: N x N eigenvectors (column-major; column i ↔ W[i]).
  * @param s_scratch  Shared scratch of `syev_scratch_bytes<T>(N)` bytes.
  */
-template <typename T, uint32_t N>
+template <typename T, uint32_t N, bool TRAILING_SYNC = true>
 __device__ void syev(const T *A, T *W, T *V, T *s_scratch)
 {
-    syev_impl<T>(ct_size<N>{}, A, W, V, s_scratch);
+    syev_impl<T, TRAILING_SYNC>(ct_size<N>{}, A, W, V, s_scratch);
 }
 
 /**
@@ -318,7 +319,7 @@ __host__ __device__ constexpr std::size_t eig_clamp_scratch_bytes(uint32_t n)
  */
 // Shared body (runtime + compile-time overloads): SizeT deduced — uint32_t or
 // ct_size<N> (constant-folds the trip counts / indexing).
-template <typename T, typename SizeT>
+template <typename T, bool TRAILING_SYNC = true, typename SizeT = uint32_t>
 __device__ void eig_clamp_impl(SizeT n, T *A, T eps, T *s_scratch)
 {
     uint32_t rank = flat_rank();
@@ -342,13 +343,14 @@ __device__ void eig_clamp_impl(SizeT n, T *A, T eps, T *s_scratch)
         }
         A[idx] = sum;
     }
-    __syncthreads();                       // clamped A valid for every thread on return
+    if constexpr (TRAILING_SYNC)
+        __syncthreads();                   // clamped A valid for every thread on return
 }
 
-template <typename T>
+template <typename T, bool TRAILING_SYNC = true>
 __device__ void eig_clamp(uint32_t n, T *A, T eps, T *s_scratch)
 {
-    eig_clamp_impl<T>(n, A, eps, s_scratch);
+    eig_clamp_impl<T, TRAILING_SYNC>(n, A, eps, s_scratch);
 }
 
 /**
@@ -365,8 +367,8 @@ __device__ void eig_clamp(uint32_t n, T *A, T eps, T *s_scratch)
  * @param eps        Eigenvalue floor.
  * @param s_scratch  Shared scratch of `eig_clamp_scratch_bytes<T>(N)` bytes.
  */
-template <typename T, uint32_t N>
+template <typename T, uint32_t N, bool TRAILING_SYNC = true>
 __device__ void eig_clamp(T *A, T eps, T *s_scratch)
 {
-    eig_clamp_impl<T>(ct_size<N>{}, A, eps, s_scratch);
+    eig_clamp_impl<T, TRAILING_SYNC>(ct_size<N>{}, A, eps, s_scratch);
 }

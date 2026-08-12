@@ -26,10 +26,11 @@
  */
 // Shared body: in-place lower Cholesky; barrier policy supplies rank/size + the
 // two per-row syncs, so the glass:: and cgrps:: surfaces share this one body.
-// (No separable TRAILING_SYNC: the algorithm's final step is itself a barrier.)
+// TRAILING_SYNC: the final row's second barrier is the separable publish
+// barrier (its column loop is empty) — elided when TRAILING_SYNC=false.
 // SizeT is deduced: uint32_t from the runtime overload, ct_size<N> from the
 // compile-time overload (constant-folds the trip counts / indexing).
-template <typename Bar, typename T, bool CHECK = false, typename SizeT>
+template <typename Bar, typename T, bool CHECK = false, bool TRAILING_SYNC = true, typename SizeT = uint32_t>
 __device__ void potrf_impl(Bar bar, SizeT n, T *s_A, int *s_fail)
 {
     uint32_t rank = bar.rank(), size = bar.size();
@@ -49,14 +50,16 @@ __device__ void potrf_impl(Bar bar, SizeT n, T *s_A, int *s_fail)
             for (uint32_t kk = 0; kk < row; kk++) sum += s_A[kk*n + col]*s_A[kk*n + row];
             s_A[row*n + col] = (static_cast<T>(1)/s_A[row*n + row])*(s_A[row*n + col] - sum);
         }
-        bar.sync();
+        // Mid-loop this barrier is mandatory; on the FINAL row (empty column
+        // loop) it is the separable publish barrier.
+        if (TRAILING_SYNC || row + 1 < n) bar.sync();
     }
 }
 
-template <typename T, bool CHECK = false>
+template <typename T, bool CHECK = false, bool TRAILING_SYNC = true>
 __device__ void potrf(uint32_t n, T *s_A, int *s_fail = nullptr)
 {
-    potrf_impl<BlockBarrier, T, CHECK>(BlockBarrier{}, n, s_A, s_fail);
+    potrf_impl<BlockBarrier, T, CHECK, TRAILING_SYNC>(BlockBarrier{}, n, s_A, s_fail);
 }
 
 /**
@@ -83,7 +86,7 @@ __device__ void potrf(uint32_t n, T *s_A, int *s_fail = nullptr)
  * @param mats     Array of K in/out column-major SPD buffers (`dims[m] x dims[m]`);
  *                 on return each lower triangle holds its Cholesky factor `L`.
  */
-template <typename T>
+template <typename T, bool TRAILING_SYNC = true>
 __device__ void potrf(uint32_t K, const uint32_t *dims, uint32_t MAX_DIM, T **mats)
 {
     uint32_t rank = flat_rank();
@@ -113,7 +116,7 @@ __device__ void potrf(uint32_t K, const uint32_t *dims, uint32_t MAX_DIM, T **ma
                 }
             }
         }
-        __syncthreads();
+        if (TRAILING_SYNC || row + 1 < MAX_DIM) __syncthreads();
     }
 }
 
@@ -129,12 +132,12 @@ __device__ void potrf(uint32_t K, const uint32_t *dims, uint32_t MAX_DIM, T **ma
  * @param MAX_DIM    `max(dimA, dimB)` — the shared row-loop length.
  * @param A,B        In/out column-major SPD buffers (dim x dim); lower triangles hold L.
  */
-template <typename T>
+template <typename T, bool TRAILING_SYNC = true>
 __device__ void potrf(uint32_t dimA, uint32_t dimB, uint32_t MAX_DIM, T *A, T *B)
 {
     uint32_t dims[2] = {dimA, dimB};
     T *mats[2] = {A, B};
-    potrf<T>(2, dims, MAX_DIM, mats);
+    potrf<T, TRAILING_SYNC>(2, dims, MAX_DIM, mats);
 }
 
 /**
@@ -149,12 +152,12 @@ __device__ void potrf(uint32_t dimA, uint32_t dimB, uint32_t MAX_DIM, T *A, T *B
  * @param MAX_DIM         `max(dimA, dimB, dimC)` — the shared row-loop length.
  * @param A,B,C           In/out column-major SPD buffers (dim x dim); lower triangles hold L.
  */
-template <typename T>
+template <typename T, bool TRAILING_SYNC = true>
 __device__ void potrf(uint32_t dimA, uint32_t dimB, uint32_t dimC, uint32_t MAX_DIM, T *A, T *B, T *C)
 {
     uint32_t dims[3] = {dimA, dimB, dimC};
     T *mats[3] = {A, B, C};
-    potrf<T>(3, dims, MAX_DIM, mats);
+    potrf<T, TRAILING_SYNC>(3, dims, MAX_DIM, mats);
 }
 
 /**
@@ -175,10 +178,10 @@ __device__ void potrf(uint32_t dimA, uint32_t dimB, uint32_t dimC, uint32_t MAX_
  * @param s_A     In/out N x N matrix (column-major); on return its lower triangle holds L.
  * @param s_fail  Optional flag (CHECK only): set to 1 on a non-PD / NaN pivot, else 0. Ignored when null.
  */
-template <typename T, uint32_t N, bool CHECK = false>
+template <typename T, uint32_t N, bool CHECK = false, bool TRAILING_SYNC = true>
 __device__ void potrf(T *s_A, int *s_fail = nullptr)
 {
-    potrf_impl<BlockBarrier, T, CHECK>(BlockBarrier{}, ct_size<N>{}, s_A, s_fail);
+    potrf_impl<BlockBarrier, T, CHECK, TRAILING_SYNC>(BlockBarrier{}, ct_size<N>{}, s_A, s_fail);
 }
 
 // ═══════════════════════════════════════════════════════════════════════

@@ -23,7 +23,7 @@
 // two per-pivot syncs, shared by the glass:: and cgrps:: surfaces.
 // SizeT is deduced: uint32_t from the runtime overload, ct_size<N> from the
 // compile-time overload (constant-folds the trip counts and the %/ indexing).
-template <typename Bar, typename T, typename SizeT>
+template <typename Bar, typename T, bool TRAILING_SYNC = true, typename SizeT = uint32_t>
 __device__ void inv_impl(Bar bar, SizeT dimA, T *A, T *s_scratch)
 {
     uint32_t rank = bar.rank(), size = bar.size();
@@ -40,14 +40,15 @@ __device__ void inv_impl(Bar bar, SizeT dimA, T *A, T *s_scratch)
             if (row == pivRC) A[row + pivOff + coff] *= pvInv;
             else A[row + pivOff + coff] -= s_scratch[row]*pvInv*s_scratch[dimA+col];
         }
-        bar.sync();
+        // Mid-loop mandatory; on the FINAL pivot it is the separable publish barrier.
+        if (TRAILING_SYNC || pivRC + 1 < dimA) bar.sync();
     }
 }
 
-template <typename T>
+template <typename T, bool TRAILING_SYNC = true>
 __device__ void inv(uint32_t dimA, T *A, T *s_scratch)
 {
-    inv_impl<BlockBarrier, T>(BlockBarrier{}, dimA, A, s_scratch);
+    inv_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, dimA, A, s_scratch);
 }
 
 /**
@@ -62,10 +63,10 @@ __device__ void inv(uint32_t dimA, T *A, T *s_scratch)
  *                on return its right half holds `A^-1`.
  * @param s_scratch  Shared scratch of `(2*N + 1) * sizeof(T)` bytes.
  */
-template <typename T, uint32_t N>
+template <typename T, uint32_t N, bool TRAILING_SYNC = true>
 __device__ void inv(T *A, T *s_scratch)
 {
-    inv_impl<BlockBarrier, T>(BlockBarrier{}, ct_size<N>{}, A, s_scratch);
+    inv_impl<BlockBarrier, T, TRAILING_SYNC>(BlockBarrier{}, ct_size<N>{}, A, s_scratch);
 }
 
 /**
@@ -151,7 +152,7 @@ __host__ __device__ constexpr std::size_t inv_pivoted_scratch_bytes(uint32_t dim
  */
 // Shared body (runtime + compile-time overloads): SizeT deduced — uint32_t or
 // ct_size<N> (constant-folds the trip counts and the %/ indexing).
-template <typename T, typename SizeT>
+template <typename T, bool TRAILING_SYNC = true, typename SizeT = uint32_t>
 __device__ void inv_pivoted_impl(SizeT dimA, T *A, T *s_scratch)
 {
     uint32_t rank = flat_rank();
@@ -211,7 +212,9 @@ __device__ void inv_pivoted_impl(SizeT dimA, T *A, T *s_scratch)
     }
 }
 
-template <typename T>
+// TRAILING_SYNC: accepted for uniformity, documented NO-OP here (the pivot
+// search/permute tail is fused into the final elimination step).
+template <typename T, bool TRAILING_SYNC = true>
 __device__ void inv_pivoted(uint32_t dimA, T *A, T *s_scratch)
 {
     inv_pivoted_impl<T>(dimA, A, s_scratch);
@@ -231,11 +234,12 @@ __device__ void inv_pivoted(uint32_t dimA, T *A, T *s_scratch)
  * @param s_scratch  Shared scratch of `(3*N + 1) * sizeof(T)` bytes
  *                (= `inv_pivoted_scratch_bytes<T>(N)`).
  */
-template <typename T, uint32_t N>
+template <typename T, uint32_t N, bool TRAILING_SYNC = true>
 __device__ void inv_pivoted(T *A, T *s_scratch)
 {
     inv_pivoted_impl<T>(ct_size<N>{}, A, s_scratch);
 }
+// (compile-time overload: same documented NO-OP TRAILING_SYNC)
 
 /**
  * @brief Scratch size in bytes for the K-way fused `inv` (`Σ_m (2*dims[m]+1)` elements).
@@ -284,7 +288,7 @@ __host__ __device__ constexpr std::size_t inv_fused_scratch_bytes(uint32_t K, co
  * @param s_scratch   Shared scratch of `inv_fused_scratch_bytes<T>(K, dims)` bytes
  *                    (= `(Σ_m (2*dims[m]+1)) * sizeof(T)`).
  */
-template <typename T>
+template <typename T, bool TRAILING_SYNC = true>
 __device__ void inv(uint32_t K, const uint32_t *dims, uint32_t MAX_DIM, T **mats, T *s_scratch)
 {
     uint32_t rank = flat_rank();
@@ -324,7 +328,8 @@ __device__ void inv(uint32_t K, const uint32_t *dims, uint32_t MAX_DIM, T **mats
             }
             sOff += 2*dim + 1;
         }
-        __syncthreads();
+        // Mid-loop mandatory; on the FINAL pivot it is the separable publish barrier.
+        if (TRAILING_SYNC || pivRC + 1 < MAX_DIM) __syncthreads();
     }
 }
 
@@ -342,12 +347,12 @@ __device__ void inv(uint32_t K, const uint32_t *dims, uint32_t MAX_DIM, T **mats
  * @param A,B        In/out augmented `[V | I]` buffers (column-major, dim x 2*dim).
  * @param s_scratch     Shared scratch of `(2*dimA + 2*dimB + 2) * sizeof(T)` bytes.
  */
-template <typename T>
+template <typename T, bool TRAILING_SYNC = true>
 __device__ void inv(uint32_t dimA, uint32_t dimB, uint32_t MAX_DIM, T *A, T *B, T *s_scratch)
 {
     uint32_t dims[2] = {dimA, dimB};
     T *mats[2] = {A, B};
-    inv<T>(2, dims, MAX_DIM, mats, s_scratch);
+    inv<T, TRAILING_SYNC>(2, dims, MAX_DIM, mats, s_scratch);
 }
 
 /**
@@ -364,12 +369,12 @@ __device__ void inv(uint32_t dimA, uint32_t dimB, uint32_t MAX_DIM, T *A, T *B, 
  * @param A,B,C           In/out augmented `[V | I]` buffers (column-major, dim x 2*dim).
  * @param s_scratch          Shared scratch of `(2*dimA + 2*dimB + 2*dimC + 3) * sizeof(T)` bytes.
  */
-template <typename T>
+template <typename T, bool TRAILING_SYNC = true>
 __device__ void inv(uint32_t dimA, uint32_t dimB, uint32_t dimC, uint32_t MAX_DIM, T *A, T *B, T *C, T *s_scratch)
 {
     uint32_t dims[3] = {dimA, dimB, dimC};
     T *mats[3] = {A, B, C};
-    inv<T>(3, dims, MAX_DIM, mats, s_scratch);
+    inv<T, TRAILING_SYNC>(3, dims, MAX_DIM, mats, s_scratch);
 }
 
 
@@ -420,7 +425,7 @@ __host__ __device__ constexpr std::size_t inv_dense_scratch_bytes(uint32_t dimA)
  */
 // Shared body (runtime + compile-time overloads): SizeT deduced — uint32_t or
 // ct_size<N> (constant-folds the trip counts and the %/ indexing).
-template <typename T, typename SizeT>
+template <typename T, bool TRAILING_SYNC = true, typename SizeT = uint32_t>
 __device__ void inv_dense_impl(SizeT dimA, T *A, T *Ainv, T *s_scratch)
 {
     uint32_t rank = flat_rank();
@@ -455,14 +460,15 @@ __device__ void inv_dense_impl(SizeT dimA, T *A, T *Ainv, T *s_scratch)
                 Ainv[row + dimA * col] -= multiplier * s_scratch[col + dimA];
             }
         }
-        __syncthreads();
+        // Mid-loop mandatory; on the FINAL pivot it is the separable publish barrier.
+        if (TRAILING_SYNC || pivRC + 1 < dimA) __syncthreads();
     }
 }
 
-template <typename T>
+template <typename T, bool TRAILING_SYNC = true>
 __device__ void inv_dense(uint32_t dimA, T *A, T *Ainv, T *s_scratch)
 {
-    inv_dense_impl<T>(dimA, A, Ainv, s_scratch);
+    inv_dense_impl<T, TRAILING_SYNC>(dimA, A, Ainv, s_scratch);
 }
 
 /**
@@ -478,10 +484,10 @@ __device__ void inv_dense(uint32_t dimA, T *A, T *Ainv, T *s_scratch)
  * @param Ainv    Workspace column-major N x N; on return also holds `A^{-1}`.
  * @param s_scratch  Shared scratch of `3 * N * sizeof(T)` bytes.
  */
-template <typename T, uint32_t N>
+template <typename T, uint32_t N, bool TRAILING_SYNC = true>
 __device__ void inv_dense(T *A, T *Ainv, T *s_scratch)
 {
-    inv_dense_impl<T>(ct_size<N>{}, A, Ainv, s_scratch);
+    inv_dense_impl<T, TRAILING_SYNC>(ct_size<N>{}, A, Ainv, s_scratch);
 }
 
 // ═══════════════════════════════════════════════════════════════════════

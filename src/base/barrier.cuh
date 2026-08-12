@@ -18,20 +18,25 @@
  * dependency-free; the `GroupBarrier` twin is only compiled when a caller
  * includes `<cooperative_groups.h>` via `glass-cgrps.cuh`.
  *
- * Uniformity rule (for NEW ops): a public op that can end on a barrier takes
- * `bool TRAILING_SYNC = true` and ends on `if constexpr (TRAILING_SYNC)
- * bar.sync();`, so the result is valid for ALL threads by default; callers
- * that own the following barrier pass `false` to elide it. For ops that
- * already ended on a barrier this is byte-identical; for the elementwise/
- * reduce-tail ops it adds a strictly-safer trailing barrier.
- *
- * COVERAGE (honest, audited 2026-08-11): the L1 reduction/vector family and
- * the newer robotics/L3 additions carry the parameter; the pre-rule factor/
- * solve chain (`potrf`/`posv`/`getrf`/`ldlt`/`inv`/`trsv`/`trsm`/`syev`/
- * `eigh`/…), the gemm/gemv variants, and `bdsv`/`pcg` do NOT yet — they
- * unconditionally end synced (the safe default; you just can't elide it).
- * An additive retrofit (defaulted parameter, non-breaking) is staged as a
- * post-launch item.
+ * UNIFORM TRAILING_SYNC CONTRACT (retrofit completed 2026-08-12): every
+ * block-scope public op takes `bool TRAILING_SYNC = true`. At the default the
+ * op ends on a barrier, so its result is valid for ALL threads on return —
+ * always safe to compose. A caller that owns the following barrier (or feeds
+ * a consumer that opens with one) passes `false`:
+ *   - where the tail barrier is SEPARABLE (the L1/reduce families, gemm/gemv,
+ *     trsv/trsm/trmv, posv/potrs, potrf, inv/inv_dense, syev/eig_clamp,
+ *     eigh/psd_project, pcg, bdmv, …) it is genuinely elided;
+ *   - where the last barrier is FUSED into the final algorithm step
+ *     (ldlt/ldlt_solve, getrf, inv_pivoted — pivoted/multi-exit control flow)
+ *     the parameter is accepted but is a documented NO-OP: uniform interface,
+ *     no pretended perf win (each such op says so at its declaration).
+ * One deliberate exception: the compile-time single-RHS `posv<T,N>`/
+ * `potrs<T,N>` carry no third template parameter (it would be ambiguous
+ * against the `<T,N,NRHS>` multi-RHS overloads) — the elidable compile-time
+ * spelling is the NRHS=1 multi-RHS form.
+ * The knob is block-scope only: `warp::`/`thread::` tiers have no block
+ * barrier to elide (warp ops are lockstep/shuffle-based; the ThreadBarrier
+ * sync is already a no-op).
  */
 struct BlockBarrier {
     __device__ __forceinline__ uint32_t rank() const {

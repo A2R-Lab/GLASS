@@ -33,6 +33,7 @@ def _run(binary, op):
     "l1_warp_f64",      # (correctness vs host ref + sync parity, 4 warps/block)
     "l3_simt_batched",
     "l3_simt_strided_batched",
+    "l3_factor_solve",   # uniform retrofit: posv/trsv/trsm/potrf/inv/trmv/syev/bdmv
 ])
 def test_trailing_sync_surface(bin_trailing_sync, op):
     """Default (true) and opt-out (false) produce identical results.

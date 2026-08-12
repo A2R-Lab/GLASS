@@ -341,7 +341,10 @@ __device__ void ldlt_impl(SizeT n, T *A, T *s_scratch, bool pivot, int32_t *piv,
     }
 }
 
-template <typename T, bool CHECK = false>
+// TRAILING_SYNC is accepted for interface uniformity but is a documented
+// NO-OP here: the factorization's tail barrier is fused into its final
+// algorithm step (both pivot paths), so nothing separable is elided.
+template <typename T, bool CHECK = false, bool TRAILING_SYNC = true>
 __device__ void ldlt(uint32_t n, T *A, T *s_scratch, bool pivot = false, int32_t *piv = nullptr,
                      int *s_fail = nullptr, int *s_inertia = nullptr)
 {
@@ -372,7 +375,7 @@ __device__ void ldlt(uint32_t n, T *A, T *s_scratch, bool pivot = false, int32_t
  * @param s_fail     Optional flag (CHECK only): 1 on a factorization breakdown, else 0. Ignored when null.
  * @param s_inertia  Optional 3 ints (CHECK only): `{n_pos, n_neg, n_zero}`. Ignored when null.
  */
-template <typename T, uint32_t N, bool CHECK = false>
+template <typename T, uint32_t N, bool CHECK = false, bool TRAILING_SYNC = true>
 __device__ void ldlt(T *A, T *s_scratch, bool pivot = false, int32_t *piv = nullptr,
                      int *s_fail = nullptr, int *s_inertia = nullptr)
 {
@@ -520,7 +523,9 @@ __device__ void ldlt_solve_impl(SizeT n, const T *LD, T *b, const int32_t *piv)
     }
 }
 
-template <typename T>
+// TRAILING_SYNC: accepted for uniformity, documented NO-OP (the last barrier
+// is the final substitution/permutation step's own, not a separable tail).
+template <typename T, bool TRAILING_SYNC = true>
 __device__ void ldlt_solve(uint32_t n, const T *LD, T *b, const int32_t *piv = nullptr)
 {
     ldlt_solve_impl<T>(n, LD, b, piv);
@@ -540,7 +545,7 @@ __device__ void ldlt_solve(uint32_t n, const T *LD, T *b, const int32_t *piv = n
  * @param b   In/out right-hand side; on return holds the solution x.
  * @param piv Pivot array from the pivoted factorization, or `nullptr` (non-pivoted).
  */
-template <typename T, uint32_t N>
+template <typename T, uint32_t N, bool TRAILING_SYNC = true>
 __device__ void ldlt_solve(const T *LD, T *b, const int32_t *piv = nullptr)
 {
     ldlt_solve_impl<T>(ct_size<N>{}, LD, b, piv);

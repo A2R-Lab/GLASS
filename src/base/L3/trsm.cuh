@@ -23,7 +23,7 @@
 // overload, ct_size<N>/ct_size<NRHS> from the compile-time overload
 // (constant-folds the trip counts and the flat-index %/ by `rows`).
 template <typename Bar, typename T, FillMode FILL, Diag DIAG, bool TRANSPOSE,
-          typename SizeT, typename SizeU>
+          bool TRAILING_SYNC = true, typename SizeT = uint32_t, typename SizeU = uint32_t>
 __device__ void trsm_impl(Bar bar, SizeT n, SizeU nrhs, const T *A, T *B)
 {
     static_assert(FILL != FillMode::Full, "trsm: FILL must name a triangle (Lower or Upper)");
@@ -47,7 +47,9 @@ __device__ void trsm_impl(Bar bar, SizeT n, SizeU nrhs, const T *A, T *B)
             uint32_t c = flat / rows;
             B[i + c * n] -= (TRANSPOSE ? A[k + i * n] : A[i + k * n]) * B[k + c * n];
         }
-        bar.sync();
+        // Mid-loop this barrier is mandatory; on the FINAL step it is the
+        // separable publish barrier.
+        if (TRAILING_SYNC || step + 1 < n) bar.sync();
     }
 }
 
@@ -73,10 +75,10 @@ __device__ void trsm_impl(Bar bar, SizeT n, SizeU nrhs, const T *A, T *B)
  * @param A     Triangular matrix (column-major; read-only).
  * @param B     In/out right-hand sides (`n×nrhs`, column-major); on return holds `X`.
  */
-template <typename T, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
+template <typename T, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false, bool TRAILING_SYNC = true>
 __device__ void trsm(uint32_t n, uint32_t nrhs, const T *A, T *B)
 {
-    trsm_impl<BlockBarrier, T, FILL, DIAG, TRANSPOSE>(BlockBarrier{}, n, nrhs, A, B);
+    trsm_impl<BlockBarrier, T, FILL, DIAG, TRANSPOSE, TRAILING_SYNC>(BlockBarrier{}, n, nrhs, A, B);
 }
 
 /**
@@ -96,10 +98,10 @@ __device__ void trsm(uint32_t n, uint32_t nrhs, const T *A, T *B)
  * @param B  In/out right-hand sides (`N×NRHS`, column-major); on return holds `X`.
  */
 template <typename T, uint32_t N, uint32_t NRHS,
-          FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false>
+          FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit, bool TRANSPOSE = false, bool TRAILING_SYNC = true>
 __device__ void trsm(const T *A, T *B)
 {
-    trsm_impl<BlockBarrier, T, FILL, DIAG, TRANSPOSE>(BlockBarrier{}, ct_size<N>{}, ct_size<NRHS>{}, A, B);
+    trsm_impl<BlockBarrier, T, FILL, DIAG, TRANSPOSE, TRAILING_SYNC>(BlockBarrier{}, ct_size<N>{}, ct_size<NRHS>{}, A, B);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
