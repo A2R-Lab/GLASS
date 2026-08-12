@@ -297,6 +297,11 @@ shipped table alone.
 
 ## Backwards-reach compile probes
 
+> Related (swept 2026-08-11): MathDx 26.03 marks `SM<720>` (Xavier, cc 7.2)
+> `[[deprecated]]` with removal announced — the vendor tier's floor is rising
+> while the SIMT tiers keep compiling everywhere. Corroborates the
+> portability story; see the paper's backwards-reach section.
+
 `portability_smoke_simt.cu` / `portability_smoke_vendor.cu` are compile-only
 probes for the tier-vs-architecture floor table: the SIMT probe touches all
 three dependency-free tiers (block L3 factor/solve, warp L1/L2, thread L1)

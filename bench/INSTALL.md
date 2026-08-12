@@ -114,7 +114,12 @@ on every cuBLASDx-enabled compile.
    -DCUBLASDX_IGNORE_NVBUG_5218000_ASSERT
    ```
 
-2. **cuSOLVERDx NVBUG 5288270** affects SM 1200 (Blackwell consumer) for some
+2. **Harmless `TransposeMode [[deprecated]]` warning (MathDx 26.03):** cuBLASDx's
+   own headers internally use their deprecated `TransposeMode` operator, so any
+   TU including `cublasdx.hpp` prints one deprecation warning. Not from GLASS
+   code (we use the current `cusolverdx::TransposeMode`, a different type);
+   nothing to fix on our side (swept 2026-08-11).
+3. **cuSOLVERDx NVBUG 5288270** affects SM 1200 (Blackwell consumer) for some
    real-precision configurations on CUDA ≤ 13.0. The bench harness defines
    `CUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT` so the static asserts don't fire.
    Verify correctness on your target arch before relying on cuSOLVERDx in
