@@ -479,6 +479,22 @@ def test_inv3(bins, dimA, dimB, dimC, threads):
         assert np.allclose(r.reshape(d, d, order='F'), np.linalg.inv(M), rtol=1e-2, atol=1e-3)
 
 
+# ─── dimm (diagonal-matrix multiply, cuBLAS dgmm analogue) ───────────────────
+
+@pytest.mark.parametrize("threads", THREAD_SWEEP_CORE)
+@pytest.mark.parametrize("right", [False, True])
+@pytest.mark.parametrize("m,n", [(4, 6), (8, 8), (5, 3), (12, 7)])
+def test_dimm(bins, m, n, right, threads):
+    alpha = 1.5
+    d = RNG.standard_normal(n if right else m).astype(np.float32)
+    B = RNG.standard_normal((m, n)).astype(np.float32)
+    result = run_op(bins["l3"], "dimm", "simple",
+                    args=[threads, m, n, int(right), alpha],
+                    inputs=[d, np.asfortranarray(B).ravel(order='F')])
+    expected = (alpha * (B @ np.diag(d)) if right else alpha * (np.diag(d) @ B)).astype(np.float32)
+    assert np.allclose(result.reshape(m, n, order='F'), expected, rtol=RTOL, atol=ATOL)
+
+
 # ─── chol ─────────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("threads", THREAD_SWEEP_CORE)

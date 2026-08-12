@@ -56,6 +56,13 @@ __global__ void k_indexed_bgemm_4_ta_atomic(uint32_t pairs, int* a_idx, int* b_i
         pairs, a_idx, b_idx, c_idx, A, B, C);
 }
 
+
+// ─── dimm kernels (diag scale, left/right) ───────────────────────────────────
+__global__ void k_dimm(int m, int n, int right, float alpha, float* d, float* B, float* C) {
+    if (right) glass::block::dimm<float, true >((uint32_t)m, (uint32_t)n, alpha, d, B, C);
+    else       glass::block::dimm<float, false>((uint32_t)m, (uint32_t)n, alpha, d, B, C);
+}
+
 // ─── GEMM kernels (standard convention) ──────────────────────────────────────
 // `nb` (no-beta): when 1, call the overload that overwrites C and never reads it
 // (so a NaN-poisoned C must survive); when 0, the beta overload.
@@ -361,6 +368,18 @@ int main(int argc, char** argv) {
         print_device_vec(dB + dimB * dimB, dimB * dimB);
         print_device_vec(dC + dimC * dimC, dimC * dimC);
         cudaFree(scratch);
+
+    } else if (strcmp(op, "dimm") == 0) {
+        // dimm <cg|simple> <threads> <m> <n> <right> <alpha> <d> <B>
+        int th = atoi(argv[3]);
+        int m = atoi(argv[4]), n = atoi(argv[5]), right = atoi(argv[6]);
+        float alpha = atof(argv[7]);
+        float* dd = read_device_vec(argv[8], right ? n : m);
+        float* dB = read_device_vec(argv[9], m * n);
+        float* dC; cudaMalloc(&dC, m * n * sizeof(float));
+        k_dimm<<<1, th>>>(m, n, right, alpha, dd, dB, dC);
+        cudaDeviceSynchronize();
+        print_device_vec(dC, m * n);
 
     } else if (strcmp(op, "chol") == 0) {
         int th = atoi(argv[3]);

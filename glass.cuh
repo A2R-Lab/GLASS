@@ -95,6 +95,7 @@ namespace block {
     #include "./src/base/L3/syrk.cuh"
     #include "./src/base/L3/gemm_strided.cuh"
     #include "./src/base/L3/symm.cuh"
+    #include "./src/base/L3/dimm.cuh"
     #include "./src/base/L3/gemm_batched_indexed.cuh"
     #include "./src/base/L3/inv.cuh"
     #include "./src/base/L3/potrf.cuh"

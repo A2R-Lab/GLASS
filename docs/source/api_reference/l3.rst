@@ -101,6 +101,15 @@ separate ``C`` so the flat one-output-per-thread loop stays race-free;
 
 .. doxygenfile:: src/base/L3/symm.cuh
 
+Diagonal-matrix multiply (dimm)
+-------------------------------
+
+Row/column scaling by a stored diagonal (cuBLAS ``dgmm`` analogue):
+``C = alpha*diag(d)*B`` (default) or ``C = alpha*B*diag(d)`` (``RIGHT``).
+Contributed by Seyoung Yang.
+
+.. doxygenfile:: src/base/L3/dimm.cuh
+
 LDLᵀ factorization (ldlt / ldlt_solve)
 --------------------------------------
 
