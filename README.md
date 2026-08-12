@@ -72,9 +72,12 @@ tier**.
 Both `glass::` and `glass::cgrps::` offer **runtime** (size as arg) and **compile-time** (size
 as template arg) overloads. Reductions additionally offer `_lowmem` (no scratch)
 and `_fast` (warp-shuffle) suffixed forms (e.g. `glass::reduce_lowmem` / `glass::reduce_fast`). The dense surface covers `gemm`/`gemv`/`ger`,
-`iamax`, `trsv`/`trmv`, `syrk`/`syr2k`, `inv`/`potrf` (single **and K-way fused**),
+`iamax`, `trsv`/`trmv`, `syrk`/`syr2k`, `symm`/`trmm`/`dimm`, `inv`/`potrf` (single **and K-way fused**),
 `ldlt`/`ldlt_solve`, and `posv`/`potrs`; plus contraction-parallel `*_reduced`, `tensor_*`, and
-`congruence_*` families. See the [namespace & naming guide](docs/source/user_guide/concepts/namespaces.rst).
+`congruence_*` families. Every block-scope op takes a `TRAILING_SYNC` template
+flag (default `true` = ends on a barrier, always safe to compose; pass `false`
+to elide the tail barrier when your caller owns the next one — see
+`src/base/barrier.cuh` for the exact contract). See the [namespace & naming guide](docs/source/user_guide/concepts/namespaces.rst).
 
 ### Higher-level solvers
 
