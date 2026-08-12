@@ -6,10 +6,17 @@ updates:
     directory: /
     schedule:
       interval: monthly
+  # test/requirements.txt carries deliberate LOOSE FLOORS (>=): raising a
+  # floor to the newest release constrains consumers for zero benefit, so
+  # version-update PRs are off (limit 0). Security advisories still open PRs.
   - package-ecosystem: pip
     directory: /test
     schedule:
       interval: monthly
+    open-pull-requests-limit: 0
+  # docs/requirements.txt is exact-pinned (==); version bumps are wanted, but
+  # merge them only after a local zero-warning `make all SPHINXOPTS=-W` build
+  # (the CI docs build is fail-on-warning).
   - package-ecosystem: pip
     directory: /docs
     schedule:
