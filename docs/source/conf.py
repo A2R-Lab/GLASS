@@ -41,16 +41,22 @@ breathe_domain_by_extension = {"cuh": "cpp", "cu": "cpp"}
 templates_path = ["_templates"]
 exclude_patterns = []
 
-# The header-only sub-namespaces (low_memory / high_speed / simple) are reopened
-# across several headers (reduce/norm/nrm2/asum/dot), so listing those files
+# The inline tier sub-namespaces (warp / thread / *_detail) are reopened across
+# many headers — exactly as in the C++ source — so listing those files
 # separately in the API reference makes Breathe re-emit the same namespace
-# anchor per file. Sphinx flags that as a duplicate explicit target — cosmetic,
-# not a content error — so we silence the docutils target-name category here.
-# (The matching "Duplicate C++ declaration" notices for the reopened namespaces
-# have no suppressible warning subtype in Sphinx 8.1; they are harmless and the
-# rendered HTML is correct.)
+# wrapper per file, and the per-tier overloads of one op (warp::posv in
+# trsm.cuh vs thread::posv in posv.cuh) lose their scoping in that rendering
+# and collide as bare names. Sphinx flags every re-emission as a duplicate
+# declaration — structural to the doxygenfile-per-header layout, not a content
+# error; the rendered HTML is correct. Sphinx ≥8.2 gives these a suppressible
+# subtype (duplicate_declaration.{cpp,c}), so the docs build is
+# zero-warning and CI runs sphinx with -W: any NEW warning (broken ref, bad
+# markup, genuine content duplication rendered elsewhere) fails the build
+# loudly instead of hiding in a warning baseline.
 suppress_warnings = [
     "docutils",
+    "duplicate_declaration.cpp",
+    "duplicate_declaration.c",
 ]
 
 # Enable numref / numbered figures.

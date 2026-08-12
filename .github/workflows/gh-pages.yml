@@ -45,10 +45,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r docs/requirements.txt
 
-      - name: Build documentation
+      - name: Build documentation (fail on any warning)
         run: |
           cd docs
-          make all
+          make all SPHINXOPTS="-W --keep-going"
 
       # shields.io endpoint badges, served from the docs site: API-surface
       # coverage (device-code line coverage does not exist; this is the honest
