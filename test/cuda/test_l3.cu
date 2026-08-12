@@ -17,8 +17,6 @@
 #include "helpers.cuh"
 #include "../../glass-cgrps.cuh"
 
-static int THREADS = 256;
-
 // Read n float32 values from a .bin, round to int, upload to device int array.
 static int* read_device_ivec(const char* path, int n) {
     float* h = read_host_vec(path, n);
@@ -339,23 +337,25 @@ int main(int argc, char** argv) {
         cudaFree(scratch);
 
     } else if (strcmp(op, "inv2") == 0) {
-        int dimA = atoi(argv[3]); int dimB = atoi(argv[4]); int maxd = atoi(argv[5]);
-        float* dA = read_device_vec(argv[6], 2 * dimA * dimA);
-        float* dB = read_device_vec(argv[7], 2 * dimB * dimB);
+        int th = atoi(argv[3]);
+        int dimA = atoi(argv[4]); int dimB = atoi(argv[5]); int maxd = atoi(argv[6]);
+        float* dA = read_device_vec(argv[7], 2 * dimA * dimA);
+        float* dB = read_device_vec(argv[8], 2 * dimB * dimB);
         float* scratch; cudaMalloc(&scratch, (2*dimA + 2*dimB + 2) * sizeof(float));
-        k_inv2_simple<<<1, THREADS>>>(dimA, dimB, maxd, dA, dB, scratch);
+        k_inv2_simple<<<1, th>>>(dimA, dimB, maxd, dA, dB, scratch);
         cudaDeviceSynchronize();
         print_device_vec(dA + dimA * dimA, dimA * dimA);
         print_device_vec(dB + dimB * dimB, dimB * dimB);
         cudaFree(scratch);
 
     } else if (strcmp(op, "inv3") == 0) {
-        int dimA = atoi(argv[3]); int dimB = atoi(argv[4]); int dimC = atoi(argv[5]); int maxd = atoi(argv[6]);
-        float* dA = read_device_vec(argv[7], 2 * dimA * dimA);
-        float* dB = read_device_vec(argv[8], 2 * dimB * dimB);
-        float* dC = read_device_vec(argv[9], 2 * dimC * dimC);
+        int th = atoi(argv[3]);
+        int dimA = atoi(argv[4]); int dimB = atoi(argv[5]); int dimC = atoi(argv[6]); int maxd = atoi(argv[7]);
+        float* dA = read_device_vec(argv[8], 2 * dimA * dimA);
+        float* dB = read_device_vec(argv[9], 2 * dimB * dimB);
+        float* dC = read_device_vec(argv[10], 2 * dimC * dimC);
         float* scratch; cudaMalloc(&scratch, (2*dimA + 2*dimB + 2*dimC + 3) * sizeof(float));
-        k_inv3_simple<<<1, THREADS>>>(dimA, dimB, dimC, maxd, dA, dB, dC, scratch);
+        k_inv3_simple<<<1, th>>>(dimA, dimB, dimC, maxd, dA, dB, dC, scratch);
         cudaDeviceSynchronize();
         print_device_vec(dA + dimA * dimA, dimA * dimA);
         print_device_vec(dB + dimB * dimB, dimB * dimB);
@@ -363,23 +363,25 @@ int main(int argc, char** argv) {
         cudaFree(scratch);
 
     } else if (strcmp(op, "chol") == 0) {
-        int n = atoi(argv[3]);
-        float* dA = read_device_vec(argv[4], n * n);
-        if (cg) k_chol_cg<<<1, THREADS>>>(n, dA);
-        else    k_chol_simple<<<1, THREADS>>>(n, dA);
+        int th = atoi(argv[3]);
+        int n = atoi(argv[4]);
+        float* dA = read_device_vec(argv[5], n * n);
+        if (cg) k_chol_cg<<<1, th>>>(n, dA);
+        else    k_chol_simple<<<1, th>>>(n, dA);
         cudaDeviceSynchronize();
         print_device_vec(dA, n * n);
 
     } else if (strcmp(op, "trsm") == 0) {
-        int n = atoi(argv[3]);
-        int nrhs = atoi(argv[4]);
-        int transpose = atoi(argv[5]);
-        float* dL = read_device_vec(argv[6], n * n);
-        float* dB = read_device_vec(argv[7], n * nrhs);
-        if (cg && transpose)  k_trsm_cg_t<<<1, THREADS>>>(n, nrhs, dL, dB);
-        else if (cg)          k_trsm_cg<<<1, THREADS>>>(n, nrhs, dL, dB);
-        else if (transpose)   k_trsm_simple_t<<<1, THREADS>>>(n, nrhs, dL, dB);
-        else                  k_trsm_simple<<<1, THREADS>>>(n, nrhs, dL, dB);
+        int th = atoi(argv[3]);
+        int n = atoi(argv[4]);
+        int nrhs = atoi(argv[5]);
+        int transpose = atoi(argv[6]);
+        float* dL = read_device_vec(argv[7], n * n);
+        float* dB = read_device_vec(argv[8], n * nrhs);
+        if (cg && transpose)  k_trsm_cg_t<<<1, th>>>(n, nrhs, dL, dB);
+        else if (cg)          k_trsm_cg<<<1, th>>>(n, nrhs, dL, dB);
+        else if (transpose)   k_trsm_simple_t<<<1, th>>>(n, nrhs, dL, dB);
+        else                  k_trsm_simple<<<1, th>>>(n, nrhs, dL, dB);
         cudaDeviceSynchronize();
         print_device_vec(dB, n * nrhs);
 
@@ -401,17 +403,18 @@ int main(int argc, char** argv) {
         print_device_vec(db, n);
 
     } else if (strcmp(op, "gemm_tiled") == 0) {
-        // gemm_tiled <cg|simple> <m> <n> <k> <alpha> <beta> <A> <B> <C>
-        int m = atoi(argv[3]);
-        int n = atoi(argv[4]);
-        int k = atoi(argv[5]);
-        float alpha = atof(argv[6]);
-        float beta  = atof(argv[7]);
-        float* dA = read_device_vec(argv[8], m * k);    // A is m×k
-        float* dB = read_device_vec(argv[9], k * n);    // B is k×n
-        float* dC = read_device_vec(argv[10], m * n);
+        // gemm_tiled <cg|simple> <threads> <m> <n> <k> <alpha> <beta> <A> <B> <C>
+        int th = atoi(argv[3]);
+        int m = atoi(argv[4]);
+        int n = atoi(argv[5]);
+        int k = atoi(argv[6]);
+        float alpha = atof(argv[7]);
+        float beta  = atof(argv[8]);
+        float* dA = read_device_vec(argv[9], m * k);    // A is m×k
+        float* dB = read_device_vec(argv[10], k * n);   // B is k×n
+        float* dC = read_device_vec(argv[11], m * n);
         int smem_bytes = (m * 8 + 8 * n) * sizeof(float);
-        k_gemm_tiled<<<1, THREADS, smem_bytes>>>(m, n, k, alpha, dA, dB, beta, dC);
+        k_gemm_tiled<<<1, th, smem_bytes>>>(m, n, k, alpha, dA, dB, beta, dC);
         cudaDeviceSynchronize();
         print_device_vec(dC, m * n);
 
@@ -440,19 +443,21 @@ int main(int argc, char** argv) {
 
     } else if (strncmp(op, "packed_gemm_4x4x", 16) == 0) {
         int K = atoi(op + 16);   // 16/32/48/64
-        float alpha = atof(argv[3]);
-        float beta  = atof(argv[4]);
-        float* dA = read_device_vec(argv[5], 4 * K);   // A is 4×K
-        float* dB = read_device_vec(argv[6], K * 4);   // B is K×4
-        float* dC = read_device_vec(argv[7], 4 * 4);
-        if      (K == 16) k_packed_gemm_4x4x16<<<1, THREADS>>>(alpha, dA, dB, beta, dC);
-        else if (K == 32) k_packed_gemm_4x4x32<<<1, THREADS>>>(alpha, dA, dB, beta, dC);
-        else if (K == 48) k_packed_gemm_4x4x48<<<1, THREADS>>>(alpha, dA, dB, beta, dC);
-        else              k_packed_gemm_4x4x64<<<1, THREADS>>>(alpha, dA, dB, beta, dC);
+        int th = atoi(argv[3]);
+        float alpha = atof(argv[4]);
+        float beta  = atof(argv[5]);
+        float* dA = read_device_vec(argv[6], 4 * K);   // A is 4×K
+        float* dB = read_device_vec(argv[7], K * 4);   // B is K×4
+        float* dC = read_device_vec(argv[8], 4 * 4);
+        if      (K == 16) k_packed_gemm_4x4x16<<<1, th>>>(alpha, dA, dB, beta, dC);
+        else if (K == 32) k_packed_gemm_4x4x32<<<1, th>>>(alpha, dA, dB, beta, dC);
+        else if (K == 48) k_packed_gemm_4x4x48<<<1, th>>>(alpha, dA, dB, beta, dC);
+        else              k_packed_gemm_4x4x64<<<1, th>>>(alpha, dA, dB, beta, dC);
         cudaDeviceSynchronize();
         print_device_vec(dC, 4 * 4);
 
     } else if (strcmp(op, "indexed_bgemm_4") == 0) {
+        int th = atoi(argv[3]);   // argv[4..5] = DIM placeholders (compile-time 4)
         uint32_t pairs = (uint32_t)atoi(argv[6]);
         int A_mats = atoi(argv[7]);
         int B_mats = atoi(argv[8]);
@@ -464,7 +469,7 @@ int main(int argc, char** argv) {
         float* dA = read_device_vec(argv[13], A_mats * MAT);
         float* dB = read_device_vec(argv[14], B_mats * MAT);
         float* dC = alloc_device_vec(C_mats * MAT);
-        k_indexed_bgemm_4<<<1, THREADS>>>(pairs, a_idx, b_idx, c_idx, dA, dB, dC);
+        k_indexed_bgemm_4<<<1, th>>>(pairs, a_idx, b_idx, c_idx, dA, dB, dC);
         cudaDeviceSynchronize();
         print_device_vec(dC, C_mats * MAT);
 
@@ -472,6 +477,7 @@ int main(int argc, char** argv) {
                strcmp(op, "indexed_bgemm_4_tb") == 0 ||
                strcmp(op, "indexed_bgemm_4_atomic") == 0 ||
                strcmp(op, "indexed_bgemm_4_ta_atomic") == 0) {
+        int th = atoi(argv[3]);   // argv[4..5] = DIM placeholders (compile-time 4)
         uint32_t pairs = (uint32_t)atoi(argv[6]);
         int A_mats = atoi(argv[7]);
         int B_mats = atoi(argv[8]);
@@ -484,13 +490,13 @@ int main(int argc, char** argv) {
         float* dB = read_device_vec(argv[14], B_mats * MAT);
         float* dC = alloc_device_vec(C_mats * MAT);
         if (strcmp(op, "indexed_bgemm_4_ta") == 0)
-            k_indexed_bgemm_4_ta<<<1, THREADS>>>(pairs, a_idx, b_idx, c_idx, dA, dB, dC);
+            k_indexed_bgemm_4_ta<<<1, th>>>(pairs, a_idx, b_idx, c_idx, dA, dB, dC);
         else if (strcmp(op, "indexed_bgemm_4_tb") == 0)
-            k_indexed_bgemm_4_tb<<<1, THREADS>>>(pairs, a_idx, b_idx, c_idx, dA, dB, dC);
+            k_indexed_bgemm_4_tb<<<1, th>>>(pairs, a_idx, b_idx, c_idx, dA, dB, dC);
         else if (strcmp(op, "indexed_bgemm_4_atomic") == 0)
-            k_indexed_bgemm_4_atomic<<<1, THREADS>>>(pairs, a_idx, b_idx, c_idx, dA, dB, dC);
+            k_indexed_bgemm_4_atomic<<<1, th>>>(pairs, a_idx, b_idx, c_idx, dA, dB, dC);
         else
-            k_indexed_bgemm_4_ta_atomic<<<1, THREADS>>>(pairs, a_idx, b_idx, c_idx, dA, dB, dC);
+            k_indexed_bgemm_4_ta_atomic<<<1, th>>>(pairs, a_idx, b_idx, c_idx, dA, dB, dC);
         cudaDeviceSynchronize();
         print_device_vec(dC, C_mats * MAT);
 

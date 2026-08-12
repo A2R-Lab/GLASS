@@ -48,7 +48,7 @@ def test_dispatch_query(bin_nvidia_dispatch):
 
 # ─── moved from test_l3.py 2026-08-06 (shard partition: these ride the nvidia TU) ───
 import numpy as np
-from conftest import bin_l3_nvidia, run_op  # noqa: F401
+from conftest import bin_l3_nvidia, run_op, THREAD_SWEEP_CORE  # noqa: F401
 RNG = np.random.default_rng(20260806)
 RTOL, ATOL = 1e-4, 1e-5
 
@@ -179,12 +179,13 @@ def test_gemm_strided_batched_1d_padded(bin_l3_nvidia, op, m, n, k, batch,
 # C[c_idx[p]] = A[a_idx[p]] @ B[b_idx[p]], 4x4 col-major, selected by index lists.
 # numpy does each indexed product independently as the reference.
 
+@pytest.mark.parametrize("threads", THREAD_SWEEP_CORE)
 @pytest.mark.parametrize("pairs,a_mats,b_mats,c_mats", [
     (1, 1, 1, 1),
     (4, 2, 3, 4),    # repeated/aliased a_idx,b_idx; distinct c_idx
     (8, 5, 5, 8),
 ])
-def test_gemm_batched_indexed(bins, pairs, a_mats, b_mats, c_mats):
+def test_gemm_batched_indexed(bins, pairs, a_mats, b_mats, c_mats, threads):
     DIM = 4
     rng = RNG
     A_mats = [rng.random((DIM, DIM)).astype(np.float32) for _ in range(a_mats)]
@@ -198,7 +199,7 @@ def test_gemm_batched_indexed(bins, pairs, a_mats, b_mats, c_mats):
 
     result = run_op(
         bins["l3"], "indexed_bgemm_4", "simple",
-        args=[DIM, DIM, DIM, pairs, a_mats, b_mats, c_mats],
+        args=[threads, DIM, DIM, pairs, a_mats, b_mats, c_mats],
         inputs=[a_idx.astype(np.float32), b_idx.astype(np.float32),
                 c_idx.astype(np.float32), A_flat, B_flat])
 
@@ -215,6 +216,7 @@ def test_gemm_batched_indexed(bins, pairs, a_mats, b_mats, c_mats):
 # Distinct c_idx, plain overwrite, but the left and/or right factor is read
 # transposed. Reference applies .T to the corresponding numpy operand.
 
+@pytest.mark.parametrize("threads", THREAD_SWEEP_CORE)
 @pytest.mark.parametrize("op,ta,tb", [
     ("indexed_bgemm_4_ta", True, False),
     ("indexed_bgemm_4_tb", False, True),
@@ -224,7 +226,7 @@ def test_gemm_batched_indexed(bins, pairs, a_mats, b_mats, c_mats):
     (4, 2, 3, 4),
     (8, 5, 5, 8),
 ])
-def test_gemm_batched_indexed_transpose(bins, op, ta, tb, pairs, a_mats, b_mats, c_mats):
+def test_gemm_batched_indexed_transpose(bins, op, ta, tb, pairs, a_mats, b_mats, c_mats, threads):
     DIM = 4
     rng = RNG
     A_mats = [rng.random((DIM, DIM)).astype(np.float32) for _ in range(a_mats)]
@@ -238,7 +240,7 @@ def test_gemm_batched_indexed_transpose(bins, op, ta, tb, pairs, a_mats, b_mats,
 
     result = run_op(
         bins["l3"], op, "simple",
-        args=[DIM, DIM, DIM, pairs, a_mats, b_mats, c_mats],
+        args=[threads, DIM, DIM, pairs, a_mats, b_mats, c_mats],
         inputs=[a_idx.astype(np.float32), b_idx.astype(np.float32),
                 c_idx.astype(np.float32), A_flat, B_flat])
 
@@ -258,11 +260,12 @@ def test_gemm_batched_indexed_transpose(bins, op, ta, tb, pairs, a_mats, b_mats,
 # scatter-ADD their products. Caller pre-zeros C; reference is a numpy
 # scatter-add into the shared C slots. parent_of maps pair -> c slot.
 
+@pytest.mark.parametrize("threads", THREAD_SWEEP_CORE)
 @pytest.mark.parametrize("op,ta", [
     ("indexed_bgemm_4_atomic", False),     # C += A · B
     ("indexed_bgemm_4_ta_atomic", True),   # C += Aᵀ · B  (backward Xᵀ·M·X→parent)
 ])
-def test_gemm_batched_indexed_atomic(bins, op, ta):
+def test_gemm_batched_indexed_atomic(bins, op, ta, threads):
     DIM = 4
     rng = RNG
     # 6 child pairs accumulating into 3 shared parent C slots (overlap by design).
@@ -281,7 +284,7 @@ def test_gemm_batched_indexed_atomic(bins, op, ta):
 
     result = run_op(
         bins["l3"], op, "simple",
-        args=[DIM, DIM, DIM, pairs, a_mats, b_mats, c_mats],
+        args=[threads, DIM, DIM, pairs, a_mats, b_mats, c_mats],
         inputs=[a_idx.astype(np.float32), b_idx.astype(np.float32),
                 c_idx.astype(np.float32), A_flat, B_flat])
 

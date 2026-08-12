@@ -237,15 +237,20 @@ def test_gemm_warp(bins, shape_id, ta, tb):
 
 # ─── gemm_tiled (no transpose; A m×k, B k×n, C m×n) ──────────────────────────
 
+# gemm_tiled is one-output-per-thread by contract (blockDim >= m*n; the auto
+# dispatcher only selects it when that holds) — so the invariance sweep runs
+# over VALID counts: exact m*n, a ragged m*n+13, and the dispatch-typical 256.
+@pytest.mark.parametrize("tcase", ["exact", "ragged", "256"])
 @pytest.mark.parametrize("m,n,k", [(4, 6, 5), (8, 8, 8), (12, 4, 6), (6, 10, 7), (4, 3, 4)])
-def test_gemm_tiled(bins, m, n, k):
+def test_gemm_tiled(bins, m, n, k, tcase):
+    threads = {"exact": m * n, "ragged": m * n + 13, "256": 256}[tcase]
     alpha, beta = 1.5, 0.3
     A = RNG.random((m, k)).astype(np.float32)   # A is m×k
     B = RNG.random((k, n)).astype(np.float32)   # B is k×n
     C = RNG.random((m, n)).astype(np.float32)
     C0 = C.copy()
     result = run_op(bins["l3"], "gemm_tiled", "simple",
-                    args=[m, n, k, alpha, beta],
+                    args=[threads, m, n, k, alpha, beta],
                     inputs=[np.asfortranarray(A).ravel(order='F'),
                             np.asfortranarray(B).ravel(order='F'),
                             np.asfortranarray(C).ravel(order='F')])
@@ -300,9 +305,10 @@ def _make_packed_vec(size, case):
     raise ValueError(case)
 
 
+@pytest.mark.parametrize("threads", THREAD_SWEEP_CORE)
 @pytest.mark.parametrize("case", ["positive", "negative", "mixed", "zero", "tiny"])
 @pytest.mark.parametrize("k", [16, 32, 48, 64])
-def test_packed_gemm(bins, k, case):
+def test_packed_gemm(bins, k, case, threads):
     # glass::gemm<float,4,4,K>: C(4×4) = alpha * A(4×K) * B(K×4) + beta * C(4×4).
     m, n = 4, 4
     alpha, beta = 1.5, 0.3
@@ -311,7 +317,7 @@ def test_packed_gemm(bins, k, case):
     C = _make_packed_vec(m * n, case).reshape(m, n)
     C0 = C.copy()
     result = run_op(bins["l3"], f"packed_gemm_4x4x{k}", "simple",
-                    args=[alpha, beta],
+                    args=[threads, alpha, beta],
                     inputs=[np.asfortranarray(A).ravel(order='F'),
                             np.asfortranarray(B).ravel(order='F'),
                             np.asfortranarray(C).ravel(order='F')])
@@ -451,21 +457,23 @@ def test_inv_pivot_near_singular(bins, n, maker):
                 f"n={n} threads={threads} maker={maker.__name__}: output differs from threads=1"
 
 
+@pytest.mark.parametrize("threads", THREAD_SWEEP_CORE)
 @pytest.mark.parametrize("dimA,dimB", [(4, 4), (6, 4), (3, 6)])
-def test_inv2(bins, dimA, dimB):
+def test_inv2(bins, dimA, dimB, threads):
     # fused 2-matrix invert: same augmented [A|I] convention, interleaved sweep
     A = make_spd(dimA, rng=RNG); B = make_spd(dimB, rng=RNG)
-    res = run_op(bins["l3"], "inv2", "simple", args=[dimA, dimB, max(dimA, dimB)],
+    res = run_op(bins["l3"], "inv2", "simple", args=[threads, dimA, dimB, max(dimA, dimB)],
                  inputs=[_aug(A, dimA), _aug(B, dimB)])
     assert np.allclose(res[0].reshape(dimA, dimA, order='F'), np.linalg.inv(A), rtol=1e-2, atol=1e-3)
     assert np.allclose(res[1].reshape(dimB, dimB, order='F'), np.linalg.inv(B), rtol=1e-2, atol=1e-3)
 
 
 # (12,12,6) mirrors GATO's Schur fused-3 (STATE_SIZE=12, CONTROL_SIZE=6 for indy7)
+@pytest.mark.parametrize("threads", THREAD_SWEEP_CORE)
 @pytest.mark.parametrize("dimA,dimB,dimC", [(12, 12, 6), (6, 6, 6), (4, 6, 3)])
-def test_inv3(bins, dimA, dimB, dimC):
+def test_inv3(bins, dimA, dimB, dimC, threads):
     A = make_spd(dimA, rng=RNG); B = make_spd(dimB, rng=RNG); C = make_spd(dimC, rng=RNG)
-    res = run_op(bins["l3"], "inv3", "simple", args=[dimA, dimB, dimC, max(dimA, dimB, dimC)],
+    res = run_op(bins["l3"], "inv3", "simple", args=[threads, dimA, dimB, dimC, max(dimA, dimB, dimC)],
                  inputs=[_aug(A, dimA), _aug(B, dimB), _aug(C, dimC)])
     for M, d, r in [(A, dimA, res[0]), (B, dimB, res[1]), (C, dimC, res[2])]:
         assert np.allclose(r.reshape(d, d, order='F'), np.linalg.inv(M), rtol=1e-2, atol=1e-3)
@@ -473,12 +481,13 @@ def test_inv3(bins, dimA, dimB, dimC):
 
 # ─── chol ─────────────────────────────────────────────────────────────────────
 
+@pytest.mark.parametrize("threads", THREAD_SWEEP_CORE)
 @pytest.mark.parametrize("n", [3, 4, 6])
 @pytest.mark.parametrize("version", CG_SIMPLE)
-def test_chol(bins, n, version):
+def test_chol(bins, n, version, threads):
     A = make_spd(n, rng=RNG)
     A_col = np.asfortranarray(A).ravel(order='F')
-    result = run_op(bins["l3"], "chol", version, args=[n], inputs=[A_col])
+    result = run_op(bins["l3"], "chol", version, args=[threads, n], inputs=[A_col])
     L_gpu = result.reshape(n, n, order='F')
     # Extract lower triangle
     L_gpu = np.tril(L_gpu)
@@ -488,17 +497,18 @@ def test_chol(bins, n, version):
 
 # ─── trsm ─────────────────────────────────────────────────────────────────────
 
+@pytest.mark.parametrize("threads", THREAD_SWEEP_CORE)
 @pytest.mark.parametrize("n", [3, 4, 6, 8])
 @pytest.mark.parametrize("nrhs", [1, 3])
 @pytest.mark.parametrize("transpose", [False, True])
 @pytest.mark.parametrize("version", CG_SIMPLE)
-def test_trsm(bins, n, nrhs, transpose, version):
+def test_trsm(bins, n, nrhs, transpose, version, threads):
     L = make_lower_triangular(n, rng=RNG)
     B = RNG.random((n, nrhs)).astype(np.float32)
     L_col = np.asfortranarray(L).ravel(order='F')
     B_col = np.asfortranarray(B).ravel(order='F')
     result = run_op(bins["l3"], "trsm", version,
-                    args=[n, nrhs, int(transpose)], inputs=[L_col, B_col])
+                    args=[threads, n, nrhs, int(transpose)], inputs=[L_col, B_col])
     X = result.reshape(n, nrhs, order='F')
     # Verify op(L) @ X == B (residual check avoids scipy dependency)
     opL = L.T if transpose else L
@@ -574,7 +584,7 @@ def test_chol_scale_conditioning(bins, s, cond, n):
     input scale or a cond≈1e6 spectrum."""
     A = ((s * s) * make_spd(n, seed=310 + n, cond=cond).astype(np.float64)) \
         .astype(np.float32)
-    result = run_op(bins["l3"], "chol", "simple", args=[n],
+    result = run_op(bins["l3"], "chol", "simple", args=[256, n],
                     inputs=[np.asfortranarray(A).ravel(order='F')])
     L = np.tril(result.reshape(n, n, order='F')).astype(np.float64)
     rel = np.linalg.norm(L @ L.T - A, 'fro') / np.linalg.norm(A, 'fro')
@@ -590,7 +600,7 @@ def test_trsm_conditioning(bins, transpose):
     np.fill_diagonal(L, np.geomspace(1e3, 1e-3, n).astype(np.float32))
     B = np.random.default_rng(56).standard_normal((n, nrhs)).astype(np.float32)
     result = run_op(bins["l3"], "trsm", "simple",
-                    args=[n, nrhs, int(transpose)],
+                    args=[256, n, nrhs, int(transpose)],
                     inputs=[np.asfortranarray(L).ravel(order='F'),
                             np.asfortranarray(B).ravel(order='F')])
     X = result.reshape(n, nrhs, order='F').astype(np.float64)
