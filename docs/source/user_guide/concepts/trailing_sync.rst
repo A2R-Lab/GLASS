@@ -39,26 +39,22 @@ with a SIMT ``parallel_loop`` and want to collapse the two syncs into one.
 Where it applies
 ----------------
 
-As of the 2026-06-25 uniformity wave, ``TRAILING_SYNC`` is on **every** public op
-that has a *separable* trailing barrier — all of L1 (``reduce``/``dot``/elementwise/
-``axpy``/``copy``/``scal``/``swap``/``clip``/``set_const``/``ident``/``transpose``/
-``infnorm``/``asum``/``nrm2`` + the ``_fast``/``_lowmem`` reduction variants),
-L2 (``gemv``/``ger`` + ``gemv_strided``/``gemv_segmented``/``gemv_reduced``), and L3
-(``gemm`` + ``gemm_strided``/``gemm_batched_indexed``/``gemm_reduced``/``syrk``/
-``syr2k``/``syrk_reduced``/tensor/congruence) — plus the cuBLASDx-backed
-``glass::nvidia::`` paths.
+Every public block-scope operation accepts ``TRAILING_SYNC``. For operations
+with a separable final barrier—including the factor/solve and eigensolver
+families—``false`` genuinely elides it. For pivoted or multi-exit algorithms
+whose last barrier is fused into the final algorithm step (currently
+``ldlt``/``ldlt_solve``, ``getrf``, and ``inv_pivoted``), the parameter is
+accepted for interface uniformity but documented as a no-op at the declaration.
+The compile-time single-RHS ``posv<T,N>`` and ``potrs<T,N>`` spellings are the
+one template-ambiguity exception; use their ``NRHS=1`` overload to select
+``TRAILING_SYNC=false``.
 
 Interior barriers (between algorithm phases) are **required for correctness and are
 never gated** — only the final trailing barrier is.
 
-Documented exceptions (the flag is intentionally absent):
-
-* **Algorithm-terminated-by-a-barrier ops** — ``potrf`` /
-  ``inv`` / ``trsm`` / ``trsv`` / ``posv`` / ``ldlt``. Their final step is
-  *itself* a barrier inside the factorization loop, so there is no separable
-  trailing barrier to gate; they always end synced.
-* **``glass::warp::`` lockstep ops** — a single warp runs in lockstep, so a trailing
-  "sync" is a no-op (``__syncwarp`` at most); the flag would be vacuous.
+``glass::warp::`` and ``glass::thread::`` operations do not expose this block
+barrier knob: warp operations are lockstep/shuffle-based and thread operations
+have no cooperating peers.
 
 Testing
 -------

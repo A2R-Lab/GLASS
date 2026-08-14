@@ -19,6 +19,7 @@ gemm
 ----
 
 .. doxygenfile:: src/base/L3/gemm.cuh
+   :no-link:
 
 Contraction-parallel gemm (``gemm_reduced``)
 --------------------------------------------
@@ -28,46 +29,55 @@ thread-utilization variant for small outputs. See
 :doc:`../user_guide/concepts/contraction_parallel` for the honest win-condition.
 
 .. doxygenfile:: src/base/L3/gemm_reduced.cuh
+   :no-link:
 
 Tensor ⊗ vector contractions (``tensor_vec_contract`` / ``vec_tensor_vec``)
 ---------------------------------------------------------------------------
 
 .. doxygenfile:: src/base/L3/tensor_contract.cuh
+   :no-link:
 
 Congruence / bilinear forms (``congruence_sym`` / ``bilinear``)
 ---------------------------------------------------------------
 
 .. doxygenfile:: src/base/L3/congruence.cuh
+   :no-link:
 
 Contraction-parallel syrk (``syrk_reduced``)
 --------------------------------------------
 
 .. doxygenfile:: src/base/L3/syrk_reduced.cuh
+   :no-link:
 
 Riccati feedback gain (``riccati_gain``)
 ----------------------------------------
 
 .. doxygenfile:: src/base/L3/riccati.cuh
+   :no-link:
 
 Strided gemm
 ------------
 
 .. doxygenfile:: src/base/L3/gemm_strided.cuh
+   :no-link:
 
 Indexed / batched gemm
 ----------------------
 
 .. doxygenfile:: src/base/L3/gemm_batched_indexed.cuh
+   :no-link:
 
 Matrix inverse
 --------------
 
 .. doxygenfile:: src/base/L3/inv.cuh
+   :no-link:
 
 Cholesky
 --------
 
 .. doxygenfile:: src/base/L3/potrf.cuh
+   :no-link:
 
 LU with partial pivoting (getrf / getrs / gesv / laswp)
 -------------------------------------------------------
@@ -78,16 +88,19 @@ The robustness path for general non-SPD systems: in-place pivoted LU
 row-interchange helper ``laswp``.
 
 .. doxygenfile:: src/base/L3/getrf.cuh
+   :no-link:
 
 Triangular solve (trsm)
 -----------------------
 
 .. doxygenfile:: src/base/L3/trsm.cuh
+   :no-link:
 
 Symmetric rank-k / rank-2k update (syrk / syr2k)
 ------------------------------------------------
 
 .. doxygenfile:: src/base/L3/syrk.cuh
+   :no-link:
 
 Symmetric / triangular matrix-matrix multiply (symm / trmm)
 -----------------------------------------------------------
@@ -100,6 +113,7 @@ separate ``C`` so the flat one-output-per-thread loop stays race-free;
 ``FillMode`` / ``Diag`` / ``TRANSPOSE`` flags as in ``trsv``/``trsm``).
 
 .. doxygenfile:: src/base/L3/symm.cuh
+   :no-link:
 
 Diagonal-matrix multiply (dimm)
 -------------------------------
@@ -109,16 +123,19 @@ Row/column scaling by a stored diagonal (cuBLAS ``dgmm`` analogue):
 Contributed by Seyoung Yang.
 
 .. doxygenfile:: src/base/L3/dimm.cuh
+   :no-link:
 
 LDLᵀ factorization (ldlt / ldlt_solve)
 --------------------------------------
 
 .. doxygenfile:: src/base/L3/ldlt.cuh
+   :no-link:
 
 SPD solve (posv / potrs)
 ------------------------
 
 .. doxygenfile:: src/base/L3/posv.cuh
+   :no-link:
 
 Symmetric eigenvalues (syev / eig_clamp)
 ----------------------------------------
@@ -131,8 +148,21 @@ host ``Eigen::SelfAdjointEigenSolver`` round-trip when regularizing a
 Hessian mid-solve. Designed for n ≤ 32.
 
 .. doxygenfile:: src/base/L3/syev.cuh
+   :no-link:
+
+Parallel symmetric eigenvalues (eigh / psd_project)
+----------------------------------------------------
+
+Compile-time-sized symmetric eigendecomposition via round-robin parallel
+Jacobi sweeps (``eigh``), plus the positive-semidefinite projection
+``psd_project``. Prefer this family when its compile-time-size contract fits;
+benchmark it against ``syev`` for the target matrix sizes.
+
+.. doxygenfile:: src/base/L3/eigh.cuh
+   :no-link:
 
 Cooperative-groups variants (``glass::cgrps::``)
 ------------------------------------------------
 
 .. doxygenfile:: src/cgrps/l3.cuh
+   :no-link:

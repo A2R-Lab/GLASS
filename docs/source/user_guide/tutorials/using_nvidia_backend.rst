@@ -5,8 +5,8 @@ The ``glass::nvidia::block::`` interface routes to NVIDIA's device-side
 libraries — CUB (L1), cuBLASDx (L2/L3 GEMM/GEMV/batched), and cuSOLVERDx
 (LAPACK) — while preserving the same one-block ``__device__`` calling
 convention. These wrappers require **compile-time** matrix sizes. (Bare
-``glass::nvidia::`` spellings are the measured-default face and currently
-resolve to the same entities — see :doc:`../concepts/namespaces`. There is
+``glass::nvidia::`` spellings are the measured-default face; its measured
+dispatch is described in :doc:`../concepts/namespaces`. There is
 also ``glass::nvidia::warp::`` — CUB ``WarpReduce`` ``reduce`` / ``dot`` /
 ``nrm2``, one FULL 32-lane warp per problem, per-warp scratch via
 ``warp_reduce_scratch_bytes<T>()``, ``TRAILING_SYNC`` emitting

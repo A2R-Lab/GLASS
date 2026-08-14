@@ -1,10 +1,8 @@
 Library Overview
 ================
 
-**GLASS** is a comprehensive, header-only CUDA C++ ``__device__`` template
-library for block-local linear algebra on GPUs — BLAS, LAPACK-style
-factorizations and triangular solves, dense linear-system solvers, and related
-algorithms, all under one single-block calling convention.
+**GLASS** is a header-only CUDA C++ library of composable ``__device__``
+primitives for small, block-local linear algebra and robotics math.
 
 What GLASS is
 -------------
@@ -17,9 +15,9 @@ vendor library would dominate the actual work — and has since grown into a
 state-of-the-art device-side libraries (CUB, cuBLASDx, cuSOLVERDx) under the
 same calling convention.
 
-The intent is one consistent API across the full block-size compute scale:
-pure-SIMT for tiny matrices where unrolled SIMT can't be beaten, and
-tensor-core-tuned vendor kernels for everything large enough to benefit.
+The intent is one predictable API vocabulary across execution scopes: pure SIMT
+for small problems, optional vendor kernels where they help, and warp/thread
+forms where packing more problems into a block is the better mapping.
 
 The single-block execution model
 ---------------------------------
@@ -39,8 +37,8 @@ problems run in parallel — one per block.
 Interfaces
 ----------
 
-GLASS exposes **four primary interfaces**. Two are **block-scoped** (one block
-per problem) — ``glass::block::`` (the default) and the vendor-backed
+GLASS exposes four primary interfaces. Two are **block-scoped** (one block per
+problem) — ``glass::block::`` and the vendor-backed
 ``glass::nvidia::block::``
 — one is **warp-scoped**, ``glass::warp::`` (one warp per problem), for kernels
 that pack many small independent problems into a block, and one is
@@ -76,27 +74,18 @@ idle:
 **Bare** ``glass::op`` (and bare ``glass::nvidia::op``) is the
 **measured-default face**: the same block-scope calling contract, body chosen
 per (op, size, dtype) by ``glass::dispatch_body()`` (``glass-dispatch.cuh``).
-Phase 1 pins every cell to the block body, so the bare names are today the
-same entities as ``glass::block::`` — old spellings compile unchanged. Pin
-``glass::block::`` where determinism is load-bearing; see
+Measured cells may use a warp-0 or thread-0 implementation behind a wrapper;
+operations with no moved cell remain the same entity as ``glass::block::``.
+The calling contract stays block-scoped in every case. Pin ``glass::block::``
+where determinism is load-bearing; see
 :doc:`../concepts/namespaces`.
 
-The two block-scoped interfaces cover the full L1/L2/L3 surface and are
-interchangeable — switch by changing the namespace prefix when profiling shows
-one is faster at a given size. They preserve the same one-block ``__device__``
-calling convention, so a single kernel can mix hand-rolled and vendor-backed
-primitives without leaving the block. ``glass::warp::`` is a **warp-per-problem**
-variant that mirrors most of the block surface: the L1 reduction/vector family
-plus ``gemv`` / ``gemm`` / ``syrk`` / ``syr2k``, the factor/solve chain
-(``potrf`` / ``trsv`` / ``trsm`` / ``posv`` / ``ldlt`` / ``ldlt_solve``), and the
-tensor/congruence/riccati families; the warps run independently for intra-block
-parallelism, and it requires a full 32-lane warp. ``glass::thread::`` takes the
-packing one level further — one problem per *thread*, sequential (no barriers,
-no shuffles, no ``threadIdx`` read), compile-time sizes so the operands stay
-register-resident (measured ceiling ``N≤7``). It mirrors the branch-free surface
-only: pivoted/data-dependent ops and the ``_fast``/``_lowmem`` reduction twins
-are deliberately absent (one thread has no reduction strategy; a data-dependent
-branch diverges the warp when every lane owns a different problem).
+The interfaces intentionally overlap but are not interchangeable inventories.
+The API reference lists the exact operations and overloads. In general,
+``glass::warp::`` mirrors selected vector, dense, factor/solve, and fused
+families and requires a full warp. ``glass::thread::`` is a smaller branch-free,
+compile-time subset; pivoted operations and reduction-strategy variants are
+deliberately absent.
 
 .. note::
 
@@ -106,9 +95,9 @@ branch diverges the warp when every lane owns a different problem).
    it from cooperative-groups code or to tile an arbitrary sub-block group; it is
    **not** a separately-tuned backend.
 
-Both ``glass::`` and ``glass::cgrps::`` offer **runtime** (size as a function
-argument) and **compile-time** (size as a template argument) overloads for every
-function. Reduction operations additionally offer ``_lowmem`` (no
+Many operations offer **runtime** (size as a function argument) and
+**compile-time** (size as a template argument) overloads. Reduction operations
+additionally offer ``_lowmem`` (no
 scratch, thread 0 accumulates) and ``_fast`` (warp-shuffle plus shared-memory
 inter-warp reduction) suffixed forms — e.g. ``glass::reduce_lowmem`` /
 ``glass::reduce_fast`` — keeping namespace = scope.
@@ -132,10 +121,8 @@ trajectory optimization / MPC — see :doc:`../concepts/block_tridiagonal`.
 Choosing the right backend
 --------------------------
 
-First pick the **execution scope** — one block per problem (the default
-``glass::`` / ``glass::cgrps::`` / ``glass::nvidia::`` surface) or one warp per
-problem (``glass::warp::``). For the block-scoped backends, three questions decide
-which to call:
+First pick the execution scope: block, warp, or thread. For a block-scoped
+implementation, three questions narrow the choice:
 
 1. **Are sizes known at compile time?**
 2. **Is the matrix large enough that vendor-tuned tensor-core kernels matter?**

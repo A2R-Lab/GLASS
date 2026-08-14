@@ -19,7 +19,7 @@ packing: thread (1 problem/thread, 32 per warp) → warp (1/warp) → block
 ================================  ======  =================================================
 Namespace                         Scope   What it is
 ================================  ======  =================================================
-``glass::block::``                block   **Block** — hand-rolled pure-SIMT (``threadIdx`` / ``blockDim``). The **contract tier**: bit-exact, thread-count invariant, never re-dispatched.
+``glass::block::``                block   **Block** — explicit hand-rolled pure-SIMT implementation (``threadIdx`` / ``blockDim``), never re-dispatched.
 ``glass::warp::``                 warp    **Warp** — single-warp SIMT (``__shfl_*_sync``), warp-per-problem. (Namespace alias of ``block::warp`` — the warp mirrors live inline in the base headers.)
 ``glass::thread::``               thread  **Thread** — sequential, thread-per-problem, for low-DOF packing (compile-time sizes; register-resident up to ``N≤7``). No barriers, no shuffles, no ``threadIdx`` read. (Alias of ``block::thread``.)
 ``glass::nvidia::block::``        block   **Nvidia** — CUB / cuBLASDx / cuSOLVERDx, auto-dispatched by size.
@@ -42,45 +42,30 @@ band-matvec is ``glass::warp::bdmv`` — never a ``glass::banded::`` namespace.
 Contract tier vs performance tier — the bare ``glass::`` face
 -------------------------------------------------------------
 
-The 2026-07-30 restructure splits each spelling along one more line:
+The bare and explicit spellings make a deliberate implementation choice:
 
-- **Explicit namespaces are the contract tier.** ``glass::block::gemm`` (and
+- **Explicit namespaces pin an implementation.** ``glass::block::gemm`` (and
   likewise ``glass::warp::`` / ``glass::thread::`` / ``glass::nvidia::block::``
-  / ``glass::nvidia::warp::``) names a specific implementation: bit-exact,
-  thread-count invariant, never re-dispatched. Emit these from codegen and
-  anywhere determinism is load-bearing.
+  / ``glass::nvidia::warp::``) is never re-dispatched. Use these from codegen
+  and wherever implementation or reduction order is load-bearing.
 - **Bare** ``glass::gemm`` (and bare ``glass::nvidia::gemm``) **is the
   measured-default face**: the same block-scope *calling* contract — all block
   threads enter, any thread count, the result is valid after return — with the
   implementation *body* chosen per (op, size, dtype) by
   ``glass::dispatch_body()`` in ``glass-dispatch.cuh``.
 
-**Phase 2 (2026-07-30): measured cells dispatch.** The in-block body sweep
-(``bench/tune.py --legs body``, driving ``bench/bench_body_dispatch.cu``)
-measured three bodies per cell under the fixed one-problem-per-block contract —
-full-block SIMT, *warp 0 only*, *thread 0 only* (each followed by a block-wide
-sync) — across block widths 32–256 and three batch sizes. A body takes a cell
-only if it is **never worse than the block body by more than the noise margin
-at any measured point and better by more than the margin at ≥1 width** in the
-throughput regime; verdicts are **bounded** at the largest measured size
-(anything larger stays block), and unmeasured architectures stay block
-everywhere. On sm_120 this moved 22 cells (small ``dot``/``trsv``/``posv``
-factor-solve cells, ``softmax``, and f64 ``eig3`` — up to ~7× at wide blocks,
-where every extra lane otherwise re-runs a serial core redundantly). Ops with
-a moved cell are shadowed by thin wrappers (``src/base/dispatch.cuh``) that
-route each cell; every other name still resolves to the *same entity* as
-``glass::block::`` (function-pointer identity pinned by
-``test/cuda/test_defaults.cu``; bare-vs-block agreement across thread counts
-tested by ``test/test_dispatch.py``). All pre-restructure spellings still
-compile. A moved cell matches the block tier to reduction-order tolerance,
-**not bit-exactly** — the retune is an attested, receipt-gated event, never a
-silent change (see :doc:`tuning`).
+The body sweep (``bench/tune.py --legs body``) compares full-block, warp-0, and
+thread-0 bodies while preserving the one-problem-per-block calling contract.
+Only cells meeting the configured robustness margin are moved; unmeasured
+architectures and out-of-range sizes stay on the block body. A moved cell agrees
+with the block result to its documented tolerance, not necessarily bit for bit.
+Retuning is therefore a receipt-gated source change; see :doc:`tuning`.
 
 Rule of thumb: **explicit namespace = contract tier; bare namespace =
 performance tier.**
 
 Axis B — reduction strategy (function-name suffixes, vector reductions only)
----------------------------------------------------------------------------
+-----------------------------------------------------------------------------
 
 A second axis lives on the reduction primitives only: bare ``glass::reduce``
 (halving), ``glass::reduce_fast`` (warp-shuffle + shared inter-warp), and

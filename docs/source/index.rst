@@ -1,39 +1,29 @@
 GLASS: GPU Linear Algebra Simple Subroutines
 ============================================
 
-`GLASS <http://a2r-lab.org/GLASS/>`_ **is a comprehensive, header-only CUDA C++**
-``__device__`` **template library for block-local linear algebra on GPUs.** It is
+`GLASS <http://a2r-lab.org/GLASS/>`_ is a header-only CUDA C++ library of
+composable ``__device__`` primitives for small, block-local linear algebra and
+robotics math. It is
 the foundational linear-algebra layer underneath
 `GRiD <https://github.com/A2R-Lab/GRiD>`_,
 `MPCGPU <https://a2r-lab.org/publication/mpcgpu/>`_,
 `GATO <http://a2r-lab.org/GATO/>`_,
 `HJCD-IK <https://a2r-lab.org/publication/hjcdik/>`_, and other A2R Lab GPU solvers.
 
-Like Eigen on the CPU, GLASS aims to be *comprehensive* — it covers all
-block-local linear algebra in one consistent ``__device__`` calling convention:
-**BLAS** (L1/L2/L3), **LAPACK-style factorizations and triangular solves**
-(Cholesky, LDLᵀ, and LU/QR via vendor backends), **dense linear-system solvers**
-(``posv`` / ``ldlt`` / ``gesv``), **related algorithms** — block-tridiagonal
-``bdmv`` / ``pcg`` for trajectory optimization and MPC, plus a contraction-parallel
-+ fused family — and **robotics-specialized operators**: Featherstone spatial
-6-D cross products, coordinate transforms, and the 10-parameter inertia, the
-SO(3)/SE(3)/quaternion Lie family with its derivative chain and pose-error
-metrics, cone/augmented-Lagrangian projections, sphere-collision distance
-primitives, the 3x3 estimation kit (``eig3``/``svd3``/``closest_rotation``),
-and the sampling-planner ``softmax``/``argmin`` reductions (see
-:doc:`user_guide/concepts/robotics_conventions`). Everything runs inside one CUDA block — and **you choose the
-granularity**: the same operations exist as **block-, warp-, or thread-scoped
-primitives** (plus vendor-backed kernels), so a block can own one problem, pack
-one per warp, or pack 32 per warp with one problem per thread — whatever matches
-your problem size and batch count.
+The library covers BLAS, factorizations and solvers, structured systems, spatial
+algebra, Lie groups, projections, and small estimation kernels. Block-scoped
+operations compose inside a caller-owned kernel; selected warp- and
+thread-scoped forms pack smaller independent problems more densely. See the
+:doc:`API reference <api_reference/index>` for the exact surface and
+:doc:`robotics conventions <user_guide/concepts/robotics_conventions>` for the
+load-bearing layout choices.
 
 Interfaces
 ----------
 
-GLASS exposes **four primary interfaces** — pick the one that matches how your
-problem maps onto the GPU. They cover the same operations under one calling
-convention, so you switch between them by changing the namespace prefix. The
-ladder runs most→least problem packing: **thread → warp → block → nvidia**.
+GLASS exposes four primary interfaces. Choose by execution scope and dependency
+budget. The interfaces intentionally overlap, but do not all expose every
+operation.
 
 .. grid:: 2
    :gutter: 3
@@ -42,11 +32,10 @@ ladder runs most→least problem packing: **thread → warp → block → nvidia
       :link: user_guide/getting_started/library_overview
       :link-type: doc
 
-      The default. One **block** per problem; the block's threads cooperate over
+      One **block** per problem; the block's threads cooperate over
       shared/global data. Pure SIMT, **no dependencies**
-      (``#include "glass.cuh"``). The **contract tier**: bit-exact,
-      thread-count invariant, never re-dispatched. Choose this for a single
-      moderate-to-large problem per block.
+      (``#include "glass.cuh"``). This explicit implementation is never
+      re-dispatched.
 
    .. grid-item-card:: Warp — ``glass::warp::``
       :link: api_reference/warp
@@ -60,10 +49,8 @@ ladder runs most→least problem packing: **thread → warp → block → nvidia
       :link: api_reference/thread
       :link-type: doc
 
-      One problem per **thread**, 32 packed per warp — the low-DOF corner
-      (compile-time sizes, register-resident up to ``N≤7``). Sequential: no
-      barriers, no shuffles. Choose this when a warp-per-problem factor at
-      ``N≲7`` would leave most lanes idle.
+      One problem per **thread**, 32 packed per warp. This is a compile-time,
+      branch-free subset intended for register-resident sizes up to ``N≤7``.
 
    .. grid-item-card:: Nvidia — ``glass::nvidia::block::``
       :link: user_guide/concepts/backend_dispatch
@@ -94,31 +81,15 @@ ladder runs most→least problem packing: **thread → warp → block → nvidia
    compile unchanged. Determinism-sensitive callers pin ``glass::block::``
    explicitly; see :doc:`user_guide/concepts/namespaces`.
 
-Performance
------------
+Measured defaults
+-----------------
 
-The four interfaces are numerically interchangeable, so GLASS can pick the
-fastest one per ``(operation, size, dtype)`` from a measured ladder:
-``glass::suggested_backend<op, N, T>()`` returns the winning interface and a
-launch config for codegen and host-side dispatch. The shipped defaults are tuned
-on an RTX 5090 (sm_120); you can regenerate the table for your own GPU with the
-GLASS autotune workflow. The sm_120 tables now include the ``thread`` interface
-(2026-07-18 sweep): it wins the low-DOF corner of every operation except
-``gemm`` — up to 7.5× on the small-``N`` factor/solve chain in f64. See :doc:`user_guide/concepts/tuning` for how the
-benchmarks drive the defaults, and the :ref:`measured ladders <measured-performance>`
-at the bottom of this page.
-
-The **contraction-parallel + fused family** (``gemm_reduced`` / ``gemv_reduced`` /
-``syrk_reduced``, the ``tensor_vec_contract`` / ``vec_tensor_vec`` /
-``congruence_sym`` / ``bilinear`` ops, ``riccati_gain``, and compile-out
-robustness flags on ``potrf`` / ``ldlt`` / ``posv``) is there for
-**expressiveness and fusion only**: on a quiet GPU the ``*_reduced``
-decomposition measured slower than the plain serial in-thread contraction in
-**48 of 48 swept shapes** (±5% margin, ``bench/RESULTS.md``), and
-the ``suggested_use_reduced<>`` picker now declines it everywhere — **prefer
-the plain ops for throughput**. See
-:doc:`user_guide/concepts/contraction_parallel` for the measurement and
-:doc:`user_guide/concepts/namespaces` for the naming convention.
+``glass::suggested_backend<op, N, T>()`` exposes architecture-specific measured
+defaults for operations included in the tuning ladder. Measurements are not a
+promise that interfaces have identical coverage or reduction order. See
+:doc:`user_guide/concepts/tuning` for the selection policy and
+:doc:`user_guide/tutorials/sweep_results` for dated, configuration-specific
+results.
 
 .. grid:: 2
    :gutter: 3
@@ -172,15 +143,9 @@ regime:
    :alt: GLASS measured backend ladder, float64, RTX 5090 / sm_120
    :width: 100%
 
-GLASS also beats the standard *host-batched* recipe at robot sizes: against
-``cublasGemmStridedBatched`` / ``cusolverDnPotrfBatched``, gemm at ``N`` ≤ 24
-and the factor-and-solve chain through ``N`` = 64 win at **every** batch size
-tested (up to 6.3× at saturation) — including with TF32 tensor cores permitted,
-which cuBLAS declines to engage below ``N`` = 24 anyway.
-
 See :doc:`user_guide/tutorials/sweep_results` for the same ladder across the
 ``NPROB=64`` / ``1024`` / ``8192`` batch regimes (the winner shifts with batch
-size), the host-batched cuBLAS/cuSOLVER and TF32 comparison, the fused
+size), a narrowly configured host-batched cuBLAS/cuSOLVER comparison, the fused
 ``riccati_gain`` case study, and the per-``(op, N)`` winner table; see
 :doc:`user_guide/concepts/tuning` to regenerate everything for your own GPU
 with ``bench/tune.py``.

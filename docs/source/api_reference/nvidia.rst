@@ -22,35 +22,43 @@ L1 (CUB-backed reductions)
 ``warp_reduce_scratch_bytes<T>()``, ``TRAILING_SYNC`` emits ``__syncwarp()``).
 
 .. doxygenfile:: src/nvidia/l1.cuh
+   :no-link:
 
 L2 (gemv)
 ---------
 
 .. doxygenfile:: src/nvidia/l2.cuh
+   :no-link:
 
 L3 (gemm)
 ---------
 
 .. doxygenfile:: src/nvidia/l3.cuh
+   :no-link:
 
 L3 SIMT batched (no cuBLASDx)
 -----------------------------
 
 .. doxygenfile:: src/nvidia/l3_simt.cuh
+   :no-link:
 
 LAPACK (cuSOLVERDx)
 -------------------
 
 .. doxygenfile:: src/nvidia/lapack.cuh
+   :no-link:
 
 Dispatch & query helpers
 ------------------------
 
 .. doxygenfile:: src/nvidia/query.cuh
+   :no-link:
 
 .. doxygenfile:: src/nvidia/query_simt.cuh
+   :no-link:
 
 .. doxygenfile:: src/nvidia/types.cuh
+   :no-link:
 
 Host helpers
 ------------
@@ -58,6 +66,7 @@ Host helpers
 The umbrella headers also expose host-callable helpers for sizing dynamic
 shared memory at launch time.
 
-.. doxygenfile:: glass.cuh
+.. doxygenfunction:: glass_gemm_dispatch_smem
 
 .. doxygenfile:: glass-nvidia.cuh
+   :no-link:

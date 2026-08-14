@@ -4,6 +4,7 @@ Installation
 
 .. Sync note: the MathDx section below is mirrored in bench/INSTALL.md (the
    offline copy that runtime error messages point at). Edit both together.
+
 GLASS is a **header-only** CUDA library. There is nothing to build or link for
 the pure-SIMT path — you add the repository root to your include path and
 ``#include`` the umbrella header. Only the optional ``glass::nvidia::`` backend

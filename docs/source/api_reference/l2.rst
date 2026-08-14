@@ -9,6 +9,7 @@ gemv
 ----
 
 .. doxygenfile:: src/base/L2/gemv.cuh
+   :no-link:
 
 Contraction-parallel gemv (``gemv_reduced``)
 --------------------------------------------
@@ -18,25 +19,31 @@ sibling of ``gemm_reduced``. See
 :doc:`../user_guide/concepts/contraction_parallel`.
 
 .. doxygenfile:: src/base/L2/gemv_reduced.cuh
+   :no-link:
 
 Strided / segmented gemv
 ------------------------
 
 .. doxygenfile:: src/base/L2/gemv_strided.cuh
+   :no-link:
 
 .. doxygenfile:: src/base/L2/gemv_segmented.cuh
+   :no-link:
 
 ger
 ---
 
 .. doxygenfile:: src/base/L2/ger.cuh
+   :no-link:
 
 Triangular solve / matvec (trsv / trmv)
 ---------------------------------------
 
 .. doxygenfile:: src/base/L2/trsv.cuh
+   :no-link:
 
 Cooperative-groups variants (``glass::cgrps::``)
 ------------------------------------------------
 
 .. doxygenfile:: src/cgrps/l2.cuh
+   :no-link:

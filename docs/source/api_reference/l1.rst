@@ -12,25 +12,31 @@ axpy / axpby
 ------------
 
 .. doxygenfile:: src/base/L1/axpy.cuh
+   :no-link:
 
 .. doxygenfile:: src/base/L1/axpy_strided.cuh
+   :no-link:
 
 copy
 ----
 
 .. doxygenfile:: src/base/L1/copy.cuh
+   :no-link:
 
 .. doxygenfile:: src/base/L1/copy_strided.cuh
+   :no-link:
 
 scal
 ----
 
 .. doxygenfile:: src/base/L1/scal.cuh
+   :no-link:
 
 swap
 ----
 
 .. doxygenfile:: src/base/L1/swap.cuh
+   :no-link:
 
 rot / rotg (Givens plane rotation)
 ----------------------------------
@@ -40,75 +46,94 @@ Apply (``rot``, BLAS SROT/DROT: ``x = c*x + s*y``, ``y = c*y - s*x``; block +
 overflow-safe scaled form; a ``__host__ __device__`` scalar helper).
 
 .. doxygenfile:: src/base/L1/rot.cuh
+   :no-link:
 
 dot
 ---
 
 .. doxygenfile:: src/base/L1/dot.cuh
+   :no-link:
 
 .. doxygenfile:: src/base/L1/dot_strided.cuh
+   :no-link:
 
 .. doxygenfile:: src/base/L1/dot_strided_coalesced.cuh
+   :no-link:
 
 reduce
 ------
 
 .. doxygenfile:: src/base/L1/reduce.cuh
+   :no-link:
 
 prefix_sum
 ----------
 
 .. doxygenfile:: src/base/L1/prefix_sum.cuh
+   :no-link:
 
 Norms
 -----
 
 .. doxygenfile:: src/base/L1/norm.cuh
+   :no-link:
 
 .. doxygenfile:: src/base/L1/nrm2.cuh
+   :no-link:
 
 .. doxygenfile:: src/base/L1/nrm1_diff.cuh
+   :no-link:
 
 .. doxygenfile:: src/base/L1/infnorm.cuh
+   :no-link:
 
 .. doxygenfile:: src/base/L1/asum.cuh
+   :no-link:
 
 Index of max-abs (iamax)
 ------------------------
 
 .. doxygenfile:: src/base/L1/iamax.cuh
+   :no-link:
 
 clip
 ----
 
 .. doxygenfile:: src/base/L1/clip.cuh
+   :no-link:
 
 set_const
 ---------
 
 .. doxygenfile:: src/base/L1/set_const.cuh
+   :no-link:
 
 identity
 --------
 
 .. doxygenfile:: src/base/L1/ident.cuh
+   :no-link:
 
 symmetrize
 ----------
 
 .. doxygenfile:: src/base/L1/symmetrize.cuh
+   :no-link:
 
 transpose
 ---------
 
 .. doxygenfile:: src/base/L1/transpose.cuh
+   :no-link:
 
 Elementwise logic
 -----------------
 
 .. doxygenfile:: src/base/L1/elementwise_logic.cuh
+   :no-link:
 
 Cooperative-groups variants (``glass::cgrps::``)
 ------------------------------------------------
 
 .. doxygenfile:: src/cgrps/l1.cuh
+   :no-link:

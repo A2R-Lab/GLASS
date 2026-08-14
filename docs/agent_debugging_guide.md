@@ -2,9 +2,10 @@
 
 Hard-won institutional knowledge for working on **GLASS** (*GPU Linear Algebra Simple
 Subroutines*) — the comprehensive, header-only, single-block GPU linear-algebra library.
-Three primary interfaces: **Block** `glass::` (SIMT), **Warp** `glass::warp::`
-(single-warp), and **Nvidia** `glass::nvidia::` (CUB/cuBLASDx/cuSOLVERDx);
-`glass::cgrps::` is a cooperative-groups convenience alias of Block. Plus the
+The public execution tiers are explicit **Block** `glass::block::`, **Warp**
+`glass::warp::`, **Thread** `glass::thread::`, and **Nvidia**
+`glass::nvidia::block::`/`warp::`; bare `glass::` is the measured-default
+block-scope face, while `glass::cgrps::` is the cooperative-groups twin. Plus the
 block-tridiagonal `glass::bdmv` / `glass::pcg`. **Read this before you change any
 primitive or do a refactor.** Every GLASS function is a `__device__` helper that assumes it
 runs inside **one CUDA block**, cooperating across `threadIdx`/`blockDim` (or a cooperative
@@ -17,7 +18,7 @@ Source map you will reference constantly:
 - Cooperative-groups surface: `glass-cgrps.cuh`.
 - Vendor backends: `glass-nvidia.cuh` → `src/nvidia/{l1,l2,l3,l3_simt,lapack,query_simt,tuning_table,types}.cuh`.
 - Warp-scoped variants: inline in the base L1/L2/L3 headers (`src/base/L1/{reduce,dot,axpy,copy,scal,iamax}.cuh`, `src/base/L2/gemv.cuh`, `src/base/L3/{gemm,potrf,trsv,trsm,posv}.cuh`), under `namespace warp`.
-- Block-tridiagonal: `glass::bdmv` (`src/base/banded/bdmv.cuh`), `glass::pcg` + `glass::pcg_smem_size` (`src/base/pcg/solve.cuh`).
+- Block-tridiagonal: `glass::bdmv` (`src/base/banded/bdmv.cuh`), `glass::pcg` + `glass::pcg_scratch_bytes` (`src/base/pcg/solve.cuh`).
 - Host smem helper: `glass_gemm_dispatch_smem` in `glass.cuh`.
 - Tests: `test/conftest.py` (compile + cache harness), `test/test_l{1,2,3}.py`,
   `test/test_nvidia_dispatch.py`, `test/test_trailing_sync.py`, and the CUDA drivers under
@@ -35,16 +36,16 @@ Source map you will reference constantly:
    `test_nvidia_dispatch`, `test_trailing_sync`) via `nvcc` into `test/build/`; later runs reuse
    the cache. The Python tests diff GPU output against a NumPy/SciPy reference, so a green suite
    means your numbers match `numpy`/`scipy` at `rtol=atol=1e-3`.
-2. **Confirm your edit actually recompiled.** The compile cache is keyed on a **source hash** of a
-   curated file list (see §4). If you edited a header that the hash covers, the next `pytest` run
-   rebuilds automatically. If you touched a header NOT in that list, the cache is stale — force a
-   clean rebuild (delete `test/build/`) or add the file to `_hash_sources` in `conftest.py`.
+2. **Confirm your edit actually recompiled.** Binaries compile lazily and the
+   cache hashes the selected CUDA source, umbrella headers, shared helper, and
+   that binary's operation-family headers (see §4). Add new binaries to the
+   right family; unassigned binaries conservatively hash the full source tree.
 3. **Check thread-count invariance.** A correct single-block GLASS function must produce
-   **identical output for any block size.** The shipped tests launch a fixed `THREADS = 256`
-   (see `test_l3.cu`), so they do NOT exercise this on their own. Before trusting a change to a
-   multi-phase primitive, run it at **1 thread, 32 (one warp), a partial warp (e.g. 48), and many
-   warps (e.g. 256)** and diff the outputs. A discrepancy = a missing barrier or a hard-coded
-   thread assumption (§1).
+   **identical output for any block size.** The shipped tests sweep representative
+   counts, including serial, single-warp, partial-final-warp, and multi-warp
+   launches. Extend that sweep for a new primitive rather than introducing a
+   one-off fixed thread count. A discrepancy indicates a missing barrier or a
+   hard-coded thread assumption (§1).
 4. **Check both layouts where relevant.** Storage order is a compile-time flag, not a runtime
    crash — wrong layout = silently wrong numbers. For any L2/L3 change, validate **column-major
    (default) AND all transpose combos** (`TRANSPOSE_A`/`TRANSPOSE_B` for `gemm`; a row-major
@@ -210,12 +211,12 @@ The banded matvec and PCG solver carry layout/launch preconditions that fail *si
   their absent `L`/`R` against **zero pad** — if the pads hold garbage, the edge rows are wrong.
   `glass::pcg` zeroes its internal vectors (`set_const`), but a hand-rolled `glass::bdmv` caller must
   zero the pads itself.
-- **`glass::pcg` needs `blockDim.x` a multiple of 32.** Its inner dot is `dot_fast`
-  (warp-shuffle); a non-warp-multiple thread count drops the partial warp's contribution. (This
-  is the one place the usual "any thread count" invariance does **not** hold — it's a documented
-  contract, asserted-by-convention.)
-- **Shared-mem must equal `glass::pcg_smem_size<T,state_size,knot_points>(threads)`** — five padded
-  work vectors + `ceil(threads/32)` warp-dot scratch. Under-sizing overruns; see 1e.
+- **Use a multiple of 32 PCG threads.** Its fast dot reduction uses a full-warp
+  shuffle mask; a partial final warp violates that launch contract.
+- **Dynamic shared memory must be at least
+  `glass::pcg_scratch_bytes<T,state_size,knot_points>(threads)` bytes** — pass
+  the helper result directly as the launch byte count. Under-sizing overruns;
+  see 1e.
 - **`[L|D|R]` is row-major per block-row**, strip `br` at `s_matrix + br*(3*state_size)*state_size`.
   Mixing this up with a dense or column-major layout silently produces wrong results — validate a
   new caller against the dense reference in `test/test_banded.py` / `test/test_pcg.py`.
@@ -344,16 +345,12 @@ NOT. Rules:
 
 ## 4. Test-infra gotchas (the compile cache)
 
-- **The compile cache is keyed on a source hash.** `conftest.py::_hash_sources` SHA-256s a
-  **curated list** of files — the `.cu` under test, `cuda/helpers.cuh`, `glass.cuh`,
-  `glass-cgrps.cuh`, `glass-nvidia.cuh`, and the specific `src/base/*` and `src/nvidia/*` headers
-  it enumerates. `compile_binary` skips `nvcc` iff the stored `<name>.hash` matches the current
-  hash AND the binary exists. So **editing a hashed header self-invalidates the cache** and the
-  next `pytest` rebuilds.
-- **The trap:** if you add a NEW header (e.g. a new `src/base/L3/<thing>.cuh`) and `glass.cuh`
-  pulls it in, but you do NOT add it to `_hash_sources`, the cache will NOT notice your edits to
-  that file — you'll test stale binaries and see phantom pass/fail. **Add new headers to the
-  `_hash_sources` list** (or keep additions inside an already-hashed file).
+- **The compile cache is keyed on a family-scoped source hash.**
+  `conftest.py::_hash_sources` hashes the selected `.cu`, shared helper,
+  umbrella headers, and the implementation headers for that binary's family.
+  The `bins` mapping is lazy: selecting one pytest module compiles only the
+  binary it accesses. Register a new binary in the appropriate family set;
+  otherwise its safe default is the full source tree.
 - **Force a clean rebuild** by deleting the build artifacts: `rm -rf test/build` (or just the
   `<name>.hash` files). `test/build/` is **gitignored** — it's a scratch dir, never commit it.
 - The session `bins` fixture compiles all binaries once per `pytest` session; per-binary skips are

@@ -30,18 +30,16 @@ Selecting tests
 The compile cache
 -----------------
 
-Compilation is driven by ``test/conftest.py``. Binaries are compiled **once per
-pytest session** (a session-scoped ``bins`` fixture) and cached by a **SHA-256
-hash of the source set**.
+Compilation is driven by ``test/conftest.py``. The session-scoped ``bins``
+mapping compiles a binary lazily, only when a selected test first accesses it,
+and caches it by a **SHA-256 hash of its source set**.
 
-For each test binary, ``_hash_sources()`` hashes the ``.cu`` file together with
-every GLASS header it can pull in — ``glass.cuh``, ``glass-cgrps.cuh``,
-``glass-nvidia.cuh``, the ``src/base/**`` and ``src/nvidia/**`` headers
-(including ``tuning_table.cuh`` and ``query_simt.cuh``), and the test helpers.
-The hash is written to ``test/build/<name>.hash``. On the next run, if the hash
-file and binary both exist and the hash matches, compilation is **skipped**;
-otherwise the binary is rebuilt. Editing **any** hashed header therefore
-invalidates the cache and forces a recompile.
+For each test binary, ``_hash_sources()`` hashes its ``.cu`` file, shared helper,
+umbrella headers, and implementation headers for the binary's operation family
+(vector, dense/factor, solver, robotics, or Nvidia). The hash is written to
+``test/build/<name>.hash``. A local change therefore rebuilds the selected
+family without rebuilding unrelated binaries. New binaries default to a
+whole-source-tree hash until assigned to a family.
 
 GPU-arch detection
 ------------------

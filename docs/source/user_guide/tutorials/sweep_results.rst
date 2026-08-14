@@ -1,12 +1,19 @@
 Backend Sweep Results
 =====================
 
-GLASS ships four interchangeable execution tiers — thread-, warp-, and
-block-scoped SIMT plus the vendor-backed ``nvidia`` path — and which one is
-fastest depends on the operation, the matrix size ``N``, and the dtype. The **mega sweep** (``bench/tune.py``'s ladder leg) times all
-of them head-to-head so the choice is data-driven rather than guessed — this is
+GLASS ships overlapping thread-, warp-, block-, and vendor-backed execution
+tiers. For operations present in more than one tier, the fastest choice depends
+on operation, size, dtype, launch shape, and batch regime. The **mega sweep**
+(``bench/tune.py``'s ladder leg) compares supported contenders — this is
 exactly the measurement behind ``glass-defaults.cuh``'s ``suggested_backend<>()``
 (see :doc:`../../api_reference/defaults`).
+
+.. warning::
+
+   This page is a dated measurement archive, not a universal performance
+   promise. Several legacy sections predate the current warm-up, trial-spread,
+   source-digest, and signed-receipt protocol and are marked accordingly. Use
+   the source capture named beside a claim, and rerun on the target machine.
 
 The figures and table below are from an RTX 5090 / sm_120 run, shown across three
 batch regimes — **NPROB=64** (low batch, latency-leaning), **NPROB=1024** (mid),
@@ -97,13 +104,23 @@ single ``cublas<t>gemmStridedBatched`` / ``cusolverDn<t>potrfBatched``
    :alt: host-batched vendor time divided by best GLASS time, vs batch size
    :width: 100%
 
-Above 1.0 = GLASS faster (fp32 shown; GLASS = best of block/warp). At robot
+Above 1.0 = the best swept GLASS configuration faster (fp32 shown; GLASS is
+best of block32, block128, and warp8 where available). The vendor side is one
+default host-API configuration, so this is not a symmetric tuner comparison or
+a universal “GLASS vs vendor” statement. In this historical capture, at robot
 sizes, host batching never catches up: gemm at ``N`` ≤ 24 and the full
 factor-and-solve (posv) through ``N`` = 64 are GLASS wins at **every** batch
 size, reaching 2.9–6.3× at saturation. The vendor's best regime is mid-batch
 (``B`` ≈ 64–1024), where it briefly leads standalone potrf at mid sizes; only
 gemm at ``N`` ≥ 32 is an outright vendor win at scale — the same mid-band the
 ladder already routes to ``glass::nvidia::``.
+
+An audited 2026-08-14 confirmation used 500 reps. Only 8/378 selected
+GLASS/vendor pairs had a contender above 5% within-run spread, and all eight
+had decisive 1.56×–2.19× gaps. One small f64 ``potrf`` comparison changed
+winner between two quiet captures despite low within-run spread. Accordingly,
+small deltas and cross-run winner changes are treated as ties; publication
+claims must survive both independent captures.
 
 Permitting TF32 tensor cores (dashed) does not change the story: cuBLAS
 *declines to engage them* below ``N`` = 24 (results bit-identical to FP32),
@@ -126,7 +143,8 @@ batched Cholesky, two triangular solves) with intermediates in global memory.
    :width: 75%
    :align: center
 
-Fusion wins at every batch size at quadrotor/manipulator scale — 2.5–2.8× at
+In this historical implementation/capture, fusion wins at every batch size at
+quadrotor/manipulator scale — 2.5–2.8× at
 ``(nx,nu)`` = (12,4) and 1.6–1.9× at (14,7) in fp32, more in fp64 — but the
 chain wins at (36,12) fp32 and (48,16), where the staged operands outgrow what
 one block overlaps profitably. Fusion is a measured choice, not a default:
@@ -168,17 +186,21 @@ amplifies conditioning error silently. Speed only ever argues *for* ``posv``,
 never against it.
 
 **Block-tridiagonal chains — ``bdsv`` (direct) vs ``pcg`` (iterative) is
-problem-dependent; do not hard-code either.** On our diagonally-dominant test
-system PCG converges in ~3 iterations and wins 11 of 12 cells (up to 9×); at
+problem-dependent; do not hard-code either.** On the benchmark's synthetic
+diagonally-dominant SPD system, PCG converges in about three iterations and
+wins 11 of 12 cells (up to 9×) at the harness's ``rho = rᵀz`` relative
+tolerance of 1e-6. This is an approximate-solve comparison, not matched final
+residual accuracy: the direct f64 solves reach near-machine precision while
+PCG stops at its requested tolerance. At
 (BlockSize=12, Knots=16) fp32 the direct sweep wins 1.8×. PCG's cost scales
 linearly with its iteration count, so an ill-conditioned Riccati/KKT chain
 (10–100× more iterations) moves the crossover proportionally toward
 ``bdsv`` — read the ``pcg iters`` column of your own sweep before
 generalizing, or measure with your actual matrices.
 
-**``syev`` / ``eig_clamp``** — the decompose–clamp–reconstruct op costs the
-same as the bare eigensolve (the clamp epilogue is free); budget ~0.9 µs
-fp32 / ~8.8 µs fp64 per 32×32 problem at saturation.
+**``syev`` / ``eig_clamp``** — the historical harness compared only this serial
+Jacobi family. It did not include the parallel fixed-sweep ``eigh`` /
+``psd_project`` family, so it cannot support a recommendation between them.
 
 The thread tier — where one-problem-per-thread wins
 ---------------------------------------------------
@@ -255,43 +277,41 @@ is the anti-case: enough work per element that the parallel tiers always win.
 Columns past the ceiling price the local-memory spill honestly (down to 0.1× —
 measured, never shipped).
 
-Warp-scope vendor A/B (why nvidia stops at block scope)
--------------------------------------------------------
+Warp-scope vendor A/B (audited characterization)
+-------------------------------------------------
 
 ``bench_nvwarp_l1.cu`` A/Bs ``glass::warp::`` against ``glass::nvidia::warp::``
 (CUB WarpReduce) for the three ops the vendor warp tier ships (reduce/dot/nrm2)
-at identical launch shape, correctness-gated. **sm_87 (Jetson Orin, 50 W):
-110/126 cells tie within ±2%; sm_120 (RTX 5090): 119/126.** Every non-tie is
-≤10% and clustered where one implementation skips a shuffle the other pays.
-Verdict on both measured architectures: the two warp tiers are the same
-algorithm and measure like it — the measured justification for the dispatch
-ladder not descending below block scope for the ``nvidia`` tier.
+at identical launch shape. The 2026-08-14 sm_120 quiet run used the shared
+warm-up, spread, provenance, and isolation protocol. Of 126 cells, 121 tie
+within ±2%. Four high-throughput f64 ``dot`` cells favor CUB by 2.0–3.0%; the
+sole SIMT verdict is a tiny latency cell with 17.45% SIMT spread and is not
+actionable. Five individual contender samples exceeded 5% spread, but no
+shipped dispatch decision depends on this characterization.
 
-Robotics micro-ops — tier packing and fusion (measured)
--------------------------------------------------------
+Robotics micro-ops — audited characterization
+----------------------------------------------
 
-The 2026-07-29 robotics sweep (quiet sm_120; noise floor median 0.40%/p90
-0.87% from a full repeat pass) settled three questions:
+The 2026-08-14 sm_120 quiet run measured 8192 problems and 1000 reps per trial
+through the shared audited protocol:
 
-- **Fused vs composed spatial ops is a wash at the best tier** — at block
-  scope the fused forms win modestly (materializing the 6×6 costs shared
-  memory + a barrier); at thread scope they are identical. Their value is
-  correctness economics (no 36-element scratch, one fewer barrier, pinned
-  convention), exactly as the paper argues.
-- **The thread tier dominates every fixed-size robotics op at batch**:
-  4.5–7.9× vs block for quat/SE(3)/spatial ops, 21.5× for ``eig3``. The
-  redundant-core construction makes this mechanical — wider tiers only stride
-  the copy-out. **Exception:** ``softmax`` (a genuine n-length reduction) →
-  use ``warp::softmax``.
-- ``argmax_fast`` pays off only at ≥128-thread blocks (~10–13%); keep the
-  default for narrow blocks.
+- The thread tier wins every fixed-size row for both dtypes.
+- ``softmax_n16`` is dtype-sensitive: warp wins f32, thread wins f64.
+- At the best thread launch, fused and composed spatial forms are nearly tied
+  in f32; the fused f64 forms are about 15–22% faster.
+- Only 2 of 136 contender samples exceed 5% spread, neither changing a clear
+  row verdict. ``argmax_fast`` is block-only and does not beat the ordinary
+  thread-tier ``argmax``.
+
+These are characterization results, not generated dispatch inputs.
 
 The full measured-results archive
 ----------------------------------
 
 The machine-refreshed verdict tables for every sweep live in one file,
-``bench/RESULTS.md`` (sections: ladder, blas2, rect, solvers, reduced, nvwarp,
-robotics — the marker-delimited blocks are rewritten by ``bench/tune.py``).
+``bench/RESULTS.md``. The ladder, body, blas2, rect, solvers, and reduced marker
+blocks are rewritten by ``bench/tune.py``; nvwarp and robotics are hand-run
+audited characterizations and do not rewrite dispatch.
 Raw captures are archived in the ``glass-paper`` repository (``data/desktop/``,
 ``data/jetson/``, ``data/sm120/``); the paper harnesses are documented in
 ``bench/PAPER_SWEEPS.md``.
