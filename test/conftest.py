@@ -142,56 +142,43 @@ def make_vec(n, seed=0, kind="normal"):
 
 # ─── source hashing ───────────────────────────────────────────────────────────
 
-VECTOR_BINS = {"test_l1", "test_l1_round2", "test_iamax", "test_symmetrize", "test_api_vector"}
-DENSE_BINS = {
-    "test_l2", "test_l3", "test_syrk", "test_reduced", "test_reduced_blas",
-    "test_tensor", "test_congruence", "test_block_access", "test_symm_rot", "test_api_dense",
-}
-FACTOR_BINS = {
-    "test_fused", "test_factor_check", "test_getrf", "test_ldlt", "test_trsv",
-    "test_posv", "test_syev", "test_solve", "test_base_f64", "test_api_factor",
-}
-TIER_BINS = {"test_warp", "test_thread", "test_defaults", "test_dispatch", "test_trailing_sync"}
-SOLVER_BINS = {"test_qp", "test_banded", "test_bdsv", "test_pcg"}
-NVIDIA_BINS = {"test_l3_nvidia", "test_nvidia_dispatch", "test_nvidia_f64"}
-
-
-def _family_headers(binary_name: str) -> list[pathlib.Path]:
-    common = [
-        GLASS_DIR / "src/base/barrier.cuh",
-        GLASS_DIR / "src/base/dispatch.cuh",
-        GLASS_DIR / "src/base/flags.cuh",
-    ]
-    l1 = sorted((GLASS_DIR / "src/base/L1").glob("*.cuh"))
-    l2 = sorted((GLASS_DIR / "src/base/L2").glob("*.cuh"))
-    l3 = sorted((GLASS_DIR / "src/base/L3").glob("*.cuh"))
-    cgrps = sorted((GLASS_DIR / "src/cgrps").glob("*.cuh"))
-    if binary_name in VECTOR_BINS:
-        return common + l1 + [GLASS_DIR / "src/cgrps/l1.cuh"]
-    if binary_name in DENSE_BINS or binary_name in FACTOR_BINS or binary_name in TIER_BINS:
-        return common + l1 + l2 + l3 + cgrps
-    if binary_name in SOLVER_BINS:
-        return (common + l1 + l2 + l3 + cgrps
-                + sorted((GLASS_DIR / "src/base/banded").glob("*.cuh"))
-                + sorted((GLASS_DIR / "src/base/pcg").glob("*.cuh"))
-                + sorted((GLASS_DIR / "src/internal").glob("*.cuh")))
-    if binary_name in {"test_robotics", "test_api_robotics"}:
-        return common + sorted((GLASS_DIR / "src/base").rglob("*.cuh")) + cgrps
-    if binary_name in NVIDIA_BINS:
-        return common + l1 + l2 + l3 + cgrps + sorted((GLASS_DIR / "src/nvidia").glob("*.cuh"))
-    # New binaries start conservative until assigned to a family above.
-    return sorted((GLASS_DIR / "src").rglob("*.cuh"))
-
-
 def _hash_sources(cu_path: pathlib.Path) -> str:
     h = hashlib.sha256()
-    # Cache scopes mirror receipt shards. Compile-smoke still parses the complete
-    # umbrella on every PR; this narrower key controls numerical-test rebuilds.
+    # EVERY library header is hashed via the glob — a new/edited .cuh can never be
+    # forgotten again (the old explicit list silently omitted 12 headers, so e.g.
+    # a prefix_sum.cuh fix never rebuilt test_l1; found 2026-07-17). The named
+    # test/cuda drivers stay explicit: they are shared-fixture inputs whose edits
+    # must bust every binary, but globbing ALL drivers would rebust the world on
+    # any single-driver edit.
     paths = [cu_path, pathlib.Path(__file__), CUDA_DIR / "helpers.cuh",
              GLASS_DIR / "glass.cuh", GLASS_DIR / "glass-cgrps.cuh",
              GLASS_DIR / "glass-defaults.cuh", GLASS_DIR / "glass-dispatch.cuh",
              GLASS_DIR / "glass-nvidia.cuh"]
-    paths += _family_headers(cu_path.stem)
+    paths += sorted((GLASS_DIR / "src").rglob("*.cuh"))
+    paths += [
+              CUDA_DIR / "test_iamax.cu",
+              CUDA_DIR / "test_symmetrize.cu",
+              CUDA_DIR / "test_symm_rot.cu",
+              CUDA_DIR / "test_l1_round2.cu",
+              CUDA_DIR / "test_reduced_blas.cu",
+              CUDA_DIR / "test_warp.cu",
+              CUDA_DIR / "test_thread.cu",
+              CUDA_DIR / "test_reduced.cu",
+              CUDA_DIR / "test_tensor.cu",
+              CUDA_DIR / "test_congruence.cu",
+              CUDA_DIR / "test_syrk.cu",
+              CUDA_DIR / "test_fused.cu",
+              CUDA_DIR / "test_factor_check.cu",
+              CUDA_DIR / "test_getrf.cu",
+              CUDA_DIR / "test_ldlt.cu",
+              CUDA_DIR / "test_trsv.cu",
+              CUDA_DIR / "test_posv.cu",
+              CUDA_DIR / "test_syev.cu",
+              CUDA_DIR / "test_solve.cu",
+              CUDA_DIR / "test_bdsv.cu",
+              CUDA_DIR / "test_block_access.cu",
+              CUDA_DIR / "test_robotics.cu",
+    ]
     paths = list(dict.fromkeys(paths))
     for p in paths:
         if p.exists():

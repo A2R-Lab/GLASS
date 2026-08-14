@@ -21,13 +21,15 @@
 #   ./test/run_gpu_proof.sh --shards dense,tiers \
 #       --reuse-shards factor,solvers \
 #       --carry-from test/gpu-proof.json           # merge prior fresh shard files
+#   (--allow-dirty permits a dirty-tree run for local iteration — the result
+#    can never verify post-commit, so it must not be committed)
 #   (extra args after -- go to pytest)
 #
 # Merge always attempts --carry-from the last committed test/gpu-proof.json
 # when a subset ran: freshly-run shards win; absent shards graft in iff their
 # narrow fingerprint recomputes identical AND the old commit is an ancestor
 # (schema-2 rules — a stale family can never ride along silently). CI verifies
-# carried shards under the policy in verify-gpu-proof.yml (allow_carried +
+# carried shards under the policy in test/gpu-proof-policy.json (allow_carried +
 # carried_max_age_days); see pytest-gpu-proof docs/sharding.md.
 #
 # The 2 permanent documented skips (test_getrf n=1) are pinned as an EXACT set
@@ -48,7 +50,7 @@ TEST_BASE="test/conftest.py,test/cuda/helpers.cuh,test/expected_skips.txt"
 declare -A SHARD_FILES SHARD_DRIVERS SHARD_PATHS
 SHARD_FILES[vector]="test/test_l1.py test/test_l1_round2.py test/test_iamax.py test/test_symmetrize.py test/test_api_vector.py"
 SHARD_DRIVERS[vector]="test/cuda/test_l1.cu test/cuda/test_l1_round2.cu test/cuda/test_iamax.cu test/cuda/test_symmetrize.cu test/cuda/test_api_vector.cu"
-SHARD_PATHS[vector]="$ROOTS_BASE,$L1_BASE,$TEST_BASE"
+SHARD_PATHS[vector]="$ROOTS_BASE,$L1_BASE,$TEST_BASE,src/cgrps"
 
 SHARD_FILES[dense]="test/test_l2.py test/test_l3.py test/test_symm_rot.py test/test_syrk.py \
  test/test_congruence.py test/test_tensor.py test/test_reduced.py test/test_reduced_blas.py \
@@ -57,7 +59,8 @@ SHARD_DRIVERS[dense]="test/cuda/test_l2.cu test/cuda/test_l3.cu test/cuda/test_s
  test/cuda/test_syrk.cu test/cuda/test_congruence.cu test/cuda/test_tensor.cu \
  test/cuda/test_reduced.cu test/cuda/test_reduced_blas.cu test/cuda/test_block_access.cu"
 SHARD_DRIVERS[dense]+=" test/cuda/test_api_dense.cu"
-SHARD_PATHS[dense]="$ROOTS_BASE,$DENSE_BASE,$TEST_BASE"
+# block_access.cuh: test_block_access exercises banded load/store_block.
+SHARD_PATHS[dense]="$ROOTS_BASE,$DENSE_BASE,$TEST_BASE,src/base/banded/block_access.cuh"
 
 SHARD_FILES[factor]="test/test_fused.py test/test_factor_check.py test/test_getrf.py \
  test/test_ldlt.py test/test_trsv.py test/test_posv.py test/test_syev.py \
@@ -71,7 +74,8 @@ SHARD_PATHS[factor]="$ROOTS_BASE,$DENSE_BASE,$TEST_BASE"
 SHARD_FILES[tiers]="test/test_thread.py test/test_warp.py test/test_defaults.py test/test_dispatch.py"
 SHARD_DRIVERS[tiers]="test/cuda/test_thread.cu test/cuda/test_warp.cu \
  test/cuda/test_defaults.cu test/cuda/test_dispatch.cu"
-SHARD_PATHS[tiers]="$ROOTS_BASE,$DENSE_BASE,$TEST_BASE"
+# svd3.cuh: the dispatch face routes eig3 into its est/ body.
+SHARD_PATHS[tiers]="$ROOTS_BASE,$DENSE_BASE,$TEST_BASE,src/base/est/svd3.cuh"
 
 SHARD_FILES[solvers]="test/test_banded.py test/test_bdsv.py test/test_pcg.py test/test_qp.py"
 SHARD_DRIVERS[solvers]="test/cuda/test_banded.cu test/cuda/test_bdsv.cu \
@@ -94,6 +98,7 @@ ALL_SHARDS="vector dense factor tiers solvers robotics mathdx integration"
 RUN_SHARDS="$ALL_SHARDS"
 REUSE_SHARDS=""
 CARRY_FROM=""
+ALLOW_DIRTY=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --shards)
@@ -102,6 +107,8 @@ while [[ $# -gt 0 ]]; do
             CARRY_FROM="$2"; shift 2 ;;
         --reuse-shards)
             REUSE_SHARDS="${2//,/ }"; shift 2 ;;
+        --allow-dirty)
+            ALLOW_DIRTY=1; shift ;;
         --)
             shift; break ;;
         *)
@@ -110,11 +117,29 @@ while [[ $# -gt 0 ]]; do
 done
 [[ "${1:-}" == "--" ]] && shift
 
+# Order-insensitive "did every shard run" test — a reordered or duplicated
+# --shards list must still count as a full run (and vice versa).
+is_full_run() {
+    [[ "$(tr ' ' '\n' <<< "$RUN_SHARDS" | sort -u | tr '\n' ' ')" == \
+       "$(tr ' ' '\n' <<< "$ALL_SHARDS" | sort -u | tr '\n' ' ')" ]]
+}
+
+# A receipt fingerprinted on a dirty tree can NEVER verify once committed:
+# the commit_sha it records predates the very changes it hashed. Refuse
+# early instead of discovering it in CI (--allow-dirty for local iteration).
+if [[ -n "$(git status --porcelain)" && "$ALLOW_DIRTY" != 1 ]]; then
+    echo "FATAL: working tree is dirty — a receipt generated now can never" >&2
+    echo "verify against the commit that eventually carries it. Commit (or" >&2
+    echo "stash) first, or pass --allow-dirty for a local-only run." >&2
+    exit 2
+fi
+
 for s in $RUN_SHARDS $REUSE_SHARDS; do
     [[ " $ALL_SHARDS " == *" $s "* ]] || {
         echo "FATAL: unknown shard '$s'" >&2; exit 2;
     }
 done
+HEAD_SHA=$(git rev-parse HEAD)
 for s in $REUSE_SHARDS; do
     [[ " $RUN_SHARDS " != *" $s "* ]] || {
         echo "FATAL: shard '$s' appears in both --shards and --reuse-shards" >&2; exit 2;
@@ -122,11 +147,22 @@ for s in $REUSE_SHARDS; do
     [[ -f "test/receipts/$s.json" ]] || {
         echo "FATAL: reusable receipt test/receipts/$s.json does not exist" >&2; exit 2;
     }
+    # Reused shard files merge as FRESH (no carry-time fingerprint recheck),
+    # so require they were produced at exactly this commit on a clean tree.
+    read -r R_SHA R_DIRTY < <($PY -c "
+import json, sys
+r = json.load(open('test/receipts/$s.json'))['repo']
+print(r.get('commit_sha', '?'), r.get('dirty', True))")
+    [[ "$R_SHA" == "$HEAD_SHA" && "$R_DIRTY" == "False" ]] || {
+        echo "FATAL: test/receipts/$s.json was generated at $R_SHA (dirty=$R_DIRTY)," >&2
+        echo "not at clean HEAD $HEAD_SHA — rerun the shard instead of reusing it." >&2
+        exit 2
+    }
 done
 
 mkdir -p test/receipts
 if [[ -n "$CARRY_FROM" ]]; then
-    if [[ "$RUN_SHARDS" == "$ALL_SHARDS" ]]; then
+    if is_full_run; then
         echo "FATAL: --carry-from is only meaningful with --shards" >&2
         exit 2
     fi
@@ -156,7 +192,7 @@ done
 CARRY=()
 if [[ -n "$CARRY_FROM" ]]; then
     CARRY=(--carry-from test/receipts/_carry_explicit.json --repo .)
-elif [[ "$RUN_SHARDS" != "$ALL_SHARDS" ]] && git cat-file -e HEAD:test/gpu-proof.json 2>/dev/null; then
+elif ! is_full_run && git cat-file -e HEAD:test/gpu-proof.json 2>/dev/null; then
     git show HEAD:test/gpu-proof.json > test/receipts/_last_green.json
     CARRY=(--carry-from test/receipts/_last_green.json --repo .)
 fi

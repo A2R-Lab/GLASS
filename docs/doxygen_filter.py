@@ -36,13 +36,18 @@ def main() -> int:
     # directives after adding a synthetic namespace makes Doxygen search for
     # system/vendor headers from inside that wrapper and produces irrelevant
     # include-resolution warnings. Preserve line count for source locations.
-    source = re.sub(r"(?m)^[ \t]*#include[^\n]*$", "", source)
+    # #pragma lines are blanked too: every header opens with `#pragma once` on
+    # line 1, and the namespace wrapper must land on that line (see below).
+    source = re.sub(r"(?m)^[ \t]*#(include|pragma)[^\n]*$", "", source)
     wrapper = namespace_for(path)
     if wrapper is None:
         sys.stdout.write(source)
     else:
         begin, end = wrapper
-        sys.stdout.write(f"{begin}\n{source}\n{end}\n")
+        # Open the namespace ON line 1, not above it: a leading newline would
+        # shift every Doxygen source location (and thus every line number in
+        # test/api-contracts.json) down by one.
+        sys.stdout.write(f"{begin} {source}\n{end}\n")
     return 0
 
 

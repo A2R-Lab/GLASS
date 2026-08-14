@@ -35,8 +35,11 @@ echo "── full eight-shard GPU receipt (no carry-forward) ────"
 ./test/run_gpu_proof.sh
 
 echo "── verify ─────────────────────────────────────────────"
+# Release policy forbids carried shards outright (allow_carried:false) so the
+# full-fresh property is ENFORCED, not just incidental to running all shards.
 .venv/bin/gpu-proof verify --receipt test/gpu-proof.json --require-gpu \
-    --expected-skips test/expected_skips.txt --policy test/gpu-proof-policy.json
+    --expected-skips test/expected_skips.txt \
+    --policy test/gpu-proof-release-policy.json
 .venv/bin/python .github/scripts/coverage_obligations.py \
     --receipt test/gpu-proof.json
 

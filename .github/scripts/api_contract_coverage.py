@@ -4,8 +4,10 @@
 The inventory comes from Doxygen XML rather than a source regex. Coverage is
 credited only when a CUDA test/example contains a compatible call shape: same
 name, viable function-argument count, and viable explicit-template-argument
-count. If one call could name several overloads, it is evidence for none; add a
-more explicit compile canary instead of relying on an ambiguous textual match.
+count. A call whose shape fits several overloads is resolved by maximum
+bipartite matching — each call credits AT MOST ONE overload, so a family of
+sibling overloads is only fully covered when there are enough distinctly
+shaped call sites to pair off every member.
 
 This is compile coverage, not numerical depth. Numerical, dtype,
 layout, conditioning, and thread-count obligations are tracked separately.
@@ -56,6 +58,11 @@ class Contract:
     required_params: int
     template_params: int
     minimum_explicit_template_args: int
+
+
+def doxygen_version() -> str:
+    out = subprocess.check_output(["doxygen", "--version"], text=True)
+    return out.split()[0].strip()
 
 
 def ensure_xml(xml_dir: pathlib.Path) -> None:
@@ -385,6 +392,7 @@ def main() -> int:
     payload = {
         "schema": 1,
         "basis": "Doxygen documented public overloads",
+        "doxygen_version": doxygen_version(),
         "policy": str(args.policy.relative_to(ROOT)),
         "contracts": [
             {
@@ -416,8 +424,21 @@ def main() -> int:
         )
     stale = False
     if args.check_manifest:
-        stale = not args.check_manifest.exists() or json.loads(args.check_manifest.read_text()) != payload
-        print("API manifest is current" if not stale else "API manifest is stale; regenerate with --manifest")
+        committed = (json.loads(args.check_manifest.read_text())
+                     if args.check_manifest.exists() else None)
+        stale = committed != payload
+        if not stale:
+            print("API manifest is current")
+        elif committed is not None and \
+                committed.get("doxygen_version") != payload["doxygen_version"]:
+            # Doxygen's XML extraction differs across releases; a mismatch here
+            # is toolchain skew, not necessarily a source-level drift.
+            print(f"API manifest DOXYGEN VERSION SKEW: manifest was generated "
+                  f"with {committed.get('doxygen_version')}, this run uses "
+                  f"{payload['doxygen_version']} — align the toolchain or "
+                  f"regenerate with --manifest")
+        else:
+            print("API manifest is stale; regenerate with --manifest")
     return 1 if (args.require_100 and gaps) or stale else 0
 
 
