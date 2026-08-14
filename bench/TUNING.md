@@ -116,15 +116,18 @@ table. The `shapes` leg below is the per-shape engine `tune.py` drives.
 
 ## Measurement methodology (and how to audit a capture)
 
-**Compiler-flag policy**: SIMT-only harnesses compile at plain `-O3`
-(default ptxas), matching how consumers compile GLASS — shipped table
-decisions must be made under production flags. MathDx-including harnesses
-additionally pass `-Xptxas -O1`, the documented workaround for a CUDA 12.9
-ptxas failure on cuBLASDx/cuSOLVERDx translation units. The flag applies to
-the whole binary, so within a MathDx capture the SIMT and vendor candidates
-are compiled identically (verdicts stay apples-to-apples), but raw µs from a
-MathDx capture are NOT comparable to µs from a SIMT-only capture — only
-within-capture comparisons are valid.
+**Compiler-flag policy**: MathDx translation units require `-Xptxas -O1` —
+the documented workaround for a CUDA 12.9 ptxas failure on
+cuBLASDx/cuSOLVERDx TUs (it also damps dead-store elimination of benchmark
+outputs). The ladder-family harnesses (`ladder`, `blas2`, `rect`, `solvers`)
+keep those same flags even in SIMT-only builds, so every contender feeding
+the `suggested_backend<>` tables is measured under ONE flag set regardless
+of whether the nvidia tier is present. The `body` and `reduced` legs and
+the characterization drivers (`perf_sweeps.py`, `paper_sweeps.py`, and
+`run_bench.py`'s non-MathDx builds) compile at plain `-O3`, matching
+production consumer flags. Consequence: within any single capture the A/B
+comparison is apples-to-apples, but raw µs are NOT comparable across legs
+with different flag sets — compare verdicts, not absolute times.
 
 The ladder-grammar harnesses share one measurement core
 (`bench/timing_common.cuh`, audited 2026-08-11):

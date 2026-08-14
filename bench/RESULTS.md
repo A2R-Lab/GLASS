@@ -347,25 +347,52 @@ Predicate `suggested_use_reduced<n_out,K_contract,blockDim>()` = `false` on ever
 
 ## nvwarp (audited characterization; no dispatch decision)
 
-The 2026-08-14 sm_120 quiet run compared `glass::warp::` with
-`glass::nvidia::warp::` (CUB WarpReduce) at identical launch shape, using the
-shared warm-up, spread, provenance, and isolation protocol. Of 126 cells, 121
-tie within ±2%. Four high-throughput f64 `dot` cells favor CUB by 2.0–3.0%; the
-sole SIMT verdict is a tiny latency cell whose SIMT spread was 17.45%, so it is
-not actionable. Five individual contender samples exceeded 5% spread, but no
-shipped dispatch depends on this characterization. Raw capture:
-`perf_nvwarp_20260813_231818.txt` (archived externally).
+The 2026-08-14 sm_120 quiet run (production `-O3` flags, post-`-O1`-revert)
+compared `glass::warp::` with `glass::nvidia::warp::` (CUB WarpReduce) at
+identical launch shape, using the shared warm-up, spread, provenance, and
+isolation protocol. Of 126 cells, 123 tie within ±2%. Three high-throughput
+(NPROB=8192) f64 `dot` cells favor CUB by 2.2–3.3%; no cell produced a SIMT
+verdict. Six of 252 contender samples exceeded 5% spread, but no shipped
+dispatch depends on this characterization. Raw capture:
+`perf_nvwarp_20260814_171251.txt` (archived externally).
 
 ## robotics (audited characterization; no dispatch decision)
 
-The 2026-08-14 sm_120 quiet run used 8192 problems and 1000 reps per trial with
-the shared audited protocol. The thread tier won every fixed-size row for both
-dtypes. `softmax_n16` split by dtype: warp won f32, thread won f64. At the best
-thread launch, fused and composed spatial forms are nearly tied in f32; in f64
-the fused forms are about 15–22% faster. Only 2 of 136 contender samples exceeded
-5% spread, neither changing a clear row verdict. `argmax_fast` is a block-only
-characterization and does not beat the ordinary thread-tier `argmax`. Raw
-capture: `perf_robotics_20260813_231523.txt` (archived externally).
+The 2026-08-14 sm_120 quiet run (production `-O3` flags, post-`-O1`-revert)
+used 8192 problems and 1000 reps per trial with the shared audited protocol.
+The thread tier won every fixed-size row for both dtypes. `softmax_n16` split
+by dtype: warp won f32, thread won f64. At the best thread launch, fused and
+composed spatial forms are nearly tied in f32; in f64 the fused forms are
+8–20% faster (mcross 1.11×, fcross 1.20×, mxform 1.19×, sinertia 1.08×).
+16 of 304 individual launch samples exceeded 5% spread, none changing a clear
+row verdict. `argmax_fast` is a block-only characterization and does not beat
+the ordinary thread-tier `argmax`. Raw capture:
+`perf_robotics_20260814_170956.txt` (archived externally).
+
+## Composition & mapping A/B (characterization; no dispatch decision)
+
+2026-08-14 sm_120 quiet run, production `-O3` flags, `bench/perf_sweeps.py
+--profile overnight` (composition: NPROB=4096, 100 reps; mapping: NPROB=8192,
+100 reps; min of 3 trials). The composition harness cross-checks each
+legacy/current pair to tolerance before timing (riccati agreed to 1.0e-7 rel
+in f32 / 2.4e-16 in f64; pcg and bdsv bit-exact).
+
+- **`riccati_gain` P·B reuse** (36×12): current beats the former P·A algebra
+  **1.19× (f64)** / **1.35× (f32)**. The ratio bundles the algebraic saving
+  with the occupancy gain from the smaller scratch (`NU²+NX·NU` vs
+  `NU²+NX²`); both variants' spreads ≤1.7%.
+- **`pcg` barrier coalescing** (SS=6, KP=32, fixed 1 iteration): 1.06× (f64)
+  / 1.01× (f32).
+- **`bdsv` compile-time inner calls** (6×16): a wash (1.00× both dtypes).
+- **Compile-time `ger` flat one-thread-per-output remap** (bit-identical by
+  construction): large wins where the former column loop serialized —
+  8.2×/6.5× at 4×128 (f32/f64), 5.6×/3.7× at 8×64, 2.3×/1.09× at 32×32,
+  1.34×/1.04× at 64×8.
+- The mapping harness's transpose/prefix/getrf rows are exploratory
+  candidates, not shipped changes.
+
+Raw captures: `perf_composition_20260814_170927.txt`,
+`perf_mapping_20260814_170931.txt` (archived externally).
 
 ## Reproduce
 

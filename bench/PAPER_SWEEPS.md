@@ -77,7 +77,12 @@ validation 2026-07-06 on a shared box; those numbers were discarded.)
 
 The audited 2026-08-14 rerun validated the refreshed harnesses (fusion capture
 `paper_fusion_20260813_231910.txt`; 500-rep host confirmation
-`paper_hostblas_20260814_111514.txt`). Fusion was stable (1 of 240 contender
+`paper_hostblas_20260814_111514.txt`). Those two validation captures were
+compiled with a then-global `-Xptxas -O1` on the GLASS side (since reverted
+to plain `-O3` for these harnesses); the vendor side is prebuilt cuBLAS and
+unaffected, so GLASS-win margins in them are conservative lower bounds. The
+shipped F2/F3/F4 figures still render from the 2026-07-08 plain-`-O3`
+captures. Fusion was stable (1 of 240 contender
 samples above 5% spread, with a stable winning contender). The host confirmation reduced noisy
 selected pairs from 24/378 to 8/378; all eight retained decisive 1.56×–2.19×
 gaps. The latency section had 0/117 samples above 5% spread. One near-tie
