@@ -48,88 +48,15 @@ def detect_arch():
         sys.exit("could not detect GPU architecture; pass --arch sm_XX")
 
 
-def compute_pids():
-    try:
-        out = subprocess.run(
-            ["nvidia-smi", "--query-compute-apps=pid",
-             "--format=csv,noheader,nounits"], capture_output=True, text=True,
-            timeout=10, check=True).stdout
-        return {int(line) for line in out.splitlines() if line.strip().isdigit()}
-    except Exception:
-        return set()
-
-
-def gpu_busy():
-    try:
-        value = subprocess.run(
-            ["nvidia-smi", "--query-gpu=utilization.gpu",
-             "--format=csv,noheader,nounits"], capture_output=True, text=True,
-            timeout=10, check=True).stdout.strip().splitlines()[0]
-        return int(value) > 5
-    except Exception:
-        return False
-
-
-def wait_for_quiet_gpu(force=False, timeout=30):
-    """Let telemetry from our preceding serial leg drain before failing."""
-    if force:
-        return
-    deadline = time.monotonic() + timeout
-    while True:
-        active = compute_pids()
-        busy = gpu_busy()
-        if not active and not busy:
-            return
-        if time.monotonic() >= deadline:
-            sys.exit("GPU is not isolated after 30s; active compute PIDs="
-                     f"{sorted(active)}, utilization_busy={busy}")
-        time.sleep(1)
-
-
-def source_digest():
-    listed = subprocess.run(
-        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z",
-         "glass*.cuh", "src", "bench"], cwd=ROOT,
-        capture_output=True, check=True).stdout
-    digest = hashlib.sha256()
-    for raw in sorted(p for p in listed.split(b"\0") if p):
-        path = ROOT / os.fsdecode(raw)
-        # Captures such as perf_*.txt are outputs, not executable inputs.
-        if path.is_file() and path.suffix in {".cuh", ".cu", ".py"}:
-            digest.update(raw + b"\0")
-            digest.update(path.read_bytes())
-    return digest.hexdigest()
+# Quiet-GPU discipline and provenance stamps are shared across the four
+# benchmark drivers — one copy in bench_common (they drifted as four copies).
+from bench_common import (compute_pids, require_quiet_gpu as wait_for_quiet_gpu,
+                          watch_process)
+import bench_common
 
 
 def provenance(leg, arch, argv):
-    commit = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True,
-        text=True, check=True).stdout.strip()
-    dirty = bool(subprocess.run(
-        ["git", "status", "--porcelain", "--untracked-files=all", "--",
-         "glass*.cuh", "src", "bench"], cwd=ROOT, capture_output=True,
-        text=True, check=True).stdout.strip())
-    nvcc = subprocess.run(
-        ["nvcc", "--version"], capture_output=True, text=True, check=True
-    ).stdout.strip().splitlines()[-1]
-    receipt_path = ROOT / "test/gpu-proof.json"
-    receipt = json.loads(receipt_path.read_text()) if receipt_path.exists() else {}
-    receipt_sha = hashlib.sha256(receipt_path.read_bytes()).hexdigest() if receipt_path.exists() else "missing"
-    session, fingerprint = receipt.get("session", {}), receipt.get("fingerprint", {})
-    return [
-        "# provenance_schema=2",
-        f"# benchmark_leg={leg}",
-        f"# timing_started_utc={datetime.datetime.now(datetime.timezone.utc).isoformat()}",
-        f"# git_commit={commit}",
-        f"# source_dirty={str(dirty).lower()}",
-        f"# source_sha256={source_digest()}",
-        f"# arch={arch} argv={' '.join(argv)}",
-        f"# toolchain={nvcc}",
-        f"# correctness_receipt_ended_utc={session.get('ended_at', 'missing')}",
-        f"# correctness_fingerprint_sha256={fingerprint.get('digest', 'missing')}",
-        f"# correctness_receipt_sha256={receipt_sha}",
-        "# correctness=separate signed GPU receipt; timing harness retains launch/finite sentinels",
-    ]
+    return bench_common.provenance(leg, f"arch={arch} argv={' '.join(argv)}")
 
 
 def build(leg, arch):
@@ -141,7 +68,7 @@ def build(leg, arch):
     if binary.exists() and binary.stat().st_mtime > max(p.stat().st_mtime for p in deps):
         print(f"[build] {leg}: up to date")
         return binary
-    cmd = ["nvcc", "-std=c++17", f"-arch={arch}", "-O3", "-Xptxas", "-O1",
+    cmd = ["nvcc", "-std=c++17", f"-arch={arch}", "-O3",
            "--expt-relaxed-constexpr", "-I..", "-I../src", source,
            "-o", str(binary)]
     print("[build]", " ".join(cmd))
@@ -152,6 +79,9 @@ def build(leg, arch):
 
 def run_leg(leg, binary, arch, force, runtime_args):
     wait_for_quiet_gpu(force)
+    # Under --force, pre-existing PIDs are tolerated by design — subtract them
+    # so the mid-run watch only trips on NEW processes.
+    baseline = compute_pids() if force else frozenset()
     argv = [str(binary), *runtime_args]
     stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     capture = BENCH_DIR / f"perf_{leg}_{stamp}.txt"
@@ -161,14 +91,7 @@ def run_leg(leg, binary, arch, force, runtime_args):
         stream.flush()
         proc = subprocess.Popen(argv, cwd=BENCH_DIR, stdout=stream,
                                 stderr=subprocess.STDOUT)
-        foreign = set()
-        while proc.poll() is None:
-            foreign |= compute_pids() - {proc.pid}
-            if foreign:
-                proc.terminate()
-                break
-            time.sleep(1)
-        returncode = proc.wait()
+        returncode, foreign = watch_process(proc, baseline)
         if foreign:
             stream.write(f"# INVALID foreign_compute_pids={sorted(foreign)}\n")
     if foreign:

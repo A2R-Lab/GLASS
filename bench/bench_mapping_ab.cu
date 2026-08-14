@@ -1,6 +1,10 @@
 // A/B harness for candidate work-mapping changes that are not yet public API.
 // Correctness stays in pytest; candidates that win the quiet timing pass must
 // be promoted with dedicated oracle tests before landing.
+//
+// NOTE: the timed region includes each kernel's per-launch shared-memory
+// initialization (operand fill), which is identical across the A and B
+// variants — so reported ratios are LOWER BOUNDS on the mapping-only delta.
 
 #include <cstdio>
 #include <cstdlib>
@@ -163,6 +167,11 @@ static void report(const char* name,A baseline,B candidate,int reps){
     }else{
         a=tc_time_ns_per_prob(baseline,reps,NPROB);as=tc_last_spread_pct();
         b=tc_time_ns_per_prob(candidate,reps,NPROB);bs=tc_last_spread_pct();
+    }
+    if(a>=1e29||b>=1e29){   // launch-failure sentinel, not a time
+        printf("AB %-20s FAIL baseline=%s candidate=%s (launch failed; no ratio)\n",
+               name,a>=1e29?"FAIL":"ok",b>=1e29?"FAIL":"ok");
+        exit(4);
     }
     printf("AB %-20s baseline=%.3f spread=%.2f%% candidate=%.3f spread=%.2f%% ratio=%.3f\n",
            name,a,as,b,bs,a/b);

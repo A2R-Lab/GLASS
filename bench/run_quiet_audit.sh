@@ -3,7 +3,8 @@
 #
 # Prebuild first. Timing is capture-first: no dispatch header changes until
 # every measured leg finishes. Regeneration then consumes immutable captures
-# offline, followed by a second full signed receipt for the generated tree.
+# offline; commit the reviewed diffs and run ./test/run_gpu_proof.sh for the
+# second receipt (the runner refuses dirty trees by design).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -24,6 +25,15 @@ ARCH=sm_120
 echo "── quiet-GPU preflight ──────────────────────────────────"
 nvidia-smi --query-gpu=name,compute_cap,utilization.gpu,memory.used,memory.total \
     --format=csv,noheader,nounits
+
+echo "── prebuild every timed binary (hash-cached, compile-only) ─"
+# Cold caches would otherwise burn quiet-window time on multi-GB MathDx
+# compiles mid-sequence. These are no-ops when the caches are warm, so the
+# quiet window itself stays execute-only. (Run this script's prebuild ahead
+# of time on a busy box if you want: it performs no timed GPU work.)
+python3 bench/tune.py --sm "$SMS" --prebuild --build-jobs 4
+python3 bench/perf_sweeps.py --arch "$ARCH" --build-only
+python3 bench/paper_sweeps.py --arch "$ARCH" --build-only
 
 if $RESUME; then
     echo "── repair NVIDIA shard; carry prior completed shards ────"
@@ -81,8 +91,8 @@ python3 bench/tune.py --sm "$SMS" \
     --from-rect "$rect" \
     --from-solvers "$solvers"
 
-echo "── final correctness receipt for generated source ────────"
-./test/run_gpu_proof.sh
-
 echo
-echo "Quiet audit complete. Review captures and generated diffs before commit."
+echo "Quiet audit complete. Review captures and generated diffs, COMMIT them,"
+echo "then run ./test/run_gpu_proof.sh for the final receipt — the runner"
+echo "refuses dirty trees because a dirty-tree receipt can never verify"
+echo "against the commit that would carry it."

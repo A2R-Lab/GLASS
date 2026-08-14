@@ -1,10 +1,18 @@
 // A/B harness for composition-level performance changes.
 //
-// This harness intentionally does not serve as a correctness test. The same
-// public paths are covered by the signed pytest receipt. It times:
+// This harness is not the correctness gate — the same public paths are
+// covered by the signed pytest receipt — but it DOES cross-check each
+// legacy/current pair once before timing (tolerance compare, abort on
+// mismatch) so a broken variant can never post a plausible-looking ratio.
+// It times:
 //   * riccati_gain: former P*A algebra vs current reuse of P*B;
 //   * pcg: former redundant trailing barriers vs current coalesced barriers;
 //   * bdsv: former runtime-dimension inner calls vs compile-time inner calls.
+//
+// NOTE on the riccati ratio: the current variant also SHRINKS scratch
+// (NU^2+NX*NU vs NU^2+NX^2), so its ratio bundles the algebraic saving with
+// any occupancy gain from the smaller dynamic-smem footprint. That is the
+// honest shipped-vs-shipped comparison, but it is not a pure-FLOP delta.
 //
 // Build only while the machine is shared; run only through the quiet timing
 // window. Output is ns/problem, min of three trials with trial spread.
@@ -13,6 +21,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <cstring>
+#include <cmath>
 #include "timing_common.cuh"
 #include "../glass.cuh"
 
@@ -36,7 +45,7 @@ __device__ void riccati_legacy(const T* P, const T* A, const T* B, const T* R,
 }
 
 template <typename T, uint32_t NX, uint32_t NU, bool LEGACY>
-__global__ void k_riccati(T* out) {
+__global__ void k_riccati(T* out, T* K_full) {
     extern __shared__ double raw[];
     T* P = reinterpret_cast<T*>(raw);
     T* A = P + NX*NX;
@@ -60,6 +69,11 @@ __global__ void k_riccati(T* out) {
     if constexpr (LEGACY) riccati_legacy<T, NX, NU>(P, A, B, R, K, scratch, &fail);
     else glass::block::riccati_gain<T, NX, NU>(P, A, B, R, K, scratch, (T)0, &fail);
     if (threadIdx.x == 0) out[blockIdx.x] = K[0] + (T)fail;
+    // Cross-check path only (K_full=nullptr in timed launches): expose the
+    // whole gain matrix so the host can compare legacy vs current.
+    if (K_full && blockIdx.x == 0)
+        for (uint32_t i = threadIdx.x; i < NU*NX; i += blockDim.x)
+            K_full[i] = K[i];
 }
 
 template <typename T, uint32_t SS, uint32_t KP>
@@ -168,7 +182,7 @@ __device__ void bdsv_legacy(T* matrix, T* vec, T* scratch) {
 }
 
 template <typename T, uint32_t KP, uint32_t BS, bool LEGACY>
-__global__ void k_bdsv(T* out) {
+__global__ void k_bdsv(T* out, T* vec_full) {
     extern __shared__ double raw[];
     T* matrix = reinterpret_cast<T*>(raw);
     constexpr uint32_t BAND = KP*3*BS*BS, V = (KP+2)*BS;
@@ -183,6 +197,10 @@ __global__ void k_bdsv(T* out) {
     if constexpr (LEGACY) bdsv_legacy<T, KP, BS>(matrix, vec, scratch);
     else glass::block::bdsv<T, KP, BS>(matrix, vec, scratch);
     if (threadIdx.x == 0) out[blockIdx.x] = vec[BS];
+    // Cross-check path only (vec_full=nullptr in timed launches).
+    if (vec_full && blockIdx.x == 0)
+        for (uint32_t i = threadIdx.x; i < V; i += blockDim.x)
+            vec_full[i] = vec[i];
 }
 
 template <typename LaunchA, typename LaunchB>
@@ -197,8 +215,42 @@ static void report(const char* name, LaunchA legacy, LaunchB current, int reps) 
         a = tc_time_ns_per_prob(legacy, reps, NPROB); as = tc_last_spread_pct();
         b = tc_time_ns_per_prob(current, reps, NPROB); bs = tc_last_spread_pct();
     }
+    if (a >= 1e29 || b >= 1e29) {   // launch-failure sentinel, not a time
+        printf("AB %-22s FAIL legacy=%s current=%s (launch failed; no ratio)\n",
+               name, a >= 1e29 ? "FAIL" : "ok", b >= 1e29 ? "FAIL" : "ok");
+        exit(4);
+    }
     printf("AB %-22s legacy=%.3f spread=%.2f%% current=%.3f spread=%.2f%% ratio=%.3f\n",
            name, a, as, b, bs, a/b);
+}
+
+// One-shot legacy-vs-current tolerance compare on host-visible outputs.
+// The two variants reorder floating-point work, so exact equality is not
+// expected; agreement far tighter than any real regression is.
+template <typename T>
+static void check_close(const char* name, const T* a, const T* b, size_t n) {
+    double tol = sizeof(T) == 4 ? 1e-3 : 1e-10, worst = 0.0;
+    for (size_t i = 0; i < n; i++) {
+        double d = fabs((double)a[i] - (double)b[i]);
+        double m = fmax(fabs((double)a[i]), fabs((double)b[i]));
+        worst = fmax(worst, d / fmax(m, 1.0));
+    }
+    if (worst > tol) {
+        fprintf(stderr, "AB %s CROSS-CHECK FAILED: legacy/current disagree "
+                "(worst rel diff %.3e > tol %.0e) — refusing to time a "
+                "broken variant\n", name, worst, tol);
+        exit(4);
+    }
+    printf("# cross-check %-22s ok (worst rel diff %.3e, n=%zu)\n",
+           name, worst, n);
+}
+
+template <typename Launch, typename T>
+static void run_once_to_host(Launch launch, const T* dev, T* host, size_t n) {
+    launch();
+    CK(cudaGetLastError());
+    CK(cudaDeviceSynchronize());
+    CK(cudaMemcpy(host, dev, n * sizeof(T), cudaMemcpyDeviceToHost));
 }
 
 template <typename T>
@@ -211,9 +263,19 @@ static void run_dtype(const char* dtype, int reps) {
     constexpr size_t base = (2*NX*NX + NX*NU + NU*NU + NU*NX)*sizeof(T);
     constexpr size_t old_work = (NU*NU + NX*NX)*sizeof(T);
     constexpr size_t new_work = glass::block::riccati_scratch_bytes<T,NX,NU>();
+    {   // cross-check the pair once before timing it
+        T* Kd; CK(cudaMalloc(&Kd, NU*NX*sizeof(T)));
+        T ka[NU*NX], kb[NU*NX];
+        run_once_to_host([&]{ k_riccati<T,NX,NU,true><<<1,128,base+old_work>>>(out, Kd); },
+                         Kd, ka, NU*NX);
+        run_once_to_host([&]{ k_riccati<T,NX,NU,false><<<1,128,base+new_work>>>(out, Kd); },
+                         Kd, kb, NU*NX);
+        check_close("riccati36x12", ka, kb, NU*NX);
+        cudaFree(Kd);
+    }
     report((sizeof(T)==4 ? "riccati36x12_f32" : "riccati36x12_f64"),
-           [&]{ k_riccati<T,NX,NU,true><<<NPROB,128,base+old_work>>>(out); },
-           [&]{ k_riccati<T,NX,NU,false><<<NPROB,128,base+new_work>>>(out); }, reps);
+           [&]{ k_riccati<T,NX,NU,true><<<NPROB,128,base+old_work>>>(out, (T*)nullptr); },
+           [&]{ k_riccati<T,NX,NU,false><<<NPROB,128,base+new_work>>>(out, (T*)nullptr); }, reps);
 
     constexpr uint32_t SS=6, PK=32, V=(PK+2)*SS, BAND=PK*3*SS*SS;
     T *S, *Pinv, *b, *x;
@@ -224,6 +286,14 @@ static void run_dtype(const char* dtype, int reps) {
     // Identity S/Pinv and a nonzero RHS keep arithmetic finite while both
     // variants execute the same fixed one-iteration path.
     size_t pcg_smem = glass::block::pcg_scratch_bytes<T,SS,PK>(128);
+    {   // cross-check: k_pcg already writes the full solution vector
+        T xa[V], xb[V];
+        run_once_to_host([&]{ k_pcg<T,SS,PK,true><<<1,128,pcg_smem>>>(S,Pinv,b,x,iters); },
+                         x, xa, V);
+        run_once_to_host([&]{ k_pcg<T,SS,PK,false><<<1,128,pcg_smem>>>(S,Pinv,b,x,iters); },
+                         x, xb, V);
+        check_close("pcg1iter", xa, xb, V);
+    }
     report((sizeof(T)==4 ? "pcg1iter_f32" : "pcg1iter_f64"),
            [&]{ k_pcg<T,SS,PK,true><<<NPROB,128,pcg_smem>>>(S,Pinv,b,x,iters); },
            [&]{ k_pcg<T,SS,PK,false><<<NPROB,128,pcg_smem>>>(S,Pinv,b,x,iters); }, reps);
@@ -232,9 +302,20 @@ static void run_dtype(const char* dtype, int reps) {
     constexpr uint32_t BK=16, BS=6;
     constexpr size_t bd_smem = (BK*3*BS*BS + (BK+2)*BS)*sizeof(T)
                              + glass::block::bdsv_scratch_bytes<T,BS>();
+    {   // cross-check the pair once before timing it
+        constexpr uint32_t BV = (BK+2)*BS;
+        T* vd; CK(cudaMalloc(&vd, BV*sizeof(T)));
+        T va[BV], vb[BV];
+        run_once_to_host([&]{ k_bdsv<T,BK,BS,true><<<1,128,bd_smem>>>(out, vd); },
+                         vd, va, BV);
+        run_once_to_host([&]{ k_bdsv<T,BK,BS,false><<<1,128,bd_smem>>>(out, vd); },
+                         vd, vb, BV);
+        check_close("bdsv6x16", va, vb, BV);
+        cudaFree(vd);
+    }
     report((sizeof(T)==4 ? "bdsv6x16_f32" : "bdsv6x16_f64"),
-           [&]{ k_bdsv<T,BK,BS,true><<<NPROB,128,bd_smem>>>(out); },
-           [&]{ k_bdsv<T,BK,BS,false><<<NPROB,128,bd_smem>>>(out); }, reps);
+           [&]{ k_bdsv<T,BK,BS,true><<<NPROB,128,bd_smem>>>(out, (T*)nullptr); },
+           [&]{ k_bdsv<T,BK,BS,false><<<NPROB,128,bd_smem>>>(out, (T*)nullptr); }, reps);
     cudaFree(out); cudaFree(iters);
     printf("# completed dtype=%s\n", dtype);
 }

@@ -130,104 +130,28 @@ def run(cmd, **kw):
     return subprocess.run([str(c) for c in cmd], **kw)
 
 
-def gpu_busy():
-    """Conservative preflight: utilization above 5% means do not time."""
-    try:
-        out = subprocess.run(
-            ["nvidia-smi", "--query-gpu=utilization.gpu",
-             "--format=csv,noheader,nounits"], capture_output=True, text=True,
-            timeout=10, check=True).stdout.strip().splitlines()[0]
-        return int(out) > 5
-    except Exception:
-        return False
-
-
-def compute_pids():
-    """Return active compute PIDs when nvidia-smi supports the query."""
-    try:
-        out = subprocess.run(
-            ["nvidia-smi", "--query-compute-apps=pid",
-             "--format=csv,noheader,nounits"], capture_output=True, text=True,
-            timeout=10, check=True).stdout
-        return {int(line) for line in out.splitlines() if line.strip().isdigit()}
-    except Exception:
-        return set()
-
-
-def require_quiet_gpu(force=False):
-    if force:
-        return
-    deadline = time.monotonic() + 30
-    while True:
-        active = compute_pids()
-        busy = gpu_busy()
-        if not active and not busy:
-            return
-        if time.monotonic() >= deadline:
-            sys.exit("ERROR: GPU is not isolated after 30s; active compute "
-                     f"PIDs={sorted(active)}, utilization_busy={busy}. "
-                     "--force is for deliberate diagnostic runs only.")
-        time.sleep(1)
-
-
-def source_digest():
-    """Hash tracked and untracked, non-ignored library/benchmark sources."""
-    listed = subprocess.run(
-        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z",
-         "glass*.cuh", "src", "bench"], cwd=GLASS_DIR,
-        capture_output=True, check=True).stdout
-    digest = hashlib.sha256()
-    for raw in sorted(p for p in listed.split(b"\0") if p):
-        path = GLASS_DIR / os.fsdecode(raw)
-        if path.is_file() and path.suffix in {".cuh", ".cu", ".py"}:
-            digest.update(raw + b"\0")
-            digest.update(path.read_bytes())
-    return digest.hexdigest()
+# Quiet-GPU discipline and provenance stamps are shared across the four
+# benchmark drivers — one copy in bench_common (they drifted as four copies).
+from bench_common import (compute_pids, gpu_busy, require_quiet_gpu,
+                          source_digest, watch_process)
+import bench_common
 
 
 def provenance(leg, sms, margin):
-    commit = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=GLASS_DIR, capture_output=True,
-        text=True, check=True).stdout.strip()
-    dirty = bool(subprocess.run(
-        ["git", "status", "--porcelain", "--untracked-files=all", "--",
-         "glass*.cuh", "src", "bench"], cwd=GLASS_DIR, capture_output=True,
-        text=True, check=True).stdout.strip())
-    nvcc = subprocess.run(
-        ["nvcc", "--version"], capture_output=True, text=True, check=True
-    ).stdout.strip().splitlines()[-1]
-    receipt_path = GLASS_DIR / "test/gpu-proof.json"
-    receipt = json.loads(receipt_path.read_text()) if receipt_path.exists() else {}
-    receipt_sha = hashlib.sha256(receipt_path.read_bytes()).hexdigest() if receipt_path.exists() else "missing"
-    session, fingerprint = receipt.get("session", {}), receipt.get("fingerprint", {})
-    return [
-        "# provenance_schema=2",
-        f"# benchmark_leg={leg}",
-        f"# timing_started_utc={datetime.datetime.now(datetime.timezone.utc).isoformat()}",
-        f"# git_commit={commit}",
-        f"# source_dirty={str(dirty).lower()}",
-        f"# source_sha256={source_digest()}",
-        f"# arch=sm_{sms // 10} decision_margin={margin:.6f}",
-        f"# toolchain={nvcc}",
-        f"# correctness_receipt_ended_utc={session.get('ended_at', 'missing')}",
-        f"# correctness_fingerprint_sha256={fingerprint.get('digest', 'missing')}",
-        f"# correctness_receipt_sha256={receipt_sha}",
-        "# correctness=separate signed GPU receipt; timing harness retains launch/finite sentinels",
-    ]
+    return bench_common.provenance(
+        leg, f"arch=sm_{sms // 10} decision_margin={margin:.6f}")
 
 
 def run_isolated(argv, force=False):
     """Run one timed process and invalidate it if another compute PID appears."""
     require_quiet_gpu(force)
+    # Under --force, pre-existing PIDs were deliberately tolerated — subtract
+    # them so the mid-run check catches only NEW processes (previously the
+    # very PIDs --force accepted re-tripped it, making the flag self-defeating).
+    baseline = compute_pids() if force else frozenset()
     proc = subprocess.Popen([str(x) for x in argv], cwd=BENCH_DIR, text=True,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    foreign = set()
-    while proc.poll() is None:
-        foreign |= compute_pids() - {proc.pid}
-        if foreign:
-            proc.terminate()
-            break
-        time.sleep(1)
+    _, foreign = watch_process(proc, baseline)
     stdout, _ = proc.communicate()
     if foreign:
         sys.exit(f"ERROR: timing invalidated; foreign compute PIDs appeared: "
@@ -387,7 +311,9 @@ def _ladder_expr(winners, dtype, op):
     return " : ".join(parts) + f" : backend::{runs[-1][1]}"
 
 
-_SPREAD_RE = re.compile(r"spread<=([\d.]+)%")
+# Ladder-style rows print `spread<=X%` (row-max over cells); the reduced and
+# solvers/AB harnesses print per-measurement `spread=X%`. Match both.
+_SPREAD_RE = re.compile(r"spread<?=+([\d.]+)%")
 
 
 def warn_jittery_rows(text, margin, label):
@@ -1351,6 +1277,7 @@ def main():
                 "\n".join(provenance("reduced_sweep", sms, args.margin))
                 + "\n" + rtxt)
         if rtxt:
+            warn_jittery_rows(rtxt, args.margin, "reduced")
             rows, wins, mism = analyze_reduced(rtxt, args.margin)
             print(f"  {len(rows)} configs, reduced wins {len(wins)}, "
                   f"predicate mismatches {len(mism)}")
@@ -1417,6 +1344,7 @@ def main():
                 sched=_SOLVERS_SCHED, force=args.force)
             txt = txt_path.read_text()
         if txt:
+            warn_jittery_rows(txt, args.margin, "solvers")
             data = parse_solvers(txt)
             if not any(data.values()):
                 print(f"  ⚠️ no NPROB=8192 rows parsed from {txt_path.name}; "

@@ -74,90 +74,18 @@ def detect_arch():
                  "failed, no Tegra device tree); pass --arch sm_XX explicitly")
 
 
-def gpu_busy():
-    try:
-        util = subprocess.run(
-            ["nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=10).stdout.strip().splitlines()[0]
-        return int(util) > 5
-    except Exception:
-        return False
-
-
-def compute_pids():
-    """Return active compute PIDs when nvidia-smi supports the query."""
-    try:
-        out = subprocess.run(
-            ["nvidia-smi", "--query-compute-apps=pid", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=10, check=True).stdout
-        return {int(line.strip()) for line in out.splitlines() if line.strip().isdigit()}
-    except Exception:
-        return set()
-
-
-def wait_for_quiet_gpu(force=False, timeout=30):
-    """Wait out trailing telemetry from a just-finished serial benchmark."""
-    if force:
-        return
-    deadline = time.monotonic() + timeout
-    while True:
-        active = compute_pids()
-        busy = gpu_busy()
-        if not active and not busy:
-            return
-        if time.monotonic() >= deadline:
-            sys.exit("GPU is not isolated after 30s; active compute PIDs="
-                     f"{sorted(active)}, utilization_busy={busy}")
-        time.sleep(1)
-
-
-def source_digest():
-    """Hash every tracked or untracked, non-ignored benchmark/library source."""
-    listed = subprocess.run(
-        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z",
-         "glass*.cuh", "src", "bench"],
-        cwd=BENCH_DIR.parent, capture_output=True, check=True).stdout
-    digest = hashlib.sha256()
-    for raw in sorted(p for p in listed.split(b"\0") if p):
-        path = BENCH_DIR.parent / os.fsdecode(raw)
-        if not path.is_file() or path.suffix not in {".cuh", ".cu", ".py"}:
-            continue
-        digest.update(raw + b"\0")
-        digest.update(path.read_bytes())
-    return digest.hexdigest()
+# Quiet-GPU discipline and provenance stamps are shared across the four
+# benchmark drivers — one copy in bench_common (they drifted as four copies).
+from bench_common import (compute_pids, require_quiet_gpu as wait_for_quiet_gpu,
+                          watch_process)
+import bench_common
 
 
 def provenance(leg, arch, reps, dtype):
-    root = BENCH_DIR.parent
-    commit = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=root, capture_output=True,
-        text=True, check=True).stdout.strip()
-    dirty = bool(subprocess.run(
-        ["git", "status", "--porcelain", "--untracked-files=all", "--",
-         "glass*.cuh", "src", "bench"], cwd=root, capture_output=True,
-        text=True, check=True).stdout.strip())
-    nvcc = subprocess.run(
-        ["nvcc", "--version"], capture_output=True, text=True, check=True
-    ).stdout.strip().splitlines()[-1]
-    receipt_path = root / "test/gpu-proof.json"
-    receipt = json.loads(receipt_path.read_text()) if receipt_path.exists() else {}
-    receipt_sha = hashlib.sha256(receipt_path.read_bytes()).hexdigest() if receipt_path.exists() else "missing"
-    session = receipt.get("session", {})
-    fingerprint = receipt.get("fingerprint", {})
-    return [
-        "# provenance_schema=2",
-        f"# benchmark_leg={leg}",
-        f"# timing_started_utc={datetime.datetime.now(datetime.timezone.utc).isoformat()}",
-        f"# git_commit={commit}",
-        f"# source_dirty={str(dirty).lower()}",
-        f"# source_sha256={source_digest()}",
-        f"# arch={arch} reps={reps} dtype={dtype}",
-        f"# toolchain={nvcc}",
-        f"# correctness_receipt_ended_utc={session.get('ended_at', 'missing')}",
-        f"# correctness_fingerprint_sha256={fingerprint.get('digest', 'missing')}",
-        f"# correctness_receipt_sha256={receipt_sha}",
-        "# comparison=best swept GLASS configurations versus documented default vendor APIs",
-    ]
+    return bench_common.provenance(
+        leg, f"arch={arch} reps={reps} dtype={dtype}",
+        comparison_line=("comparison=best swept GLASS configurations versus "
+                         "documented default vendor APIs"))
 
 
 def build(leg, arch):
@@ -176,7 +104,6 @@ def build(leg, arch):
             print(f"[build] {leg}: up to date, skipping")
             return out
     cmd = ["nvcc", "-std=c++17", f"-arch={arch}", "-O3", "--expt-relaxed-constexpr",
-           "-Xptxas", "-O1",
            "-I..", "-I../src", src, "-o", str(out)] + libs
     print(f"[build] {' '.join(cmd)}")
     r = subprocess.run(cmd, cwd=BENCH_DIR)
@@ -185,7 +112,7 @@ def build(leg, arch):
     return out
 
 
-def run(leg, binary, arch, reps, dtype):
+def run(leg, binary, arch, reps, dtype, baseline=frozenset()):
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     out_txt = BENCH_DIR / f"paper_{leg}_{ts}.txt"
     args = [str(binary), str(reps), dtype]
@@ -194,14 +121,7 @@ def run(leg, binary, arch, reps, dtype):
         f.write("\n".join(provenance(leg, arch, reps, dtype)) + "\n")
         f.flush()
         proc = subprocess.Popen(args, cwd=BENCH_DIR, stdout=f, stderr=subprocess.STDOUT)
-        foreign = set()
-        while proc.poll() is None:
-            foreign |= compute_pids() - {proc.pid}
-            if foreign:
-                proc.terminate()
-                break
-            time.sleep(2)
-        returncode = proc.wait()
+        returncode, foreign = watch_process(proc, baseline, poll_s=2)
         if foreign:
             f.write(f"# INVALID foreign_compute_pids={','.join(map(str, sorted(foreign)))}\n")
     print(f"[run] {leg} exit={returncode}")
@@ -254,9 +174,12 @@ def main():
         return
 
     wait_for_quiet_gpu(args.force)
+    # Under --force, pre-existing PIDs are tolerated by design — subtract them
+    # so the mid-run watch only trips on NEW processes.
+    baseline = compute_pids() if args.force else frozenset()
 
     for l in legs:   # serial, one timed leg at a time
-        run(l, binaries[l], arch, args.reps, args.dtype)
+        run(l, binaries[l], arch, args.reps, args.dtype, baseline)
     print("all legs done")
 
 
