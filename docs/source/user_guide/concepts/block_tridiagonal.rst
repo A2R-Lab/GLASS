@@ -79,7 +79,8 @@ Sizing and launch:
   as the launch's dynamic-shared-memory argument. Five scalars live in static
   ``__shared__``.
 * Use a multiple of 32 threads; PCG's fast dot reduction uses full-warp
-  shuffle masks.
+  shuffle masks. (This is the one documented exception to the library's
+  thread-count-invariance contract.)
 * Seed ``x`` with an initial guess (zeros are fine); the solution is written back
   into ``x`` and the iteration count into ``iters``.
 

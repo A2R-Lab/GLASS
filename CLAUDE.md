@@ -5,7 +5,7 @@ block-local linear algebra and robotics math. Most callers launch one CUDA block
 per independent problem and compose GLASS operations inside a larger kernel.
 
 This file contains working rules, not project history. For user-facing API
-documentation, start with `README.md`; for current work, see `docs/HANDOFF.md`.
+documentation, start with `README.md`.
 
 ## Read before editing
 
@@ -29,7 +29,12 @@ documentation, start with `README.md`; for current work, see `docs/HANDOFF.md`.
 
 Use an explicit namespace when the implementation or deterministic reduction
 order is part of the caller's contract. Use the bare face when measured-default
-dispatch is desired.
+dispatch is desired. A moved cell matches block to tolerance, NOT bit-exactly —
+emit `glass::block::` from codegen and anywhere determinism is load-bearing.
+
+⚠ MAINTENANCE: a new public overload on a `block::` op with moved cells
+(dot/gemv/potrf/trsv/posv/eig3/softmax today) must ALSO be restated in
+`src/base/dispatch.cuh`, or the bare face silently loses it.
 
 The naming rule is:
 
@@ -45,7 +50,10 @@ actually documented and compile-covered.
 
 - A block primitive must be entered by every participating block thread.
 - Results must be invariant across supported block sizes, including partial
-  warps, unless the API documents a stricter launch contract.
+  warps. The ONE documented exception is `pcg`, whose warp-level dot
+  reductions require a multiple-of-32 launch; do not add new exceptions.
+- Preserve the single-block model — never split a primitive across blocks.
+- Don't gate/skip an op per problem-size without saying so.
 - Put a synchronization boundary between a cooperative write phase and any
   dependent read phase.
 - Route shared implementations through their barrier object. A raw
@@ -70,7 +78,6 @@ actually documented and compile-covered.
 - `test`: pytest oracles and CUDA drivers.
 - `bench`: benchmark harnesses, tuning policy, and generated reports.
 - `docs/source`: published Sphinx documentation.
-- `docs/open-tasks`: dated design records and archived plans; not current policy.
 
 ## Testing workflow
 
@@ -97,12 +104,29 @@ The signed GPU receipt is split into eight shards: `vector`, `dense`, `factor`,
 rerun only affected shards and carry forward unchanged fresh shards:
 
 ```bash
-./test/run_gpu_proof.sh vector dense
+./test/run_gpu_proof.sh --shards vector,dense
 ```
 
-A release always runs all eight shards from scratch. Any tracked change under a
-fingerprinted library or test path invalidates the old receipt. Stage newly
-created files before the final receipt so the fingerprint includes them.
+**Pushing: any commit that touches `src/`, the `glass*.cuh` roots, or `test/`
+MUST end with a fresh signed receipt** — run `./test/run_gpu_proof.sh` and
+include the regenerated `test/gpu-proof.json` in the push, or the
+`verify-gpu-proof` gate goes red (the receipt fingerprints the source tree, so
+an un-attested source change can't verify). The runner refuses a dirty tree:
+commit first, generate the receipt at the commit, then commit the receipt.
+⚠ The fingerprint walks **git-TRACKED files only**: `git add` any NEW files
+under the fingerprinted paths before running the receipt. Sanity-check locally
+before pushing:
+
+```bash
+.venv/bin/gpu-proof verify --receipt test/gpu-proof.json \
+    --expected-skips test/expected_skips.txt
+```
+
+A release always runs all eight shards from scratch (`release.sh` verifies
+under a no-carry policy). Library headers are hashed into the test-binary
+cache key by GLOB (`src/**/*.cuh` + the `glass*.cuh` roots) — new headers bust
+the cache automatically; only a NEW `test/cuda` driver needs registering in
+`test/conftest.py` (compile target + hash entry).
 
 ## Benchmark workflow
 
@@ -129,9 +153,15 @@ Before handoff:
 
 ```bash
 git diff --check
-cd docs && make all SPHINXOPTS="-W --keep-going"
+cd docs && PATH="$(cd .. && pwd)/.venv/bin:$PATH" make all SPHINXOPTS="-W --keep-going"
 ```
 
 `release.sh` requires a clean `main`, a changelog entry, a current 100% overload
 manifest, 100% declared correctness obligations, a fresh full GPU receipt, and
 local receipt verification before it tags and pushes.
+
+## Conventions
+
+- Short, single-line commit messages; no `Co-Authored-By` footer.
+- Never edit generated tables or marker-delimited blocks by hand; use their
+  owning script and diff the regeneration.

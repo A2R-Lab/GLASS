@@ -116,6 +116,16 @@ table. The `shapes` leg below is the per-shape engine `tune.py` drives.
 
 ## Measurement methodology (and how to audit a capture)
 
+**Compiler-flag policy**: SIMT-only harnesses compile at plain `-O3`
+(default ptxas), matching how consumers compile GLASS — shipped table
+decisions must be made under production flags. MathDx-including harnesses
+additionally pass `-Xptxas -O1`, the documented workaround for a CUDA 12.9
+ptxas failure on cuBLASDx/cuSOLVERDx translation units. The flag applies to
+the whole binary, so within a MathDx capture the SIMT and vendor candidates
+are compiled identically (verdicts stay apples-to-apples), but raw µs from a
+MathDx capture are NOT comparable to µs from a SIMT-only capture — only
+within-capture comparisons are valid.
+
 The ladder-grammar harnesses share one measurement core
 (`bench/timing_common.cuh`, audited 2026-08-11):
 

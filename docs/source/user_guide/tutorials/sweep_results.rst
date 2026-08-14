@@ -107,7 +107,7 @@ single ``cublas<t>gemmStridedBatched`` / ``cusolverDn<t>potrfBatched``
 Above 1.0 = the best swept GLASS configuration faster (fp32 shown; GLASS is
 best of block32, block128, and warp8 where available). The vendor side is one
 default host-API configuration, so this is not a symmetric tuner comparison or
-a universal “GLASS vs vendor” statement. In this historical capture, at robot
+a universal "GLASS vs vendor" statement. In this historical capture, at robot
 sizes, host batching never catches up: gemm at ``N`` ≤ 24 and the full
 factor-and-solve (posv) through ``N`` = 64 are GLASS wins at **every** batch
 size, reaching 2.9–6.3× at saturation. The vendor's best regime is mid-batch

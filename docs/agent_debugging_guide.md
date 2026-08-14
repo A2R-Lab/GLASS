@@ -212,7 +212,9 @@ The banded matvec and PCG solver carry layout/launch preconditions that fail *si
   `glass::pcg` zeroes its internal vectors (`set_const`), but a hand-rolled `glass::bdmv` caller must
   zero the pads itself.
 - **Use a multiple of 32 PCG threads.** Its fast dot reduction uses a full-warp
-  shuffle mask; a partial final warp violates that launch contract.
+  shuffle mask; a partial final warp violates that launch contract. This is the
+  ONE documented exception to GLASS's thread-count-invariance contract — do not
+  add new ones.
 - **Dynamic shared memory must be at least
   `glass::pcg_scratch_bytes<T,state_size,knot_points>(threads)` bytes** — pass
   the helper result directly as the launch byte count. Under-sizing overruns;
@@ -345,16 +347,18 @@ NOT. Rules:
 
 ## 4. Test-infra gotchas (the compile cache)
 
-- **The compile cache is keyed on a family-scoped source hash.**
-  `conftest.py::_hash_sources` hashes the selected `.cu`, shared helper,
-  umbrella headers, and the implementation headers for that binary's family.
-  The `bins` mapping is lazy: selecting one pytest module compiles only the
-  binary it accesses. Register a new binary in the appropriate family set;
-  otherwise its safe default is the full source tree.
+- **The compile cache is keyed on a whole-tree source hash plus build
+  identity.** `conftest.py::_hash_sources` hashes the selected `.cu`, shared
+  helpers, umbrella headers, and EVERY `src/**/*.cuh` by glob (an edited or
+  new header can never be forgotten; the narrower per-family key was tried and
+  reverted 2026-08-14 — it reintroduced the 2026-07-17 "edited header never
+  rebuilds" bug). The cache fingerprint additionally folds in `-arch`, extra
+  nvcc flags, and the nvcc version, so a GPU/toolchain change rebuilds too.
 - **Force a clean rebuild** by deleting the build artifacts: `rm -rf test/build` (or just the
   `<name>.hash` files). `test/build/` is **gitignored** — it's a scratch dir, never commit it.
-- The session `bins` fixture compiles all binaries once per `pytest` session; per-binary skips are
-  surfaced as fixture `pytest.skip`s (§3), so a single missing optional dep doesn't fail the run.
+- The `bins` fixture is **lazy**: selecting one pytest module compiles only the binaries it
+  accesses. Per-binary skips are surfaced as fixture `pytest.skip`s (§3), so a single missing
+  optional dep doesn't fail the run.
 
 ---
 

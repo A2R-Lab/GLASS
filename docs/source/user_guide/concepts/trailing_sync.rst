@@ -52,9 +52,16 @@ one template-ambiguity exception; use their ``NRHS=1`` overload to select
 Interior barriers (between algorithm phases) are **required for correctness and are
 never gated** — only the final trailing barrier is.
 
-``glass::warp::`` and ``glass::thread::`` operations do not expose this block
-barrier knob: warp operations are lockstep/shuffle-based and thread operations
-have no cooperating peers.
+``glass::thread::`` operations do not expose the knob at all — a single thread
+has no cooperating peers to synchronize with. ``glass::warp::`` operations that
+end on a warp-level publish point DO take ``TRAILING_SYNC`` and gate their
+final ``__syncwarp()`` on it (``gemm_reduced``, ``gemv_reduced``,
+``syrk_reduced``, ``tensor_contract``, ``axpy_strided``, ``copy_strided``,
+banded ``load_block``/``store_block``, among others); purely
+lockstep/shuffle-based warp ops need no trailing barrier and omit the
+parameter. ``warp::riccati_gain`` accepts it for interface uniformity but
+documents it as a no-op — the composed warp solver always ends at a sync
+boundary.
 
 Testing
 -------

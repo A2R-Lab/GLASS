@@ -10,10 +10,10 @@ a handful of threads grind through the sum.
 
 The ``*_reduced`` family flips the mapping: **one warp owns one output**, and its
 32 lanes split the contraction, combining with a single warp-shuffle reduce
-(:cpp:func:`glass::warp::reduce`). The engine appears as:
+(``glass::warp::reduce``). The engine appears as:
 
-- :cpp:func:`glass::gemm_reduced` — the core (and the mechanism behind FR-4);
-- :cpp:func:`glass::gemv_reduced`, :cpp:func:`glass::syrk_reduced` — the L2 / SYRK siblings;
+- ``glass::gemm_reduced`` — the core (and the mechanism behind FR-4);
+- ``glass::gemv_reduced``, ``glass::syrk_reduced`` — the L2 / SYRK siblings;
 - the tensor and congruence families (``tensor_vec_contract``, ``vec_tensor_vec``,
   ``congruence_sym``, ``bilinear``) — products the serial BLAS surface cannot
   express in one call, built on the same engine.
@@ -27,7 +27,7 @@ All ship in the three SIMT surfaces (``glass::`` block, ``glass::warp::``,
    quiet RTX 5090 (sm_120) sweep, reduced cleared the ±5% decision margin in
    0/48 f32 cells and 2/48 f64 cells. Both f64 wins were the same 4×4×64
    shape at 128/256 threads (full table: ``bench/RESULTS.md``). The
-   dtype-independent :cpp:func:`glass::suggested_use_reduced` picker therefore
+   dtype-independent ``glass::suggested_use_reduced`` picker therefore
    declines it everywhere rather than regressing f32.
    **Prefer the plain ops** (``gemm`` / ``gemv`` / ``syrk``) for throughput;
    reach for this family only for the fused forms (``tensor_vec_contract``,
@@ -67,7 +67,7 @@ idle. The two wins are f64 4×4×64 at 128/256 threads (1.41× and 1.97×).
 That single dtype-specific shape is worth a future targeted sweep, but it does
 not justify a general or dtype-blind default.
 
-:cpp:func:`glass::suggested_use_reduced` encodes that measurement — it returns
+``glass::suggested_use_reduced`` encodes that measurement — it returns
 ``false`` unconditionally on sm_120. Its ``<n_out, K_contract, blockDim>``
 signature has no scalar-type parameter, so it cannot safely encode the observed
 f64-only corner:
@@ -94,7 +94,7 @@ Like every GLASS primitive, the ``*_reduced`` ops are **thread-count invariant**
 identical output at 1 thread, a partial warp, or many warps. Each output is
 reduced by the *same* fixed 32-way tree regardless of how many warps the block
 has — a trailing partial warp (``blockDim % 32``) idles, and below 32 threads a
-register path (:cpp:func:`reduced_tree32`) reproduces the warp-shuffle summation
+register path (``reduced_tree32``) reproduces the warp-shuffle summation
 order **bit-for-bit**, so the result does not change across the 32-thread
 boundary.
 

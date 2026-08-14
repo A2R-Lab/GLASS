@@ -19,7 +19,7 @@ packing: thread (1 problem/thread, 32 per warp) → warp (1/warp) → block
 ================================  ======  =================================================
 Namespace                         Scope   What it is
 ================================  ======  =================================================
-``glass::block::``                block   **Block** — explicit hand-rolled pure-SIMT implementation (``threadIdx`` / ``blockDim``), never re-dispatched.
+``glass::block::``                block   **Block** — explicit hand-rolled pure-SIMT implementation (``threadIdx`` / ``blockDim``). CONTRACT tier: bit-exact, thread-count invariant, never re-dispatched.
 ``glass::warp::``                 warp    **Warp** — single-warp SIMT (``__shfl_*_sync``), warp-per-problem. (Namespace alias of ``block::warp`` — the warp mirrors live inline in the base headers.)
 ``glass::thread::``               thread  **Thread** — sequential, thread-per-problem, for low-DOF packing (compile-time sizes; register-resident up to ``N≤7``). No barriers, no shuffles, no ``threadIdx`` read. (Alias of ``block::thread``.)
 ``glass::nvidia::block::``        block   **Nvidia** — CUB / cuBLASDx / cuSOLVERDx, auto-dispatched by size.
@@ -83,7 +83,7 @@ The naming rule for new code
 When you add an operation, decide what kind of variation it is:
 
 - **A different algorithm or decomposition → its own function name (a suffix).**
-  The contraction-parallel gemm is :cpp:func:`glass::gemm_reduced`, not a
+  The contraction-parallel gemm is ``glass::gemm_reduced``, not a
   ``glass::reduced::`` namespace — matching the existing ``gemm_tiled`` /
   ``gemm_dispatch`` precedent. Same scope, different name.
 - **Optional, additive behavior → a compile-time** ``bool`` **flag that compiles

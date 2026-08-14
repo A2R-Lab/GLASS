@@ -227,7 +227,9 @@ Why bother?
 -----------
 
 Small-GEMM performance is highly SM-dependent, so the shipped heuristic is only
-a default. A representative measurement (RTX 5090, sm_120):
+a default. An illustrative legacy measurement (undated early capture whose
+device metadata was not recorded — kept for the *shape* of the crossover, not
+the numbers; regenerate with ``bench/autotune.py`` for current hardware):
 
 .. list-table::
    :header-rows: 1

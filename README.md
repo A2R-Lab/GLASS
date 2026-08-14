@@ -67,10 +67,13 @@ tier**.
 Many operations offer both **runtime** (size as an argument) and **compile-time**
 (size as a template argument) overloads. Reductions additionally offer `_lowmem` (no scratch)
 and `_fast` (warp-shuffle) suffixed forms (e.g. `glass::reduce_lowmem` / `glass::reduce_fast`). The dense surface covers `gemm`/`gemv`/`ger`,
-`iamax`, `trsv`/`trmv`, `syrk`/`syr2k`, `symm`/`trmm`/`dimm`, `inv`/`potrf`,
-`ldlt`/`ldlt_solve`, and `posv`/`potrs`, plus tensor and congruence families.
-Block operations expose a `TRAILING_SYNC` template flag where composition can
-legally elide the final barrier. See the [namespace and naming guide](docs/source/user_guide/concepts/namespaces.rst)
+`iamax`, `trsv`/`trmv`, `syrk`/`syr2k`, `symm`/`trmm`/`dimm`, `inv`/`potrf` (single **and K-way fused**),
+`ldlt`/`ldlt_solve`, and `posv`/`potrs`; plus contraction-parallel `*_reduced`, `tensor_*`, and
+`congruence_*` families. Every block-scope op takes a `TRAILING_SYNC` template
+flag (default `true` = ends on a barrier, always safe to compose; pass `false`
+to elide the tail barrier where separable — a documented no-op where the last
+barrier is fused into the algorithm; see `src/base/barrier.cuh` for the exact
+contract). See the [namespace and naming guide](docs/source/user_guide/concepts/namespaces.rst)
 and [synchronization contract](docs/source/user_guide/concepts/trailing_sync.rst).
 
 ### Higher-level solvers

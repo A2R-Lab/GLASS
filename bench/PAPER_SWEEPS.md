@@ -50,7 +50,7 @@ counted as project correctness coverage.
 
 This comparison is intentionally narrow: it selects the best of several GLASS
 launch configurations against a single default vendor API configuration. Do not
-summarize it as a universal “GLASS vs vendor” result.
+summarize it as a universal "GLASS vs vendor" result.
 
 ## Jetson / Orin runbook (when the box lands)
 
