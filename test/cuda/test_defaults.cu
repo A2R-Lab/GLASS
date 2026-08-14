@@ -111,7 +111,7 @@ static_assert(glass::dispatch_body(op::eig3,  3, false) == body::block,         
 static_assert(glass::dispatch_body(op::softmax, 16, false) == body::warp_in_block, "softmax16 f32 -> warp body");
 static_assert(glass::dispatch_body(op::softmax, 4096, false) == body::block,      "softmax large-n BOUNDED -> block");
 static_assert(glass::dispatch_body(op::gemm, 16, false) == body::block,           "gemm never moves");
-// sm_87 body table (body_dispatch_sweep_20260803_0936.txt, 50W, archived in the glass-paper repo): the same rule
+// sm_87 body table (body_dispatch_sweep_20260803_0936.txt, 50W, archived externally): the same rule
 // moves 23 cells there; softmax/eig3 land identically, dot's warp band runs wider.
 static_assert(glass::dispatch_body(op::dot,   8, false, 870u) == body::thread_in_block, "sm_87 dot8 -> thread body");
 static_assert(glass::dispatch_body(op::dot,  32, false, 870u) == body::warp_in_block,   "sm_87 dot32 -> warp body");

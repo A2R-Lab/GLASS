@@ -1,7 +1,7 @@
 # Paper sweeps — swept GLASS configurations vs default host APIs
 
-Harnesses feeding the GLASS paper's evaluation figures (the paper lives in the
-sibling `glass-paper` repository, which also archives all raw captures). These are
+Harnesses feeding the GLASS paper's evaluation figures (raw captures are
+archived externally with the paper materials). These are
 **characterization only** — nothing here regenerates library dispatch tables
 (that is `bench/tune.py`'s job).
 

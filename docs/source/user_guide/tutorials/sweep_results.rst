@@ -98,7 +98,7 @@ single ``cublas<t>gemmStridedBatched`` / ``cusolverDn<t>potrfBatched``
 (+ ``potrsBatched``) call over the whole batch.
 ``bench/bench_paper_hostblas.cu`` measures exactly that: gemm / potrf / posv,
 ``N`` = 4–64, batch ``B`` = 1–8192, both precisions (raw capture committed as
-``paper_hostblas_20260708_0054.txt`` (archived in the glass-paper repo); RTX 5090 / sm_120, quiet GPU).
+``paper_hostblas_20260708_0054.txt`` (archived externally); RTX 5090 / sm_120, quiet GPU).
 
 .. image:: /_static/hostblas_speedup.png
    :alt: host-batched vendor time divided by best GLASS time, vs batch size
@@ -136,7 +136,7 @@ Fusion: ``riccati_gain`` vs. a 7-call vendor chain
 memory; the host-batched equivalent is seven vendor calls (four gemms, a
 batched Cholesky, two triangular solves) with intermediates in global memory.
 ``bench/bench_paper_fusion.cu`` compares them (capture
-``paper_fusion_20260708_0055.txt`` (archived in the glass-paper repo)):
+``paper_fusion_20260708_0055.txt`` (archived externally)):
 
 .. image:: /_static/fusion_speedup.png
    :alt: fused riccati_gain vs 7-call host-batched vendor chain
@@ -312,9 +312,8 @@ The machine-refreshed verdict tables for every sweep live in one file,
 ``bench/RESULTS.md``. The ladder, body, blas2, rect, solvers, and reduced marker
 blocks are rewritten by ``bench/tune.py``; nvwarp and robotics are hand-run
 audited characterizations and do not rewrite dispatch.
-Raw captures are archived in the ``glass-paper`` repository (``data/desktop/``,
-``data/jetson/``, ``data/sm120/``); the paper harnesses are documented in
-``bench/PAPER_SWEEPS.md``.
+Raw captures are archived externally with the paper materials; the paper
+harnesses are documented in ``bench/PAPER_SWEEPS.md``.
 
 See :doc:`../concepts/tuning` for how to emit a per-host override table from a
 sweep, and :doc:`../../api_reference/defaults` for the picker API.

@@ -7,8 +7,8 @@ labor (2026-08-11 consolidation):
 
 - **Analysis & narrative** → the docs site
   (`docs/source/user_guide/tutorials/sweep_results.rst`).
-- **Raw captures** → the `glass-paper` repo (`data/desktop/`, `data/jetson/`,
-  `data/sm120/`) — nothing raw is tracked here.
+- **Raw captures** → archived externally with the paper materials — nothing
+  raw is tracked here.
 - **Shipped decisions** → `glass-defaults.cuh` (ladder/blas2/rect tables),
   `glass-dispatch.cuh` (body dispatch), `src/nvidia/tuning_table.cuh`
   (per-shape cuBLASDx-vs-SIMT).
@@ -21,7 +21,7 @@ labor (2026-08-11 consolidation):
 ## ladder (mega sweep — thread/warp/block/nvidia)
 
 Captures: 3-way 2026-06-23, 4-way (thread tier) 2026-07-19, both quiet RTX
-5090/sm_120 (archived in glass-paper `data/desktop/`). The winners ARE the
+5090/sm_120 (archived externally). The winners ARE the
 shipped `ideal_sm120` table; sm_87 (Jetson Orin, three power modes,
 byte-identical tables) landed 2026-08-03. Ladder analysis, thread-tier
 verdict tables, and figures live on the docs site; the winner-per-(op,N)

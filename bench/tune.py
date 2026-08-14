@@ -75,8 +75,8 @@ DISPATCH_HDR = GLASS_DIR / "glass-dispatch.cuh"
 STATIC    = GLASS_DIR / "docs" / "source" / "_static"
 # Single measured-results archive (consolidated 2026-08-11): every leg's
 # "latest measured run" splices into its own marker-delimited section of
-# bench/RESULTS.md. Curated analysis lives on the docs site; raw captures in
-# the glass-paper repo.
+# bench/RESULTS.md. Curated analysis lives on the docs site; raw captures are
+# archived externally.
 RESULTS_MD = BENCH_DIR / "RESULTS.md"
 CACHE_ROOT = BENCH_DIR / ".tune_cache"
 
