@@ -17,17 +17,13 @@
  *   - `glass::thread::` — one problem per thread (alias of block::thread).
  *   - `glass::op` BARE  — the measured-DEFAULT face: block-scope calling
  *                         contract, implementation chosen per (op, size, dtype)
- *                         from the shipped dispatch table. Phase 1 pins every
- *                         cell to the block body (`glass::dispatch_body()` in
- *                         glass-defaults.cuh), so today the bare names ARE the
- *                         block tier via the using-directive below — identical
- *                         symbols, bit-identical results. A future measured
- *                         retune may add shadowing wrappers that route specific
- *                         cells to a warp- or thread-body executed under the
- *                         same block-scope contract (all threads enter, result
- *                         valid after return); such a retune is an attested
- *                         event, and determinism-sensitive consumers should pin
- *                         `glass::block::` explicitly.
+ *                         from the shipped `glass::dispatch_body()` table.
+ *                         Cells with measured wins may run the warp-0 or
+ *                         thread-0 twin behind a wrapper; all threads still
+ *                         enter and the result is block-visible on return.
+ *                         Operations with no moved cell remain the same entity
+ *                         as `glass::block::`. Determinism-sensitive consumers
+ *                         should pin `glass::block::` explicitly.
  *
  * Include glass-cgrps.cuh for the cooperative-groups variants, or
  * glass-nvidia.cuh for the CUB / cuBLASDx / cuSOLVERDx-accelerated paths

@@ -75,7 +75,7 @@ constexpr bool nv_available(op o) {
 // inserts a new block + dispatch case for a first-time arch), leaving the rest alone. ───
 
 // === BEGIN tune.py ladder sm_120 ===
-// Source sweep: mega_sweep_20260811_2323.txt (archived: glass-paper repo, data/desktop/)   tie margin: ±5% (nvidia must clear it; SIMT ties ±2% prefer thread>warp>block)
+// Source sweep: mega_sweep_20260813_231932.txt   tie margin: ±5% (nvidia must clear it; SIMT ties ±2% prefer thread>warp>block)
 // Returns the *ideal* tier assuming nvidia is linked; nv_available() filters after.
 constexpr backend ideal_sm120(op o, uint32_t N, bool f64) {
     switch (o) {
@@ -137,7 +137,7 @@ constexpr backend ideal_sm87(op o, uint32_t N, bool f64) {
 // and deliberately have no table — measured and reported, never picked. ───
 
 // === BEGIN tune.py blas2 sm_120 ===
-// Source sweep: blas2_sweep_20260812_0134.txt (archived: glass-paper repo, data/desktop/)   tie margin: ±5% (SIMT ties ±2% prefer the simpler tier)
+// Source sweep: blas2_sweep_20260814_011659.txt   tie margin: ±5% (SIMT ties ±2% prefer the simpler tier)
 constexpr backend blas2_sm120(op o, uint32_t N, bool f64) {
     switch (o) {
         case op::syrk:
@@ -174,7 +174,7 @@ constexpr backend blas2_ideal(op o, uint32_t N, bool f64, uint32_t sm) {
 // `shapes` table). Unmeasured shapes stay block. ───
 
 // === BEGIN tune.py rect sm_120 ===
-// Source sweep: rect_sweep_20260812_0331.txt (archived: glass-paper repo, data/desktop/)   tie margin: ±5% (SIMT ties ±2% prefer the simpler tier); exact shapes only
+// Source sweep: rect_sweep_20260814_031430.txt   tie margin: ±5% (SIMT ties ±2% prefer the simpler tier); exact shapes only
 constexpr backend rect_gemv_sm120(uint32_t M, uint32_t N, bool f64) {
     if (!f64) {
         if (M == 8u && N == 64u) return backend::warp;

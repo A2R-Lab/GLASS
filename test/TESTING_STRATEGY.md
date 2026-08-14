@@ -45,9 +45,9 @@ grows with input magnitude — that is a real bug.
 - **Layout flags** (`ROW_MAJOR_A/B/C`, `TRANSPOSE_B`) are compile-time and
   silently produce wrong numbers (not a crash) if data is passed in the wrong
   order. Test both row- and column-major where a function supports them.
-- **`beta = 0`** GEMM/GEMV still *reads* `C` in some paths (`beta*C` with
-  `beta=0` is `0*C`, but `0*NaN = NaN`). Test `beta = 0` with an initialized `C`,
-  and remember the caller must initialize `C` even when `beta = 0`.
+- **`beta = 0`** is a library-wide no-read guarantee: the destination is
+  write-only and may contain NaNs or uninitialized data. Test this edge with a
+  NaN-poisoned destination. Nonzero-beta cases must still verify accumulation.
 
 ## Principle 4 — Gate genuinely ill-defined inputs instead of loosening tolerance
 
@@ -60,9 +60,9 @@ relaxing the tolerance for everyone.
 
 1. Implement it; keep it thread-count invariant (strided loops, barriers between
    dependent phases).
-2. Add a CUDA test source under `test/cuda/` and a pytest wrapper. **Register a
-   new `.cu`'s headers in the compile-cache list in `conftest.py`** or the cache
-   won't rebuild.
+2. Add a CUDA test source under `test/cuda/` and a pytest wrapper, then assign
+   the binary to the appropriate cache family in `conftest.py`. New binaries
+   conservatively hash the whole source tree until assigned.
 3. Launch it at ≥3 thread counts including 1 and a multi-warp count.
 4. Compare to a NumPy/SciPy reference with a scale-aware tolerance; test both
    layouts and `beta = 0` where relevant.

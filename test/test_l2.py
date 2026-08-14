@@ -436,3 +436,19 @@ def test_ger_full_sweep(bins, kind):
                          sweep=THREAD_SWEEP)
     expected = (A.astype(np.float64) + alpha * np.outer(x, y)).astype(np.float32)
     assert _rel_close(result.reshape(m, n, order='F'), expected)
+
+
+@pytest.mark.parametrize("m,n", [(4, 128), (64, 8)])
+def test_ger_compile_time_rectangular_full_sweep(bins, m, n):
+    """The flat compile-time mapping covers short-wide and tall-thin shapes."""
+    alpha = -0.75
+    x = make_vec(m, seed=210 + m)
+    y = make_vec(n, seed=211 + n)
+    A = make_general(m, n, seed=212 + m + n)
+    result = sweep_exact(
+        bins["l2"], "ger", "ct", [m, n, alpha],
+        [x, y, np.asfortranarray(A).ravel(order="F")],
+        sweep=THREAD_SWEEP,
+    )
+    expected = (A.astype(np.float64) + alpha * np.outer(x, y)).astype(np.float32)
+    assert _rel_close(result.reshape(m, n, order="F"), expected)

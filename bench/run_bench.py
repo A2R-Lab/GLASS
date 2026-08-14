@@ -143,6 +143,7 @@ def compile_binary(name: str, arch: str, sms: int, mathdx_root,
         "-O3",
         f"-I{GLASS_DIR}",
         f"-I{GLASS_DIR / 'src'}",
+        "-Xptxas", "-O1",  # CUDA 12.9 workaround + consistent anti-DSE policy
         "-o", str(out_bin),
         str(cu_src),
     ]
@@ -154,7 +155,6 @@ def compile_binary(name: str, arch: str, sms: int, mathdx_root,
             "-DGLASS_BENCH_CUBLASDX",
             f"-DSMS={sms}",
             "--expt-relaxed-constexpr",  # silence cuBLASDx constexpr/host/device warnings
-            "-Xptxas", "-O1",            # workaround for CUDA 12.9 bug + anti-DSE for benches
         ]
 
     if have_cusolverdx and name in CUSOLVERDX_REQUIRED:

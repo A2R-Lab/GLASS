@@ -89,15 +89,18 @@ static_assert(glass::suggested_backend_rect_gemv<64, 8, float, 1200u>() == backe
 static_assert(glass::suggested_backend_rect_gemm<7, 7, 7, float, 1200u>() == backend::block, "unmeasured rect shape -> block");
 static_assert(glass::suggested_backend_rect_gemv<64, 8, float, 870u>() == backend::block, "rect unmeasured arch -> block");
 
-// ── bare-namespace face: Phase-2 pins (2026-07-30 body sweep, sm_120) ──
+// ── bare-namespace face: measured body pins (2026-08-14 sweep, sm_120) ──
 // dispatch_body() now carries the measured body_sm120 table
-// (body_dispatch_sweep_20260730_2041.txt, archived in the glass-paper repo; rule = never worse than block
+// (body_dispatch_sweep_20260814_010815.txt; rule = never worse than block
 // by >5% at any measured (NPROB, TB), >5% faster at >=1 TB @ NPROB=8192,
 // bounded at the largest measured N). Spot-pin the moved cells + the rule's
 // conservative refusals:
 using glass::body;
-static_assert(glass::dispatch_body(op::dot,   8, false) == body::warp_in_block,   "dot8 f32 -> warp body");
-static_assert(glass::dispatch_body(op::dot,  32, false) == body::thread_in_block, "dot32 f32 -> thread body");
+static_assert(glass::dispatch_body(op::dot,   4, false) == body::block,           "dot4 f32 -> block body");
+static_assert(glass::dispatch_body(op::dot,   8, false) == body::thread_in_block, "dot8 f32 -> thread body");
+static_assert(glass::dispatch_body(op::dot,  16, false) == body::thread_in_block, "dot16 f32 -> thread body");
+static_assert(glass::dispatch_body(op::dot,  32, false) == body::warp_in_block,   "dot32 f32 -> warp body");
+static_assert(glass::dispatch_body(op::dot,  64, false) == body::warp_in_block,   "dot64 f32 -> warp body");
 static_assert(glass::dispatch_body(op::dot, 128, false) == body::block,           "dot128 f32 BOUNDED -> block");
 static_assert(glass::dispatch_body(op::trsv, 16, false) == body::warp_in_block,   "trsv16 f32 -> warp body");
 static_assert(glass::dispatch_body(op::trsv, 64, false) == body::block,           "trsv64 f32 stays block");

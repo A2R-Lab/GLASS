@@ -20,7 +20,7 @@
 // global memory; each rep = ONE launch / ONE host API chain spanning all B,
 // bracketed by cudaEvents; mutated buffers RESTORED from pristine device
 // copies OUTSIDE the event window. ns/problem = ms_sum*1e6/(reps*B), min of
-// 3 trials. GPU-event timing excludes host API overhead — conservative
+// 3 trials, with trial spread reported. GPU-event timing excludes host API overhead — conservative
 // TOWARD the vendor (their per-call CPU cost is amortized 1/B anyway).
 //
 // LATENCY PROTOCOL (batch=1, the MPC regime): R=200 pre-initialized problem
@@ -40,8 +40,8 @@
 //
 // Output grammar (parsed by paper_sweeps.py):
 //   CHECK  op=<op> dtype=<dt> N=<n> impl=<impl> maxerr=<e>
-//   RESULT section=thru op=<op> dtype=<dt> N=<n> B=<b> impl=<impl> ns=<ns_per_problem>
-//   RESULT section=lat  op=<op> dtype=<dt> N=<n> impl=<impl> us=<us_per_call>
+//   RESULT section=thru ... ns=<ns_per_problem> spread=<worst/best-1 percent>
+//   RESULT section=lat  ... us=<us_per_call> spread=<worst/best-1 percent>
 //   SKIP   ... reason=...
 
 #include <cstdio>
@@ -51,12 +51,15 @@
 #include <cmath>
 #include <ctime>
 #include <functional>
+#include <algorithm>
+#include <random>
 #include <string>
 #include <vector>
 
 #include <cublas_v2.h>
 #include <cusolverDn.h>
 
+#include "timing_common.cuh"
 #include "../glass.cuh"
 
 #define CK(call) do { cudaError_t e_ = (call); if (e_ != cudaSuccess) { \
@@ -72,6 +75,7 @@ static const int    NBGRID    = 7;
 static const size_t MEM_CAP   = 4ull << 30;   // skip cells whose buffers exceed 4 GB (Jetson-safe)
 static const int    LAT_CALLS = 200;
 static int REPS = 50;
+static double last_spread_pct = 0.0;
 
 // ─── deterministic host RNG (xorshift64* + Box-Muller), as bench_solvers.cu ──
 static uint64_t rng_state = 1;
@@ -214,7 +218,7 @@ static double time_thru_ns_per_prob(int B, const std::function<void()>& restore,
     cudaEvent_t s, e;
     CK(cudaEventCreate(&s)); CK(cudaEventCreate(&e));
     restore(); work(); CK(cudaDeviceSynchronize());   // warm-up (JIT, clocks)
-    double best_ms = 1e300;
+    double best_ms = 1e300, worst_ms = 0.0;
     for (int trial = 0; trial < 3; trial++) {
         double ms_sum = 0;
         for (int rep = 0; rep < REPS; rep++) {
@@ -227,7 +231,9 @@ static double time_thru_ns_per_prob(int B, const std::function<void()>& restore,
             ms_sum += ms;
         }
         if (ms_sum < best_ms) best_ms = ms_sum;
+        if (ms_sum > worst_ms) worst_ms = ms_sum;
     }
+    last_spread_pct = (worst_ms / best_ms - 1.0) * 100.0;
     CK(cudaEventDestroy(s)); CK(cudaEventDestroy(e));
     return best_ms * 1e6 / ((double)REPS * B);
 }
@@ -412,10 +418,12 @@ static void run_for_N(Handles H, const char* dt, bool do_thru, bool do_lat) {
         if (sizeof(T) == 4)
             rows.push_back({"gemm", "vendor_tf32", nop,
                             [&]{ xgemm_sb(H.cb_tf32, N, (T)1, dA, MM, dB, MM, (T)0, dC, MM, B); }, true});
+        std::mt19937 order_rng(0x474c4153u ^ (N << 16) ^ (uint32_t)B ^ (uint32_t)sizeof(T));
+        std::shuffle(rows.begin(), rows.end(), order_rng);
         for (auto& r : rows) {
             double ns = time_thru_ns_per_prob(B, r.restore, r.work);
-            printf("RESULT section=thru op=%s dtype=%s N=%u B=%d impl=%s ns=%.2f\n",
-                   r.op, dt, N, B, r.impl, ns);
+            printf("RESULT section=thru op=%s dtype=%s N=%u B=%d impl=%s ns=%.2f spread=%.2f%%\n",
+                   r.op, dt, N, B, r.impl, ns, last_spread_pct);
             fflush(stdout);
         }
         CK(cudaFree(dA)); CK(cudaFree(dB)); CK(cudaFree(dC)); CK(cudaFree(dS));
@@ -462,18 +470,26 @@ static void run_for_N(Handles H, const char* dt, bool do_thru, bool do_lat) {
             lats.push_back({"gemm", "vendor_tf32",
                             [&](int r){ xgemm(H.cb_tf32, N, (T)1, dA + (size_t)r*MM,
                                               dB + (size_t)r*MM, (T)0, dC + (size_t)r*MM); }});
+        std::mt19937 latency_order_rng(0x4c41544eu ^ (N << 8) ^ (uint32_t)sizeof(T));
+        std::shuffle(lats.begin(), lats.end(), latency_order_rng);
         for (auto& L : lats) {
-            // pristine pool per op — the previous op's potrf/posv mutated dS/db
-            CK(cudaMemcpy(dS, dS0, MM*(size_t)R*sizeof(T), cudaMemcpyDeviceToDevice));
-            CK(cudaMemcpy(db, db0, (size_t)N*R*sizeof(T), cudaMemcpyDeviceToDevice));
-            for (int r = 0; r < 10; r++) { L.call(r); }          // warm-up on the
-            CK(cudaDeviceSynchronize());                          // first 10 copies
-            struct timespec t0, t1;
-            clock_gettime(CLOCK_MONOTONIC, &t0);
-            for (int r = 10; r < R; r++) { L.call(r); CK(cudaDeviceSynchronize()); }
-            clock_gettime(CLOCK_MONOTONIC, &t1);
-            printf("RESULT section=lat op=%s dtype=%s N=%u impl=%s us=%.3f\n",
-                   L.op, dt, N, L.impl, elapsed_us(t0, t1) / (R - 10));
+            double best_us = 1e300, worst_us = 0.0;
+            for (int trial = 0; trial < 3; trial++) {
+                // Pristine pool per trial; restoration is outside the timed window.
+                CK(cudaMemcpy(dS, dS0, MM*(size_t)R*sizeof(T), cudaMemcpyDeviceToDevice));
+                CK(cudaMemcpy(db, db0, (size_t)N*R*sizeof(T), cudaMemcpyDeviceToDevice));
+                for (int r = 0; r < 10; r++) L.call(r);
+                CK(cudaDeviceSynchronize());
+                struct timespec t0, t1;
+                clock_gettime(CLOCK_MONOTONIC, &t0);
+                for (int r = 10; r < R; r++) { L.call(r); CK(cudaDeviceSynchronize()); }
+                clock_gettime(CLOCK_MONOTONIC, &t1);
+                double us = elapsed_us(t0, t1) / (R - 10);
+                if (us < best_us) best_us = us;
+                if (us > worst_us) worst_us = us;
+            }
+            printf("RESULT section=lat op=%s dtype=%s N=%u impl=%s us=%.3f spread=%.2f%%\n",
+                   L.op, dt, N, L.impl, best_us, (worst_us / best_us - 1.0) * 100.0);
             fflush(stdout);
         }
         CK(cudaFree(dA)); CK(cudaFree(dB)); CK(cudaFree(dC)); CK(cudaFree(dS));
@@ -502,6 +518,7 @@ int main(int argc, char** argv) {
     cudaDeviceProp prop; CK(cudaGetDeviceProperties(&prop, 0));
     printf("# bench_paper_hostblas — %s, reps=%d, dtype=%s, section=%s\n",
            prop.name, REPS, dt.c_str(), sec.c_str());
+    tc_warm_gpu();
 
     Handles H;
     CB(cublasCreate(&H.cb));

@@ -83,6 +83,12 @@ int main(int argc, char** argv) {
             else    { if(reg) k_riccati<XX,UU,true><<<1,th,sm>>>(dP,dA,dB,dR,dK,rho,dFail); \
                       else    k_riccati<XX,UU,false><<<1,th,sm>>>(dP,dA,dB,dR,dK,rho,dFail); } ok=true; }
         RIC_SHAPES(DR)
+        if(!ok && !warp && NX==36 && NU==12){
+            int sm = glass::block::riccati_scratch_bytes<float,36,12>();
+            if(reg) k_riccati<36,12,true><<<1,th,sm>>>(dP,dA,dB,dR,dK,rho,dFail);
+            else    k_riccati<36,12,false><<<1,th,sm>>>(dP,dA,dB,dR,dK,rho,dFail);
+            ok=true;
+        }
         #undef DR
         if(!ok){fprintf(stderr,"bad riccati shape\n");return 1;}
         cudaError_t e=cudaDeviceSynchronize();

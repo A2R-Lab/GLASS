@@ -32,7 +32,9 @@ if(GLASS_ENABLE_MATHDX)
     if(NOT DEFINED MATHDX_ROOT)
         message(FATAL_ERROR "GLASS_ENABLE_MATHDX requires MATHDX_ROOT (cmake -DMATHDX_ROOT=... or the env var)")
     endif()
-    target_include_directories(glass INTERFACE ${MATHDX_ROOT}/include)
+    target_include_directories(glass INTERFACE
+        ${MATHDX_ROOT}/include
+        ${MATHDX_ROOT}/external/cutlass/include)
 endif()
 
 if(GLASS_BUILD_EXAMPLES)
@@ -46,6 +48,7 @@ include(CMakePackageConfigHelpers)
 
 install(TARGETS glass EXPORT glassTargets)
 install(FILES glass.cuh glass-cgrps.cuh glass-nvidia.cuh glass-defaults.cuh
+              glass-dispatch.cuh
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/glass)
 install(DIRECTORY src DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/glass
         FILES_MATCHING PATTERN "*.cuh")

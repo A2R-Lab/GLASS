@@ -29,7 +29,9 @@ Requires MATHDX_ROOT set (cuBLASDx headers needed for the cuBLASDx leg).
 
 import argparse
 import concurrent.futures
+import datetime
 import hashlib
+import json
 import os
 import pathlib
 import platform
@@ -555,6 +557,87 @@ def detect_sm() -> int:
     return int(f"{major}{minor}0")
 
 
+def compute_pids():
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-compute-apps=pid",
+             "--format=csv,noheader,nounits"], capture_output=True, text=True,
+            timeout=10, check=True).stdout
+        return {int(line) for line in out.splitlines() if line.strip().isdigit()}
+    except Exception:
+        return set()
+
+
+def gpu_busy():
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=utilization.gpu",
+             "--format=csv,noheader,nounits"], capture_output=True, text=True,
+            timeout=10, check=True).stdout.strip().splitlines()[0]
+        return int(out) > 5
+    except Exception:
+        return False
+
+
+def wait_for_quiet_gpu(force=False, timeout=30):
+    if force:
+        return
+    deadline = time.monotonic() + timeout
+    while True:
+        active = compute_pids()
+        busy = gpu_busy()
+        if not active and not busy:
+            return
+        if time.monotonic() >= deadline:
+            sys.exit("ERROR: GPU is not isolated after 30s; active compute "
+                     f"PIDs={sorted(active)}, utilization_busy={busy}")
+        time.sleep(1)
+
+
+def source_digest():
+    listed = subprocess.run(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z",
+         "glass*.cuh", "src", "bench"], cwd=GLASS_DIR,
+        capture_output=True, check=True).stdout
+    digest = hashlib.sha256()
+    for raw in sorted(p for p in listed.split(b"\0") if p):
+        path = GLASS_DIR / os.fsdecode(raw)
+        if path.is_file() and path.suffix in {".cuh", ".cu", ".py"}:
+            digest.update(raw + b"\0")
+            digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def provenance(sms, margin):
+    commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=GLASS_DIR, capture_output=True,
+        text=True, check=True).stdout.strip()
+    dirty = bool(subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all", "--",
+         "glass*.cuh", "src", "bench"], cwd=GLASS_DIR, capture_output=True,
+        text=True, check=True).stdout.strip())
+    receipt_path = GLASS_DIR / "test/gpu-proof.json"
+    receipt = json.loads(receipt_path.read_text()) if receipt_path.exists() else {}
+    receipt_sha = hashlib.sha256(receipt_path.read_bytes()).hexdigest() if receipt_path.exists() else "missing"
+    session, fingerprint = receipt.get("session", {}), receipt.get("fingerprint", {})
+    nvcc = subprocess.run(
+        ["nvcc", "--version"], capture_output=True, text=True, check=True
+    ).stdout.strip().splitlines()[-1]
+    return [
+        "provenance_schema: 2",
+        f"timing_started_utc: {datetime.datetime.now(datetime.timezone.utc).isoformat()}",
+        f"git_commit: {commit}",
+        f"source_dirty: {str(dirty).lower()}",
+        f"source_sha256: {source_digest()}",
+        f"arch: sm_{sms // 10}",
+        f"decision_margin: {margin:.6f}",
+        f"toolchain: {nvcc}",
+        f"correctness_receipt_ended_utc: {session.get('ended_at', 'missing')}",
+        f"correctness_fingerprint_sha256: {fingerprint.get('digest', 'missing')}",
+        f"correctness_receipt_sha256: {receipt_sha}",
+    ]
+
+
 _LIB_DIGEST = None
 
 
@@ -616,32 +699,45 @@ def measure_shape(api, shape, sms, iters, mathdx_root, build_dir):
         # cuBLASDx may reject some shapes outright → "SIMT wins by default".
         print(f"    [{api} {cfg['label_fmt'](shape)}] compile failed → SIMT default",
               file=sys.stderr)
-        return None, None
+        return None, None, None, None
 
-    res = subprocess.run([str(bin_path), str(iters)],
-                         capture_output=True, text=True)
-    if res.returncode != 0:
+    proc = subprocess.Popen([str(bin_path), str(iters)], stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, text=True)
+    foreign = set()
+    while proc.poll() is None:
+        foreign |= compute_pids() - {proc.pid}
+        if foreign:
+            proc.terminate()
+            break
+        time.sleep(0.5)
+    stdout, stderr = proc.communicate()
+    if foreign:
+        sys.exit(f"timing invalidated by foreign compute PIDs: {sorted(foreign)}")
+    if proc.returncode != 0:
         print(f"    [{api} {cfg['label_fmt'](shape)}] runtime failure: "
-              f"{res.stderr[:200]}", file=sys.stderr)
-        return None, None
+              f"{stderr[:200]}", file=sys.stderr)
+        return None, None, None, None
 
     simt_us = cublasdx_us = None
-    for line in res.stdout.splitlines():
+    simt_spread = cublasdx_spread = None
+    for line in stdout.splitlines():
         m1 = re.match(r"^(simt|cublasdx)\s+([\d.]+)(?:\s+spread\s+([\d.]+))?",
                       line.strip())
         if not m1:
             continue
         if m1.group(1) == "simt":
             simt_us = float(m1.group(2))
+            simt_spread = float(m1.group(3)) if m1.group(3) is not None else None
         else:
             cublasdx_us = float(m1.group(2))
+            cublasdx_spread = float(m1.group(3)) if m1.group(3) is not None else None
         # audit hook: a cell whose 3-trial spread exceeds the decision margin
         # cannot cleanly resolve it — surface the jitter instead of hiding it.
         if m1.group(3) is not None and float(m1.group(3)) > 5.0:
             print(f"    !! [{api} {cfg['label_fmt'](shape)}] {m1.group(1)} "
                   f"trial spread {m1.group(3)}% > 5% margin — verdict unreliable, "
                   f"re-run on a quieter GPU", file=sys.stderr)
-    return simt_us, cublasdx_us
+    return simt_us, cublasdx_us, simt_spread, cublasdx_spread
 
 
 # ─── Emit per-host overrides file ──────────────────────────────────────────
@@ -668,8 +764,10 @@ def emit_overrides(out_path: pathlib.Path,
                    margin: float,
                    include_path: str,
                    hostname: str):
-    """results_by_api: dict[api] -> list of (shape_tuple, simt_us, cublasdx_us).
-    All values can be None for the timing pair if measurement failed."""
+    """Results contain shape, timings, and spreads for both contenders.
+
+    Timing and spread values can be None when measurement failed.
+    """
     header = _OUTPUT_HEADER.replace("@INCLUDE_PATH@", include_path).rstrip()
     lines = [header, ""]
     lines.append(f"// Host: {hostname}    SM: sm_{sms // 10} (sms={sms})")
@@ -690,7 +788,7 @@ def emit_overrides(out_path: pathlib.Path,
         # Below this floor we can't trust either leg, so we conservatively
         # default to SIMT.
         MIN_TRUSTWORTHY_US = 0.05
-        for shape, simt, cdx in results:
+        for shape, simt, cdx, _simt_spread, _cdx_spread in results:
             spec = cfg["spec_fmt"](*shape, sms)
             if simt is None or cdx is None:
                 verdict = "false"
@@ -727,7 +825,8 @@ def emit_results_md(md_path: pathlib.Path,
                     sms: int,
                     results_by_api: dict,
                     margin: float,
-                    hostname: str):
+                    hostname: str,
+                    provenance_lines: list[str]):
     lines = [
         f"# autotune results — {hostname}, sm_{sms // 10}",
         "",
@@ -735,6 +834,10 @@ def emit_results_md(md_path: pathlib.Path,
         f"{time.strftime('%Y-%m-%d %H:%M:%S %Z')}._",
         "",
         f"Tie tolerance: ±{margin*100:.0f}% (ties default to SIMT).",
+        "",
+        "## Provenance",
+        "",
+        *[f"- ``{line}``" for line in provenance_lines],
         "",
     ]
     for api in API_CONFIGS:
@@ -745,30 +848,37 @@ def emit_results_md(md_path: pathlib.Path,
         keys = cfg["shape_keys"]
         lines.append(f"## {api}")
         lines.append("")
-        header = "| " + " | ".join(keys) + " | SIMT (us) | cuBLASDx (us) | Winner | Speedup |"
-        sep = "|" + "|".join(["---"] * (len(keys) + 4)) + "|"
+        header = ("| " + " | ".join(keys)
+                  + " | SIMT (us) | SIMT spread | cuBLASDx (us) | "
+                    "cuBLASDx spread | Winner | Speedup |")
+        sep = "|" + "|".join(["---"] * (len(keys) + 6)) + "|"
         lines.extend([header, sep])
         # See emit_overrides_file: sub-noise-floor measurements are
         # untrustworthy and we conservatively default to SIMT.
         MIN_TRUSTWORTHY_US = 0.05
-        for shape, simt, cdx in results:
+        for shape, simt, cdx, simt_spread, cdx_spread in results:
             shape_cells = " | ".join(str(s) for s in shape)
             if simt is None or cdx is None:
-                lines.append(f"| {shape_cells} | — | — | SIMT (compile failed) | — |")
+                lines.append(f"| {shape_cells} | — | — | — | — | "
+                             "SIMT (compile failed) | — |")
                 continue
+            ss = "—" if simt_spread is None else f"{simt_spread:.1f}%"
+            cs = "—" if cdx_spread is None else f"{cdx_spread:.1f}%"
             if simt < MIN_TRUSTWORTHY_US or cdx < MIN_TRUSTWORTHY_US:
-                lines.append(f"| {shape_cells} | {simt:.3f} | {cdx:.3f} | "
-                             f"SIMT (sub-noise) | — |")
+                lines.append(f"| {shape_cells} | {simt:.3f} | {ss} | "
+                             f"{cdx:.3f} | {cs} | SIMT (sub-noise) | — |")
                 continue
             if _cublasdx_wins(simt, cdx, margin):
-                lines.append(f"| {shape_cells} | {simt:.3f} | {cdx:.3f} | "
-                             f"**cuBLASDx** | {simt/cdx:.2f}× |")
+                lines.append(f"| {shape_cells} | {simt:.3f} | {ss} | "
+                             f"{cdx:.3f} | {cs} | **cuBLASDx** | "
+                             f"{simt/cdx:.2f}× |")
             elif simt < cdx * (1.0 - margin):
-                lines.append(f"| {shape_cells} | {simt:.3f} | {cdx:.3f} | "
-                             f"**SIMT** | {cdx/simt:.2f}× |")
+                lines.append(f"| {shape_cells} | {simt:.3f} | {ss} | "
+                             f"{cdx:.3f} | {cs} | **SIMT** | "
+                             f"{cdx/simt:.2f}× |")
             else:
-                lines.append(f"| {shape_cells} | {simt:.3f} | {cdx:.3f} | "
-                             f"tie (→ SIMT) | — |")
+                lines.append(f"| {shape_cells} | {simt:.3f} | {ss} | "
+                             f"{cdx:.3f} | {cs} | tie (→ SIMT) | — |")
         lines.append("")
     md_path.parent.mkdir(parents=True, exist_ok=True)
     md_path.write_text("\n".join(lines))
@@ -873,6 +983,9 @@ def main():
                         "tie (default 0.05)")
     p.add_argument("--dry-run", action="store_true",
                    help="Measure but don't write any files")
+    p.add_argument("--force", action="store_true",
+                   help="ignore the initial busy-GPU preflight; foreign compute "
+                        "PIDs appearing during a cell still invalidate it")
     p.add_argument("--build-only", action="store_true",
                    help="Compile every microbench into the build cache and exit "
                         "(no timing, no table written). Pre-warms the cache so the "
@@ -955,6 +1068,13 @@ def main():
         print(f"Cache ready at {build_dir} — the timed sweep is now execute-only.")
         return
 
+    wait_for_quiet_gpu(args.force)
+    # Snapshot before the first measurement and before --in-tree can mutate a
+    # generated header. Previously this was computed after writing the table,
+    # so timing_started_utc and source_sha256 described the output tree rather
+    # than the source that the cached binaries actually measured.
+    run_provenance = provenance(sms, args.margin)
+
     if args.in_tree:
         out = (GLASS_DIR / "src" / "nvidia" / "tuning_table.cuh").resolve()
     elif args.out is not None:
@@ -987,8 +1107,8 @@ def main():
         for shape in shapes:
             label = cfg["label_fmt"](shape)
             print(f"  measuring {label} ...", end=" ", flush=True)
-            simt, cdx = measure_shape(api, shape, sms, args.iters,
-                                      mathdx_root, build_dir)
+            simt, cdx, simt_spread, cdx_spread = measure_shape(
+                api, shape, sms, args.iters, mathdx_root, build_dir)
             if simt is None and cdx is None:
                 print("[skipped — both legs failed]")
             elif simt is None or cdx is None:
@@ -1004,7 +1124,7 @@ def main():
                 else:
                     winner = "tie"
                 print(f"simt={simt:.3f}us cublasdx={cdx:.3f}us → {winner}")
-            api_results.append((shape, simt, cdx))
+            api_results.append((shape, simt, cdx, simt_spread, cdx_spread))
         results_by_api[api] = api_results
 
     if args.dry_run:
@@ -1020,7 +1140,8 @@ def main():
         # GLASS_TUNING_TABLE_LOCAL.
         include_path = str(out.relative_to(GLASS_DIR)) if out.is_relative_to(GLASS_DIR) else str(out)
         emit_overrides(out, sms, results_by_api, args.margin, include_path, hostname)
-    emit_results_md(md, sms, results_by_api, args.margin, hostname)
+    emit_results_md(md, sms, results_by_api, args.margin, hostname,
+                    run_provenance)
 
     if not args.in_tree:
         print("\nConsume the new overrides in your build with:")
@@ -1065,7 +1186,7 @@ def _update_in_tree(path: pathlib.Path,
         # values). Below this floor we can't trust either leg → default
         # to SIMT.
         MIN_TRUSTWORTHY_US = 0.05
-        for shape, simt, cdx in results:
+        for shape, simt, cdx, _simt_spread, _cdx_spread in results:
             spec = cfg["spec_fmt"](*shape, sms)
             if simt is None or cdx is None:
                 verdict, note = "false", "measurement failed → SIMT default"

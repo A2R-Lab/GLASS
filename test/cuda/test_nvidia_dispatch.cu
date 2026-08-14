@@ -288,7 +288,9 @@ static_assert(gnb::gemm_batched_1d_block_threads_valid<float, 8, 8, 8, 4, 32, 25
 static_assert(gnb::gemm_strided_batched_1d_scratch_bytes<float, 8, 8, 8, 4, 32>() >= 0u, "strided_batched_1d scratch evaluable");
 static_assert(gnb::gemm_strided_batched_1d_threads<float, 8, 8, 8, 4, 32>() > 0, "strided_batched_1d threads");
 static_assert(gnb::gemm_strided_scratch_bytes<float, 8, 8, 8>() >= 0u, "gemm_strided scratch evaluable");
-static_assert(gn::gemv_strided_scratch_bytes<float, 8, 8>() >= 0u, "gemv_strided scratch evaluable");
+static_assert(gnb::gemv_strided_scratch_bytes<float, 8, 8>() >= 0u, "gemv_strided scratch evaluable");
+static_assert(gnb::gemv_strided_scratch_bytes<float, 5, 5, 8>() >= 0u,
+              "gemv_strided explicit-row-stride scratch evaluable");
 static_assert(gn::reduce_scratch_bytes<float, 256>() > 0, "CUB reduce scratch");
 
 __global__ void k_gemm_batched(float* const* A, float* const* B, float* const* C) {

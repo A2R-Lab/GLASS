@@ -13,7 +13,7 @@ predicate. `bench/tune.py` remeasures all of them on your GPU and regenerates
 them under **one shared noise margin**, so nothing bakes sub-noise jitter:
 
 ```bash
-python bench/tune.py --sm auto --prebuild --build-jobs 6   # compile everything in parallel (no GPU needed)
+python bench/tune.py --sm auto --prebuild --build-jobs 1   # serial: safe default on a shared host
 python bench/tune.py --sm auto              # all legs, ±5% margin (reuses the prebuilt cache)
 python bench/tune.py --sm auto --quick      # ladder throughput point only (faster)
 python bench/tune.py --legs ladder,reduced  # pick legs; --margin 0.05 to retune the tie band
@@ -25,14 +25,32 @@ clock (the `shapes` leg alone compiles ~66 separate cuBLASDx microbenches).
 `--prebuild` compiles every binary the selected legs need into a persistent,
 hash-keyed cache (`bench/.tune_cache/sm<sms>/`, gitignored) and runs nothing.
 Run it **anytime — even while the GPU is busy**, since compilation is CPU-bound.
-Building isn't timed, so fan it out with **`--build-jobs N`** (size to free_RAM/7
-— each cuBLASDx compile needs ~6-7GB; `--build-jobs 6` on a 64GB box cut a full
-re-sweep's compile wall from ~45min serial to ~10min). The later timed sweep on a
+Building isn't timed. On a dedicated build host you may use **`--build-jobs N`**
+(size to free_RAM/7 — each cuBLASDx compile needs ~6-7GB); keep the default of 1
+on a shared host. The later timed sweep on a
 quiet GPU then finds every binary cached and is **execute-only** — and always runs
 serially for clean measurement, regardless of `--build-jobs`. The cache is keyed
 on the rendered source + a digest of the whole header library + the SM, so any
 library edit transparently rebuilds the affected binaries; a cuBLASDx-rejected
 shape is remembered so it isn't retried.
+
+The shape tuner snapshots provenance before its first timed launch and before
+writing any generated header. Its Markdown artifact records both contender
+times and their three-trial spreads. This ordering matters: a generated-header
+write must never change the source digest claimed for measurements already
+taken.
+
+For the complete release audit on the sm_120 measurement host, run
+`bench/run_quiet_audit.sh` after prebuilding. It captures every non-shape leg
+with `--dry-run`, measures and writes the shape table last, then regenerates
+the remaining tables offline from those immutable captures. This prevents an
+early generated-header write from invalidating later cached binaries. A full
+signed receipt brackets timing, and a second full receipt covers the final
+generated tree. If an interrupted run already produced its first receipt, use
+`bench/run_quiet_audit.sh --resume`: it reruns the MathDx shard against that
+receipt, carries only fingerprint-identical completed shards, then continues
+with timing. The release run deliberately uses the longer candidate A/B and
+paper profiles.
 
 ### The `blas2` and `rect` legs
 
@@ -80,6 +98,8 @@ input, the harness restores pristine device copies between reps **outside** the
 `cudaEvent` window (per-launch event timing; see the methodology section of
 the solvers section of `bench/RESULTS.md`, where the measured block is spliced), and a
 CPU-checked correctness guard per shape aborts on any solver/reference mismatch.
+The direct-vs-PCG table is an approximate-solve comparison at PCG's configured
+``rho = rᵀz`` tolerance, not an equal-final-residual contest.
 Prebuild-cached like the other legs; offline hook `--from-solvers <txt>`.
 
 The shared rule (`bench/tune_pick.py::pick`): a dependency-carrying impl
@@ -122,6 +142,17 @@ The ladder-grammar harnesses share one measurement core
   itself. Clocks are deliberately **not locked** (`nvidia-smi -lgc`): users
   run at stock boost, so the tables are tuned at stock boost — the telemetry
   lines exist so a reviewer can verify the clocks were stable anyway.
+- **Provenance and isolation**: every new capture records the UTC start,
+  commit, dirty-source digest, architecture, compiler, and the timestamp and
+  fingerprint of the nearest signed correctness receipt. Provenance schema 2
+  records the receipt artifact SHA-256 separately from its source fingerprint;
+  schema-1 captures mislabeled the fingerprint digest as
+  `correctness_receipt_sha256`. The source digest describes the exact
+  pre-regeneration tree that was timed; the final signed receipt validates the
+  generated tree after tables are written. The driver refuses a
+  busy GPU and invalidates a leg if a foreign compute PID appears after start.
+  Correctness stays a separate gate; a timing capture does not promote peer
+  agreement into a numerical oracle.
 - **Mutation invariant**: reps run with no restore in the timed region, so
   in-place ops re-factor their own output from rep 2 on. This is
   timing-benign only for branch-free, data-independent ops (everything
@@ -141,6 +172,14 @@ The ladder-grammar harnesses share one measurement core
   mysterious timing cliff) at PR time, before any re-timing. Intentional
   changes regenerate the baseline in the same PR:
   `python3 .github/scripts/resource_canary.py --arch sm_120 --update`.
+
+Candidate-only A/B sweeps use the same rules but never rewrite dispatch tables:
+
+```bash
+python bench/perf_sweeps.py --arch sm_120 --build-only  # shared box: compile only
+python bench/perf_sweeps.py --arch sm_120               # quiet GPU: execute serially
+python bench/perf_sweeps.py --arch sm_120 --profile overnight  # release confirmation
+```
 
 ## The cuBLASDx-vs-SIMT table
 

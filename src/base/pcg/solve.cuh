@@ -19,17 +19,20 @@
  * Convergence is tested on the preconditioned residual `rho = rᵀ z`:
  * `|rho| < abs_tol + rel_tol * |rho_init|`.
  *
- * Shared scratch: pass `s_mem` of `pcg_scratch_bytes<T,state_size,knot_points>(threads)`
- * elements (5 padded vectors + the warp-dot scratch). Five scalars live in
- * static `__shared__`. Requires `blockDim.x` be a multiple of 32 (the warp dot).
+ * Allocate `pcg_scratch_bytes<T,state_size,knot_points>(threads)` bytes of
+ * dynamic shared memory and pass its base as `s_mem` (5 padded vectors + the
+ * warp-dot scratch). Five scalars live in static `__shared__`. The launch
+ * thread count must be a multiple of 32 because the warp-dot reduction uses a
+ * full-warp shuffle mask.
  */
 
 /**
- * @brief Shared-memory element count needed by `glass::pcg`.
+ * @brief Dynamic shared-memory byte count needed by `glass::pcg`.
  *
- * Host- or device-callable. Multiply by `sizeof(T)` for the dynamic-shared-mem
- * bytes to pass at launch. Covers the 5 padded work vectors plus the warp-dot
- * scratch (`ceil(threads/32)`); the 5 scalars are static `__shared__`.
+ * Host- or device-callable. Pass the return value directly as the kernel's
+ * dynamic-shared-memory byte count. It covers the 5 padded work vectors plus
+ * the warp-dot scratch (`ceil(threads/32)`); the 5 scalars are static
+ * `__shared__`.
  *
  * @tparam T            Scalar type.
  * @tparam state_size   Block dimension.
@@ -54,7 +57,8 @@ __host__ __device__ inline constexpr std::size_t pcg_scratch_bytes(uint32_t thre
  * @param S          Block-tridiagonal SPD system, `[L|D|R]` row-major strips.
  * @param Pinv       Block-tridiagonal preconditioner, `[L|D|R]` row-major strips.
  * @param b          Padded right-hand side.
- * @param s_mem      Shared scratch of `pcg_scratch_bytes<T,...>(blockDim.x)` elements.
+ * @param s_mem      Base of a dynamic-shared allocation of
+ *                   `pcg_scratch_bytes<T,...>(blockDim.x)` bytes.
  * @param max_iters  Maximum CG iterations.
  * @param rel_tol    Relative tolerance on the preconditioned residual.
  * @param abs_tol    Absolute tolerance on the preconditioned residual.
@@ -78,27 +82,27 @@ __device__ void pcg(T *x, T *S, T *Pinv, T *b, T *s_mem,
 
     uint32_t rank = flat_rank();
 
-    set_const<T, 5 * VEC>(static_cast<T>(0), s_mem);   // zero the 5 vectors incl. pads
+    set_const<T, 5 * VEC, /*TRAILING_SYNC=*/false>(static_cast<T>(0), s_mem);   // zero the 5 vectors incl. pads
     __syncthreads();
 
-    copy<T, VEC>(x, s_x);                              // s_x = x (initial guess)
+    copy<T, VEC, /*TRAILING_SYNC=*/false>(x, s_x);      // s_x = x (initial guess)
     __syncthreads();
 
     bdmv<T, knot_points, state_size, /*TRAILING_SYNC=*/false>(s_r, S, s_x);             // r = S x
     __syncthreads();
-    axpby<T, VEC>(static_cast<T>(1), b, static_cast<T>(-1), s_r, s_r); // r = b - S x
+    axpby<T, VEC, /*TRAILING_SYNC=*/false>(static_cast<T>(1), b, static_cast<T>(-1), s_r, s_r); // r = b - S x
     __syncthreads();
 
     bdmv<T, knot_points, state_size, /*TRAILING_SYNC=*/false>(s_z, s_p, Pinv, s_r);     // z = p = Pinv r
     __syncthreads();
 
-    dot_fast<T, VEC>(s_r, s_z, &s_rho, s_scr);                  // rho = rᵀ z
+    dot_fast<T, VEC, /*TRAILING_SYNC=*/false>(s_r, s_z, &s_rho, s_scr); // rho = rᵀ z
     __syncthreads();
 
     T arho = (s_rho < static_cast<T>(0)) ? -s_rho : s_rho;
     if (arho < abs_tol) {
         if (rank == 0) *iters = 0;
-        copy<T, VEC>(s_x, x);
+        copy<T, VEC, /*TRAILING_SYNC=*/false>(s_x, x);
         if constexpr (TRAILING_SYNC) __syncthreads();
         return;
     }
@@ -113,19 +117,19 @@ __device__ void pcg(T *x, T *S, T *Pinv, T *b, T *s_mem,
         bdmv<T, knot_points, state_size, /*TRAILING_SYNC=*/false>(s_Ap, S, s_p);        // Ap = S p
         __syncthreads();
 
-        dot_fast<T, VEC>(s_p, s_Ap, &s_alpha, s_scr);          // pᵀ Ap
+        dot_fast<T, VEC, /*TRAILING_SYNC=*/false>(s_p, s_Ap, &s_alpha, s_scr); // pᵀ Ap
         __syncthreads();
         if (rank == 0) s_alpha = s_rho / s_alpha;                      // alpha
         __syncthreads();
 
-        axpy<T, VEC>(s_alpha, s_p, s_x);                              // x += alpha p
-        axpy<T, VEC>(-s_alpha, s_Ap, s_r);                           // r -= alpha Ap
+        axpy<T, VEC, /*TRAILING_SYNC=*/false>(s_alpha, s_p, s_x);    // x += alpha p
+        axpy<T, VEC, /*TRAILING_SYNC=*/false>(-s_alpha, s_Ap, s_r);  // r -= alpha Ap
         __syncthreads();
 
         bdmv<T, knot_points, state_size, /*TRAILING_SYNC=*/false>(s_z, Pinv, s_r);     // z = Pinv r
         __syncthreads();
 
-        dot_fast<T, VEC>(s_r, s_z, &s_rho_new, s_scr);        // rho_new = rᵀ z
+        dot_fast<T, VEC, /*TRAILING_SYNC=*/false>(s_r, s_z, &s_rho_new, s_scr); // rho_new = rᵀ z
         __syncthreads();
 
         T arho_new = (s_rho_new < static_cast<T>(0)) ? -s_rho_new : s_rho_new;
@@ -135,12 +139,11 @@ __device__ void pcg(T *x, T *S, T *Pinv, T *b, T *s_mem,
         if (rank == 0) { s_beta = s_rho_new / s_rho; s_rho = s_rho_new; }
         __syncthreads();
 
-        axpby<T, VEC>(static_cast<T>(1), s_z, s_beta, s_p, s_p);      // p = z + beta p
+        axpby<T, VEC, /*TRAILING_SYNC=*/false>(static_cast<T>(1), s_z, s_beta, s_p, s_p); // p = z + beta p
         __syncthreads();
     }
 
     if (rank == 0) *iters = it;
-    copy<T, VEC>(s_x, x);                                             // write solution back
+    copy<T, VEC, /*TRAILING_SYNC=*/false>(s_x, x);                     // write solution back
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
-
