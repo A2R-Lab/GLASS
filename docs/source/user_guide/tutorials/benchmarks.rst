@@ -92,5 +92,6 @@ Autotuning from the bench
 
 The same harness backs ``bench/autotune.py``, which measures SIMT vs cuBLASDx
 per shape and writes a per-host override table so the ``glass::nvidia::*``
-auto-dispatch picks the measured winner instead of the static heuristic. See
+compile-time auto-dispatch picks the measured winner instead of the static
+heuristic (the table is consulted at compile time — rebuild to apply). See
 :doc:`../concepts/tuning` for that workflow.

@@ -39,7 +39,8 @@ The reference is organized by BLAS level and by backend:
 .. note::
 
    The block-scope SIMT entries on these pages are the ``glass::block::``
-   **contract tier** (bit-exact, thread-count invariant, never re-dispatched);
+   **contract tier** (bit-exact, thread-count invariant — ``pcg`` alone
+   documents a multiple-of-32 launch contract — never re-dispatched);
    the bare ``glass::`` spellings are the **measured-default face**. Measured
    cells can use a warp-0 or thread-0 body while preserving the block-scope
    calling contract; unmoved operations remain re-exports. See

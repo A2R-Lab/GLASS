@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Validate required correctness obligations against collection and a receipt."""
+"""Check the 19 declared behavioral obligations (test/coverage-obligations.json)
+have passing evidence in collection and the signed receipt. This is an
+obligation-presence check, not line or semantic coverage."""
 
 import argparse
 import fnmatch

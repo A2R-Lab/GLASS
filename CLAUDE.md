@@ -123,8 +123,15 @@ before pushing:
 ```
 
 A release always runs all eight shards from scratch (`release.sh` verifies
-under a no-carry policy). Library headers are hashed into the test-binary
-cache key by GLOB (`src/**/*.cuh` + the `glass*.cuh` roots) — new headers bust
+under a no-carry policy).
+
+**Trust model — never oversell it:** a receipt is a **signed attestation by a
+keyholder, NOT cryptographic proof of GPU execution**. CI verifies signature +
+source fingerprint + exact outcomes; `gpu_info` is self-reported. Keep every
+README/docs claim consistent with pytest-gpu-proof's `docs/security_model.md`
+("attests"/"establishes", never "proves GPU execution").
+
+Library headers are hashed into the test-binary cache key by GLOB (`src/**/*.cuh` + the `glass*.cuh` roots) — new headers bust
 the cache automatically; only a NEW `test/cuda` driver needs registering in
 `test/conftest.py` (compile target + hash entry).
 
@@ -156,9 +163,11 @@ git diff --check
 cd docs && PATH="$(cd .. && pwd)/.venv/bin:$PATH" make all SPHINXOPTS="-W --keep-going"
 ```
 
-`release.sh` requires a clean `main`, a changelog entry, a current 100% overload
-manifest, 100% declared correctness obligations, a fresh full GPU receipt, and
-local receipt verification before it tags and pushes.
+`release.sh` requires a clean `main`, a changelog entry, a complete
+public-overload manifest (every documented overload compile-covered — an
+overload metric, not line coverage), all 19 declared behavioral obligations
+passing, a fresh full GPU receipt, and local receipt verification before it
+tags and pushes.
 
 ## Conventions
 

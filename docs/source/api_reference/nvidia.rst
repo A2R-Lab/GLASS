@@ -4,8 +4,9 @@ NVIDIA Backend (``glass::nvidia::``)
 Vendor-accelerated paths built on CUB (reductions), cuBLASDx (GEMM/GEMV), and
 cuSOLVERDx (LAPACK). The block-scope ops live in ``glass::nvidia::block::``
 (the contract tier; bare ``glass::nvidia::`` re-exports them as the
-measured-default face). The entry points auto-dispatch between a pure-SIMT
-implementation and the vendor backend based on a size heuristic / tuning table;
+measured-default face). The entry points auto-dispatch **at compile time**
+between a pure-SIMT implementation and the vendor backend based on a size
+heuristic / tuning table (a ``constexpr`` decision — no runtime branching);
 see :doc:`../user_guide/concepts/backend_dispatch`. The L2/L3/LAPACK paths
 require NVIDIA MathDx (``MATHDX_ROOT``) — see
 :doc:`../user_guide/getting_started/installation`.

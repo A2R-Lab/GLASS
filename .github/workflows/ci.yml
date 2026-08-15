@@ -23,7 +23,7 @@ jobs:
           sudo apt-get install -y doxygen
           python3 -m pip install pytest numpy scipy
 
-      - name: Require current 100% API and behavioral coverage
+      - name: Require complete overload manifest + all declared obligations
         run: |
           python3 .github/scripts/api_contract_coverage.py \
             --check-manifest test/api-contracts.json --require-100

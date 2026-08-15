@@ -2,11 +2,13 @@ Testing, oracles & receipts
 ===========================
 
 Every Doxygen-documented public overload is compile-covered by a CUDA test TU
-(the 100% overload badge), while each behavioral family is exercised on a GPU
-against the obligations below. Every push to ``main`` that touches library or
-test sources carries a **signed hardware receipt**
-(`pytest-gpu-proof <https://pypi.org/project/pytest-gpu-proof/>`_): the selected
-suite ran on a physical GPU at that source tree, attested and re-verified by CI.
+(the 100% overload badge — an *overload-manifest* metric, not line or semantic
+coverage), while each behavioral family is exercised on a GPU against the 19
+declared obligations below. Every push to ``main`` that touches library or
+test sources carries a **signed receipt**
+(`pytest-gpu-proof <https://pypi.org/project/pytest-gpu-proof/>`_): a keyholder
+attests that the selected suite ran on their GPU at that exact source tree, and
+CI re-verifies the signature, source fingerprint, and exact test outcomes.
 This page states *how* each family is validated so the compile-coverage number
 is never confused with numerical depth.
 
@@ -20,8 +22,9 @@ public function overload—not a name—matched to a compatible call in
 from the supported surface, with a reason for every exclusion. Compile-only
 canary TUs close overload-shape gaps; they do not claim numerical correctness.
 Numerical correctness, dtype/layout coverage, conditioning, thread-count
-invariance, and cross-tier agreement are separate required obligations backed
-by the GPU receipt.
+invariance, and cross-tier agreement are separate required obligations — 19
+declared in ``test/coverage-obligations.json``, each checked for passing
+evidence in the signed receipt by ``coverage_obligations.py``.
 
 Validation classes
 ------------------
@@ -127,7 +130,9 @@ These hold regardless of oracle class and are what make the suite hard to fool:
   (1, partial warps, 32, 64, 256; the full sweep adds ragged counts like
   7/31/33/57/96) and must produce **byte-identical** output. This catches the
   #1 single-block bug class (missing barriers) that any fixed-configuration
-  test misses.
+  test misses. The one documented exception is ``pcg``, whose warp-level dot
+  reductions require a multiple-of-32 launch; it is swept over multiples of
+  32 only.
 - **Cross-tier agreement** — ``thread::``/``warp::``/``block::`` instantiate
   the same serial core; tiers are compared to ULP-level bounds on identical
   inputs. The bare dispatched face is pinned to be the same entity as the
@@ -160,10 +165,28 @@ Receipt shards
 ``vector``, ``dense``, ``factor``, ``tiers``, ``solvers``, ``robotics``,
 ``mathdx``, and ``integration``. A local change reruns only the affected
 families; untouched shards may carry forward only when their source-and-test
-fingerprint matches and their attested commit is an ancestor. Release runs do
-not carry results: all eight shards rerun at the release commit. The merged
-receipt records each shard's test count and duration, which makes future shard
-rebalancing evidence-based.
+fingerprint matches and their attested commit is an ancestor. Carrying a shard
+is a **trust-boundary decision**: the merged receipt is an attestation by the
+*merger*, who vouches that the carried results still apply — which is why the
+verification policy gates it (``allow_carried``) and why release runs do not
+carry results: all eight shards rerun at the release commit
+(``test/gpu-proof-release-policy.json`` sets ``allow_carried: false``). The
+merged receipt records each shard's test count and duration, which makes
+future shard rebalancing evidence-based.
+
+What the receipt does — and does not — establish
+------------------------------------------------
+
+Mirroring pytest-gpu-proof's `security model
+<https://github.com/A2R-Lab/pytest-gpu-proof/blob/main/docs/security_model.md>`_:
+a receipt **establishes** that a specific signer (their GitHub SSH key)
+attested to a specific set of test outcomes over a specific source fingerprint
+at a specific commit and time. CI verifies exactly that — signature, source
+fingerprint, commit ancestry, exact outcome-and-skip set, freshness, and the
+carry policy. It does **not** independently prove which GPU ran the tests
+(``gpu_info`` is self-reported), that the signer's machine was uncompromised,
+or anything about performance — timing artifacts are a separate lane that
+merely *reference* their proximate correctness receipt.
 
 What is *not* oracle-tested
 ---------------------------
@@ -173,5 +196,5 @@ helpers — their spec *is* the pinned value), and performance-related claims
 (dispatch-table *choices* are measured by ``bench/tune.py``, not asserted by
 the correctness suite; the suite only pins that every choice is numerically
 correct). Everything else on the public surface traces to class A, B, or C —
-and every A/B/C comparison in the table runs on real hardware under the
-receipt.
+and every A/B/C comparison in the table is attested by the signed receipt to
+have run on the signer's GPU.

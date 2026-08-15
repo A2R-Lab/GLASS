@@ -56,7 +56,7 @@ idle:
      - Header
    * - ``glass::block::`` (Block)
      - block
-     - Hand-rolled SIMT, ``threadIdx.{x,y,z}`` / ``blockDim.*`` (no dependencies). The **contract tier** — bit-exact, thread-count invariant, never re-dispatched
+     - Hand-rolled SIMT, ``threadIdx.{x,y,z}`` / ``blockDim.*`` (no dependencies). The **contract tier** — bit-exact, thread-count invariant (sole exception: ``pcg`` needs a multiple-of-32 launch), never re-dispatched
      - ``glass.cuh``
    * - ``glass::warp::`` (Warp)
      - warp
@@ -173,8 +173,9 @@ When **not** to use ``glass::nvidia::``:
   and the pure-SIMT compile-time path is often competitive there.
 
 The ``glass::nvidia::gemm<>`` / ``gemv<>`` / ``row_strided_*`` /
-``gemm_batched_1d<>`` primary templates **auto-dispatch**: small shapes route to
-SIMT automatically without any DEFINE macro. See
+``gemm_batched_1d<>`` primary templates **auto-dispatch at compile time**:
+small shapes route to SIMT automatically without any DEFINE macro (a
+``constexpr`` selection — nothing is decided at runtime). See
 :doc:`../concepts/backend_dispatch` for the full decision logic.
 
 Next steps

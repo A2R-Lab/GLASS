@@ -66,7 +66,7 @@ than fail when those aren't present:
        ``gemm_strided_batched_1d``). Does **not** need cuBLASDx; tests skip only
        if compilation fails for some toolchain reason.
    * - ``test_nvidia_dispatch``
-     - Round-2 auto-dispatch features. Needs ``MATHDX_ROOT`` (cuBLASDx) to
+     - Round-2 compile-time auto-dispatch features. Needs ``MATHDX_ROOT`` (cuBLASDx) to
        compile; skipped otherwise.
    * - ``test_trailing_sync``
      - The ``TRAILING_SYNC`` surface. Compiles with or without cuBLASDx (it

@@ -9,7 +9,8 @@
 - [ ] **Receipt**: this PR touches `src/`, a `glass*.cuh` root, or `test/` —
       so the tip commit includes a fresh signed `test/gpu-proof.json` from
       `./test/run_gpu_proof.sh` (full GPU suite; the `verify-gpu-proof` gate
-      is red otherwise). Doc-only / bench-only changes can skip this.
+      checks the signature + source fingerprint and is red otherwise).
+      Doc-only / bench-only changes can skip this.
 - [ ] **Thread-count invariance**: any new/changed block-scope op produces
       identical results at 1, 32, 33, 64, … threads (the tests sweep this).
 - [ ] **Doc-comment**: new public functions carry a `/** */` doc-comment and

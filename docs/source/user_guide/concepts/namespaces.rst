@@ -19,10 +19,10 @@ packing: thread (1 problem/thread, 32 per warp) → warp (1/warp) → block
 ================================  ======  =================================================
 Namespace                         Scope   What it is
 ================================  ======  =================================================
-``glass::block::``                block   **Block** — explicit hand-rolled pure-SIMT implementation (``threadIdx`` / ``blockDim``). CONTRACT tier: bit-exact, thread-count invariant, never re-dispatched.
+``glass::block::``                block   **Block** — explicit hand-rolled pure-SIMT implementation (``threadIdx`` / ``blockDim``). CONTRACT tier: bit-exact, thread-count invariant (one documented exception: ``pcg`` requires a multiple-of-32 launch), never re-dispatched.
 ``glass::warp::``                 warp    **Warp** — single-warp SIMT (``__shfl_*_sync``), warp-per-problem. (Namespace alias of ``block::warp`` — the warp mirrors live inline in the base headers.)
 ``glass::thread::``               thread  **Thread** — sequential, thread-per-problem, for low-DOF packing (compile-time sizes; register-resident up to ``N≤7``). No barriers, no shuffles, no ``threadIdx`` read. (Alias of ``block::thread``.)
-``glass::nvidia::block::``        block   **Nvidia** — CUB / cuBLASDx / cuSOLVERDx, auto-dispatched by size.
+``glass::nvidia::block::``        block   **Nvidia** — CUB / cuBLASDx / cuSOLVERDx, auto-dispatched by size at compile time.
 ``glass::nvidia::warp::``         warp    **Nvidia-warp** — CUB ``WarpReduce`` L1 reductions (``reduce`` / ``dot`` / ``nrm2``), one FULL 32-lane warp per problem; per-warp scratch sized by ``warp_reduce_scratch_bytes<T>()``; ``TRAILING_SYNC`` emits ``__syncwarp()``.
 ``glass::`` *(bare)*              block   **Measured default** — block-scope calling contract, body chosen by ``glass::dispatch_body()``; see below. (Likewise bare ``glass::nvidia::``.)
 ``glass::cgrps::``                block   *Convenience alias* of Block via a cooperative-groups handle (same numerics; not a separately-tuned backend).
@@ -50,9 +50,12 @@ The bare and explicit spellings make a deliberate implementation choice:
   and wherever implementation or reduction order is load-bearing.
 - **Bare** ``glass::gemm`` (and bare ``glass::nvidia::gemm``) **is the
   measured-default face**: the same block-scope *calling* contract — all block
-  threads enter, any thread count, the result is valid after return — with the
-  implementation *body* chosen per (op, size, dtype) by
-  ``glass::dispatch_body()`` in ``glass-dispatch.cuh``.
+  threads enter, any thread count (``pcg`` alone requires a multiple of 32),
+  the result is valid after return — with the implementation *body* chosen per
+  (op, size, dtype) by ``glass::dispatch_body()`` in ``glass-dispatch.cuh``.
+  The choice is a ``constexpr`` selection made **inside the device function**
+  — resolved per call site at compile time, not by a host-side dispatcher and
+  not by any runtime branch.
 
 The body sweep (``bench/tune.py --legs body``) compares full-block, warp-0, and
 thread-0 bodies while preserving the one-problem-per-block calling contract.

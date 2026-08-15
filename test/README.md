@@ -51,7 +51,7 @@ gracefully** when it is absent.
 See [`TESTING_STRATEGY.md`](TESTING_STRATEGY.md) for *why* the tests are shaped
 this way — especially the thread-count sweep that catches single-block races.
 
-## Signed sharded proof
+## Signed sharded attestation
 
 `test/run_gpu_proof.sh` emits eight dependency-scoped signed shard receipts and
 merges them into `test/gpu-proof.json`. Run a subset with `--shards`; unchanged

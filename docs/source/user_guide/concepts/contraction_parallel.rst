@@ -90,7 +90,9 @@ f64-only corner:
 Thread-count invariance
 -----------------------
 
-Like every GLASS primitive, the ``*_reduced`` ops are **thread-count invariant**:
+Like every GLASS primitive (the one documented exception being ``pcg``'s
+multiple-of-32 launch contract), the ``*_reduced`` ops are
+**thread-count invariant**:
 identical output at 1 thread, a partial warp, or many warps. Each output is
 reduced by the *same* fixed 32-way tree regardless of how many warps the block
 has — a trailing partial warp (``blockDim % 32``) idles, and below 32 threads a
