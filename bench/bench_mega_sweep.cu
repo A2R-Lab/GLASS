@@ -38,6 +38,7 @@
 #include <cstdint>
 #include <cstring>
 #include <ctime>
+#include <functional>
 #include "timing_common.cuh"
 #include <type_traits>
 
@@ -305,9 +306,16 @@ template<typename T,int N> static constexpr bool nv_lapack_ok()
 // per row so tune.py can flag captures where jitter exceeds the margin.
 static double g_row_spread = 0.0;
 
+// Per-TRIAL pristine-input hook (set by bench_size, inherited by every timing
+// call including nv_timed): tc_time_ns_per_prob_pre runs it untimed before
+// each trial so in-place ops (chol/trsv/posv) time the same pristine->drift
+// trajectory in every trial of every contender.
+static std::function<void()> g_pre_trial;
+
 template<typename F>
 static double time_ns_per_prob(F launch, int reps) {
-    double ns = tc_time_ns_per_prob(launch, reps, NPROB);
+    double ns = tc_time_ns_per_prob_pre(
+        launch, []{ if (g_pre_trial) g_pre_trial(); }, reps, NPROB);
     if (tc_last_spread_pct() > g_row_spread) g_row_spread = tc_last_spread_pct();
     return ns;
 }
@@ -391,10 +399,10 @@ static void bench_size(Op op, int reps) {
     cudaMalloc(&x, vv*sizeof(T)); cudaMalloc(&y, vv*sizeof(T));
     // diagonally-dominant A (valid for chol/trsv/posv); broadcast one tile to all problems.
     // PRISTINE MIRRORS (audit 2026-08-15): factor ops refactor A in place and
-    // dot/gemv write into x/y, so inputs drift across reps — identical code
-    // timed ~13% apart purely by contender ORDER before this fix. reset()
-    // restores the pristine bytes before EVERY timed cell (outside the timed
-    // region), so each contender measures the same input trajectory.
+    // dot/gemv write into x/y, so inputs drift across launches — identical code
+    // timed ~13% apart purely by contender ORDER before this fix. reset() is
+    // installed as the per-TRIAL hook (g_pre_trial), so every trial of every
+    // contender times the same pristine->drift input trajectory, untimed.
     T *A0, *x0, *y0;
     cudaMalloc(&A0, mm*sizeof(T)); cudaMalloc(&x0, vv*sizeof(T)); cudaMalloc(&y0, vv*sizeof(T));
     T* hA = (T*)malloc((size_t)N*N*sizeof(T));
@@ -404,7 +412,7 @@ static void bench_size(Op op, int reps) {
     cudaMemset(B, 1, mm*sizeof(T)); cudaMemset(C, 0, mm*sizeof(T));
     cudaMemset(x0, 1, vv*sizeof(T)); cudaMemset(y0, 1, vv*sizeof(T));
     free(hA);
-    auto reset = [&]{
+    g_pre_trial = [=]{
         cudaMemcpy(A, A0, mm*sizeof(T), cudaMemcpyDeviceToDevice);
         cudaMemcpy(x, x0, vv*sizeof(T), cudaMemcpyDeviceToDevice);
         cudaMemcpy(y, y0, vv*sizeof(T), cudaMemcpyDeviceToDevice);
@@ -416,7 +424,6 @@ static void bench_size(Op op, int reps) {
     g_row_spread = 0.0;
     printf("%-5s N=%-3d | BLOCK", op_name(op), N);
     for (int TB : {32, 64, 128, 256}) {
-        reset();
         double ns = time_ns_per_prob([&]{ launch_block<T,N>(op, TB, A, B, C, x, y); }, reps);
         if (ns < 1e29) printf("  tb%d=%.4f", TB, ns); else printf("  tb%d=FAIL", TB);
         if (ns < best_block) { best_block = ns; best_tb = TB; }
@@ -424,7 +431,6 @@ static void bench_size(Op op, int reps) {
     printf("  | WARP");
     for (int WPB : {1, 2, 4, 8, 16, 32}) {
         if (WPB > NPROB) break;
-        reset();
         double ns = time_ns_per_prob([&]{ launch_warp<T,N>(op, WPB, A, B, C, x, y); }, reps);
         if (ns < 1e29) printf("  w%d=%.4f", WPB, ns); else printf("  w%d=FAIL", WPB);
         if (ns < best_warp) { best_warp = ns; best_wpb = WPB; }
@@ -432,7 +438,6 @@ static void bench_size(Op op, int reps) {
     if constexpr (thread_ok<T,N>()) {
         printf("  | THREAD");
         for (int TPB : {32, 64, 128, 256}) {
-            reset();
             double ns = time_ns_per_prob([&]{ launch_thread<T,N>(op, TPB, A, B, C, x, y); }, reps);
             if (ns < 1e29) printf("  t%d=%.4f", TPB, ns); else printf("  t%d=FAIL", TPB);
             if (ns < best_thread) { best_thread = ns; best_tpb = TPB; }
@@ -444,12 +449,10 @@ static void bench_size(Op op, int reps) {
     double best_auto = 1e30; int best_atb = 0;
     printf("  | AUTO");
     for (int TB : {32, 64, 128, 256}) {
-        reset();
         double ns = time_ns_per_prob([&]{ launch_auto<T,N>(op, TB, A, B, C, x, y); }, reps);
         if (ns < 1e29) printf("  a%d=%.4f", TB, ns); else printf("  a%d=FAIL", TB);
         if (ns < best_auto) { best_auto = ns; best_atb = TB; }
     }
-    reset();
     double nv = nv_dispatch<T,N>(op, A, B, C, x, y, reps);
 
     // 4-way winner. thread/warp/block are all dependency-free pure SIMT, so they
@@ -477,6 +480,7 @@ static void bench_size(Op op, int reps) {
     // left-to-right, so a trailing token cannot perturb table regeneration.
     if (best_auto < 1e29) printf("  auto a%d=%.4f", best_atb, best_auto);
     printf("  spread<=%.1f%%  -> %s (%.2fx)\n", g_row_spread, winner, margin);
+    g_pre_trial = nullptr;
     cudaFree(A); cudaFree(B); cudaFree(C); cudaFree(x); cudaFree(y);
     cudaFree(A0); cudaFree(x0); cudaFree(y0);
 }

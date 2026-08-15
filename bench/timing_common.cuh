@@ -30,15 +30,26 @@ static inline double tc_elapsed_ms(struct timespec a, struct timespec b) {
 static double tc_g_spread_pct = 0.0;
 static inline double tc_last_spread_pct() { return tc_g_spread_pct; }
 
-template <typename F>
-static double tc_time_ns_per_prob(F launch, int reps, int nprob) {
+// pre_trial runs UNTIMED before the probe and before each trial (followed by a
+// device sync), so a harness can restore pristine inputs per trial. In-place
+// ops (chol/trsv/posv) drift their inputs across launches; without a per-TRIAL
+// reset the first trial times the pristine->drifted transient while later
+// trials time the drifted steady state — inflating spread and, worse, timing
+// different contenders against different input trajectories (measured ~13%
+// apart on identical code by position alone, audit 2026-08-15). With the hook
+// every trial times the same trajectory for every contender.
+template <typename F, typename P>
+static double tc_time_ns_per_prob_pre(F launch, P pre_trial, int reps, int nprob) {
     cudaGetLastError();                          // clear any sticky prior error
+    pre_trial();
     launch(); cudaDeviceSynchronize();
     // An infeasible config fails to LAUNCH; without this probe the empty launch
     // times as ~350ns total and poisons the argmin (caught 2026-07-18).
     if (cudaGetLastError() != cudaSuccess) { tc_g_spread_pct = 0.0; return 1e30; }
     double best = 1e30, worst = 0.0;
     for (int t = 0; t < 3; t++) {
+        pre_trial();
+        cudaDeviceSynchronize();                 // keep the reset out of the timed region
         struct timespec t0, t1;
         clock_gettime(CLOCK_MONOTONIC, &t0);
         for (int r = 0; r < reps; r++) launch();
@@ -50,6 +61,11 @@ static double tc_time_ns_per_prob(F launch, int reps, int nprob) {
     }
     tc_g_spread_pct = (best > 0.0 && best < 1e29) ? (worst / best - 1.0) * 100.0 : 0.0;
     return best;
+}
+
+template <typename F>
+static double tc_time_ns_per_prob(F launch, int reps, int nprob) {
+    return tc_time_ns_per_prob_pre(launch, []{}, reps, nprob);
 }
 
 // ~0.7 s FMA busy-loop across all SMs: brings an idle GPU to steady boost
