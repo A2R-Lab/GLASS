@@ -2,7 +2,6 @@
 # verify --expected-skips (a new skip, or a baselined test that starts
 # running again, both fail CI; update this file deliberately).
 #
-# 2x getrf: a zero leading pivot at n=1 is genuinely singular - there is
-#   no row to pivot to, the case is vacuous.
-test/test_getrf.py::test_gesv[needs_pivot-1]
-test/test_getrf.py::test_getrf_reconstruction[needs_pivot-1]
+# Currently EMPTY: the suite runs skip-free. The former getrf needs_pivot
+# n=1 skips were vacuous parameter combinations (a 1x1 zero-leading-pivot
+# matrix is singular) and are now excluded at parametrization instead.

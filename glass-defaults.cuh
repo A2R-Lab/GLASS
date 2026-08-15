@@ -75,12 +75,12 @@ constexpr bool nv_available(op o) {
 // inserts a new block + dispatch case for a first-time arch), leaving the rest alone. ───
 
 // === BEGIN tune.py ladder sm_120 ===
-// Source sweep: mega_sweep_20260813_231932.txt   tie margin: ±5% (nvidia must clear it; SIMT ties ±2% prefer thread>warp>block)
+// Source sweep: mega_sweep_20260815_113004.txt   tie margin: ±5% (nvidia must clear it; SIMT ties ±2% prefer thread>warp>block)
 // Returns the *ideal* tier assuming nvidia is linked; nv_available() filters after.
 constexpr backend ideal_sm120(op o, uint32_t N, bool f64) {
     switch (o) {
         case op::dot:
-            if (!f64) return N <= 12u ? backend::thread : backend::warp;
+            if (!f64) return N <= 24u ? backend::thread : backend::warp;
             else      return N <= 32u ? backend::thread : backend::warp;
         case op::gemv:
             if (!f64) return N <= 6u ? backend::thread : N <= 32u ? backend::warp : N <= 48u ? backend::block : backend::warp;
@@ -93,7 +93,7 @@ constexpr backend ideal_sm120(op o, uint32_t N, bool f64) {
             else      return N <= 24u ? backend::thread : N <= 64u ? backend::nvidia : backend::block;
         case op::trsv:
             if (!f64) return N <= 16u ? backend::thread : N <= 32u ? backend::nvidia : backend::warp;
-            else      return N <= 16u ? backend::thread : N <= 48u ? backend::nvidia : N <= 64u ? backend::block : backend::warp;
+            else      return N <= 16u ? backend::thread : N <= 48u ? backend::nvidia : backend::warp;
         case op::posv:
             if (!f64) return N <= 12u ? backend::thread : backend::nvidia;
             else      return N <= 24u ? backend::thread : N <= 64u ? backend::nvidia : backend::block;

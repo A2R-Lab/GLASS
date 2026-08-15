@@ -65,13 +65,16 @@ def _apply_swaps(M, piv, reverse=False):
 
 # ─── getrf: LU reconstruction vs scipy.linalg.lu_factor convention ─────────────
 
-@pytest.mark.parametrize("n", NS)
-@pytest.mark.parametrize("kind", ["general", "scaled", "needs_pivot"])
+# needs_pivot requires n >= 2: a 1x1 matrix with a zero leading pivot is
+# singular (no row to swap to), so that combination is never generated —
+# excluded at parametrization rather than skipped, keeping the suite skip-free.
+@pytest.mark.parametrize("n,kind",
+                         [(n, k) for n in NS
+                          for k in ("general", "scaled", "needs_pivot")
+                          if not (k == "needs_pivot" and n < 2)])
 def test_getrf_reconstruction(bins, n, kind):
     """P@A == L@U with valid 0-based LAPACK ipiv, and our (LU, piv) is drop-in
     for scipy.linalg.lu_solve — the lu_factor-compatibility contract."""
-    if kind == "needs_pivot" and n < 2:
-        pytest.skip("a zero leading pivot is singular at n=1")
     A = _make_A(kind, n)
     LU_flat, piv_f = run_op(bins["getrf"], "getrf", "simple",
                             args=[128, n], inputs=[_col(A)])
@@ -95,13 +98,14 @@ def test_getrf_reconstruction(bins, n, kind):
 
 # ─── gesv: general non-symmetric solve (incl. the pivot-REQUIRING case) ────────
 
-@pytest.mark.parametrize("n", NS)
-@pytest.mark.parametrize("kind", ["general", "needs_pivot"])
+# same n >= 2 exclusion as test_getrf_reconstruction (vacuous at n=1)
+@pytest.mark.parametrize("n,kind",
+                         [(n, k) for n in NS
+                          for k in ("general", "needs_pivot")
+                          if not (k == "needs_pivot" and n < 2)])
 def test_gesv(bins, n, kind):
     """gesv == np.linalg.solve on general non-symmetric A, single RHS —
     including a zero leading pivot, where no-pivot LU produces garbage."""
-    if kind == "needs_pivot" and n < 2:
-        pytest.skip("a zero leading pivot is singular at n=1")
     A = _make_A(kind, n)
     b = make_general(n, 1, seed=31 + n)
     X_flat, _LU = run_op(bins["getrf"], "gesv", "simple",
