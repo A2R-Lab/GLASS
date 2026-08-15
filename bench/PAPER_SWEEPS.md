@@ -70,7 +70,7 @@ summarize it as a universal "GLASS vs vendor" result.
 
 sm_120 timing landed in the 2026-07-08 quiet window (captures
 `paper_hostblas_20260708_0054.txt` / `paper_fusion_20260708_0055.txt`; F2/F3/F4
-in the paper render from them). Jetson/Orin legs of THESE harnesses
+rendered from them until the 2026-08-15 recapture below). Jetson/Orin legs of THESE harnesses
 (hostblas/fusion at sm_87, optional tegrastats energy) remain un-run — the
 Orin runbook below is still pending for that leg only. (Original smoke
 validation 2026-07-06 on a shared box; those numbers were discarded.)
@@ -91,6 +91,13 @@ gaps. The latency section had 0/117 samples above 5% spread. One near-tie
 conservative: small deltas and cross-run winner changes are ties; only claims
 that survive both quiet captures are reportable. These characterization cells
 do not drive library dispatch.
+
+The 2026-08-15 quiet window re-ran both legs at plain `-O3` on the GLASS side
+(post-revert flags): `paper_hostblas_20260815_135938.txt` /
+`paper_fusion_20260815_140027.txt`. These are the captures the paper's F2/F3/F4
+figures and prose numbers regenerate from (superseding the 2026-07-08 pair);
+the -O1-era 08-13/08-14 captures above remain archived as conservative
+validation runs only.
 
 **Numerics finding (valid despite shared load — maxerr is deterministic):**
 the `vendor_tf32` CHECK column doubles as a tensor-core ENGAGEMENT detector.
