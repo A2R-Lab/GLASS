@@ -1,7 +1,12 @@
-// bench_mega_sweep.cu — three-contender scaling sweep:
+// bench_mega_sweep.cu — ladder scaling sweep:
 //   WARP   — one warp per problem,   <<<ceil(NPROB/WPB), dim3(32,WPB)>>>, WPB ∈ {1..32}
-//   BLOCK  — one block per problem,   <<<NPROB, TB>>>, TB ∈ {32,64,128,256} (pure-SIMT glass::)
+//   BLOCK  — one block per problem,   <<<NPROB, TB>>>, TB ∈ {32,64,128,256} (pure-SIMT glass::block::)
 //   NVIDIA — cuBLASDx/cuSOLVERDx,     <<<NPROB, nv_threads(N)>>>, descriptor-fixed (f32 to N128; f64 to N64)
+//   AUTO   — bare glass::op at the BLOCK launch shapes: the shipped measured-default
+//            face (constexpr device-level body dispatch via -DSMS). FIGURE-ONLY —
+//            the AUTO segment/token is ignored by tune.py's table parsers and never
+//            feeds a verdict; it exists to show how close the shipped default face
+//            tracks the best per-cell body.
 //
 // Answers "where do the breakevens fall on the warp → SIMT-block → MathDx ladder?" across
 // problem size N and batch count NPROB (single-problem latency → GPU-saturating throughput).
@@ -17,7 +22,7 @@
 //
 // Metric: ns per problem (wall / (reps*NPROB)), min of 3 trials. Lower = better. Timing-only:
 // inputs are factored/overwritten in place across reps (no per-rep reload) — uniform across
-// all three contenders, so the comparison is apples-to-apples.
+// all contenders, so the comparison is apples-to-apples.
 //
 // Compile (3-way, needs MathDx — set MATHDX_ROOT):
 //   nvcc -std=c++17 -arch=sm_120 -O3 --expt-relaxed-constexpr -Xptxas -O1 -I.. -I../src
@@ -70,6 +75,16 @@ template<typename T,int N> __global__ void kw_chol(T* A, int np) { int p=blockId
 template<typename T,int N> __global__ void kw_trsv(T* A, T* x, int np) { int p=blockIdx.x*blockDim.y+threadIdx.y; if(p>=np)return; glass::warp::trsv<T,N>(A+(size_t)p*N*N, x+p*N); }
 template<typename T,int N> __global__ void kw_posv(T* A, T* b, int np) { int p=blockIdx.x*blockDim.y+threadIdx.y; if(p>=np)return; glass::warp::posv<T,N>(A+(size_t)p*N*N, b+p*N); }
 
+// ─── AUTO model: bare glass::op (measured-default face), block launch shapes ──
+// Same launch geometry as BLOCK (block b owns problem b); the implementation
+// body per (op,N,dtype) is whatever glass::dispatch_body() shipped for this SMS.
+template<typename T,int N> __global__ void ka_dot (T* x, T* y) { int p=blockIdx.x; glass::dot<T,N>(x+p*N, y+p*N); }
+template<typename T,int N> __global__ void ka_gemv(T* A, T* x, T* y) { int p=blockIdx.x; glass::gemv<T,N,N>((T)1, A+(size_t)p*N*N, x+p*N, (T)0, y+p*N); }
+template<typename T,int N> __global__ void ka_gemm(T* A, T* B, T* C) { int p=blockIdx.x; glass::gemm<T,N,N,N>((T)1, A+(size_t)p*N*N, B+(size_t)p*N*N, (T)0, C+(size_t)p*N*N); }
+template<typename T,int N> __global__ void ka_chol(T* A) { int p=blockIdx.x; glass::potrf<T,N>(A+(size_t)p*N*N); }
+template<typename T,int N> __global__ void ka_trsv(T* A, T* x) { int p=blockIdx.x; glass::trsv<T,N>(A+(size_t)p*N*N, x+p*N); }
+template<typename T,int N> __global__ void ka_posv(T* A, T* b) { int p=blockIdx.x; glass::posv<T,N>(A+(size_t)p*N*N, b+p*N); }
+
 enum Op { DOT, GEMV, GEMM, CHOL, TRSV, POSV, NOP };
 static const char* op_name(Op o) {
     const char* n[] = {"dot","gemv","gemm","chol","trsv","posv"};
@@ -86,6 +101,19 @@ static void launch_block(Op op, int TB, T* A, T* B, T* C, T* x, T* y) {
         case CHOL: kb_chol<T,N><<<grid,blk>>>(A); break;
         case TRSV: kb_trsv<T,N><<<grid,blk>>>(A, x); break;
         case POSV: kb_posv<T,N><<<grid,blk>>>(A, x); break;
+        default: break;
+    }
+}
+template<typename T,int N>
+static void launch_auto(Op op, int TB, T* A, T* B, T* C, T* x, T* y) {
+    dim3 grid(NPROB), blk(TB);
+    switch (op) {
+        case DOT:  ka_dot <T,N><<<grid,blk>>>(x, y); break;
+        case GEMV: ka_gemv<T,N><<<grid,blk>>>(A, x, y); break;
+        case GEMM: ka_gemm<T,N><<<grid,blk>>>(A, B, C); break;
+        case CHOL: ka_chol<T,N><<<grid,blk>>>(A); break;
+        case TRSV: ka_trsv<T,N><<<grid,blk>>>(A, x); break;
+        case POSV: ka_posv<T,N><<<grid,blk>>>(A, x); break;
         default: break;
     }
 }
@@ -394,6 +422,16 @@ static void bench_size(Op op, int reps) {
             if (ns < best_thread) { best_thread = ns; best_tpb = TPB; }
         }
     }
+    // AUTO: the bare shipped-default face at the block launch shapes.
+    // FIGURE-ONLY — excluded from the winner verdict and ignored by tune.py's
+    // parsers (its summary token trails the ones _ROW_RE captures).
+    double best_auto = 1e30; int best_atb = 0;
+    printf("  | AUTO");
+    for (int TB : {32, 64, 128, 256}) {
+        double ns = time_ns_per_prob([&]{ launch_auto<T,N>(op, TB, A, B, C, x, y); }, reps);
+        if (ns < 1e29) printf("  a%d=%.4f", TB, ns); else printf("  a%d=FAIL", TB);
+        if (ns < best_auto) { best_auto = ns; best_atb = TB; }
+    }
     double nv = nv_dispatch<T,N>(op, A, B, C, x, y, reps);
 
     // 4-way winner. thread/warp/block are all dependency-free pure SIMT, so they
@@ -417,6 +455,9 @@ static void bench_size(Op op, int reps) {
     printf("  || block tb%d=%.4f  warp w%d=%.4f", best_tb, best_block, best_wpb, best_warp);
     if (has_thread) printf("  thread t%d=%.4f", best_tpb, best_thread);
     if (nv > 0)     printf("  nv=%.4f", nv);
+    // auto token LAST among times: _ROW_RE captures block/warp[/thread][/nv]
+    // left-to-right, so a trailing token cannot perturb table regeneration.
+    if (best_auto < 1e29) printf("  auto a%d=%.4f", best_atb, best_auto);
     printf("  spread<=%.1f%%  -> %s (%.2fx)\n", g_row_spread, winner, margin);
     cudaFree(A); cudaFree(B); cudaFree(C); cudaFree(x); cudaFree(y);
 }
@@ -438,7 +479,7 @@ int main(int argc, char** argv) {
     bool f64 = (strcmp(dt, "f64") == 0 || strcmp(dt, "fp64") == 0 || strcmp(dt, "double") == 0);
     { int v = 48*1024; cudaDeviceGetAttribute(&v, cudaDevAttrMaxSharedMemoryPerBlockOptin, 0); g_optin_smem = (size_t)v; }
     printf("# mega sweep | NPROB=%d reps=%d dtype=%s | ns/problem (lower=better) | optin_smem=%zuKB\n", NPROB, reps, f64 ? "f64" : "f32", g_optin_smem/1024);
-    printf("# contenders: BLOCK(SIMT, TB swept) | WARP(WPB swept) | THREAD(SIMT, TPB swept) | NV(cuBLASDx/cuSOLVERDx, forced; f32<=128, f64<=64)\n");
+    printf("# contenders: BLOCK(SIMT, TB swept) | WARP(WPB swept) | THREAD(SIMT, TPB swept) | AUTO(bare glass::, shipped dispatch, TB swept; figure-only) | NV(cuBLASDx/cuSOLVERDx, forced; f32<=128, f64<=64)\n");
     printf("# THREAD stages operands global->registers->global in the per-problem-contiguous layout (uncoalesced; the layout tax is IN the timing).\n");
     tc_warm_gpu();                    // steady boost clocks before the first timed cell
     if (f64) run_all<double>(reps);

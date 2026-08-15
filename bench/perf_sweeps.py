@@ -21,10 +21,16 @@ BENCH_DIR = pathlib.Path(__file__).parent.resolve()
 ROOT = BENCH_DIR.parent
 BUILD_DIR = BENCH_DIR / "build"
 
+# robotics_paper: the paper's batch sweep — the same robotics micro-op grid
+# re-run across the concurrency axis (one capture, one invocation per NPROB).
+BATCH_GRID = ("256", "1024", "4096", "8192", "32768")
+
 LEGS = {
     "composition": ("bench_composition_ab.cu", ["4096", "20", "both"]),
     "mapping": ("bench_mapping_ab.cu", ["8192", "20", "both"]),
     "robotics": ("bench_robotics.cu", ["8192", "500", "both"]),
+    "robotics_paper": ("bench_robotics.cu",
+                       [[n, "500", "both"] for n in BATCH_GRID]),
     "nvwarp": ("bench_nvwarp_l1.cu", []),
 }
 
@@ -32,6 +38,7 @@ OVERNIGHT_ARGS = {
     "composition": ["4096", "100", "both"],
     "mapping": ["8192", "100", "both"],
     "robotics": ["8192", "1000", "both"],
+    "robotics_paper": [[n, "1000", "both"] for n in BATCH_GRID],
     "nvwarp": [],
 }
 
@@ -82,22 +89,30 @@ def run_leg(leg, binary, arch, force, runtime_args):
     # Under --force, pre-existing PIDs are tolerated by design — subtract them
     # so the mid-run watch only trips on NEW processes.
     baseline = compute_pids() if force else frozenset()
-    argv = [str(binary), *runtime_args]
+    # A leg is either one invocation (flat argv list) or several appended into
+    # the same capture (list of argv lists — the robotics_paper batch grid).
+    runs = (runtime_args if runtime_args and isinstance(runtime_args[0], list)
+            else [runtime_args])
     stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     capture = BENCH_DIR / f"perf_{leg}_{stamp}.txt"
-    print(f"[run] {' '.join(argv)} -> {capture.name}")
     with capture.open("w") as stream:
-        stream.write("\n".join(provenance(leg, arch, argv[1:])) + "\n")
+        stream.write("\n".join(provenance(
+            leg, arch, [" ".join(r) for r in runs])) + "\n")
         stream.flush()
-        proc = subprocess.Popen(argv, cwd=BENCH_DIR, stdout=stream,
-                                stderr=subprocess.STDOUT)
-        returncode, foreign = watch_process(proc, baseline)
-        if foreign:
-            stream.write(f"# INVALID foreign_compute_pids={sorted(foreign)}\n")
-    if foreign:
-        sys.exit(f"{leg} invalidated by foreign compute PIDs {sorted(foreign)}")
-    if returncode:
-        sys.exit(f"{leg} exited {returncode}; see {capture.name}")
+        for runtime in runs:
+            argv = [str(binary), *runtime]
+            print(f"[run] {' '.join(argv)} -> {capture.name}")
+            proc = subprocess.Popen(argv, cwd=BENCH_DIR, stdout=stream,
+                                    stderr=subprocess.STDOUT)
+            returncode, foreign = watch_process(proc, baseline)
+            if foreign:
+                stream.write(
+                    f"# INVALID foreign_compute_pids={sorted(foreign)}\n")
+            if foreign:
+                sys.exit(f"{leg} invalidated by foreign compute PIDs "
+                         f"{sorted(foreign)}")
+            if returncode:
+                sys.exit(f"{leg} exited {returncode}; see {capture.name}")
 
 
 def main():
