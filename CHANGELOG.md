@@ -26,9 +26,12 @@ All notable changes to GLASS will be documented here. The format follows
   lazy test-binary compilation; development reruns only affected shards, and
   releases still require a fresh all-shard receipt (now enforced by a
   no-carry verify policy in `release.sh`).
-- `test/test_pcg.py` sweeps only multiple-of-32 thread counts, matching
-  `pcg`'s documented full-warp launch contract (the removed 1/7/33-thread
-  passes exercised undefined behavior, not coverage).
+- `pcg` — and the whole block-scope `_fast` reduction family — is now legal
+  at ANY thread count: the warp shuffle folds bound their sync mask to the
+  active lanes of a ragged last warp (previously a latent full-mask UB that
+  passed by hardware behavior). Multiple-of-32 launches are unchanged
+  bit-for-bit and remain the fast path; `test/test_pcg.py` sweeps ragged
+  counts again.
 
 ### Fixed
 

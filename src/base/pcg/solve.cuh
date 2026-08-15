@@ -21,9 +21,12 @@
  *
  * Allocate `pcg_scratch_bytes<T,state_size,knot_points>(threads)` bytes of
  * dynamic shared memory and pass its base as `s_mem` (5 padded vectors + the
- * warp-dot scratch). Five scalars live in static `__shared__`. The launch
- * thread count must be a multiple of 32 because the warp-dot reduction uses a
- * full-warp shuffle mask.
+ * warp-dot scratch). Five scalars live in static `__shared__`. Any launch
+ * thread count is legal (the warp-dot reduction bounds its shuffle mask to
+ * the active lanes of a ragged last warp); multiples of 32 keep the best
+ * throughput and are bit-identical to the historical results. Like `dot_fast`
+ * itself, results are reduction-order-dependent across DIFFERENT thread
+ * counts (each count is individually deterministic).
  */
 
 /**

@@ -40,6 +40,43 @@ namespace shfl_detail {
         }
         return v;
     }
+
+    // ── bounded folds: legal for a PARTIAL warp of k contiguous active lanes
+    // 0..k-1 (any 1 <= k <= 32). The sync mask names exactly the active
+    // lanes, and the guard discards shuffle results whose source lane is not
+    // active (undefined values never enter the sum). k == 32 routes through
+    // the exact full-warp ladder above, so multiple-of-32 launches remain
+    // bit-identical to the historical path. These are what make the block
+    // `_fast` family — and therefore `pcg` — legal at ANY thread count.
+    __device__ __forceinline__ unsigned lanes_mask(uint32_t k) {
+        return (k >= 32u) ? 0xffffffffu : ((1u << k) - 1u);
+    }
+    // active-lane count of the warp holding flat rank `rank` in a block of
+    // `size` threads: 32 for every warp except a ragged last one.
+    __device__ __forceinline__ uint32_t warp_active(uint32_t rank, uint32_t size) {
+        const uint32_t rem = size - (rank & ~31u);
+        return (rem < 32u) ? rem : 32u;
+    }
+    template <typename T>
+    __device__ __forceinline__ T fold_sum_bounded(T v, uint32_t lane, uint32_t k) {
+        if (k == 32u) return fold_sum(v);
+        const unsigned mask = (1u << k) - 1u;
+        for (int off = 16; off > 0; off >>= 1) {
+            const T o = __shfl_down_sync(mask, v, off);
+            if (lane + off < k) v += o;
+        }
+        return v;
+    }
+    template <typename T, typename Op>
+    __device__ __forceinline__ T fold_bounded(T v, Op op, uint32_t lane, uint32_t k) {
+        if (k == 32u) return fold(v, op);
+        const unsigned mask = (1u << k) - 1u;
+        for (int off = 16; off > 0; off >>= 1) {
+            const T o = __shfl_down_sync(mask, v, off);
+            if (lane + off < k) v = op(v, o);
+        }
+        return v;
+    }
 }
 
 /**
@@ -165,14 +202,14 @@ __device__ void reduce_fast(uint32_t n, T *x, T *s_scratch)
     uint32_t size = flat_size();
     T val = static_cast<T>(0);
     for (uint32_t i = rank; i < n; i += size) val += x[i];
-    val = shfl_detail::fold_sum(val);
     uint32_t lane = rank & 31, warp = rank >> 5;
+    val = shfl_detail::fold_sum_bounded(val, lane, shfl_detail::warp_active(rank, size));
     if (lane == 0) s_scratch[warp] = val;
     __syncthreads();
     uint32_t nw = (size + 31) / 32;
     if (rank < 32) {
         val = (rank < nw) ? s_scratch[rank] : static_cast<T>(0);
-        val = shfl_detail::fold_sum(val);
+        val = shfl_detail::fold_sum_bounded(val, rank, (size < 32u) ? size : 32u);
         if (rank == 0) x[0] = val;
     }
     if constexpr (TRAILING_SYNC) __syncthreads();
@@ -197,14 +234,14 @@ __device__ void reduce_fast(T *x, T *s_scratch)
     uint32_t size = flat_size();
     T val = static_cast<T>(0);
     for (uint32_t i = rank; i < N; i += size) val += x[i];
-    val = shfl_detail::fold_sum(val);
     uint32_t lane = rank & 31, warp = rank >> 5;
+    val = shfl_detail::fold_sum_bounded(val, lane, shfl_detail::warp_active(rank, size));
     if (lane == 0) s_scratch[warp] = val;
     __syncthreads();
     uint32_t nw = (size + 31) / 32;
     if (rank < 32) {
         val = (rank < nw) ? s_scratch[rank] : static_cast<T>(0);
-        val = shfl_detail::fold_sum(val);
+        val = shfl_detail::fold_sum_bounded(val, rank, (size < 32u) ? size : 32u);
         if (rank == 0) x[0] = val;
     }
     if constexpr (TRAILING_SYNC) __syncthreads();
@@ -246,14 +283,14 @@ __device__ T reduce_fast(T partial, T *s_scratch)
     uint32_t rank = flat_rank();
     uint32_t size = flat_size();
     T val = partial;
-    val = shfl_detail::fold_sum(val);
     uint32_t lane = rank & 31, warp = rank >> 5;
+    val = shfl_detail::fold_sum_bounded(val, lane, shfl_detail::warp_active(rank, size));
     if (lane == 0) s_scratch[warp] = val;
     __syncthreads();
     uint32_t nw = (size + 31) / 32;
     if (rank < 32) {
         val = (rank < nw) ? s_scratch[rank] : static_cast<T>(0);
-        val = shfl_detail::fold_sum(val);
+        val = shfl_detail::fold_sum_bounded(val, rank, (size < 32u) ? size : 32u);
         if (rank == 0) s_scratch[0] = val;
     }
     __syncthreads();
@@ -290,8 +327,9 @@ __device__ T reduce_fast_min(T partial, T *s_scratch)
     uint32_t size = flat_size();
     uint32_t nw = (size + 31) / 32;
     T val = partial;
-    val = shfl_detail::fold(val, shfl_detail::MinOp{});
     uint32_t lane = rank & 31, warp = rank >> 5;
+    val = shfl_detail::fold_bounded(val, shfl_detail::MinOp{}, lane,
+                                    shfl_detail::warp_active(rank, size));
     if (lane == 0) s_scratch[warp] = val;
     __syncthreads();
     if (rank < 32) {
@@ -299,7 +337,8 @@ __device__ T reduce_fast_min(T partial, T *s_scratch)
         // sentinel: min is idempotent, so re-folding a value already in the set
         // cannot change the result, and it needs no type-specific +inf.
         val = s_scratch[(rank < nw) ? rank : 0];
-        val = shfl_detail::fold(val, shfl_detail::MinOp{});
+        val = shfl_detail::fold_bounded(val, shfl_detail::MinOp{}, rank,
+                                        (size < 32u) ? size : 32u);
         if (rank == 0) s_scratch[0] = val;
     }
     __syncthreads();

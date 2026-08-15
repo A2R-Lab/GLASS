@@ -49,9 +49,11 @@ actually documented and compile-covered.
 ## Primitive invariants
 
 - A block primitive must be entered by every participating block thread.
-- Results must be invariant across supported block sizes, including partial
-  warps. The ONE documented exception is `pcg`, whose warp-level dot
-  reductions require a multiple-of-32 launch; do not add new exceptions.
+- Every primitive must be LEGAL at every thread count, ragged final warps
+  included — do not add launch-count restrictions. Deterministic-order ops
+  must also be result-invariant across block sizes; the `_fast` shuffle
+  reductions (and `pcg`, built on them) have documented `blockDim`-dependent
+  summation order (each count individually deterministic, oracle-close).
 - Preserve the single-block model — never split a primitive across blocks.
 - Don't gate/skip an op per problem-size without saying so.
 - Put a synchronization boundary between a cooperative write phase and any

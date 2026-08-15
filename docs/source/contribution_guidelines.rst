@@ -17,8 +17,10 @@ Before you open a pull request
    at 1 thread, 32 threads (one warp), a partial warp, and many warps. The most
    common GLASS bug is a missing ``__syncthreads()`` between a write phase and a
    later read — invisible at 32 threads, a race at 64+. Never test only at one
-   warp. The one documented exception is ``pcg``, whose warp-level dot
-   reductions require a multiple-of-32 launch; do **not** add new exceptions.
+   warp. Every primitive must be *legal* at every thread count (ragged final
+   warps included) — do **not** add launch-count restrictions; an op whose
+   reduction order varies with ``blockDim`` (the ``_fast`` family, ``pcg``)
+   must document that and still be swept at ragged counts.
 #. **Test both storage orders** where a function takes layout flags
    (``ROW_MAJOR_*`` / ``TRANSPOSE_B``).
 #. **Run the suite:** ``pytest test/`` must be green (the harness compiles the

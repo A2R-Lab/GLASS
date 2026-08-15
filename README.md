@@ -88,7 +88,7 @@ trajectory optimization / MPC:
 |----------|------|--------|
 | `glass::bdmv` | block-tridiagonal matvec (`[L\|D\|R]` strips, padded vectors) | `src/base/banded/bdmv.cuh` |
 | `glass::bdsv` | block-tridiagonal **direct** SPD solve (block-Cholesky / block-Thomas sweep; the direct sibling of `pcg` on the identical `[L\|D\|R]` layout) | `src/base/banded/bdsv.cuh` |
-| `glass::pcg` | single-block preconditioned conjugate gradient (`S x = b`). ⚠ Documented launch contract: `blockDim` must be a multiple of 32 (warp-level dot reductions) — the one exception to thread-count invariance | `src/base/pcg/solve.cuh` |
+| `glass::pcg` | single-block preconditioned conjugate gradient (`S x = b`). Any `blockDim` is legal; like the `_fast` reductions it is built on, results vary with thread count (each count individually deterministic), and multiples of 32 are the fast path | `src/base/pcg/solve.cuh` |
 
 An internal box-constrained QP solver, `glass::internal::box_qp`, also lives in the tree but is
 **not** part of the public surface (QP is optimization, not linear algebra).

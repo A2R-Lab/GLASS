@@ -58,14 +58,14 @@ __device__ void nrm1_diff_fast(uint32_t n, const T *x, const T *y, T *out, T *s_
     uint32_t size = flat_size();
     T val = static_cast<T>(0);
     for (uint32_t i = rank; i < n; i += size) val += abs(x[i] - y[i]);
-    val = shfl_detail::fold_sum(val);
     uint32_t lane = rank & 31, warp = rank >> 5;
+    val = shfl_detail::fold_sum_bounded(val, lane, shfl_detail::warp_active(rank, size));
     if (lane == 0) s_scratch[warp] = val;
     __syncthreads();
     uint32_t nw = (size + 31) / 32;
     if (rank < 32) {
         val = (rank < nw) ? s_scratch[rank] : static_cast<T>(0);
-        val = shfl_detail::fold_sum(val);
+        val = shfl_detail::fold_sum_bounded(val, rank, (size < 32u) ? size : 32u);
         if (rank == 0) out[0] = val;
     }
     if constexpr (TRAILING_SYNC) __syncthreads();
@@ -92,14 +92,14 @@ __device__ void nrm1_diff_fast(const T *x, const T *y, T *out, T *s_scratch)
     uint32_t size = flat_size();
     T val = static_cast<T>(0);
     for (uint32_t i = rank; i < N; i += size) val += abs(x[i] - y[i]);
-    val = shfl_detail::fold_sum(val);
     uint32_t lane = rank & 31, warp = rank >> 5;
+    val = shfl_detail::fold_sum_bounded(val, lane, shfl_detail::warp_active(rank, size));
     if (lane == 0) s_scratch[warp] = val;
     __syncthreads();
     uint32_t nw = (size + 31) / 32;
     if (rank < 32) {
         val = (rank < nw) ? s_scratch[rank] : static_cast<T>(0);
-        val = shfl_detail::fold_sum(val);
+        val = shfl_detail::fold_sum_bounded(val, rank, (size < 32u) ? size : 32u);
         if (rank == 0) out[0] = val;
     }
     if constexpr (TRAILING_SYNC) __syncthreads();

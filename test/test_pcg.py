@@ -49,10 +49,10 @@ def from_padded(p, SS, KP):
 
 
 @pytest.mark.parametrize("SS,KP", [(2, 3), (6, 4)])
-# Thread sweep is multiples of 32 ONLY: pcg documents a full-warp launch
-# contract (warp-level dot reductions), the one documented exception to
-# block-size invariance. The old 1/7/33 passes exercised UB, not coverage.
-@pytest.mark.parametrize("threads", [32, 64, 128, 256])
+# Any thread count is legal since the bounded-shuffle fold (2026-08-15):
+# 7 exercises the sub-warp path (nw=1, k<32), 33 a ragged last warp, the
+# multiples of 32 the historical full-warp fast path (bit-identical).
+@pytest.mark.parametrize("threads", [7, 32, 33, 64, 128, 256])
 def test_pcg_solve(bins, SS, KP, threads):
     Sd, band, pinv = make_spd_banded(SS, KP, seed=SS * 10 + KP)
     n = SS * KP

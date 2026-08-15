@@ -70,6 +70,23 @@ __device__ void argreduce(uint32_t n, const T *x, uint32_t *out, T *out_val, T *
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 
+// bounded (key, index) shuffle fold: legal for a PARTIAL warp of k contiguous
+// active lanes 0..k-1 — the sync mask names exactly the active lanes and the
+// guard discards pairs from inactive source lanes. k == 32 combines are
+// result-identical to the historical unguarded ladder (an out-of-range
+// full-warp shuffle returns the caller's own pair, and self-combine is a
+// no-op under the lower-index tie-break).
+template <typename T, bool MINIMUM>
+__device__ __forceinline__ void pair_fold_bounded(T &key, uint32_t &idx,
+                                                  uint32_t lane, uint32_t k) {
+    const unsigned mask = (k >= 32u) ? 0xffffffffu : ((1u << k) - 1u);
+    for (int off = 16; off > 0; off >>= 1) {
+        T okey = __shfl_down_sync(mask, key, off);
+        uint32_t oidx = __shfl_down_sync(mask, idx, off);
+        if (k == 32u || lane + off < k) combine<T, MINIMUM>(key, idx, okey, oidx);
+    }
+}
+
 // tier-shared body, warp-shuffle variant (`_fast`): per-thread strided scan,
 // in-warp `__shfl_down_sync` fold of the (key, index) pair, per-warp winners
 // combined through scratch by warp 0 — the argreduce twin of `iamax_fast`.
@@ -88,23 +105,15 @@ __device__ void argreduce_fast(uint32_t n, const T *x, uint32_t *out, T *out_val
     uint32_t idx = UINT32_MAX;
     for (uint32_t i = rank; i < n; i += size)
         combine<T, MINIMUM>(key, idx, Key{}(x[i]), i);
-    for (int off = 16; off > 0; off >>= 1) {
-        T okey = __shfl_down_sync(0xffffffffu, key, off);
-        uint32_t oidx = __shfl_down_sync(0xffffffffu, idx, off);
-        combine<T, MINIMUM>(key, idx, okey, oidx);
-    }
     uint32_t lane = rank & 31, warp = rank >> 5;
+    pair_fold_bounded<T, MINIMUM>(key, idx, lane, shfl_detail::warp_active(rank, size));
     if (lane == 0) { s_key[warp] = key; s_idx[warp] = idx; }
     __syncthreads();
 
     if (rank < 32) {
         key = (rank < nw) ? s_key[rank] : static_cast<T>(0);
         idx = (rank < nw) ? s_idx[rank] : UINT32_MAX;
-        for (int off = 16; off > 0; off >>= 1) {
-            T okey = __shfl_down_sync(0xffffffffu, key, off);
-            uint32_t oidx = __shfl_down_sync(0xffffffffu, idx, off);
-            combine<T, MINIMUM>(key, idx, okey, oidx);
-        }
+        pair_fold_bounded<T, MINIMUM>(key, idx, rank, (size < 32u) ? size : 32u);
         if (rank == 0) {
             out[0] = (idx == UINT32_MAX) ? 0u : idx;
             if (out_val != nullptr) out_val[0] = (idx == UINT32_MAX) ? Key{}.empty(x) : key;
@@ -257,10 +266,10 @@ __host__ __device__ constexpr std::size_t argreduce_fast_scratch_bytes(uint32_t 
  *
  * Bit-identical result to `argmax` (same combine, same tie-break/NaN policy);
  * fewer scratch bytes and no serial thread-0 fold — the wide-block fast path.
- * Scratch via `argreduce_fast_scratch_bytes<T>(blockDim)`. REQUIRES a
- * full-warp block size (a multiple of 32): the shuffle folds use the full
- * 0xffffffff mask (the `iamax_fast` contract) — use the default `argmax` for
- * partial-warp blocks.
+ * Scratch via `argreduce_fast_scratch_bytes<T>(blockDim)`. Any block size is
+ * legal: the shuffle folds bound their sync mask to the active lanes of a
+ * ragged last warp (selection is grouping-invariant, so the result matches
+ * the default `argmax` at every count).
  *
  * @tparam T  Scalar type (e.g. `float`, `double`).
  * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).

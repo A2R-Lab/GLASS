@@ -128,11 +128,13 @@ These hold regardless of oracle class and are what make the suite hard to fool:
 
 - **Thread-count invariance** — block ops are re-run across thread counts
   (1, partial warps, 32, 64, 256; the full sweep adds ragged counts like
-  7/31/33/57/96) and must produce **byte-identical** output. This catches the
+  7/31/33/57/96). Deterministic-order ops must produce **byte-identical**
+  output; the ``_fast`` shuffle reductions — and ``pcg``, which is built on
+  them — are instead checked oracle-close at every count, because their
+  summation grouping varies with ``blockDim`` by documented design. Every op
+  is *legal* at every count (ragged final warps included). This catches the
   #1 single-block bug class (missing barriers) that any fixed-configuration
-  test misses. The one documented exception is ``pcg``, whose warp-level dot
-  reductions require a multiple-of-32 launch; it is swept over multiples of
-  32 only.
+  test misses.
 - **Cross-tier agreement** — ``thread::``/``warp::``/``block::`` instantiate
   the same serial core; tiers are compared to ULP-level bounds on identical
   inputs. The bare dispatched face is pinned to be the same entity as the

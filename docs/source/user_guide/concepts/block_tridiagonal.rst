@@ -78,9 +78,10 @@ Sizing and launch:
   (five padded work vectors + the warp-dot scratch); pass this value directly
   as the launch's dynamic-shared-memory argument. Five scalars live in static
   ``__shared__``.
-* Use a multiple of 32 threads; PCG's fast dot reduction uses full-warp
-  shuffle masks. (This is the one documented exception to the library's
-  thread-count-invariance contract.)
+* Any thread count works (the fast dot reduction bounds its shuffle mask to
+  a ragged last warp); multiples of 32 are the fast path. Like ``dot_fast``,
+  results vary with the launch's thread count — each count is individually
+  deterministic.
 * Seed ``x`` with an initial guess (zeros are fine); the solution is written back
   into ``x`` and the iteration count into ``iters``.
 

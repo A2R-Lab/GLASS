@@ -11,8 +11,10 @@ block solves one system (launch one block per independent solve); it uses only
 :doc:`banded`, and all vectors use the same padded
 ``(knot_points + 2)·state_size`` layout. Size the dynamic shared memory with
 ``glass::pcg_scratch_bytes<T, state_size, knot_points>(threads)``; it returns
-bytes, ready to pass as the launch argument. Launch with a multiple of 32
-threads because PCG's fast dot reduction uses a full-warp shuffle mask.
+bytes, ready to pass as the launch argument. Any thread count is legal (the
+fast dot reduction bounds its shuffle mask to the active lanes of a ragged
+last warp); multiples of 32 are the fast path and reproduce the historical
+results bit-for-bit.
 
 See :doc:`../user_guide/concepts/block_tridiagonal` for the layout and a worked
 walkthrough.

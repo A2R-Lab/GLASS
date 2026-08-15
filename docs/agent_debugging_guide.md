@@ -211,10 +211,11 @@ The banded matvec and PCG solver carry layout/launch preconditions that fail *si
   their absent `L`/`R` against **zero pad** — if the pads hold garbage, the edge rows are wrong.
   `glass::pcg` zeroes its internal vectors (`set_const`), but a hand-rolled `glass::bdmv` caller must
   zero the pads itself.
-- **Use a multiple of 32 PCG threads.** Its fast dot reduction uses a full-warp
-  shuffle mask; a partial final warp violates that launch contract. This is the
-  ONE documented exception to GLASS's thread-count-invariance contract — do not
-  add new ones.
+- **PCG runs at any thread count** (since 2026-08-15: the bounded shuffle fold
+  in `shfl_detail` made ragged final warps legal across the whole `_fast`
+  family). Multiples of 32 are the fast path and bit-match historical results;
+  like `dot_fast`, results differ across thread counts (each individually
+  deterministic).
 - **Dynamic shared memory must be at least
   `glass::pcg_scratch_bytes<T,state_size,knot_points>(threads)` bytes** — pass
   the helper result directly as the launch byte count. Under-sizing overruns;

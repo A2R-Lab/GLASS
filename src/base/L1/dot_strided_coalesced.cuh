@@ -68,14 +68,14 @@ __device__ void dot_strided_coalesced(const T* x, const T* y, T* out, T* s_scrat
         val += x[i * SX] * y[i * SY];
 
     // Warp-level reduce, then inter-warp reduce via shared scratch.
-    val = shfl_detail::fold_sum(val);
     uint32_t lane = rank & 31, warp = rank >> 5;
+    val = shfl_detail::fold_sum_bounded(val, lane, shfl_detail::warp_active(rank, size));
     if (lane == 0) s_scratch[warp] = val;
     __syncthreads();
     uint32_t nw = (size + 31) / 32;
     if (rank < 32) {
         val = (rank < nw) ? s_scratch[rank] : static_cast<T>(0);
-        val = shfl_detail::fold_sum(val);
+        val = shfl_detail::fold_sum_bounded(val, rank, (size < 32u) ? size : 32u);
         if (rank == 0) *out = val;
     }
     if constexpr (TRAILING_SYNC) __syncthreads();

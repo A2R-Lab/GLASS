@@ -56,7 +56,7 @@ idle:
      - Header
    * - ``glass::block::`` (Block)
      - block
-     - Hand-rolled SIMT, ``threadIdx.{x,y,z}`` / ``blockDim.*`` (no dependencies). The **contract tier** — bit-exact, thread-count invariant (sole exception: ``pcg`` needs a multiple-of-32 launch), never re-dispatched
+     - Hand-rolled SIMT, ``threadIdx.{x,y,z}`` / ``blockDim.*`` (no dependencies). The **contract tier** — bit-exact, thread-count invariant for deterministic-order ops, never re-dispatched
      - ``glass.cuh``
    * - ``glass::warp::`` (Warp)
      - warp
