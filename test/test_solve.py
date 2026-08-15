@@ -93,6 +93,19 @@ def test_riccati_gain(bins, NX, NU):
     assert np.allclose(K, expK, rtol=RTOL, atol=ATOL), f"err {np.abs(K-expK).max()}"
 
 
+def test_riccati_gain_timed_shape(bins):
+    """Oracle-check the exact 36x12 shape used by the performance A/B."""
+    NX, NU = 36, 12
+    P = _spd(NX)
+    A = RNG.random((NX, NX)).astype(np.float32)
+    B = RNG.random((NX, NU)).astype(np.float32)
+    R = _spd(NU)
+    fail, K = _ricc(bins["solve"], 128, NX, NU, False, 0.0, P, A, B, R)
+    expK = np.linalg.solve(R + B.T @ P @ B, B.T @ P @ A)
+    assert fail == 0
+    assert np.allclose(K, expK, rtol=RTOL, atol=ATOL), f"err {np.abs(K-expK).max()}"
+
+
 @pytest.mark.parametrize("NX,NU", [(14, 7), (8, 4)])
 def test_riccati_thread_invariance(bins, NX, NU):
     P = _spd(NX)

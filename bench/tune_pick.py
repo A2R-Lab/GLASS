@@ -236,18 +236,19 @@ def parse_rect(text, nprob=8192):
 
 
 _REDUCED_RE = re.compile(
-    r"^REDUCED\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+([\d.]+)\s+([\d.]+)")
+    r"^REDUCED\s+(?:(f32|f64)\s+)?(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+([\d.]+)\s+([\d.]+)")
 
 
 def parse_reduced(text):
-    """Parse bench_reduced rows → list of dicts with M,N,K,blockDim,n_out,serial,reduced."""
+    """Parse rows with dtype, shape, launch, and the two measured times."""
     rows = []
     for line in text.splitlines():
         m = _REDUCED_RE.match(line.strip())
         if m:
-            M, N, K, bd, n_out = (int(m.group(i)) for i in range(1, 6))
-            rows.append(dict(M=M, N=N, K=K, blockDim=bd, n_out=n_out,
-                             serial=float(m.group(6)), reduced=float(m.group(7))))
+            M, N, K, bd, n_out = (int(m.group(i)) for i in range(2, 7))
+            rows.append(dict(dtype=m.group(1) or "f32", M=M, N=N, K=K,
+                             blockDim=bd, n_out=n_out,
+                             serial=float(m.group(7)), reduced=float(m.group(8))))
     return rows
 
 

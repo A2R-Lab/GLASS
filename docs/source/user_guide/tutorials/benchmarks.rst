@@ -81,6 +81,12 @@ iteration loop runs *inside* the kernel to amortize launch overhead.
    ~0.1 µs/op for a non-trivial kernel almost always mean the bench was elided —
    recheck the safeguards.
 
+   The reduction rows are end-to-end harness comparisons, not isolated
+   primitive instruction counts. The raw CUB path reads its global input
+   directly, while the GLASS paths include their harness staging and
+   synchronization. Use those rows to compare the tested call paths; do not
+   attribute the whole difference to the reduction primitive alone.
+
 Autotuning from the bench
 -------------------------
 

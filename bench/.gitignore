@@ -21,5 +21,6 @@ robotics_sweep_*.txt
 body_dispatch_sweep_*.txt
 paper_hostblas_*.txt
 paper_fusion_*.txt
+perf_*.txt
 night_logs/
 overnight_*_chain.sh

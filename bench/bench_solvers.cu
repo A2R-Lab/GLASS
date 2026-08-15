@@ -9,7 +9,8 @@
 //                      (N ∈ {4,8,16,32,64}, single RHS): prices the pivoted-LU
 //                      overhead where Cholesky suffices, and the
 //                      invert-then-multiply anti-pattern.
-//   C. syev + eig_clamp — timing only (no contender), N ∈ {4,8,16,32}.
+//   C. adaptive syev/eig_clamp vs fixed-sweep eigh/psd_project,
+//                      N ∈ {4,8,16,32}.
 //
 // PROTOCOL (differs from bench_blas2.cu because these ops MUTATE their input):
 // NPROB independent problem copies live in global memory; each rep launches one
@@ -41,6 +42,7 @@
 #include <cstring>
 #include <cmath>
 
+#include "timing_common.cuh"
 #include "../glass.cuh"
 
 static int NPROB = 8192;
@@ -212,7 +214,7 @@ static double time_restored_ns(L launch, R restore, int reps) {
     cudaEvent_t e0, e1;
     CK(cudaEventCreate(&e0)); CK(cudaEventCreate(&e1));
     restore(); launch(); CK(cudaDeviceSynchronize());        // warmup (untimed)
-    double best = 1e30;
+    double best = 1e30, worst = 0.0;
     for (int t = 0; t < 3; t++) {
         double total_ms = 0.0;
         for (int r = 0; r < reps; r++) {
@@ -226,7 +228,9 @@ static double time_restored_ns(L launch, R restore, int reps) {
         }
         double ns = total_ms * 1e6 / ((double)reps * NPROB);
         if (ns < best) best = ns;
+        if (ns > worst) worst = ns;
     }
+    tc_g_spread_pct = (worst / best - 1.0) * 100.0;
     CK(cudaEventDestroy(e0)); CK(cudaEventDestroy(e1));
     return best;
 }
@@ -309,6 +313,22 @@ __global__ void k_eig_clamp(T* A) {
     glass::block::eig_clamp<T, N>(A + (size_t)blockIdx.x*N*N, (T)1e-3, s);
 }
 
+template<typename T, int N>
+__global__ void k_eigh(const T* A, T* W, T* V) {
+    extern __shared__ double solvers_smem[];
+    T* s = reinterpret_cast<T*>(solvers_smem);
+    size_t p = blockIdx.x;
+    glass::block::eigh<T, N>(A + p * (size_t)N*N, W + p * (size_t)N,
+                             V + p * (size_t)N*N, s);
+}
+
+template<typename T, int N>
+__global__ void k_psd_project(T* A) {
+    extern __shared__ double solvers_smem[];
+    T* s = reinterpret_cast<T*>(solvers_smem);
+    glass::block::psd_project<T, N>(A + (size_t)blockIdx.x*N*N, (T)1e-3, s);
+}
+
 // ─── section A: bdsv vs pcg ───────────────────────────────────────────────────
 
 template<typename T, int BS, int KP>
@@ -378,7 +398,7 @@ static void bench_bdsv_pcg(int reps) {
         double ns = time_restored_ns(
             [&] { k_bdsv<T, BS, KP><<<NPROB, TB, sm_bdsv>>>(dWork, dVecWork); },
             restore_bdsv, reps);
-        printf("  tb%d=%.2f", TB, ns);
+        printf("  tb%d=%.2f(spread=%.1f%%)", TB, ns, tc_last_spread_pct());
         if (ns < best_b) { best_b = ns; tb_b = TB; }
     }
     printf("  | PCG");
@@ -389,7 +409,7 @@ static void bench_bdsv_pcg(int reps) {
             [&] { k_pcg<T, BS, KP><<<NPROB, TB, sm_pcg>>>(dX, dPristine, dPinv,
                       dVecPristine, PCG_MAX, REL, ABS, dIters); },
             restore_pcg, reps);
-        printf("  tb%d=%.2f", TB, ns);
+        printf("  tb%d=%.2f(spread=%.1f%%)", TB, ns, tc_last_spread_pct());
         if (ns < best_p) { best_p = ns; tb_p = TB; }
     }
     const char* winner = best_b <= best_p ? "BDSV" : "PCG";
@@ -477,21 +497,21 @@ static void bench_spdsv(int reps) {
     for (int TB : {32, 256}) {
         double ns = time_restored_ns([&] { k_gesv<T, N><<<NPROB, TB>>>(dA, dB); },
                                      restore_ab, reps);
-        printf("  tb%d=%.2f", TB, ns);
+        printf("  tb%d=%.2f(spread=%.1f%%)", TB, ns, tc_last_spread_pct());
         if (ns < best[0]) best[0] = ns;
     }
     printf("  | POSV");
     for (int TB : {32, 256}) {
         double ns = time_restored_ns([&] { k_posv<T, N><<<NPROB, TB>>>(dA, dB); },
                                      restore_ab, reps);
-        printf("  tb%d=%.2f", TB, ns);
+        printf("  tb%d=%.2f(spread=%.1f%%)", TB, ns, tc_last_spread_pct());
         if (ns < best[1]) best[1] = ns;
     }
     printf("  | INVSV");
     for (int TB : {32, 256}) {
         double ns = time_restored_ns([&] { k_invsolve<T, N><<<NPROB, TB, sm_inv>>>(dG, dB, dY); },
                                      restore_g, reps);
-        printf("  tb%d=%.2f", TB, ns);
+        printf("  tb%d=%.2f(spread=%.1f%%)", TB, ns, tc_last_spread_pct());
         if (ns < best[2]) best[2] = ns;
     }
     double best_thr = 1e30;
@@ -501,7 +521,7 @@ static void bench_spdsv(int reps) {
             double ns = time_restored_ns(
                 [&] { k_thread_posv<T, N><<<(NPROB + TB - 1) / TB, TB>>>(dA, dB, NPROB); },
                 restore_ab, reps);
-            printf("  tb%d=%.2f", TB, ns);
+            printf("  tb%d=%.2f(spread=%.1f%%)", TB, ns, tc_last_spread_pct());
             if (ns < best_thr) best_thr = ns;
         }
     }
@@ -543,18 +563,22 @@ static void bench_eig(int reps) {
     T* dA = upload_tile<T>(hA, mm, NPROB);              // syev input (const, preserved)
     T* dC  = upload_tile<T>(hA, mm, NPROB);             // eig_clamp works in place
     T* dC0 = upload_tile<T>(hA, mm, NPROB);
+    T* dP  = upload_tile<T>(hA, mm, NPROB);             // psd_project works in place
+    T* dP0 = upload_tile<T>(hA, mm, NPROB);
     T* dW; CK(cudaMalloc(&dW, (size_t)NPROB*N*sizeof(T)));
     T* dV; CK(cudaMalloc(&dV, (size_t)NPROB*mm*sizeof(T)));
 
     const size_t sm_syev  = glass::block::syev_scratch_bytes<T>(N);
     const size_t sm_clamp = glass::block::eig_clamp_scratch_bytes<T>(N);
+    const size_t sm_eigh  = glass::block::eigh_scratch_bytes<T, N>();
+    const size_t sm_psd   = glass::block::psd_project_scratch_bytes<T, N>();
 
     printf("syev      N=%-3d | BLOCK", N);
     double best = 1e30; int tb = 0;
     for (int TB : {32, 256}) {
         double ns = time_restored_ns([&] { k_syev<T, N><<<NPROB, TB, sm_syev>>>(dA, dW, dV); },
                                      [] {}, reps);      // A preserved — no restore needed
-        printf("  tb%d=%.2f", TB, ns);
+        printf("  tb%d=%.2f(spread=%.1f%%)", TB, ns, tc_last_spread_pct());
         if (ns < best) { best = ns; tb = TB; }
     }
     printf("  || best tb%d=%.2f\n", tb, best);
@@ -567,13 +591,37 @@ static void bench_eig(int reps) {
     for (int TB : {32, 256}) {
         double ns = time_restored_ns([&] { k_eig_clamp<T, N><<<NPROB, TB, sm_clamp>>>(dC); },
                                      restore_c, reps);
-        printf("  tb%d=%.2f", TB, ns);
+        printf("  tb%d=%.2f(spread=%.1f%%)", TB, ns, tc_last_spread_pct());
+        if (ns < best) { best = ns; tb = TB; }
+    }
+    printf("  || best tb%d=%.2f\n", tb, best);
+
+    printf("eigh      N=%-3d | BLOCK", N);
+    best = 1e30; tb = 0;
+    for (int TB : {32, 256}) {
+        double ns = time_restored_ns([&] { k_eigh<T, N><<<NPROB, TB, sm_eigh>>>(dA, dW, dV); },
+                                     [] {}, reps);
+        printf("  tb%d=%.2f(spread=%.1f%%)", TB, ns, tc_last_spread_pct());
+        if (ns < best) { best = ns; tb = TB; }
+    }
+    printf("  || best tb%d=%.2f\n", tb, best);
+
+    printf("psd_project N=%-3d | BLOCK", N);
+    best = 1e30; tb = 0;
+    auto restore_p = [&] {
+        CK(cudaMemcpyAsync(dP, dP0, (size_t)NPROB*mm*sizeof(T), cudaMemcpyDeviceToDevice));
+    };
+    for (int TB : {32, 256}) {
+        double ns = time_restored_ns([&] { k_psd_project<T, N><<<NPROB, TB, sm_psd>>>(dP); },
+                                     restore_p, reps);
+        printf("  tb%d=%.2f(spread=%.1f%%)", TB, ns, tc_last_spread_pct());
         if (ns < best) { best = ns; tb = TB; }
     }
     printf("  || best tb%d=%.2f\n", tb, best);
     CK(cudaGetLastError());
 
-    cudaFree(dA); cudaFree(dC); cudaFree(dC0); cudaFree(dW); cudaFree(dV);
+    cudaFree(dA); cudaFree(dC); cudaFree(dC0); cudaFree(dP); cudaFree(dP0);
+    cudaFree(dW); cudaFree(dV);
     free(hA);
 }
 
@@ -587,7 +635,7 @@ template<typename T> static void run_all(int reps) {
     printf("\n# section B: gesv (pivoted LU) vs posv (Cholesky) vs inv+gemv (anti-pattern) — same SPD system, single RHS\n");
     bench_spdsv<T, 4>(reps);  bench_spdsv<T, 8>(reps);  bench_spdsv<T, 16>(reps);
     bench_spdsv<T, 32>(reps); bench_spdsv<T, 64>(reps);
-    printf("\n# section C: syev (cyclic Jacobi eigensolver) + eig_clamp (decompose-clamp-reconstruct) — timing only\n");
+    printf("\n# section C: adaptive syev/eig_clamp vs fixed-sweep eigh/psd_project\n");
     bench_eig<T, 4>(reps);  bench_eig<T, 8>(reps);
     bench_eig<T, 16>(reps); bench_eig<T, 32>(reps);
     printf("\n");
@@ -604,6 +652,7 @@ int main(int argc, char** argv) {
     printf("# protocol: in-place solvers run on NPROB independent global-memory copies; "
            "mutated state restored from pristine device copies OUTSIDE the cudaEvent window "
            "(per-launch event timing, min of 3 trials); CPU-checked correctness guard per shape\n");
+    tc_warm_gpu();
     if (f64) run_all<double>(reps);
     else     run_all<float>(reps);
     return 0;

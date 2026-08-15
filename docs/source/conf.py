@@ -38,26 +38,18 @@ breathe_default_project = "GLASS"
 breathe_default_members = ()
 breathe_domain_by_extension = {"cuh": "cpp", "cu": "cpp"}
 
-templates_path = ["_templates"]
-exclude_patterns = []
-
-# The inline tier sub-namespaces (warp / thread / *_detail) are reopened across
-# many headers — exactly as in the C++ source — so listing those files
-# separately in the API reference makes Breathe re-emit the same namespace
-# wrapper per file, and the per-tier overloads of one op (warp::posv in
-# trsm.cuh vs thread::posv in posv.cuh) lose their scoping in that rendering
-# and collide as bare names. Sphinx flags every re-emission as a duplicate
-# declaration — structural to the doxygenfile-per-header layout, not a content
-# error; the rendered HTML is correct. Sphinx ≥8.2 gives these a suppressible
-# subtype (duplicate_declaration.{cpp,c}), so the docs build is
-# zero-warning and CI runs sphinx with -W: any NEW warning (broken ref, bad
-# markup, genuine content duplication rendered elsewhere) fails the build
-# loudly instead of hiding in a warning baseline.
+# A file page renders its enclosing namespace for context. Because the API is
+# deliberately organized as one file view per operation family, those wrapper
+# declarations recur. Suppress only Sphinx's duplicate-registration category;
+# malformed RST, unresolved Doxygen entries, invalid declarations, and broken
+# references remain fatal under ``-W``.
 suppress_warnings = [
-    "docutils",
     "duplicate_declaration.cpp",
     "duplicate_declaration.c",
 ]
+
+templates_path = ["_templates"]
+exclude_patterns = []
 
 # Enable numref / numbered figures.
 numfig = True

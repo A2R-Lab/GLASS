@@ -22,74 +22,91 @@ Spatial 6-D cross products
 --------------------------
 
 .. doxygenfile:: src/base/spatial/cross.cuh
+   :no-link:
 
 Spatial coordinate transforms
 -----------------------------
 
 .. doxygenfile:: src/base/spatial/transform.cuh
+   :no-link:
 
 Spatial inertia (10 parameters)
 -------------------------------
 
 .. doxygenfile:: src/base/spatial/inertia.cuh
+   :no-link:
 
 Quaternions
 -----------
 
 .. doxygenfile:: src/base/lie/quat.cuh
+   :no-link:
 
 Pose errors
 -----------
 
 .. doxygenfile:: src/base/lie/pose.cuh
+   :no-link:
 
 SO(3): exp / log / Jacobians
 ----------------------------
 
 .. doxygenfile:: src/base/lie/so3.cuh
+   :no-link:
 
 SE(3): retract + derivatives
 ----------------------------
 
 .. doxygenfile:: src/base/lie/se3.cuh
+   :no-link:
 
 Planar angles
 -------------
 
 .. doxygenfile:: src/base/lie/angle.cuh
+   :no-link:
 
 Cones & projections
 -------------------
 
 .. doxygenfile:: src/base/proj/cone.cuh
+   :no-link:
 
 Interval / AL / barrier scalars
 -------------------------------
 
 .. doxygenfile:: src/base/proj/interval.cuh
+   :no-link:
 
 Geometry distances
 ------------------
 
 .. doxygenfile:: src/base/geom/sphere.cuh
+   :no-link:
 
 .. doxygenfile:: src/base/geom/frame.cuh
+   :no-link:
 
 .. doxygenfile:: src/base/geom/segment.cuh
+   :no-link:
 
 3x3 estimation kit
 ------------------
 
 .. doxygenfile:: src/base/est/svd3.cuh
+   :no-link:
 
 Fused Gauss-Newton / LM step
 ----------------------------
 
 .. doxygenfile:: src/base/L3/gn_step.cuh
+   :no-link:
 
 Sampling reductions (L1)
 ------------------------
 
 .. doxygenfile:: src/base/L1/softmax.cuh
+   :no-link:
 
 .. doxygenfile:: src/base/L1/argreduce.cuh
+   :no-link:

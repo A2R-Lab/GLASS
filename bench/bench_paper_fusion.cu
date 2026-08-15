@@ -21,7 +21,7 @@
 //
 // PROTOCOL: as bench_solvers.cu — each rep = one fused launch / one full chain
 // spanning all B problems, cudaEvent-bracketed; ns/problem = ms*1e6/(reps*B),
-// min of 3 trials. CORRECTNESS: fused AND chain vs host double reference on
+// min of 3 trials with spread reported. CORRECTNESS: fused AND chain vs host double reference on
 // problem 0 before any timing (mismatch aborts).
 //
 // Compile: nvcc -std=c++17 -arch=sm_XX -O3 --expt-relaxed-constexpr
@@ -40,12 +40,15 @@
 #include <cstring>
 #include <cmath>
 #include <functional>
+#include <algorithm>
+#include <random>
 #include <string>
 #include <vector>
 
 #include <cublas_v2.h>
 #include <cusolverDn.h>
 
+#include "timing_common.cuh"
 #include "../glass.cuh"
 
 #define CK(call) do { cudaError_t e_ = (call); if (e_ != cudaSuccess) { \
@@ -319,9 +322,12 @@ static void run_shape(Handles H, const char* dt) {
             {"fused_tb512", [&]{ fused(512); }},   // chain-wins cells may be TB-starved
             {"chain",       chain},
         };
+        std::mt19937 order_rng(0x46555345u ^ (NX << 20) ^ (NU << 12) ^
+                               (uint32_t)B ^ (uint32_t)sizeof(T));
+        std::shuffle(rows.begin(), rows.end(), order_rng);
         for (auto& r : rows) {
             r.work(); CK(cudaDeviceSynchronize());   // warm-up
-            double best_ms = 1e300;
+            double best_ms = 1e300, worst_ms = 0.0;
             for (int trial = 0; trial < 3; trial++) {
                 double ms_sum = 0;
                 for (int rep = 0; rep < REPS; rep++) {
@@ -333,9 +339,11 @@ static void run_shape(Handles H, const char* dt) {
                     ms_sum += ms;
                 }
                 if (ms_sum < best_ms) best_ms = ms_sum;
+                if (ms_sum > worst_ms) worst_ms = ms_sum;
             }
-            printf("RESULT op=riccati dtype=%s NX=%u NU=%u B=%d impl=%s ns=%.2f\n",
-                   dt, NX, NU, B, r.impl, best_ms * 1e6 / ((double)REPS * B));
+            printf("RESULT op=riccati dtype=%s NX=%u NU=%u B=%d impl=%s ns=%.2f spread=%.2f%%\n",
+                   dt, NX, NU, B, r.impl, best_ms * 1e6 / ((double)REPS * B),
+                   (worst_ms / best_ms - 1.0) * 100.0);
             fflush(stdout);
         }
         CK(cudaEventDestroy(ev_s)); CK(cudaEventDestroy(ev_e));
@@ -358,6 +366,7 @@ int main(int argc, char** argv) {
     std::string dt = (argc > 2) ? argv[2] : "both";
 
     cudaDeviceProp prop; CK(cudaGetDeviceProperties(&prop, 0));
+    tc_warm_gpu();
     printf("# bench_paper_fusion — %s, reps=%d, dtype=%s\n", prop.name, REPS, dt.c_str());
 
     Handles H;

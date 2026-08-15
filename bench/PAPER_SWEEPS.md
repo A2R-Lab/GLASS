@@ -1,13 +1,13 @@
-# Paper sweeps — GLASS vs host-batched vendor + fusion case study
+# Paper sweeps — swept GLASS configurations vs default host APIs
 
-Harnesses feeding the GLASS paper's evaluation figures (the paper lives in the
-sibling `glass-paper` repository, which also archives all raw captures). These are
+Harnesses feeding the GLASS paper's evaluation figures (raw captures are
+archived externally with the paper materials). These are
 **characterization only** — nothing here regenerates library dispatch tables
 (that is `bench/tune.py`'s job).
 
 | Leg | Harness | Paper figure | What it measures |
 |-----|---------|--------------|------------------|
-| hostblas | `bench_paper_hostblas.cu` | F2 (throughput vs batch), F4 (batch=1 latency) | glass block/warp vs cuBLAS `gemmStridedBatched` / cuSOLVER `potrfBatched(+potrsBatched)`, ops {gemm, potrf, posv(nrhs=1)}, N {4…64} × B {1…8192} × {f32,f64}; plus a `vendor_tf32` gemm-f32 contender (handle with `CUBLAS_TF32_TENSOR_OP_MATH` — tensor cores ALLOWED at relaxed numerics) whose report-only CHECK line records the measured TF32 rounding cost |
+| hostblas | `bench_paper_hostblas.cu` | F2 (throughput vs batch), F4 (batch=1 latency) | Best of the explicitly swept GLASS block32/block128/warp8 configurations vs one documented default cuBLAS/cuSOLVER host-API configuration, for {gemm, potrf, posv(nrhs=1)}, N {4…64} × B {1…8192} × {f32,f64}; plus a `vendor_tf32` gemm-f32 contender with relaxed numerics |
 | fusion | `bench_paper_fusion.cu` | F3 (fusion speedup vs batch) | fused `glass::riccati_gain` kernel (intermediates in smem) vs the same math as 7 host-batched cuBLAS/cuSOLVER calls, (NX,NU) {(12,4),(14,7),(36,12),(48,16)} × B {1…4096} |
 
 The nvidia-interface (cuBLASDx/cuSOLVERDx) curves for F1 come from the
@@ -20,22 +20,37 @@ so they build anywhere (Jetson included) with just the CUDA toolkit.
 ```bash
 python3 bench/paper_sweeps.py --build-only    # prep — safe while the GPU is busy
 python3 bench/paper_sweeps.py                 # timed run — QUIET GPU ONLY
+python3 bench/paper_sweeps.py --reps 100      # longer release confirmation
 ```
 
 The driver auto-detects the arch (`nvidia-smi compute_cap`), links
-`-lcublas -lcusolver`, refuses to time on a busy GPU (`--force` overrides),
-runs legs serially, and writes `paper_<leg>_<timestamp>.txt` (gitignored, like
-the other raw sweep captures).
+`-lcublas -lcusolver`, refuses to start on a busy GPU (`--force` overrides),
+and invalidates a run if another compute PID appears. Legs run serially and
+write `paper_<leg>_<timestamp>.txt`. Each capture begins with the source
+revision and digest, dirty state, device target, toolchain, UTC date, and the
+date/fingerprint of the proximate signed correctness receipt.
+Provenance schema 2 records the receipt artifact hash and source fingerprint
+as separate fields. Older schema-1 captures mislabeled the fingerprint digest
+as `correctness_receipt_sha256`; the value remains useful as a source identity,
+but it is not a hash of the JSON artifact.
 
-Methodology matches `bench_solvers.cu`: correctness-guarded against a host
-double reference before any timing (abort on mismatch); each rep is one
-event-bracketed launch/API-chain spanning all B problems, mutated state
-restored outside the event window; ns/problem = min of 3 trials. The latency
-section wall-clocks batch=1 calls (sync per call, 190 timed calls on pristine
-per-call data) against the NON-batched vendor calls a user would actually
-write. GPU-event timing excludes host API overhead — conservative toward the
-vendor. No silent caps: cells skipped for memory or smem limits print `SKIP`
-lines.
+The harness warms the GPU to steady boost before the first cell and randomizes
+contender order within each cell. Each rep is one event-bracketed launch or API
+chain spanning all B problems; mutated state is restored outside the event
+window. Reports use the minimum of three trials and include worst/best spread.
+The latency section repeats its 190 synchronized batch=1 calls in three trials
+on pristine data. GPU-event throughput excludes host API overhead, which is
+conservative toward the vendor. Cells skipped for memory or shared-memory
+limits print `SKIP` lines.
+
+Correctness remains a separate release gate through the signed GPU receipt. The
+paper harness also retains a cheap host-double guard to catch a malformed
+benchmark configuration before it consumes a timing window; its output is not
+counted as project correctness coverage.
+
+This comparison is intentionally narrow: it selects the best of several GLASS
+launch configurations against a single default vendor API configuration. Do not
+summarize it as a universal "GLASS vs vendor" result.
 
 ## Jetson / Orin runbook (when the box lands)
 
@@ -59,6 +74,23 @@ in the paper render from them). Jetson/Orin legs of THESE harnesses
 (hostblas/fusion at sm_87, optional tegrastats energy) remain un-run — the
 Orin runbook below is still pending for that leg only. (Original smoke
 validation 2026-07-06 on a shared box; those numbers were discarded.)
+
+The audited 2026-08-14 rerun validated the refreshed harnesses (fusion capture
+`paper_fusion_20260813_231910.txt`; 500-rep host confirmation
+`paper_hostblas_20260814_111514.txt`). Those two validation captures were
+compiled with a then-global `-Xptxas -O1` on the GLASS side (since reverted
+to plain `-O3` for these harnesses); the vendor side is prebuilt cuBLAS and
+unaffected, so GLASS-win margins in them are conservative lower bounds. The
+shipped F2/F3/F4 figures still render from the 2026-07-08 plain-`-O3`
+captures. Fusion was stable (1 of 240 contender
+samples above 5% spread, with a stable winning contender). The host confirmation reduced noisy
+selected pairs from 24/378 to 8/378; all eight retained decisive 1.56×–2.19×
+gaps. The latency section had 0/117 samples above 5% spread. One near-tie
+(`potrf` f64, N=8, B=4) changed winner between the independent 100- and
+500-rep captures despite low within-run spread. Publication policy is therefore
+conservative: small deltas and cross-run winner changes are ties; only claims
+that survive both quiet captures are reportable. These characterization cells
+do not drive library dispatch.
 
 **Numerics finding (valid despite shared load — maxerr is deterministic):**
 the `vendor_tf32` CHECK column doubles as a tensor-core ENGAGEMENT detector.

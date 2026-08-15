@@ -14,6 +14,7 @@ See :doc:`../user_guide/concepts/block_tridiagonal` for the layout in detail, an
 :doc:`pcg` for the conjugate-gradient solver built on top of this matvec.
 
 .. doxygenfile:: src/base/banded/bdmv.cuh
+   :no-link:
 
 Direct solve (``glass::bdsv``)
 ------------------------------
@@ -26,6 +27,7 @@ per right-hand side), and the fused ``bdsv``. Composed from
 ``potrf``/``trsm``/``syrk``/``gemv``/``trsv``.
 
 .. doxygenfile:: src/base/banded/bdsv.cuh
+   :no-link:
 
 Block accessors (``store_block`` / ``load_block``)
 --------------------------------------------------
@@ -35,3 +37,4 @@ Strided read/write of a single ``BlockSize × BlockSize`` block into / out of a
 block-tridiagonal strips. Block- and warp-scoped forms.
 
 .. doxygenfile:: src/base/banded/block_access.cuh
+   :no-link:

@@ -28,6 +28,9 @@ namespace glass { namespace nvidia { namespace block {
     DEFINE_NVIDIA_GEMV_PREC(8,  8,  double)
     DEFINE_NVIDIA_GEMV_PREC(16, 16, double)
     DEFINE_NVIDIA_GEMV_PREC(32, 32, double)
+    DEFINE_NVIDIA_CHOL_BLOCKDIM(8, 256)
+    DEFINE_NVIDIA_TRSM_BLOCKDIM(8, 1, 256)
+    DEFINE_NVIDIA_POTRS_BLOCKDIM(8, 1, 256)
     // float LAPACK tail (this is the only cuSOLVERDx-linked TU): the no-pivot
     // LU family + QR/least-squares, one shape each.
     DEFINE_NVIDIA_GETRF(8)
@@ -73,6 +76,12 @@ __global__ void k_geqrf(float* A, float* tau) {
 }
 __global__ void k_gels(float* A, float* tau, float* B) {
     extern __shared__ char s[]; gnb::gels<float, 8, 4, 1>(A, tau, B, s);
+}
+__global__ void compile_cholesky_family(float* A, float* B) {
+    extern __shared__ char s[];
+    gnb::potrf<float, 8, 256>(A, s);
+    gnb::trsm<float, 8, 1, 256>(1.0f, A, B, s);
+    gnb::potrs<float, 8, 1, 256>(A, B, s);
 }
 
 template<int N> __global__ void k_posv(double* A, double* b) {

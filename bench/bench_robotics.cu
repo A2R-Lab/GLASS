@@ -10,7 +10,8 @@
 //      block / warp / thread packings (the 17_thread_pack story replayed).
 //   3. ARGREDUCE strategies — argmax default vs argmax_fast (block tier).
 //
-// Metric: ns per problem (wall / (reps*NPROB)), min of 3 trials, FAIL-guarded
+// Metric: ns per problem (wall / (reps*NPROB)), min of 3 trials with spread,
+// steady-state GPU warm-up, and a launch-failure sentinel
 // (a failed launch times as ~ns and would otherwise poison the argmin — the
 // bench_mega_sweep lesson). Timing-only: outputs are overwritten across reps.
 //
@@ -23,33 +24,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <cmath>
-#include <ctime>
 
 #include "../glass.cuh"
+#include "timing_common.cuh"
 
 static int NPROB = 8192;
-
-static double elapsed_ms(struct timespec a, struct timespec b) {
-    return (double)(b.tv_sec - a.tv_sec) * 1e3 + (double)(b.tv_nsec - a.tv_nsec) * 1e-6;
-}
-
-template <typename F>
-static double time_ns_per_prob(F launch, int reps) {
-    cudaGetLastError();                          // clear any sticky prior error
-    launch(); cudaDeviceSynchronize();
-    if (cudaGetLastError() != cudaSuccess) return 1e30;   // FAIL guard
-    double best = 1e30;
-    for (int t = 0; t < 3; t++) {
-        struct timespec t0, t1;
-        clock_gettime(CLOCK_MONOTONIC, &t0);
-        for (int r = 0; r < reps; r++) launch();
-        cudaDeviceSynchronize();
-        clock_gettime(CLOCK_MONOTONIC, &t1);
-        double ns = elapsed_ms(t0, t1) * 1e6 / ((double)reps * NPROB);
-        if (ns < best) best = ns;
-    }
-    return best;
-}
 
 // ─── ops ─────────────────────────────────────────────────────────────────────
 // Per-problem input strides: in0 = 12 (E|r, pose|-, quat|quat_des, sym3, pi),
@@ -249,16 +228,18 @@ static void bench_all(int reps) {
         printf("%-18s | BLOCK", OP_NAMES[op]);
         double best_b = 1e30, best_w = 1e30, best_t = 1e30;
         for (int TB : {32, 64, 128, 256}) {
-            double ns = time_ns_per_prob([&]{ k_block<T><<<NPROB, TB, smem>>>(op, i0, i1, out); }, reps);
-            if (ns < 1e29) printf("  tb%d=%.4f", TB, ns); else printf("  tb%d=FAIL", TB);
+            double ns = tc_time_ns_per_prob([&]{ k_block<T><<<NPROB, TB, smem>>>(op, i0, i1, out); }, reps, NPROB);
+            double spread = tc_last_spread_pct();
+            if (ns < 1e29) printf("  tb%d=%.4f(spread=%.2f%%)", TB, ns, spread); else printf("  tb%d=FAIL", TB);
             if (ns < best_b) best_b = ns;
         }
         if (has_warp(op)) {
             printf("  | WARP");
             for (int WPB : {2, 4, 8}) {
                 dim3 grid((NPROB + WPB - 1)/WPB), blk(32, WPB);
-                double ns = time_ns_per_prob([&]{ k_warp<T><<<grid, blk>>>(op, i0, i1, out, NPROB); }, reps);
-                if (ns < 1e29) printf("  w%d=%.4f", WPB, ns); else printf("  w%d=FAIL", WPB);
+                double ns = tc_time_ns_per_prob([&]{ k_warp<T><<<grid, blk>>>(op, i0, i1, out, NPROB); }, reps, NPROB);
+                double spread = tc_last_spread_pct();
+                if (ns < 1e29) printf("  w%d=%.4f(spread=%.2f%%)", WPB, ns, spread); else printf("  w%d=FAIL", WPB);
                 if (ns < best_w) best_w = ns;
             }
         }
@@ -266,8 +247,9 @@ static void bench_all(int reps) {
             printf("  | THREAD");
             for (int TPB : {64, 128, 256}) {
                 int blocks = (NPROB + TPB - 1)/TPB;
-                double ns = time_ns_per_prob([&]{ k_thread<T><<<blocks, TPB>>>(op, i0, i1, out, NPROB); }, reps);
-                if (ns < 1e29) printf("  t%d=%.4f", TPB, ns); else printf("  t%d=FAIL", TPB);
+                double ns = tc_time_ns_per_prob([&]{ k_thread<T><<<blocks, TPB>>>(op, i0, i1, out, NPROB); }, reps, NPROB);
+                double spread = tc_last_spread_pct();
+                if (ns < 1e29) printf("  t%d=%.4f(spread=%.2f%%)", TPB, ns, spread); else printf("  t%d=FAIL", TPB);
                 if (ns < best_t) best_t = ns;
             }
         }
@@ -282,12 +264,18 @@ int main(int argc, char** argv) {
     NPROB    = (argc > 1) ? atoi(argv[1]) : 8192;
     int reps = (argc > 2) ? atoi(argv[2]) : 500;
     const char* dt = (argc > 3) ? argv[3] : "f32";
-    bool f64 = (strcmp(dt, "f64") == 0);
-    printf("# robotics micro-op sweep | NPROB=%d reps=%d dtype=%s | ns/problem (lower=better)\n",
-           NPROB, reps, f64 ? "f64" : "f32");
     printf("# fused-vs-composed pairs share a tier; composed = materialize 6x6 + gemv.\n");
     printf("# TIMED RUNS REQUIRE A QUIET GPU (see file header).\n");
-    if (f64) bench_all<double>(reps);
-    else     bench_all<float>(reps);
+    tc_warm_gpu();
+    if (!strcmp(dt,"f64") || !strcmp(dt,"both")) {
+        printf("# robotics micro-op sweep | NPROB=%d reps=%d dtype=f64 | ns/problem (lower=better)\n",
+               NPROB, reps);
+        bench_all<double>(reps);
+    }
+    if (!strcmp(dt,"f32") || !strcmp(dt,"both")) {
+        printf("# robotics micro-op sweep | NPROB=%d reps=%d dtype=f32 | ns/problem (lower=better)\n",
+               NPROB, reps);
+        bench_all<float>(reps);
+    }
     return 0;
 }

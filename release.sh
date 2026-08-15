@@ -3,11 +3,12 @@
 #
 #   1. clean-tree + main-branch preconditions; CHANGELOG.md must have a
 #      section for the version being released;
-#   2. 100% API-surface coverage gate (.github/scripts/surface_coverage.py —
-#      the badge contract; a release cannot regress it);
-#   3. FULL five-shard GPU receipt — carry-forward is deliberately NOT used
+#   2. 100% Doxygen-derived overload compile-coverage gate; the generated API
+#      manifest must also be current;
+#   3. FULL eight-shard GPU receipt — carry-forward is deliberately NOT used
 #      for a release: every shard re-runs at the release commit;
-#   4. local verify of the merged receipt (same seven checks CI runs);
+#   4. local verify of the merged receipt and every declared correctness
+#      obligation against passing evidence in its assigned shard;
 #   5. commit the receipt if it changed, annotated tag, push branch + tag —
 #      the push regenerates the coverage/receipt badges via the Documentation
 #      workflow, so the public numbers can never go stale relative to a tag.
@@ -26,15 +27,21 @@ git tag | grep -qx "$VER" && { echo "FATAL: tag $VER already exists"; exit 1; }
 grep -q "^## \[${VER#v}\]\|^## $VER" CHANGELOG.md || { echo "FATAL: CHANGELOG.md has no section for $VER"; exit 1; }
 
 echo "── coverage gate (100% is the contract) ───────────────"
-python3 .github/scripts/surface_coverage.py | tee /tmp/glass_release_cov.txt
-grep -q "100.0%" /tmp/glass_release_cov.txt || { echo "FATAL: API-surface coverage below 100%"; exit 1; }
+.venv/bin/python .github/scripts/api_contract_coverage.py \
+    --check-manifest test/api-contracts.json --require-100
+.venv/bin/python .github/scripts/coverage_obligations.py
 
-echo "── full five-shard GPU receipt (no carry-forward) ─────"
+echo "── full eight-shard GPU receipt (no carry-forward) ────"
 ./test/run_gpu_proof.sh
 
 echo "── verify ─────────────────────────────────────────────"
+# Release policy forbids carried shards outright (allow_carried:false) so the
+# full-fresh property is ENFORCED, not just incidental to running all shards.
 .venv/bin/gpu-proof verify --receipt test/gpu-proof.json --require-gpu \
-    --expected-skips test/expected_skips.txt --policy test/gpu-proof-policy.json
+    --expected-skips test/expected_skips.txt \
+    --policy test/gpu-proof-release-policy.json
+.venv/bin/python .github/scripts/coverage_obligations.py \
+    --receipt test/gpu-proof.json
 
 if [[ -n "$(git status --porcelain test/gpu-proof.json)" ]]; then
     git add test/gpu-proof.json

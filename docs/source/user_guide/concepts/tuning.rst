@@ -14,7 +14,7 @@ pure-noise re-run reproduces the same tables:
 
 .. code-block:: bash
 
-   python bench/tune.py --sm auto --prebuild --build-jobs 6   # compile everything in parallel (no GPU)
+   python bench/tune.py --sm auto --prebuild --build-jobs 1   # shared-host safe default
    python bench/tune.py --sm auto              # all legs, ±5% margin (reuses the prebuilt cache)
    python bench/tune.py --sm auto --quick      # ladder throughput point only (faster)
    python bench/tune.py --legs ladder,reduced  # pick legs; --margin to retune the tie band
@@ -25,8 +25,9 @@ clock (the ``shapes`` leg alone compiles ~66 separate cuBLASDx microbenches).
 ``--prebuild`` compiles every binary the selected legs need into a persistent,
 hash-keyed cache (``bench/.tune_cache/sm<sms>/``) and runs nothing — so you can
 run it **anytime, even while the GPU is busy** (compilation is CPU-bound). Because
-building isn't timed, fan it out with ``--build-jobs N`` (size to free_RAM/7 —
-each cuBLASDx compile needs ~6-7GB). The later timed sweep on a quiet GPU is then
+building isn't timed, a dedicated host may fan it out with ``--build-jobs N``
+(size to free_RAM/7 — each cuBLASDx compile needs ~6-7GB); keep one job on a
+shared host. The later timed sweep on a quiet GPU is then
 **execute-only**, and always runs serially for clean measurement. The cache is
 keyed on the rendered source + a digest of the whole header library + the SM, so a
 library edit transparently rebuilds only the affected binaries.
@@ -41,6 +42,17 @@ first to confirm a re-run only moves dispatch inside the tie band before
 committing. The sections below describe the two tables ``tune.py`` drives — the
 cuBLASDx-vs-SIMT table (its ``shapes`` leg, also runnable standalone as
 ``bench/autotune.py``) and the backend ladder (its ``ladder`` leg).
+
+Every new capture records its UTC start, commit, dirty-source digest,
+architecture, compiler, and nearest signed correctness-receipt fingerprint.
+Timed drivers refuse a busy GPU and invalidate a leg if a foreign compute PID
+appears. Correctness remains a separate signed gate. Candidate-only A/Bs use
+``bench/perf_sweeps.py``; ``--build-only`` is safe while the host is shared and
+the run without it is reserved for a quiet window. Release confirmation uses
+``--profile overnight``. The complete capture-first sequence is
+``bench/run_quiet_audit.sh``; after an interrupted first pass, ``--resume``
+repairs the changed MathDx shard and carries only fingerprint-identical shards
+before continuing.
 
 The cuBLASDx-vs-SIMT table
 --------------------------
@@ -215,7 +227,9 @@ Why bother?
 -----------
 
 Small-GEMM performance is highly SM-dependent, so the shipped heuristic is only
-a default. A representative measurement (RTX 3080, sm_120):
+a default. An illustrative legacy measurement (undated early capture whose
+device metadata was not recorded — kept for the *shape* of the crossover, not
+the numbers; regenerate with ``bench/autotune.py`` for current hardware):
 
 .. list-table::
    :header-rows: 1

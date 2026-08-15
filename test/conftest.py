@@ -12,6 +12,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+from collections.abc import Mapping
 
 import pytest
 
@@ -149,7 +150,7 @@ def _hash_sources(cu_path: pathlib.Path) -> str:
     # test/cuda drivers stay explicit: they are shared-fixture inputs whose edits
     # must bust every binary, but globbing ALL drivers would rebust the world on
     # any single-driver edit.
-    paths = [cu_path, CUDA_DIR / "helpers.cuh",
+    paths = [cu_path, pathlib.Path(__file__), CUDA_DIR / "helpers.cuh",
              GLASS_DIR / "glass.cuh", GLASS_DIR / "glass-cgrps.cuh",
              GLASS_DIR / "glass-defaults.cuh", GLASS_DIR / "glass-dispatch.cuh",
              GLASS_DIR / "glass-nvidia.cuh"]
@@ -178,6 +179,7 @@ def _hash_sources(cu_path: pathlib.Path) -> str:
               CUDA_DIR / "test_block_access.cu",
               CUDA_DIR / "test_robotics.cu",
     ]
+    paths = list(dict.fromkeys(paths))
     for p in paths:
         if p.exists():
             h.update(p.read_bytes())
@@ -193,7 +195,18 @@ def compile_binary(name: str, build_dir: pathlib.Path, arch: str,
     out_bin   = build_dir / name
     hash_file = build_dir / f"{name}.hash"
 
-    current_hash = _hash_sources(cu_src)
+    # A source-only key can silently reuse sm_XX SASS on another GPU or retain
+    # a binary across compiler/MathDx flag changes. Include the complete build
+    # identity in the persistent cache fingerprint.
+    identity = hashlib.sha256()
+    identity.update(_hash_sources(cu_src).encode())
+    identity.update(arch.encode())
+    identity.update("\0".join(extra_flags or []).encode())
+    try:
+        identity.update(subprocess.check_output(["nvcc", "--version"]))
+    except Exception:
+        pass
+    current_hash = identity.hexdigest()[:16]
     if hash_file.exists() and out_bin.exists():
         if hash_file.read_text().strip() == current_hash:
             return out_bin
@@ -221,117 +234,89 @@ def compile_binary(name: str, build_dir: pathlib.Path, arch: str,
 
 # ─── session fixture ──────────────────────────────────────────────────────────
 
-@pytest.fixture(scope="session")
-def bins(tmp_path_factory):
-    """Compile all test binaries once per pytest session."""
-    build_dir = BUILD_DIR
-    out = {
-        "l1": compile_binary("test_l1", build_dir, CUDA_ARCH),
-        "l2": compile_binary("test_l2", build_dir, CUDA_ARCH),
-        "l3": compile_binary("test_l3", build_dir, CUDA_ARCH),
-        "qp": compile_binary("test_qp", build_dir, CUDA_ARCH),
-        "banded": compile_binary("test_banded", build_dir, CUDA_ARCH),
-        "bdsv": compile_binary("test_bdsv", build_dir, CUDA_ARCH),
-        "pcg": compile_binary("test_pcg", build_dir, CUDA_ARCH),
-        "syrk": compile_binary("test_syrk", build_dir, CUDA_ARCH),
-        "trsv": compile_binary("test_trsv", build_dir, CUDA_ARCH),
-        "ldlt": compile_binary("test_ldlt", build_dir, CUDA_ARCH),
-        "getrf": compile_binary("test_getrf", build_dir, CUDA_ARCH),
-        "iamax": compile_binary("test_iamax", build_dir, CUDA_ARCH),
-        "fused": compile_binary("test_fused", build_dir, CUDA_ARCH),
-        "warp": compile_binary("test_warp", build_dir, CUDA_ARCH),
-        "thread": compile_binary("test_thread", build_dir, CUDA_ARCH),
-        "posv": compile_binary("test_posv", build_dir, CUDA_ARCH),
-        "reduced": compile_binary("test_reduced", build_dir, CUDA_ARCH),
-        "tensor": compile_binary("test_tensor", build_dir, CUDA_ARCH),
-        "factor_check": compile_binary("test_factor_check", build_dir, CUDA_ARCH),
-        "congruence": compile_binary("test_congruence", build_dir, CUDA_ARCH),
-        "solve": compile_binary("test_solve", build_dir, CUDA_ARCH),
-        "reduced_blas": compile_binary("test_reduced_blas", build_dir, CUDA_ARCH),
-        "base_f64": compile_binary("test_base_f64", build_dir, CUDA_ARCH),
-        "defaults": compile_binary("test_defaults", build_dir, CUDA_ARCH),
-        "dispatch": compile_binary("test_dispatch", build_dir, CUDA_ARCH),
-        "l1_round2": compile_binary("test_l1_round2", build_dir, CUDA_ARCH),
-        "block_access": compile_binary("test_block_access", build_dir, CUDA_ARCH),
-        "symmetrize": compile_binary("test_symmetrize", build_dir, CUDA_ARCH),
-        "symm_rot": compile_binary("test_symm_rot", build_dir, CUDA_ARCH),
-        "syev": compile_binary("test_syev", build_dir, CUDA_ARCH),
-        "robotics": compile_binary("test_robotics", build_dir, CUDA_ARCH),
+class LazyBins(Mapping):
+    """Compile only the binary a selected test actually requests."""
+
+    names = {
+        "l1", "l2", "l3", "qp", "banded", "bdsv", "pcg", "syrk", "trsv",
+        "ldlt", "getrf", "iamax", "fused", "warp", "thread", "posv", "reduced",
+        "tensor", "factor_check", "congruence", "solve", "reduced_blas", "base_f64",
+        "defaults", "dispatch", "l1_round2", "block_access", "symmetrize", "symm_rot",
+        "syev", "robotics", "api_vector", "api_dense", "api_factor", "api_robotics", "l3_nvidia", "nvidia_dispatch", "trailing_sync", "nvidia_f64",
     }
-    # test_l3_nvidia.cu includes glass-nvidia.cuh and exercises the SIMT-only
-    # batched APIs (gemm_batched_1d, gemm_strided_batched_1d). It does NOT
-    # require cuBLASDx — l3_simt.cuh has no cuBLASDx dependency. If compilation
-    # fails for any reason (e.g. a non-cuBLASDx-related toolchain issue), tests
-    # that depend on it will be skipped via the `bin_l3_nvidia` fixture below.
-    try:
-        out["l3_nvidia"] = compile_binary("test_l3_nvidia", build_dir, CUDA_ARCH)
-    except Exception as e:
-        print(f"\nSkipping test_l3_nvidia (compile failed): {e}", file=sys.stderr)
+    optional = {"l3_nvidia", "nvidia_dispatch", "trailing_sync", "nvidia_f64"}
 
-    # test_nvidia_dispatch.cu exercises round-2 auto-dispatch features
-    # (Gap A/B/C/D, gemv + row_strided_* + gemm-with-TRANSPOSE_B, dispatch
-    # query helpers). Requires cuBLASDx for the gemm cuBLASDx-route test,
-    # so it needs MATHDX_ROOT to compile; otherwise skipped at the fixture.
-    mathdx = os.environ.get("MATHDX_ROOT")
-    cublasdx_available = bool(mathdx) and (pathlib.Path(mathdx) / "include" / "cublasdx.hpp").exists() if mathdx else False
-    if cublasdx_available:
+    def __init__(self):
+        self.cache: dict[str, pathlib.Path] = {}
+        self.failed: set[str] = set()
+
+    @staticmethod
+    def _mathdx():
+        root = os.environ.get("MATHDX_ROOT")
+        path = pathlib.Path(root) if root else None
+        available = bool(path and (path / "include/cublasdx.hpp").exists())
+        return path, available
+
+    def _compile(self, key: str) -> pathlib.Path:
+        mathdx, cublasdx = self._mathdx()
+        flags: list[str] = []
+        if key == "nvidia_dispatch" and not cublasdx:
+            raise KeyError(key)
+        if key in {"nvidia_dispatch", "trailing_sync"} and cublasdx:
+            flags = ["--expt-relaxed-constexpr", "-DGLASS_BENCH_CUBLASDX",
+                     "-I", str(mathdx / "include"),
+                     "-I", str(mathdx / "external/cutlass/include")]
+        if key == "nvidia_f64":
+            solver = bool(cublasdx and (mathdx / "include/cusolverdx.hpp").exists()
+                          and (mathdx / "include/cusolverdx_io.hpp").exists()
+                          and (mathdx / "lib/libcusolverdx.a").exists())
+            if not solver:
+                raise KeyError(key)
+            sms = CUDA_ARCH.replace("sm_", "") + "0"
+            flags = ["--expt-relaxed-constexpr", "-DGLASS_BENCH_CUBLASDX",
+                     "-DGLASS_BENCH_CUSOLVERDX",
+                     "-DCUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT", f"-DSMS={sms}",
+                     "-I", str(mathdx / "include"),
+                     "-I", str(mathdx / "external/cutlass/include"),
+                     "-rdc=true", "-dlto", "-L", str(mathdx / "lib"),
+                     "-lcusolverdx", "-lcublas", "-lcusolver", "-lcudart"]
+        return compile_binary(f"test_{key}", BUILD_DIR, CUDA_ARCH, flags)
+
+    def __getitem__(self, key: str) -> pathlib.Path:
+        if key not in self.names or key in self.failed:
+            raise KeyError(key)
+        if key not in self.cache:
+            try:
+                self.cache[key] = self._compile(key)
+            except Exception as exc:
+                if key in self.optional:
+                    self.failed.add(key)
+                    print(f"\nSkipping test_{key} (compile unavailable): {exc}", file=sys.stderr)
+                    raise KeyError(key) from exc
+                raise
+        return self.cache[key]
+
+    def __iter__(self):
+        return iter(self.names)
+
+    def __len__(self):
+        return len(self.names)
+
+    def __contains__(self, key):
+        if key not in self.names:
+            return False
+        if key not in self.optional:
+            return True
         try:
-            out["nvidia_dispatch"] = compile_binary(
-                "test_nvidia_dispatch", build_dir, CUDA_ARCH,
-                extra_flags=[
-                    "--expt-relaxed-constexpr",
-                    "-DGLASS_BENCH_CUBLASDX",
-                    "-I", str(pathlib.Path(mathdx) / "include"),
-                    "-I", str(pathlib.Path(mathdx) / "external" / "cutlass" / "include"),
-                ])
-        except Exception as e:
-            print(f"\nSkipping test_nvidia_dispatch (compile failed): {e}", file=sys.stderr)
+            self[key]
+            return True
+        except KeyError:
+            return False
 
-    # test_trailing_sync.cu exercises the bool TRAILING_SYNC template
-    # parameter across the L1/L2/L3 surface. Compile both variants
-    # (with and without cuBLASDx) — the binary internally skips the
-    # cuBLASDx op when GLASS_BENCH_CUBLASDX isn't defined.
-    try:
-        flags = []
-        if cublasdx_available:
-            flags = [
-                "--expt-relaxed-constexpr",
-                "-DGLASS_BENCH_CUBLASDX",
-                "-I", str(pathlib.Path(mathdx) / "include"),
-                "-I", str(pathlib.Path(mathdx) / "external" / "cutlass" / "include"),
-            ]
-        out["trailing_sync"] = compile_binary(
-            "test_trailing_sync", build_dir, CUDA_ARCH, extra_flags=flags)
-    except Exception as e:
-        print(f"\nSkipping test_trailing_sync (compile failed): {e}", file=sys.stderr)
 
-    # test_nvidia_f64.cu validates the DOUBLE-precision nvidia path (cuSOLVERDx
-    # posv / cuBLASDx gemm,gemv). Needs cuSOLVERDx (headers + libcusolverdx.a,
-    # which is LTO so the link wants -rdc=true -dlto). Skipped if absent.
-    cusolverdx_available = (
-        cublasdx_available
-        and (pathlib.Path(mathdx) / "include" / "cusolverdx.hpp").exists()
-        and (pathlib.Path(mathdx) / "include" / "cusolverdx_io.hpp").exists()
-        and (pathlib.Path(mathdx) / "lib" / "libcusolverdx.a").exists()
-    )
-    if cusolverdx_available:
-        sms = CUDA_ARCH.replace("sm_", "") + "0"   # sm_120 -> 1200
-        try:
-            out["nvidia_f64"] = compile_binary(
-                "test_nvidia_f64", build_dir, CUDA_ARCH,
-                extra_flags=[
-                    "--expt-relaxed-constexpr",
-                    "-DGLASS_BENCH_CUBLASDX", "-DGLASS_BENCH_CUSOLVERDX",
-                    "-DCUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT", f"-DSMS={sms}",
-                    "-I", str(pathlib.Path(mathdx) / "include"),
-                    "-I", str(pathlib.Path(mathdx) / "external" / "cutlass" / "include"),
-                    "-rdc=true", "-dlto",
-                    "-L", str(pathlib.Path(mathdx) / "lib"),
-                    "-lcusolverdx", "-lcublas", "-lcusolver", "-lcudart",
-                ])
-        except Exception as e:
-            print(f"\nSkipping test_nvidia_f64 (compile failed): {e}", file=sys.stderr)
-    return out
+@pytest.fixture(scope="session")
+def bins():
+    return LazyBins()
 
 
 @pytest.fixture(scope="session")

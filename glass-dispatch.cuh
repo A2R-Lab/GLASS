@@ -56,17 +56,17 @@ enum class op : int      { dot, gemv, gemm, chol, trsv, posv, eig3, softmax,
 enum class body : int { block, warp_in_block, thread_in_block };
 
 // === BEGIN tune.py body sm_120 ===
-// Source sweep: body_dispatch_sweep_20260730_2041.txt (archived: glass-paper repo, data/desktop/)   margin: ±5%
+// Source sweep: body_dispatch_sweep_20260814_010815.txt   margin: ±5%
 // RULE: never slower than block by >margin at ANY measured (NPROB, TB);
 // faster by >margin at >=1 TB in the NPROB=8192 section. Else block.
 // Verdicts are BOUNDED: N beyond the largest measured point stays block.
 GLASS_DISPATCH_HD constexpr body body_sm120(op o, uint32_t N, bool f64) {
     switch (o) {
         case op::dot:
-            if (!f64) return N <= 4u ? body::block : N <= 8u ? body::warp_in_block : N <= 32u ? body::thread_in_block : N <= 64u ? body::warp_in_block : body::block;
-            else      return N <= 4u ? body::block : N <= 8u ? body::thread_in_block : N <= 64u ? body::warp_in_block : body::block;
+            if (!f64) return N <= 4u ? body::block : N <= 16u ? body::thread_in_block : N <= 64u ? body::warp_in_block : body::block;
+            else      return N <= 8u ? body::thread_in_block : N <= 64u ? body::warp_in_block : body::block;
         case op::gemv:
-            if (!f64) return N <= 8u ? body::block : N <= 16u ? body::warp_in_block : body::block;
+            if (!f64) return N <= 16u ? body::block : N <= 32u ? body::warp_in_block : body::block;
             else      return N <= 4u ? body::block : N <= 8u ? body::warp_in_block : N <= 16u ? body::block : N <= 32u ? body::warp_in_block : body::block;
         case op::gemm: return body::block;
         case op::chol:
@@ -91,7 +91,7 @@ GLASS_DISPATCH_HD constexpr body body_sm120(op o, uint32_t N, bool f64) {
 // === END tune.py body sm_120 ===
 
 // === BEGIN tune.py body sm_87 ===
-// Source sweep: body_dispatch_sweep_20260803_0936.txt (archived: glass-paper repo, data/jetson/)   margin: ±5%
+// Source sweep: body_dispatch_sweep_20260803_0936.txt   margin: ±5%
 // RULE: never slower than block by >margin at ANY measured (NPROB, TB);
 // faster by >margin at >=1 TB in the NPROB=8192 section. Else block.
 // Verdicts are BOUNDED: N beyond the largest measured point stays block.

@@ -109,6 +109,12 @@ __global__ void k_ger_cg(int m, int n, float alpha, float* x, float* y, float* A
 __global__ void k_ger_simple(int m, int n, float alpha, float* x, float* y, float* A) {
     glass::block::ger(m, n, alpha, x, y, A);
 }
+__global__ void k_ger_ct_4x128(float alpha, float* x, float* y, float* A) {
+    glass::block::ger<float, 4, 128>(alpha, x, y, A);
+}
+__global__ void k_ger_ct_64x8(float alpha, float* x, float* y, float* A) {
+    glass::block::ger<float, 64, 8>(alpha, x, y, A);
+}
 
 // ─── main ────────────────────────────────────────────────────────────────────
 
@@ -157,8 +163,15 @@ int main(int argc, char** argv) {
         float* dx = read_device_vec(argv[6], m);
         float* dy = read_device_vec(argv[7], n);
         float* dA = read_device_vec(argv[8], m * n);
-        if (cg) k_ger_cg<<<1, THREADS>>>(m, n, alpha, dx, dy, dA);
-        else    k_ger_simple<<<1, THREADS>>>(m, n, alpha, dx, dy, dA);
+        if (cg) {
+            k_ger_cg<<<1, THREADS>>>(m, n, alpha, dx, dy, dA);
+        } else if (strcmp(ver, "ct") == 0 && m == 4 && n == 128) {
+            k_ger_ct_4x128<<<1, THREADS>>>(alpha, dx, dy, dA);
+        } else if (strcmp(ver, "ct") == 0 && m == 64 && n == 8) {
+            k_ger_ct_64x8<<<1, THREADS>>>(alpha, dx, dy, dA);
+        } else {
+            k_ger_simple<<<1, THREADS>>>(m, n, alpha, dx, dy, dA);
+        }
         cudaDeviceSynchronize();
         print_device_vec(dA, m * n);
 

@@ -4,18 +4,16 @@
 [![verify-gpu-proof](https://github.com/A2R-Lab/GLASS/actions/workflows/verify-gpu-proof.yml/badge.svg)](https://github.com/A2R-Lab/GLASS/actions/workflows/verify-gpu-proof.yml)
 [![Documentation](https://github.com/A2R-Lab/GLASS/actions/workflows/gh-pages.yml/badge.svg)](https://a2r-lab.github.io/GLASS/)
 [![GPU tests](https://img.shields.io/endpoint?url=https%3A%2F%2Fa2r-lab.github.io%2FGLASS%2Fbadges%2Freceipt.json)](test/gpu-proof.json)
-[![API surface tested](https://img.shields.io/endpoint?url=https%3A%2F%2Fa2r-lab.github.io%2FGLASS%2Fbadges%2Fsurface.json)](.github/scripts/surface_coverage.py)
+[![API overloads compile-covered](https://img.shields.io/endpoint?url=https%3A%2F%2Fa2r-lab.github.io%2FGLASS%2Fbadges%2Fsurface.json)](test/api-contracts.json)
+[![Correctness obligations](https://img.shields.io/endpoint?url=https%3A%2F%2Fa2r-lab.github.io%2FGLASS%2Fbadges%2Fobligations.json)](test/coverage-obligations.json)
 [![Contributors](https://img.shields.io/github/contributors/A2R-Lab/GLASS)](https://github.com/A2R-Lab/GLASS/graphs/contributors)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**GLASS is a comprehensive, header-only CUDA C++ `__device__` template library for
-block-local linear algebra on GPUs** — BLAS, LAPACK-style factorizations and triangular
-solves, dense linear-system solvers, related algorithms, and **robotics-specialized
-operators** (Featherstone spatial 6-D algebra — cross products, coordinate transforms,
-10-parameter inertia — the SO(3)/SE(3)/quaternion Lie family with its derivative chain
-and pose-error metrics, cone/augmented-Lagrangian projections, sphere-collision
-distances, the 3x3 estimation kit eig3/svd3/closest_rotation, and sampling-planner
-softmax/argmin), all under one single-block calling convention. It is the foundational linear-algebra layer underneath
+**GLASS is a header-only CUDA C++ library of composable `__device__`
+primitives for small, block-local linear algebra and robotics math.** It includes
+BLAS operations, factorizations and solvers, structured-system routines, spatial
+algebra, Lie-group operations, projections, and small estimation kernels. GLASS
+is the foundational linear-algebra layer underneath
 [GRiD](https://github.com/A2R-Lab/GRiD),
 [MPCGPU](https://a2r-lab.org/publication/mpcgpu/),
 [GATO](http://a2r-lab.org/GATO/),
@@ -25,33 +23,30 @@ softmax/argmin), all under one single-block calling convention. It is the founda
 
 ## Overview
 
-GLASS functions are `__device__` helpers that operate on data already in shared or device
-memory. Every function assumes it runs within **one CUDA block** — the caller launches one
-block per independent data item — which makes GLASS a composable layer for kernels in
-model-predictive control, trajectory optimization, and rigid-body dynamics. It is the
-linear-algebra layer underneath [GRiD](https://github.com/A2R-Lab/GRiD).
+GLASS functions operate on data already in shared or device memory. Block-scoped
+functions run within **one CUDA block**; the caller normally launches one block
+per independent problem. Warp- and thread-scoped forms let a block pack smaller
+independent problems more densely.
 
 It began as hand-rolled SIMT subroutines tuned for the very small matrices where vendor
 launch/dispatch overhead dominates, and has grown into a unified single-block surface that
 also wraps NVIDIA's device-side libraries — CUB (L1), cuBLASDx (L2/L3), cuSOLVERDx (LAPACK) —
 under one `__device__` calling convention, so one kernel can mix hand-rolled and vendor-backed
-primitives without leaving the block — and **you choose the granularity**: the same operations
-exist as block-, warp-, or thread-scoped primitives, so a block can own one problem, pack one
-per warp, or pack 32 per warp with one problem per thread.
+primitives without leaving the block. Not every operation exists at every scope;
+the [API reference](docs/source/api_reference/index.rst) is the authoritative
+surface inventory.
 
 ### Interfaces
 
-GLASS exposes **four primary interfaces** — pick the one that matches how your problem maps
-onto the GPU. Two are **block-scoped** (one block per problem), one is **warp-scoped** (one
-warp per problem), and one is **thread-scoped** (one problem per thread, 32 packed per warp);
-all share the same operations. The ladder runs most→least problem packing:
-thread → warp → block → nvidia:
+GLASS exposes four primary interfaces. Pick one based on how many independent
+problems should share a block and whether optional vendor dependencies are
+acceptable:
 
 | Interface | Scope | What it is / when to choose it | Header |
 |-----------|-------|--------------------------------|--------|
-| `glass::block::` (**Block**) | block | Hand-rolled SIMT, `threadIdx` / `blockDim` — no deps. The default and the **contract tier** (bit-exact, thread-count invariant, never re-dispatched); one moderate-to-large problem per block | `glass.cuh` |
+| `glass::block::` (**Block**) | block | Explicit hand-rolled SIMT implementation; no dependencies and never re-dispatched | `glass.cuh` |
 | `glass::warp::` (**Warp**) | **warp** | Single-warp SIMT via `__shfl_*_sync` (*selected* L1/L2/L3 ops, no `__syncthreads`). Pack many small independent problems into one block | inline in the base headers (via `glass.cuh`) |
-| `glass::thread::` (**Thread**) | **thread** | Sequential, one problem per thread (compile-time sizes, register-resident up to `N≤7`; branch-free ops only). Pack 32 low-DOF problems into a warp where a warp-per-problem factor would leave most lanes idle | inline in the base headers (via `glass.cuh`) |
+| `glass::thread::` (**Thread**) | **thread** | Sequential branch-free subset, one compile-time problem per thread; intended for register-resident sizes up to `N≤7` | inline in the base headers (via `glass.cuh`) |
 | `glass::nvidia::block::` (**Nvidia**) | block | CUB + cuBLASDx + cuSOLVERDx, auto-dispatched against SIMT by size (compile-time sizes). When a vendor tensor-core kernel wins at your size. Plus `glass::nvidia::warp::` — CUB `WarpReduce` L1 reductions, one full 32-lane warp per problem | `glass-nvidia.cuh` |
 
 **Bare `glass::op`** (and bare `glass::nvidia::op`) is the **measured-default face**: the
@@ -69,15 +64,17 @@ tier**.
 > `cooperative_groups::thread_group`, numerically identical and **not** a separately-tuned
 > backend.
 
-Both `glass::` and `glass::cgrps::` offer **runtime** (size as arg) and **compile-time** (size
-as template arg) overloads. Reductions additionally offer `_lowmem` (no scratch)
+Many operations offer both **runtime** (size as an argument) and **compile-time**
+(size as a template argument) overloads. Reductions additionally offer `_lowmem` (no scratch)
 and `_fast` (warp-shuffle) suffixed forms (e.g. `glass::reduce_lowmem` / `glass::reduce_fast`). The dense surface covers `gemm`/`gemv`/`ger`,
 `iamax`, `trsv`/`trmv`, `syrk`/`syr2k`, `symm`/`trmm`/`dimm`, `inv`/`potrf` (single **and K-way fused**),
 `ldlt`/`ldlt_solve`, and `posv`/`potrs`; plus contraction-parallel `*_reduced`, `tensor_*`, and
 `congruence_*` families. Every block-scope op takes a `TRAILING_SYNC` template
 flag (default `true` = ends on a barrier, always safe to compose; pass `false`
-to elide the tail barrier when your caller owns the next one — see
-`src/base/barrier.cuh` for the exact contract). See the [namespace & naming guide](docs/source/user_guide/concepts/namespaces.rst).
+to elide the tail barrier where separable — a documented no-op where the last
+barrier is fused into the algorithm; see `src/base/barrier.cuh` for the exact
+contract). See the [namespace and naming guide](docs/source/user_guide/concepts/namespaces.rst)
+and [synchronization contract](docs/source/user_guide/concepts/trailing_sync.rst).
 
 ### Higher-level solvers
 
@@ -144,7 +141,8 @@ pip install -r test/requirements.txt
 pytest test/                 # compiles test/cuda/*.cu once, caches by source hash
 ```
 
-`rm -rf test/build` forces a clean rebuild. Details in
+Selected tests compile only the requested CUDA binaries. Signed correctness is
+split into eight functional shards, while releases rerun every shard. Details in
 [`docs/source/user_guide/tutorials/running_tests.rst`](docs/source/user_guide/tutorials/running_tests.rst).
 What "tested" means per op — which independent oracle (NumPy/SciPy/Pinocchio),
 finite-difference identity, or pinned contract validates each family, on real

@@ -48,10 +48,14 @@ __device__ void ger(T alpha, const T *x, const T *y, T *A)
 {
     uint32_t rank = flat_rank();
     uint32_t size = flat_size();
-    for (uint32_t col = 0; col < N; col++) {
-        T ay = alpha * y[col];
-        for (uint32_t row = rank; row < M; row += size)
-            A[row + col*M] += ay * x[row];
+    // Map across the complete output, so short-wide matrices use the whole
+    // block instead of serializing every column over only M active lanes.
+    // M and N are compile-time constants, so row/column recovery strength
+    // reduces to constant-divisor arithmetic.
+    for (uint32_t elem = rank; elem < M * N; elem += size) {
+        uint32_t row = elem % M;
+        uint32_t col = elem / M;
+        A[elem] += alpha * x[row] * y[col];
     }
     if constexpr (TRAILING_SYNC) __syncthreads();
 }

@@ -26,7 +26,15 @@ doxygen:
 clean:
 	@rm -rf $(BUILDDIR)/* doxygen/xml
 
-.PHONY: help Makefile all doxygen clean
+# Sphinx 9 may copy the theme logo before its ordinary static-assets phase. On
+# a completely clean tree the copy helper otherwise treats ``html/_static`` as
+# a filename, leaving a PNG there and breaking every later asset copy. Creating
+# the directory makes clean and incremental builds behave identically.
+html:
+	@mkdir -p $(BUILDDIR)/html/_static
+	@$(SPHINXBUILD) -M html "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
+
+.PHONY: help Makefile all doxygen clean html
 
 # Catch-all target: route all unknown targets to Sphinx using the new
 # "make mode" option.  $(O) is meant as a shortcut for $(SPHINXOPTS).

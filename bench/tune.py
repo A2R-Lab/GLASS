@@ -35,7 +35,8 @@ the same tables. The legs:
                                   reports picks into RESULTS.md (rect section) +
                                   regenerates the exact-shape rect_*_sm* pickers
   solvers  bench_solvers.cu     → solver characterization (bdsv-vs-pcg crossover,
-                                  gesv/posv/inv-solve on SPD, syev/eig_clamp) into
+                                  gesv/posv/inv-solve on SPD, syev/eig_clamp,
+                                  eigh/psd_project) into
                                   RESULTS.md (solvers section) — measured, never picked
                                   (the bdsv/pcg choice is conditioning-dependent)
   figures  export_sweep_figures → docs _static/*.png ladders + sweep_winners.txt
@@ -51,8 +52,10 @@ into memory and diffs against the in-tree tables WITHOUT writing — use it to
 confirm a re-run only moves dispatch inside the tie band before committing.
 """
 import argparse
+import datetime
 import glob
 import hashlib
+import json
 import math
 import os
 import pathlib
@@ -72,8 +75,8 @@ DISPATCH_HDR = GLASS_DIR / "glass-dispatch.cuh"
 STATIC    = GLASS_DIR / "docs" / "source" / "_static"
 # Single measured-results archive (consolidated 2026-08-11): every leg's
 # "latest measured run" splices into its own marker-delimited section of
-# bench/RESULTS.md. Curated analysis lives on the docs site; raw captures in
-# the glass-paper repo.
+# bench/RESULTS.md. Curated analysis lives on the docs site; raw captures are
+# archived externally.
 RESULTS_MD = BENCH_DIR / "RESULTS.md"
 CACHE_ROOT = BENCH_DIR / ".tune_cache"
 
@@ -125,6 +128,38 @@ def mathdx_root():
 def run(cmd, **kw):
     print("  $", " ".join(str(c) for c in cmd))
     return subprocess.run([str(c) for c in cmd], **kw)
+
+
+# Quiet-GPU discipline and provenance stamps are shared across the four
+# benchmark drivers — one copy in bench_common (they drifted as four copies).
+from bench_common import (compute_pids, gpu_busy, require_quiet_gpu,
+                          source_digest, watch_process)
+import bench_common
+
+
+def provenance(leg, sms, margin):
+    return bench_common.provenance(
+        leg, f"arch=sm_{sms // 10} decision_margin={margin:.6f}")
+
+
+def run_isolated(argv, force=False):
+    """Run one timed process and invalidate it if another compute PID appears."""
+    require_quiet_gpu(force)
+    # Under --force, pre-existing PIDs were deliberately tolerated — subtract
+    # them so the mid-run check catches only NEW processes (previously the
+    # very PIDs --force accepted re-tripped it, making the flag self-defeating).
+    baseline = compute_pids() if force else frozenset()
+    proc = subprocess.Popen([str(x) for x in argv], cwd=BENCH_DIR, text=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    _, foreign = watch_process(proc, baseline)
+    stdout, _ = proc.communicate()
+    if foreign:
+        sys.exit(f"ERROR: timing invalidated; foreign compute PIDs appeared: "
+                 f"{sorted(foreign)}")
+    if proc.returncode != 0:
+        sys.exit(f"ERROR: timed harness exited {proc.returncode}: {' '.join(argv)}\n"
+                 + "\n".join(stdout.splitlines()[-20:]))
+    return stdout
 
 
 # ─── ladder leg: bench_mega_sweep → per-arch ideal_sm* + dispatch ────────────
@@ -213,7 +248,8 @@ def build_mega_sweep(sms, mdx, allow_no_mathdx=False):
     return binp
 
 
-def run_mega_sweep(binp, quick, prefix="mega_sweep", sched=None):
+def run_mega_sweep(binp, quick, sms, margin, prefix="mega_sweep", sched=None,
+                   force=False):
     """Run a ladder-style harness (mega/blas2/rect/solvers share the CLI +
     section grammar) over the NPROB schedule x {f32,f64}; write
     <prefix>_<ts>.txt. ``sched`` overrides the NPROB/reps schedule (the solvers
@@ -224,7 +260,7 @@ def run_mega_sweep(binp, quick, prefix="mega_sweep", sched=None):
     # EVERY section, so a killed run (power cut, reboot, orchestrator bail)
     # keeps all completed sections — hours of Orin data died to the old
     # write-at-the-end behavior (2026-07-31).
-    path = BENCH_DIR / f"{prefix}_{time.strftime('%Y%m%d_%H%M')}.txt"
+    path = BENCH_DIR / f"{prefix}_{time.strftime('%Y%m%d_%H%M%S')}.txt"
 
     def _telemetry():
         """One `# telemetry ...` line (SM clock + temp) — stamped per SECTION,
@@ -239,17 +275,17 @@ def run_mega_sweep(binp, quick, prefix="mega_sweep", sched=None):
         except Exception:
             return "# telemetry n/a (no nvidia-smi query support on this host)"
 
-    hdr = [f"# {prefix}  {time.strftime('%c')}  (bench/tune.py)", _telemetry(), ""]
+    hdr = provenance(prefix, sms, margin)
+    hdr += [f"# {prefix}  {time.strftime('%c')}  (bench/tune.py)", _telemetry(), ""]
     path.write_text("\n".join(hdr) + "\n")
     for nprob, reps in sched:
         for dt in ("f32", "f64"):
             print(f"  -> {prefix} NPROB={nprob} reps={reps} {dt}")
-            r = subprocess.run([str(binp), nprob, reps, dt], text=True,
-                               capture_output=True, cwd=BENCH_DIR)
+            stdout = run_isolated([str(binp), nprob, reps, dt], force)
             with open(path, "a") as f:
                 f.write(f"################ NPROB={nprob}  reps={reps}  dtype={dt} ################\n")
                 f.write(_telemetry() + "\n")
-                f.write(r.stdout)
+                f.write(stdout)
                 f.write(_telemetry() + "  [section end]\n")
                 f.write("\n")
             print(f"     section saved -> {path.name}")
@@ -275,7 +311,9 @@ def _ladder_expr(winners, dtype, op):
     return " : ".join(parts) + f" : backend::{runs[-1][1]}"
 
 
-_SPREAD_RE = re.compile(r"spread<=([\d.]+)%")
+# Ladder-style rows print `spread<=X%` (row-max over cells); the reduced and
+# solvers/AB harnesses print per-measurement `spread=X%`. Match both.
+_SPREAD_RE = re.compile(r"spread<?=+([\d.]+)%")
 
 
 def warn_jittery_rows(text, margin, label):
@@ -690,10 +728,10 @@ def build_reduced(sms):
 def predicate_use_reduced(n_out, K, blockDim):
     """Mirror of glass::suggested_use_reduced<n_out,K_contract,blockDim>().
 
-    Retired to constant False 2026-07-08: the quiet-GPU resweep measured 0/48
-    reduced wins under the ±5% margin, so the predicate's true-corner was
-    emptied. If a sweep on new hardware finds wins, derive a new corner from
-    that data and update BOTH this mirror and the .cuh predicate."""
+    Kept constant False after the 2026-08-14 sm_120 sweep: f32 had 0/48 wins;
+    f64 had 2/48 at one shape, which this dtype-independent signature cannot
+    encode safely. A future type-aware predicate may promote a repeatable
+    region; keep this mirror synchronized with the .cuh predicate."""
     return False
 
 
@@ -731,22 +769,21 @@ def gen_reduced_block(rows, wins, mism, margin, src):
          f"_Source: `{src}` · tie margin ±{margin*100:.0f}% (reduced must clear "
          f"it) · {len(wins)} of {len(rows)} configs pick reduced._", ""]
     if wins:
-        L += ["| M | N | K | n_out | blockDim | serial_us | reduced_us | ratio |",
-              "|---|---|---|-------|----------|-----------|------------|-------|"]
+        L += ["| dtype | M | N | K | n_out | blockDim | serial_us | reduced_us | ratio |",
+              "|:------|---|---|---|-------|----------|-----------|------------|-------|"]
         for r in wins:
-            L.append(f"| {r['M']} | {r['N']} | {r['K']} | {r['n_out']} | "
+            L.append(f"| {r['dtype']} | {r['M']} | {r['N']} | {r['K']} | {r['n_out']} | "
                      f"{r['blockDim']} | {r['serial']:.4f} | {r['reduced']:.4f} | "
                      f"**{r['serial']/r['reduced']:.2f}** |")
         L.append("")
     L.append("Predicate `suggested_use_reduced<n_out,K_contract,blockDim>()` = "
-             "`(n_out <= blockDim/32) && (K_contract >= 32)` "
-             "(K_contract is the N column here).")
+             "`false` on every cell (K_contract is the N column here).")
     if mism:
         L += ["", f"⚠️ **{len(mism)} config(s) disagree** with the predicate — "
               "review before trusting the formula on this GPU:", ""]
         for r in mism:
             pred = "reduced" if predicate_use_reduced(r['n_out'], r['N'], r['blockDim']) else "serial"
-            L.append(f"- {r['M']}×{r['N']}×{r['K']} bd={r['blockDim']} "
+            L.append(f"- {r['dtype']} {r['M']}×{r['N']}×{r['K']} bd={r['blockDim']} "
                      f"(n_out={r['n_out']}): measured **{r['winner']}**, predicate **{pred}**")
     else:
         L += ["", "✅ Measurement matches the predicate for every swept config — "
@@ -883,8 +920,7 @@ _RECT_NOTE = ("nvidia leg skipped for rectangular shapes (needs new per-shape "
 # i.e. with conditioning; bdsv is exact in one serial-over-knots sweep) — so this
 # leg records the measured crossover on the harness's well-conditioned test
 # system instead of regenerating any dispatch table. gesv/posv/inv-solve and
-# syev/eig_clamp rows are pure characterization (what does the robustness /
-# anti-pattern path cost where Cholesky suffices).
+# adaptive/fixed-sweep eigensolver rows are pure characterization.
 
 # The solvers harness restores mutated state between reps (untimed), so each rep
 # is a full restore+launch round-trip — budget far fewer reps than the ladder.
@@ -901,7 +937,8 @@ _SLV_B_RE = re.compile(
 # run before the thread tier existed — replayed via --from-solvers) and from live
 # rows at N>7, where bench_solvers skips the tier (register-residency ceiling).
 # Keep it optional or old sweeps stop parsing and the section-B table drops.
-_SLV_C_RE = re.compile(r"^(syev|eig_clamp)\s+N=(\d+)\b.*\|\|\s*best tb\d+=([\d.]+)")
+_SLV_C_RE = re.compile(
+    r"^(syev|eig_clamp|eigh|psd_project)\s+N=(\d+)\b.*\|\|\s*best tb\d+=([\d.]+)")
 
 
 def parse_solvers(text, nprob=8192):
@@ -911,7 +948,7 @@ def parse_solvers(text, nprob=8192):
     from the ``||`` summary + pcg's converged iteration count);
     ``spdsv``:    ``(dtype, N) -> {gesv, posv, invsv[, thrposv]}`` (``thrposv`` is
     the thread-tier ``glass::thread::posv``, present only for N<=7);
-    ``eig``:      ``(dtype, N) -> {syev, eig_clamp}``.
+    ``eig``:      ``(dtype, N) -> {syev, eig_clamp, eigh, psd_project}``.
     """
     data = {"bdsv_pcg": {}, "spdsv": {}, "eig": {}}
     dtype, cur = None, None
@@ -956,8 +993,10 @@ def gen_solvers_block(data, src):
         bw = sum(1 for v in A.values() if v["bdsv"] <= v["pcg"])
         L += ["### bdsv (direct) vs pcg (iterative) — identical block-tridiagonal SPD input", "",
               f"bdsv is faster in {bw} of {len(A)} cells **on this well-conditioned "
-              f"test system** (see the iters column — pcg's cost scales with the "
-              f"iteration count, so the crossover moves with conditioning).", "",
+              f"test system at PCG's `rho = rᵀz` relative tolerance of 1e-6**. "
+              f"This is an approximate-solve comparison, not matched final residual "
+              f"accuracy; PCG cost and the crossover move with tolerance, conditioning, "
+              f"and iteration count.", "",
               "| BlockSize | Knots | dtype | bdsv ns | pcg ns | pcg iters | pcg/bdsv |",
               "|-----------|-------|-------|---------|--------|-----------|----------|"]
         for key in sorted(A, key=lambda k: (k[1], k[2], k[0])):
@@ -999,14 +1038,16 @@ def gen_solvers_block(data, src):
         L.append("")
     C = data["eig"]
     if C:
-        L += ["### syev + eig_clamp — timing only (no contender)", "",
-              "| N | dtype | syev ns | eig_clamp ns |",
-              "|---|-------|---------|--------------|"]
+        L += ["### Adaptive vs fixed-sweep symmetric eigensolvers", "",
+              "| N | dtype | syev ns | eig_clamp ns | eigh ns | psd_project ns |",
+              "|---|-------|---------|--------------|---------|----------------|"]
         for key in sorted(C, key=lambda k: (k[1], k[0])):
             v = C[key]
             sy = f"{v['syev']:.2f}" if "syev" in v else "—"
             ec = f"{v['eig_clamp']:.2f}" if "eig_clamp" in v else "—"
-            L.append(f"| {key[1]} | {key[0]} | {sy} | {ec} |")
+            eh = f"{v['eigh']:.2f}" if "eigh" in v else "—"
+            pp = f"{v['psd_project']:.2f}" if "psd_project" in v else "—"
+            L.append(f"| {key[1]} | {key[0]} | {sy} | {ec} | {eh} | {pp} |")
         L.append("")
     L.append(_md_end("solvers"))
     return "\n".join(L)
@@ -1061,6 +1102,9 @@ def main():
                         "Jetson, where MathDx does not ship.")
     p.add_argument("--dry-run", action="store_true",
                    help="regenerate + diff against in-tree tables, write nothing")
+    p.add_argument("--force", action="store_true",
+                   help="allow timed runs despite a busy-GPU preflight; foreign "
+                        "compute PIDs appearing during a leg still invalidate it")
     p.add_argument("--from-ladder", metavar="TXT",
                    help="skip ladder build/run; regenerate from this mega_sweep .txt")
     p.add_argument("--from-body", metavar="TXT",
@@ -1117,9 +1161,11 @@ def main():
             if mdx is None:
                 print("  [skip] shapes needs MATHDX_ROOT (cuBLASDx).")
             else:
-                run([sys.executable, "autotune.py", "--sm", str(sms),
-                     "--build-only", "--build-jobs", str(args.build_jobs),
-                     "--build-dir", str(cache_dir(sms))], cwd=BENCH_DIR)
+                result = run([sys.executable, "autotune.py", "--sm", str(sms),
+                              "--build-only", "--build-jobs", str(args.build_jobs),
+                              "--build-dir", str(cache_dir(sms))], cwd=BENCH_DIR)
+                if result.returncode:
+                    sys.exit("ERROR: shapes prebuild failed")
         if "reduced" in legs:
             print("── prebuild: reduced ─────────────────────────────────────")
             build_reduced(sms)
@@ -1152,7 +1198,9 @@ def main():
             sweep_text = sweep_path.read_text()
         else:
             binp = build_mega_sweep(sms, mdx, args.allow_no_mathdx)
-            sweep_path = run_mega_sweep(binp, args.quick, sched=user_sched)
+            sweep_path = run_mega_sweep(
+                binp, args.quick, sms, args.margin, sched=user_sched,
+                force=args.force)
             sweep_text = sweep_path.read_text()
         new_defaults, n = regen_ladder(sweep_text, args.margin, sweep_path.name, sms)
         print(f"  regenerated ideal_sm{sms // 10} from {n} (dtype,op) groups")
@@ -1176,9 +1224,10 @@ def main():
             body_text = None
         else:
             binp = build_body(sms)
-            body_path = run_mega_sweep(binp, args.quick,
-                                       prefix="body_dispatch_sweep",
-                                       sched=user_sched)
+            body_path = run_mega_sweep(
+                binp, args.quick, sms, args.margin,
+                prefix="body_dispatch_sweep", sched=user_sched,
+                force=args.force)
             body_text = body_path.read_text()
         if body_text is not None:
             new_defaults, moved = regen_body(body_text, args.margin,
@@ -1205,7 +1254,10 @@ def main():
                    "--build-dir", str(cache_dir(sms))]
             if args.dry_run:
                 cmd.append("--dry-run")
-            run(cmd, cwd=BENCH_DIR)
+            if args.force:
+                cmd.append("--force")
+            if run(cmd, cwd=BENCH_DIR).returncode:
+                sys.exit("ERROR: shapes autotune failed")
 
     # ── reduced ──
     if "reduced" in legs:
@@ -1219,11 +1271,13 @@ def main():
         else:
             binp = build_reduced(sms)
             print(f"  -> bench_reduced {args.iters}")
-            rtxt = subprocess.run([str(binp), str(args.iters)], text=True,
-                                  capture_output=True, cwd=BENCH_DIR).stdout
-            rtxt_path = BENCH_DIR / f"reduced_sweep_{time.strftime('%Y%m%d_%H%M')}.txt"
-            rtxt_path.write_text(rtxt)
+            rtxt = run_isolated([str(binp), str(args.iters)], args.force)
+            rtxt_path = BENCH_DIR / f"reduced_sweep_{time.strftime('%Y%m%d_%H%M%S')}.txt"
+            rtxt_path.write_text(
+                "\n".join(provenance("reduced_sweep", sms, args.margin))
+                + "\n" + rtxt)
         if rtxt:
+            warn_jittery_rows(rtxt, args.margin, "reduced")
             rows, wins, mism = analyze_reduced(rtxt, args.margin)
             print(f"  {len(rows)} configs, reduced wins {len(wins)}, "
                   f"predicate mismatches {len(mism)}")
@@ -1254,7 +1308,9 @@ def main():
             continue
         else:
             binp = builder(sms)
-            txt_path = run_mega_sweep(binp, args.quick, prefix)
+            txt_path = run_mega_sweep(
+                binp, args.quick, sms, args.margin, prefix,
+                force=args.force)
             txt = txt_path.read_text()
         report_pick_leg(leg, txt, txt_path.name, md_path, args.margin,
                         parse, args.dry_run, changed, note)
@@ -1283,10 +1339,12 @@ def main():
             print("  [skip] solvers needs a GPU or --from-solvers.")
         else:
             binp = build_solvers(sms)
-            txt_path = run_mega_sweep(binp, args.quick, "solvers_sweep",
-                                      sched=_SOLVERS_SCHED)
+            txt_path = run_mega_sweep(
+                binp, args.quick, sms, args.margin, "solvers_sweep",
+                sched=_SOLVERS_SCHED, force=args.force)
             txt = txt_path.read_text()
         if txt:
+            warn_jittery_rows(txt, args.margin, "solvers")
             data = parse_solvers(txt)
             if not any(data.values()):
                 print(f"  ⚠️ no NPROB=8192 rows parsed from {txt_path.name}; "

@@ -20,9 +20,14 @@ from bench/tune.py's mega-sweep leg instead).
 
 import argparse
 import datetime
+import hashlib
+import json
+import os
 import pathlib
+import re
 import subprocess
 import sys
+import time
 
 BENCH_DIR = pathlib.Path(__file__).parent.resolve()
 BUILD_DIR = BENCH_DIR / "build"
@@ -69,14 +74,18 @@ def detect_arch():
                  "failed, no Tegra device tree); pass --arch sm_XX explicitly")
 
 
-def gpu_busy():
-    try:
-        util = subprocess.run(
-            ["nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=10).stdout.strip().splitlines()[0]
-        return int(util) > 5
-    except Exception:
-        return False
+# Quiet-GPU discipline and provenance stamps are shared across the four
+# benchmark drivers — one copy in bench_common (they drifted as four copies).
+from bench_common import (compute_pids, require_quiet_gpu as wait_for_quiet_gpu,
+                          watch_process)
+import bench_common
+
+
+def provenance(leg, arch, reps, dtype):
+    return bench_common.provenance(
+        leg, f"arch={arch} reps={reps} dtype={dtype}",
+        comparison_line=("comparison=best swept GLASS configurations versus "
+                         "documented default vendor APIs"))
 
 
 def build(leg, arch):
@@ -103,18 +112,38 @@ def build(leg, arch):
     return out
 
 
-def run(leg, binary, reps, dtype):
-    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+def run(leg, binary, arch, reps, dtype, baseline=frozenset()):
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     out_txt = BENCH_DIR / f"paper_{leg}_{ts}.txt"
     args = [str(binary), str(reps), dtype]
     print(f"[run] {' '.join(args)} -> {out_txt.name}")
     with open(out_txt, "w") as f:
-        r = subprocess.run(args, cwd=BENCH_DIR, stdout=f, stderr=subprocess.STDOUT)
-    print(f"[run] {leg} exit={r.returncode}")
-    if r.returncode != 0:
+        f.write("\n".join(provenance(leg, arch, reps, dtype)) + "\n")
+        f.flush()
+        proc = subprocess.Popen(args, cwd=BENCH_DIR, stdout=f, stderr=subprocess.STDOUT)
+        returncode, foreign = watch_process(proc, baseline, poll_s=2)
+        if foreign:
+            f.write(f"# INVALID foreign_compute_pids={','.join(map(str, sorted(foreign)))}\n")
+    print(f"[run] {leg} exit={returncode}")
+    if foreign:
+        sys.exit(f"leg invalidated: another compute process appeared ({sorted(foreign)})")
+    if returncode != 0:
         tail = out_txt.read_text().splitlines()[-15:]
         print("\n".join(tail))
         sys.exit(f"leg failed: {leg} (see {out_txt.name})")
+    spread_by_section = {}
+    for line in out_txt.read_text().splitlines():
+        match = re.search(r"RESULT section=(\w+).* spread=([0-9.]+)%", line)
+        if match:
+            spread_by_section.setdefault(match.group(1), []).append(float(match.group(2)))
+    for section, spreads in sorted(spread_by_section.items()):
+        over5 = sum(value > 5.0 for value in spreads)
+        over10 = sum(value > 10.0 for value in spreads)
+        print(f"[spread] {leg}/{section}: {over5}/{len(spreads)} >5%, "
+              f"{over10}/{len(spreads)} >10%, max={max(spreads):.2f}%")
+        if over5:
+            print("[spread] WARNING: do not publish small deltas from this capture; "
+                  "compare an independent quiet run")
     return out_txt
 
 
@@ -144,12 +173,13 @@ def main():
         print("[build-only] done — run again without --build-only on a quiet GPU")
         return
 
-    if gpu_busy() and not args.force:
-        sys.exit("GPU is busy (>5% util) — perf timing must be isolated. "
-                 "Re-run when quiet, or pass --force.")
+    wait_for_quiet_gpu(args.force)
+    # Under --force, pre-existing PIDs are tolerated by design — subtract them
+    # so the mid-run watch only trips on NEW processes.
+    baseline = compute_pids() if args.force else frozenset()
 
     for l in legs:   # serial, one timed leg at a time
-        run(l, binaries[l], args.reps, args.dtype)
+        run(l, binaries[l], arch, args.reps, args.dtype, baseline)
     print("all legs done")
 
 

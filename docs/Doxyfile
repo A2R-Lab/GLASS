@@ -13,7 +13,8 @@ FULL_PATH_NAMES        = YES
 STRIP_FROM_PATH        = ..
 
 # --- What to parse ---------------------------------------------------------
-INPUT                  = ../src ../glass.cuh ../glass-cgrps.cuh ../glass-nvidia.cuh
+INPUT                  = ../src ../glass.cuh ../glass-cgrps.cuh ../glass-nvidia.cuh \
+                         ../glass-defaults.cuh ../glass-dispatch.cuh
 RECURSIVE              = YES
 # The live public API is src/base/** (-> glass::), src/cgrps/** (-> glass::cgrps::)
 # and src/nvidia/** (-> glass::nvidia::). The top-level src/L1, src/L2, src/L3
@@ -23,8 +24,10 @@ EXCLUDE                = ../src/L1 ../src/L2 ../src/L3
 # Internal shared-body helpers (`*_impl`, taking a barrier-policy `Bar bar`) are
 # not public API — keep them out of the reference (and silence their
 # undocumented-`bar` param warnings).
-EXCLUDE_SYMBOLS        = *_impl
+EXCLUDE_SYMBOLS        = *_impl glass::block::*_detail::* \
+                         glass::nvidia::block::*_detail::*
 FILE_PATTERNS          = *.cuh *.cu
+FILTER_PATTERNS        = *.cuh=./doxygen_filter.py *.cu=./doxygen_filter.py
 # Treat CUDA headers as C++ so __device__/templates parse correctly.
 EXTENSION_MAPPING      = cuh=C++ cu=C++
 
@@ -59,3 +62,4 @@ JAVADOC_AUTOBRIEF      = YES
 QT_AUTOBRIEF           = YES
 OPTIMIZE_OUTPUT_FOR_C  = NO
 BUILTIN_STL_SUPPORT    = YES
+HAVE_DOT               = NO

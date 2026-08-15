@@ -18,6 +18,22 @@
 
 static constexpr int TC = 32;
 
+// Scratch queries are host constexpr APIs. Instantiate them in host context;
+// calling them from a device compile-canary requires relaxed constexpr and can
+// silently turn this otherwise core SIMT test binary into an optional skip.
+[[maybe_unused]] constexpr auto block_reduce_scratch_query =
+    glass::nvidia::block::reduce_scratch_bytes<float>();
+[[maybe_unused]] constexpr auto warp_reduce_scratch_query =
+    glass::nvidia::warp::warp_reduce_scratch_bytes<float>();
+
+// Compile coverage for the remaining CUB/query overloads. This kernel is not
+// launched; focused tests below provide the numerical GPU oracles.
+__global__ void compile_nvidia_query_contracts(bool run, float* p) {
+    if (!run) return;
+    glass::nvidia::block::reduce<float, 4>(p, p);
+    glass::nvidia::block::nrm2<float, 4>(p, p, p);
+}
+
 // ─── gemm_batched_1d kernels (col-major) ─────────────────────────────────────
 template <int M_, int N_, int K_, int BATCH_>
 __global__ void k_batched_1d(float alpha, float** A, float** B, float beta, float** C) {

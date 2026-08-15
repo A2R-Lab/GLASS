@@ -13,18 +13,14 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <ctime>
 #include <cmath>
 #include <vector>
 #include "../glass.cuh"
 #include "../glass-nvidia.cuh"   // glass::nvidia::warp::{reduce,dot,nrm2}
+#include "timing_common.cuh"
 
 static const int WARPS = 8;      // warps (= problems) per block
 static int NPROB = 8192;         // set per section in main
-
-static double elapsed_ms(struct timespec a, struct timespec b) {
-    return (b.tv_sec - a.tv_sec) * 1e3 + (b.tv_nsec - a.tv_nsec) * 1e-6;
-}
 
 // ─── kernels: p = global warp index = one problem per warp ───────────────────
 template<typename T, uint32_t N>
@@ -71,24 +67,6 @@ __global__ void kn_nrm2(T* x, T* out, int np) {
 }
 
 // ─── harness ─────────────────────────────────────────────────────────────────
-template<typename F>
-static double time_ns_per_prob(F launch, int reps) {
-    cudaGetLastError();
-    launch(); cudaDeviceSynchronize();
-    if (cudaGetLastError() != cudaSuccess) return -1.0;
-    double best = 1e30;
-    for (int t = 0; t < 3; t++) {
-        struct timespec t0, t1;
-        clock_gettime(CLOCK_MONOTONIC, &t0);
-        for (int r = 0; r < reps; r++) launch();
-        cudaDeviceSynchronize();
-        clock_gettime(CLOCK_MONOTONIC, &t1);
-        double ns = elapsed_ms(t0, t1) * 1e6 / ((double)reps * NPROB);
-        if (ns < best) best = ns;
-    }
-    return best;
-}
-
 template<typename T>
 static void fill(std::vector<T>& h) {
     for (size_t i = 0; i < h.size(); i++)
@@ -160,23 +138,29 @@ static void run_op(const char* dt) {
         if (!check("simt", which) || !check("cub", which)) exit(1);
         cudaMemcpy(dx, hx.data(), elems * sizeof(T), cudaMemcpyHostToDevice);
         cudaMemcpy(dy, hy.data(), elems * sizeof(T), cudaMemcpyHostToDevice);
-        double simt = -1, cub = -1;
+        double simt = -1, cub = -1, simt_spread = 0, cub_spread = 0;
         switch (which) {
             case 0:
-                simt = time_ns_per_prob([&]{ kw_reduce<T, N><<<grid, blk>>>(dx, NPROB); }, reps);
-                cub  = time_ns_per_prob([&]{ kn_reduce<T, N><<<grid, blk, smem>>>(dx, NPROB); }, reps);
+                simt = tc_time_ns_per_prob([&]{ kw_reduce<T, N><<<grid, blk>>>(dx, NPROB); }, reps, NPROB);
+                simt_spread = tc_last_spread_pct();
+                cub  = tc_time_ns_per_prob([&]{ kn_reduce<T, N><<<grid, blk, smem>>>(dx, NPROB); }, reps, NPROB);
+                cub_spread = tc_last_spread_pct();
                 break;
             case 1:
-                simt = time_ns_per_prob([&]{ kw_dot<T, N><<<grid, blk>>>(dx, dy, dout, NPROB); }, reps);
-                cub  = time_ns_per_prob([&]{ kn_dot<T, N><<<grid, blk, smem>>>(dx, dy, dout, NPROB); }, reps);
+                simt = tc_time_ns_per_prob([&]{ kw_dot<T, N><<<grid, blk>>>(dx, dy, dout, NPROB); }, reps, NPROB);
+                simt_spread = tc_last_spread_pct();
+                cub  = tc_time_ns_per_prob([&]{ kn_dot<T, N><<<grid, blk, smem>>>(dx, dy, dout, NPROB); }, reps, NPROB);
+                cub_spread = tc_last_spread_pct();
                 break;
             case 2:
-                simt = time_ns_per_prob([&]{ kw_nrm2<T, N><<<grid, blk>>>(dx, dout, NPROB); }, reps);
-                cub  = time_ns_per_prob([&]{ kn_nrm2<T, N><<<grid, blk, smem>>>(dx, dout, NPROB); }, reps);
+                simt = tc_time_ns_per_prob([&]{ kw_nrm2<T, N><<<grid, blk>>>(dx, dout, NPROB); }, reps, NPROB);
+                simt_spread = tc_last_spread_pct();
+                cub  = tc_time_ns_per_prob([&]{ kn_nrm2<T, N><<<grid, blk, smem>>>(dx, dout, NPROB); }, reps, NPROB);
+                cub_spread = tc_last_spread_pct();
                 break;
         }
-        printf("%-6s N=%-3u | simt=%8.3f  cub=%8.3f | cub/simt=%.3f -> %s\n",
-               names[which], N, simt, cub, cub / simt,
+        printf("%-6s N=%-3u | simt=%8.3f spread=%5.2f%%  cub=%8.3f spread=%5.2f%% | cub/simt=%.3f -> %s\n",
+               names[which], N, simt, simt_spread, cub, cub_spread, cub / simt,
                cub < simt * 0.98 ? "CUB" : simt < cub * 0.98 ? "SIMT" : "tie");
     }
     cudaFree(dx); cudaFree(dy); cudaFree(dout);
@@ -192,6 +176,7 @@ static void run_dtype(const char* dt) {
 int main() {
     cudaDeviceProp prop; cudaGetDeviceProperties(&prop, 0);
     printf("device: %s (sm_%d%d)\n", prop.name, prop.major, prop.minor);
+    tc_warm_gpu();
     for (int np : {64, 1024, 8192}) {
         NPROB = np;
         run_dtype<float>("f32");

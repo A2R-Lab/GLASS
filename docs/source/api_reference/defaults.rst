@@ -69,7 +69,10 @@ Example
    constexpr auto be = glass::suggested_backend<glass::op::chol, N, float>();
    if      constexpr (be == glass::backend::nvidia) { /* cuSOLVERDx launch */ }
    else if constexpr (be == glass::backend::warp)   { /* <<<ceil(P/WPB), {32,WPB}>>> */ }
-   else /* block */ {
+   else if constexpr (be == glass::backend::thread) {
+       constexpr int TPB = glass::suggested_threads_per_block<glass::op::chol, N, float>();
+       /* <<<ceil(P/TPB), TPB>>> */
+   } else /* block */ {
        constexpr int TB = glass::suggested_block_threads<glass::op::chol, N, float>();
        /* <<<P, TB>>> */
    }

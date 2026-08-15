@@ -74,18 +74,20 @@ is tested on the preconditioned residual ``rho = rᵀz``:
 Sizing and launch:
 
 * Dynamic shared memory =
-  ``glass::pcg_scratch_bytes<T, state_size, knot_points>(threads)`` elements (five
-  padded work vectors + the warp-dot scratch); five scalars live in static
+  ``glass::pcg_scratch_bytes<T, state_size, knot_points>(threads)`` **bytes**
+  (five padded work vectors + the warp-dot scratch); pass this value directly
+  as the launch's dynamic-shared-memory argument. Five scalars live in static
   ``__shared__``.
-* The block thread count **must be a multiple of 32** — the inner dot product
-  uses a warp-shuffle reduction (``glass::dot_fast``).
+* Use a multiple of 32 threads; PCG's fast dot reduction uses full-warp
+  shuffle masks. (This is the one documented exception to the library's
+  thread-count-invariance contract.)
 * Seed ``x`` with an initial guess (zeros are fine); the solution is written back
   into ``x`` and the iteration count into ``iters``.
 
 .. code-block:: cpp
 
    constexpr int SS = 6, KP = 32;
-   size_t smem = glass::pcg_scratch_bytes<float, SS, KP>(threads) * sizeof(float);
+   size_t smem = glass::pcg_scratch_bytes<float, SS, KP>(threads);
    pcg_kernel<<<num_problems, threads, smem>>>(d_x, d_S, d_Pinv, d_b, ...);
    // inside the kernel:
    extern __shared__ float s_mem[];

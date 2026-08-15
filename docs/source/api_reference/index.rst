@@ -40,9 +40,9 @@ The reference is organized by BLAS level and by backend:
 
    The block-scope SIMT entries on these pages are the ``glass::block::``
    **contract tier** (bit-exact, thread-count invariant, never re-dispatched);
-   the bare ``glass::`` spellings are the **measured-default face** — in
-   Phase 1 the same entities, re-exported (likewise ``glass::nvidia::block::``
-   vs bare ``glass::nvidia::``). See
+   the bare ``glass::`` spellings are the **measured-default face**. Measured
+   cells can use a warp-0 or thread-0 body while preserving the block-scope
+   calling contract; unmoved operations remain re-exports. See
    :doc:`../user_guide/concepts/namespaces`.
 
 .. toctree::

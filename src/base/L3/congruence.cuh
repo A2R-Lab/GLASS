@@ -120,7 +120,8 @@ template <typename T, uint32_t N, uint32_t Kdim,
 __device__ void congruence_sym(T alpha, const T* X, const T* M, T beta, T* Q, T* s_scratch)
 {
     // step 1: MX = M * X  (N x N times N x Kdim -> N x Kdim), overwrite scratch.
-    gemm<T, N, Kdim, N>(static_cast<T>(1), const_cast<T*>(M), const_cast<T*>(X), s_scratch);
+    gemm<T, N, Kdim, N, false, false, false, /*TRAILING_SYNC=*/false>(
+        static_cast<T>(1), const_cast<T*>(M), const_cast<T*>(X), s_scratch);
     __syncthreads();                         // MX visible before the Xᵀ·MX contraction
     uint32_t rank = flat_rank();
     uint32_t size = flat_size();
@@ -153,7 +154,8 @@ template <typename T, uint32_t N, uint32_t P, uint32_t Qd,
           bool ACCUMULATE = false, bool TRAILING_SYNC = true>
 __device__ void bilinear(T alpha, const T* X, const T* M, const T* Y, T beta, T* R, T* s_scratch)
 {
-    gemm<T, N, Qd, N>(static_cast<T>(1), const_cast<T*>(M), const_cast<T*>(Y), s_scratch);
+    gemm<T, N, Qd, N, false, false, false, /*TRAILING_SYNC=*/false>(
+        static_cast<T>(1), const_cast<T*>(M), const_cast<T*>(Y), s_scratch);
     __syncthreads();
     uint32_t rank = flat_rank();
     uint32_t size = flat_size();

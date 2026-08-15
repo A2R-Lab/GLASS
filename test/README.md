@@ -34,10 +34,10 @@ gracefully** when it is absent.
   and builds with `-arch=sm_XX` (falls back to `sm_75`).
 - **Compile-once, cache by source hash** — `compile_binary()` compiles each
   `cuda/test_*.cu` once per session and caches it; it recompiles only when
-  `_hash_sources()` changes. **Gotcha:** that hash covers a *curated* list of
-  headers (`glass.cuh`, the nvidia headers, a few base files), not every header.
-  If you edit a header that isn't in the list and the cache looks stale,
-  `rm -rf test/build` to force a clean rebuild.
+  `_hash_sources()` changes. Binaries compile lazily, and each hash includes the
+  selected CUDA source, shared helper, umbrella headers, and the implementation
+  headers for that binary's operation family. A vector-only edit therefore
+  does not rebuild factor, robotics, solver, or vendor binaries.
 - **Optional-dependency skips** — `test_l3_nvidia`, `test_nvidia_dispatch`, and
   `test_trailing_sync` are compiled in `try/except`; their fixtures
   (`bin_l3_nvidia`, `bin_nvidia_dispatch`, `bin_trailing_sync`) `pytest.skip`
@@ -50,3 +50,16 @@ gracefully** when it is absent.
 
 See [`TESTING_STRATEGY.md`](TESTING_STRATEGY.md) for *why* the tests are shaped
 this way — especially the thread-count sweep that catches single-block races.
+
+## Signed sharded proof
+
+`test/run_gpu_proof.sh` emits eight dependency-scoped signed shard receipts and
+merges them into `test/gpu-proof.json`. Run a subset with `--shards`; unchanged
+shards may carry from an earlier receipt only when their fingerprints match.
+If a merge discovers another stale shard after some fresh shards already ran,
+reuse those saved receipts rather than executing them again:
+
+```bash
+./test/run_gpu_proof.sh --shards dense,tiers \
+  --reuse-shards factor,solvers --carry-from test/gpu-proof.json
+```

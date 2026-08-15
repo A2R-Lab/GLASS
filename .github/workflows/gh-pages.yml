@@ -8,7 +8,9 @@ on:
       - 'docs/**'
       - 'src/**'          # API reference is generated from header doc-comments
       - 'glass*.cuh'
-      - 'test/**'         # badges: surface coverage + receipt read the test tree
+      - 'test/**'         # badges: contract coverage + receipt read the test tree
+      - 'README.md'
+      - '.github/scripts/**'
       - '.github/workflows/gh-pages.yml'
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
@@ -44,19 +46,27 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r docs/requirements.txt
+          # coverage_obligations.py performs pytest collection only; keep the
+          # Pages job independent of the heavyweight GPU/signing dependencies.
+          pip install pytest numpy scipy
 
       - name: Build documentation (fail on any warning)
         run: |
           cd docs
           make all SPHINXOPTS="-W --keep-going"
 
-      # shields.io endpoint badges, served from the docs site: API-surface
-      # coverage (device-code line coverage does not exist; this is the honest
-      # metric) + the receipted GPU-test count from the signed receipt.
+      # shields.io endpoint badges, served from the docs site: public-overload
+      # compile coverage, required correctness obligations, and the receipted
+      # GPU-test count from the signed receipt.
       - name: Generate badges
         run: |
           mkdir -p docs/build/html/badges
-          python .github/scripts/surface_coverage.py --json docs/build/html/badges/surface.json
+          python .github/scripts/api_contract_coverage.py \
+            --check-manifest test/api-contracts.json --require-100 \
+            --json docs/build/html/badges/surface.json
+          python .github/scripts/coverage_obligations.py \
+            --receipt test/gpu-proof.json \
+            --json docs/build/html/badges/obligations.json
           python .github/scripts/receipt_badge.py docs/build/html/badges/receipt.json
 
       - name: Setup Pages

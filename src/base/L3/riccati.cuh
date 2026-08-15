@@ -12,8 +12,9 @@
 /**
  * @brief Scratch size in bytes for `riccati_gain` `s_scratch`.
  *
- * Holds the NU×NU control-Hessian `S = R + BᵀPB` plus the larger of the two
- * congruence/bilinear products (`P·B` is NX×NU, `P·A` is NX×NX).
+ * Holds the NU×NU control-Hessian `S = R + BᵀPB` and `P·B` (NX×NU).
+ * Because `P` is symmetric, the coupling is formed as `(P·B)ᵀA`, so no
+ * NX×NX `P·A` intermediate is needed.
  *
  * @tparam T   Element type.
  * @tparam NX  State dimension.
@@ -22,7 +23,7 @@
  */
 template <typename T, uint32_t NX, uint32_t NU>
 __host__ __device__ constexpr std::size_t riccati_scratch_bytes() {
-    return (NU*NU + NX * (NX >= NU ? NX : NU)) * sizeof(T);
+    return (NU*NU + NX*NU) * sizeof(T);
 }
 
 /**
@@ -62,14 +63,15 @@ __device__ void riccati_gain(const T* P, const T* A, const T* B, const T* R,
     for (uint32_t i = rank; i < NU*NU; i += size) S[i] = R[i];   // S = R
     __syncthreads();
 
-    // S += Bᵀ·P·B  (symmetric congruence, accumulate onto S=R)
+    // S += Bᵀ·P·B. The congruence leaves PB in scr.
     congruence_sym<T, NX, NU, /*ACCUMULATE=*/true>(static_cast<T>(1), B, P, static_cast<T>(1), S, scr);
-    // G = Bᵀ·P·A  -> Kgain  (general bilinear, NU x NX)
-    bilinear<T, NX, NU, NX>(static_cast<T>(1), B, P, A, static_cast<T>(0), Kgain, scr);
+    // P is symmetric: Bᵀ·P·A = (P·B)ᵀ·A. Reuse PB instead of forming P·A.
+    congruence_detail::xtY_impl<T, NX, NU, NX, false, false>(
+        rank, size, static_cast<T>(1), scr, A, static_cast<T>(0), Kgain);
+    __syncthreads();
     // solve S·K = G in place on Kgain (NX right-hand sides); checked + optional shift
-    posv<T, NU, NX, REGULARIZE, /*CHECK=*/true>(S, Kgain, rho, s_fail);
-
-    if constexpr (TRAILING_SYNC) __syncthreads();
+    posv<T, NU, NX, REGULARIZE, /*CHECK=*/true, /*REG_DIAG=*/false, TRAILING_SYNC>(
+        S, Kgain, rho, s_fail);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -91,7 +93,8 @@ namespace warp {
      * @tparam NX  State dimension (`P`,`A` are NX×NX, `B` is NX×NU).
      * @tparam NU  Control dimension (`R` is NU×NU, `K` is NU×NX). Assumes `NX >= NU`.
      * @tparam REGULARIZE  If true, add `rho·I` to `S` before the solve (default false).
-     * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
+     * @tparam TRAILING_SYNC  Compatibility flag; currently a no-op because the
+     *                         composed warp solver always ends at a sync boundary.
      * @param P,A,B,R  Inputs (column-major; see the block overload).
      * @param Kgain  Out gain `K` (NU×NX, column-major).
      * @param s_scratch Shared scratch of `riccati_scratch_bytes<T,NX,NU>()` bytes (per warp).
@@ -111,10 +114,12 @@ namespace warp {
         __syncwarp();
 
         congruence_sym<T, NX, NU, /*ACCUMULATE=*/true>(static_cast<T>(1), B, P, static_cast<T>(1), S, scr);
-        bilinear<T, NX, NU, NX>(static_cast<T>(1), B, P, A, static_cast<T>(0), Kgain, scr);
+        congruence_detail::xtY_impl<T, NX, NU, NX, false, false>(
+            lane, 32u, static_cast<T>(1), scr, A, static_cast<T>(0), Kgain);
+        __syncwarp();
         posv<T, NU, NX, REGULARIZE, /*CHECK=*/true>(S, Kgain, rho, s_fail);
-
-        if constexpr (TRAILING_SYNC) __syncwarp();
+        // warp::posv already ends at a warp synchronization boundary.
+        (void)TRAILING_SYNC;
     }
 }
 
@@ -169,10 +174,11 @@ namespace thread {
 
         for (uint32_t i = 0; i < NU*NU; ++i) S[i] = R[i];   // S = R
 
-        // S += Bᵀ·P·B  (symmetric congruence, accumulate onto S=R)
+        // S += Bᵀ·P·B; the congruence leaves PB in scr.
         thread::congruence_sym<T, NX, NU, /*ACCUMULATE=*/true>(static_cast<T>(1), B, P, static_cast<T>(1), S, scr);
-        // G = Bᵀ·P·A  -> Kgain  (general bilinear, NU x NX)
-        thread::bilinear<T, NX, NU, NX>(static_cast<T>(1), B, P, A, static_cast<T>(0), Kgain, scr);
+        // P is symmetric: reuse PB and form G=(PB)ᵀA.
+        congruence_detail::xtY_impl<T, NX, NU, NX, false, false>(
+            0u, 1u, static_cast<T>(1), scr, A, static_cast<T>(0), Kgain);
         // solve S·K = G in place on Kgain: the flagged posv path, one thread —
         // optional rho·I shift, checked factor, then NX forward/back solves.
         if constexpr (REGULARIZE) {

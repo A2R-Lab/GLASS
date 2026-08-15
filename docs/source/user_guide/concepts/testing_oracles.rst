@@ -1,15 +1,27 @@
 Testing, oracles & receipts
 ===========================
 
-Every public entry point in GLASS (100% of the doc-commented API surface — the
-number on the coverage badge) is exercised by a GPU-run test, and every push to
-``main`` that touches library or test sources carries a **signed hardware
-receipt** (`pytest-gpu-proof <https://pypi.org/project/pytest-gpu-proof/>`_):
-the full suite ran on a physical GPU at that exact source tree, attested and
-re-verified by CI. This page states *how* each family is validated — which
-independent reference it is compared against, and where the reference is
-instead a mathematical identity or a pinned contract — so you can tell at a
-glance what "tested" means for the op you care about.
+Every Doxygen-documented public overload is compile-covered by a CUDA test TU
+(the 100% overload badge), while each behavioral family is exercised on a GPU
+against the obligations below. Every push to ``main`` that touches library or
+test sources carries a **signed hardware receipt**
+(`pytest-gpu-proof <https://pypi.org/project/pytest-gpu-proof/>`_): the selected
+suite ran on a physical GPU at that source tree, attested and re-verified by CI.
+This page states *how* each family is validated so the compile-coverage number
+is never confused with numerical depth.
+
+Coverage model
+--------------
+
+``test/api-contracts.json`` is generated from Doxygen XML. Its stable unit is a
+public function overload—not a name—matched to a compatible call in
+``test/cuda`` or an example. The maintained
+``test/api-coverage-policy.json`` lists internal implementation symbols excluded
+from the supported surface, with a reason for every exclusion. Compile-only
+canary TUs close overload-shape gaps; they do not claim numerical correctness.
+Numerical correctness, dtype/layout coverage, conditioning, thread-count
+invariance, and cross-tier agreement are separate required obligations backed
+by the GPU receipt.
 
 Validation classes
 ------------------
@@ -140,6 +152,18 @@ These hold regardless of oracle class and are what make the suite hard to fool:
 - **No-read guarantees** — ``beta = 0`` paths run against NaN-poisoned
   buffers; triangular ops run with NaN-poisoned dead triangles, so any stray
   read fails loudly.
+
+Receipt shards
+--------------
+
+``test/run_gpu_proof.sh`` emits eight independently fingerprinted shards:
+``vector``, ``dense``, ``factor``, ``tiers``, ``solvers``, ``robotics``,
+``mathdx``, and ``integration``. A local change reruns only the affected
+families; untouched shards may carry forward only when their source-and-test
+fingerprint matches and their attested commit is an ancestor. Release runs do
+not carry results: all eight shards rerun at the release commit. The merged
+receipt records each shard's test count and duration, which makes future shard
+rebalancing evidence-based.
 
 What is *not* oracle-tested
 ---------------------------
