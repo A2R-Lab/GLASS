@@ -390,19 +390,33 @@ static void bench_size(Op op, int reps) {
     cudaMalloc(&A, mm*sizeof(T)); cudaMalloc(&B, mm*sizeof(T)); cudaMalloc(&C, mm*sizeof(T));
     cudaMalloc(&x, vv*sizeof(T)); cudaMalloc(&y, vv*sizeof(T));
     // diagonally-dominant A (valid for chol/trsv/posv); broadcast one tile to all problems.
+    // PRISTINE MIRRORS (audit 2026-08-15): factor ops refactor A in place and
+    // dot/gemv write into x/y, so inputs drift across reps — identical code
+    // timed ~13% apart purely by contender ORDER before this fix. reset()
+    // restores the pristine bytes before EVERY timed cell (outside the timed
+    // region), so each contender measures the same input trajectory.
+    T *A0, *x0, *y0;
+    cudaMalloc(&A0, mm*sizeof(T)); cudaMalloc(&x0, vv*sizeof(T)); cudaMalloc(&y0, vv*sizeof(T));
     T* hA = (T*)malloc((size_t)N*N*sizeof(T));
     for (int i=0;i<N;i++) for (int j=0;j<N;j++) hA[i+j*N] = (i==j)?(T)(N+2):(T)(0.1*((i+2*j)%5));
-    cudaMemcpy(A, hA, (size_t)N*N*sizeof(T), cudaMemcpyHostToDevice);
-    for (size_t p=1;p<(size_t)NPROB;p++) cudaMemcpy(A+p*N*N, A, (size_t)N*N*sizeof(T), cudaMemcpyDeviceToDevice);
+    cudaMemcpy(A0, hA, (size_t)N*N*sizeof(T), cudaMemcpyHostToDevice);
+    for (size_t p=1;p<(size_t)NPROB;p++) cudaMemcpy(A0+p*N*N, A0, (size_t)N*N*sizeof(T), cudaMemcpyDeviceToDevice);
     cudaMemset(B, 1, mm*sizeof(T)); cudaMemset(C, 0, mm*sizeof(T));
-    cudaMemset(x, 1, vv*sizeof(T)); cudaMemset(y, 1, vv*sizeof(T));
+    cudaMemset(x0, 1, vv*sizeof(T)); cudaMemset(y0, 1, vv*sizeof(T));
     free(hA);
+    auto reset = [&]{
+        cudaMemcpy(A, A0, mm*sizeof(T), cudaMemcpyDeviceToDevice);
+        cudaMemcpy(x, x0, vv*sizeof(T), cudaMemcpyDeviceToDevice);
+        cudaMemcpy(y, y0, vv*sizeof(T), cudaMemcpyDeviceToDevice);
+        cudaDeviceSynchronize();
+    };
 
     double best_block=1e30, best_warp=1e30, best_thread=1e30;
     int best_tb=0, best_wpb=0, best_tpb=0;
     g_row_spread = 0.0;
     printf("%-5s N=%-3d | BLOCK", op_name(op), N);
     for (int TB : {32, 64, 128, 256}) {
+        reset();
         double ns = time_ns_per_prob([&]{ launch_block<T,N>(op, TB, A, B, C, x, y); }, reps);
         if (ns < 1e29) printf("  tb%d=%.4f", TB, ns); else printf("  tb%d=FAIL", TB);
         if (ns < best_block) { best_block = ns; best_tb = TB; }
@@ -410,6 +424,7 @@ static void bench_size(Op op, int reps) {
     printf("  | WARP");
     for (int WPB : {1, 2, 4, 8, 16, 32}) {
         if (WPB > NPROB) break;
+        reset();
         double ns = time_ns_per_prob([&]{ launch_warp<T,N>(op, WPB, A, B, C, x, y); }, reps);
         if (ns < 1e29) printf("  w%d=%.4f", WPB, ns); else printf("  w%d=FAIL", WPB);
         if (ns < best_warp) { best_warp = ns; best_wpb = WPB; }
@@ -417,6 +432,7 @@ static void bench_size(Op op, int reps) {
     if constexpr (thread_ok<T,N>()) {
         printf("  | THREAD");
         for (int TPB : {32, 64, 128, 256}) {
+            reset();
             double ns = time_ns_per_prob([&]{ launch_thread<T,N>(op, TPB, A, B, C, x, y); }, reps);
             if (ns < 1e29) printf("  t%d=%.4f", TPB, ns); else printf("  t%d=FAIL", TPB);
             if (ns < best_thread) { best_thread = ns; best_tpb = TPB; }
@@ -428,10 +444,12 @@ static void bench_size(Op op, int reps) {
     double best_auto = 1e30; int best_atb = 0;
     printf("  | AUTO");
     for (int TB : {32, 64, 128, 256}) {
+        reset();
         double ns = time_ns_per_prob([&]{ launch_auto<T,N>(op, TB, A, B, C, x, y); }, reps);
         if (ns < 1e29) printf("  a%d=%.4f", TB, ns); else printf("  a%d=FAIL", TB);
         if (ns < best_auto) { best_auto = ns; best_atb = TB; }
     }
+    reset();
     double nv = nv_dispatch<T,N>(op, A, B, C, x, y, reps);
 
     // 4-way winner. thread/warp/block are all dependency-free pure SIMT, so they
@@ -460,6 +478,7 @@ static void bench_size(Op op, int reps) {
     if (best_auto < 1e29) printf("  auto a%d=%.4f", best_atb, best_auto);
     printf("  spread<=%.1f%%  -> %s (%.2fx)\n", g_row_spread, winner, margin);
     cudaFree(A); cudaFree(B); cudaFree(C); cudaFree(x); cudaFree(y);
+    cudaFree(A0); cudaFree(x0); cudaFree(y0);
 }
 
 template<typename T> static void run_all(int reps) {
