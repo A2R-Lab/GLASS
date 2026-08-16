@@ -26,6 +26,10 @@ All notable changes to GLASS will be documented here. The format follows
   lazy test-binary compilation; development reruns only affected shards, and
   releases still require a fresh all-shard receipt (now enforced by a
   no-carry verify policy in `release.sh`).
+- Layout compatibility of `pcg`/`bdsv` (bit-identical `[L|D|R]` strips +
+  padded vectors) is now DECLARED obligation #20 with a receipt-gated
+  same-system-both-solvers test, and the tuning docs gain a solver-level
+  cutoff calibration recipe (probe → fit → persist).
 - `pcg` — and the whole block-scope `_fast` reduction family — is now legal
   at ANY thread count: the warp shuffle folds bound their sync mask to the
   active lanes of a ragged last warp (previously a latent full-mask UB that

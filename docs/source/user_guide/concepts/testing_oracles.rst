@@ -3,7 +3,7 @@ Testing, oracles & receipts
 
 Every Doxygen-documented public overload is compile-covered by a CUDA test TU
 (the 100% overload badge — an *overload-manifest* metric, not line or semantic
-coverage), while each behavioral family is exercised on a GPU against the 19
+coverage), while each behavioral family is exercised on a GPU against the 20
 declared obligations below. Every push to ``main`` that touches library or
 test sources carries a **signed receipt**
 (`pytest-gpu-proof <https://pypi.org/project/pytest-gpu-proof/>`_): a keyholder
@@ -22,7 +22,7 @@ public function overload—not a name—matched to a compatible call in
 from the supported surface, with a reason for every exclusion. Compile-only
 canary TUs close overload-shape gaps; they do not claim numerical correctness.
 Numerical correctness, dtype/layout coverage, conditioning, thread-count
-invariance, and cross-tier agreement are separate required obligations — 19
+invariance, and cross-tier agreement are separate required obligations — 20
 declared in ``test/coverage-obligations.json``, each checked for passing
 evidence in the signed receipt by ``coverage_obligations.py``.
 

@@ -82,6 +82,10 @@ Sizing and launch:
   a ragged last warp); multiples of 32 are the fast path. Like ``dot_fast``,
   results vary with the launch's thread count — each count is individually
   deterministic.
+* ``pcg`` and the direct ``bdsv`` consume **bit-identical** strips and padded
+  vectors — a declared, receipt-checked obligation — so a per-solve
+  iterative↔direct switch is one mode flag. See the solver-level calibration
+  recipe in :doc:`tuning` for choosing the cutoff on your workload.
 * Seed ``x`` with an initial guess (zeros are fine); the solution is written back
   into ``x`` and the iteration count into ``iters``.
 

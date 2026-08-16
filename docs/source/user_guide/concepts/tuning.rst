@@ -303,6 +303,38 @@ Debugging dispatch decisions
 These are ``__host__ __device__`` so you can call them from ``main`` for
 build-time confirmation or drop one into a kernel for runtime diagnostics.
 
+Solver-level calibration: the cutoff recipe
+-------------------------------------------
+
+The measured-selection flow extends one level above operations, to *solver*
+choice — and here the library deliberately ships a contract and a recipe, not
+a policy. ``glass::pcg`` (iterative, warm-start friendly) and ``glass::bdsv``
+(direct, flat cost) consume **bit-identical** ``[L|D|R]`` strips and padded
+vectors; that layout compatibility is a declared behavioral obligation
+(``linsys_layout_compatibility`` in ``test/coverage-obligations.json``),
+checked by the signed receipt, so switching solvers per solve costs the caller
+nothing but a mode flag. Which solver to run — and where the cutoff sits — is
+workload evidence the application owns, because the useful switching signals
+(a warm-start quality estimate, a disturbance flag, an iteration budget) live
+above the algebra layer.
+
+The recipe mirrors ``tune.py``:
+
+#. **Probe** — run your real workload once per candidate policy on a quiet
+   GPU, recording per-solve wall times (not just means: keep the traces, the
+   interesting differences are in the tail percentiles).
+#. **Fit** — pick the cutoff that optimizes the statistic your deployment
+   actually bounds (p99/max for deadlines, mean for throughput). Cutoff bands
+   are usually wide; prefer the band center over the razor edge.
+#. **Persist** — ship the decision as a default in your configuration with
+   the capture it came from, and re-measure per problem class and per GPU,
+   exactly as GLASS re-measures its dispatch tables per architecture.
+
+A worked end-to-end example lives downstream: GATO's ``linsys="auto"``
+controller switches per solve on prediction error, with a probe/fit/persist
+autotune script (``tools/autotune_linsys.py``) calibrating the threshold per
+robot — a few application lines, enabled by the layout contract above.
+
 Contributing measurements upstream
 ----------------------------------
 

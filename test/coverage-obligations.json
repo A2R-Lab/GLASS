@@ -1,25 +1,199 @@
 {
-  "schema": 1,
-  "rule": "Every evidence pattern must match at least one collected test; with a receipt, every match used as evidence must have passed in the declared shard.",
-  "obligations": [
-    {"id": "vector_external_oracles", "shard": "vector", "description": "L1 arithmetic and reductions match NumPy-style references.", "evidence": ["test/test_l1.py::test_axpy[*", "test/test_l1.py::test_dot[*", "test/test_l1.py::test_prefix_sum_*" ]},
-    {"id": "vector_thread_invariance", "shard": "vector", "description": "L1 results are invariant across ragged, warp-boundary, and multi-warp block sizes.", "evidence": ["test/test_l1.py::test_axpy_full_sweep*", "test/test_l1.py::test_reduction_full_sweep*" ]},
-    {"id": "dense_external_oracles", "shard": "dense", "description": "L2/L3 products match independent host references.", "evidence": ["test/test_l2.py::test_gemv[*", "test/test_l3.py::test_gemm_rt[*" ]},
-    {"id": "dense_layouts", "shard": "dense", "description": "Transpose, row-major, rectangular, and strided contracts are exercised.", "evidence": ["test/test_l2.py::test_gemv_rowmajor*", "test/test_l3.py::test_gemm_rowmajor_is_transpose*", "test/test_l3.py::test_gemm_strided*" ]},
-    {"id": "beta_zero_no_read", "shard": "dense", "description": "beta=0 destinations are NaN-poisoned to enforce the no-read contract.", "evidence": ["test/test_l2.py::test_gemv_beta0_poisoned_y_no_read*", "test/test_l3.py::test_gemm_rt_beta0_no_read*" ]},
-    {"id": "factor_reconstruction", "shard": "factor", "description": "LU, LDLT, and Cholesky factors reconstruct their inputs.", "evidence": ["test/test_getrf.py::test_getrf_reconstruction*", "test/test_ldlt.py::test_ldlt_factor*", "test/test_factor_check.py::test_chol_check_pd*" ]},
-    {"id": "solve_residuals_conditioning", "shard": "mixed", "description": "Dense solves use independent solutions/backward residuals across scale and conditioning.", "evidence": ["test/test_posv.py::test_posv_scale_conditioning*", "test/test_l3.py::test_trsm_conditioning*", "test/test_getrf.py::test_gesv[*" ]},
-    {"id": "eigensolver_oracles", "shard": "factor", "description": "syev/eigh and PSD projection match NumPy and structural identities.", "evidence": ["test/test_syev.py::test_syev_vs_numpy*", "test/test_syev.py::test_eigh_oracle_parity*", "test/test_syev.py::test_psd_project*" ]},
-    {"id": "base_f64", "shard": "factor", "description": "Base and warp contracts are numerically exercised in double precision.", "evidence": ["test/test_base_f64.py::test_base_f64_correctness*", "test/test_base_f64.py::test_base_f64_thread_invariance*" ]},
-    {"id": "tier_and_bare_agreement", "shard": "tiers", "description": "Thread/warp/block tiers and the bare measured-default face agree on shared contracts.", "evidence": ["test/test_thread.py::test_gemm*", "test/test_warp.py::test_gemm*", "test/test_dispatch.py::test_bare_face_matches_block*" ]},
-    {"id": "structured_solvers", "shard": "solvers", "description": "PCG, block-banded solvers, and box QP match dense/SciPy references and invariance checks.", "evidence": ["test/test_pcg.py::test_pcg_solve*", "test/test_qp.py::test_coupled_vs_scipy*", "test/test_qp.py::test_thread_invariance*" ]},
-    {"id": "robotics_external_oracles", "shard": "robotics", "description": "SO(3)/SE(3) operations agree with SciPy/Pinocchio references.", "evidence": ["test/test_robotics.py::test_se3_retract_vs_pinocchio*", "test/test_robotics.py::test_so3_maps_vs_pinocchio*", "test/test_robotics.py::test_quat_exp_oracle*" ]},
-    {"id": "robotics_finite_differences", "shard": "robotics", "description": "SE(3) Jacobians and Hessians agree with finite differences.", "evidence": ["test/test_robotics.py::test_se3_jacobians_fd*", "test/test_robotics.py::test_se3_hessian_fd*" ]},
-    {"id": "robotics_spatial_geometry", "shard": "robotics", "description": "Spatial algebra, projections, geometry, and estimation kits have independent or identity oracles.", "evidence": ["test/test_robotics.py::test_motion_force_cross_oracle*", "test/test_robotics.py::test_soc_project_oracle*", "test/test_robotics.py::test_sphere_sphere*", "test/test_robotics.py::test_svd3_oracle*" ]},
-    {"id": "mathdx_core", "shard": "mathdx", "description": "cuBLASDx/cuSOLVERDx paths match independent references in f32 and f64.", "evidence": ["test/test_nvidia_dispatch.py::test_dispatch_op*", "test/test_nvidia_f64.py::test_posv_f64*", "test/test_nvidia_f64.py::test_gels*" ]},
-    {"id": "nvidia_batched", "shard": "mathdx", "description": "Nvidia batched, strided, indexed, transpose, and atomic variants are exercised.", "evidence": ["test/test_nvidia_dispatch.py::test_gemm_batched_1d_colmajor*", "test/test_nvidia_dispatch.py::test_gemm_strided_batched_1d_padded*", "test/test_nvidia_dispatch.py::test_gemm_batched_indexed_atomic*" ]},
-    {"id": "trailing_sync", "shard": "integration", "description": "TRAILING_SYNC true/false variants compile and agree numerically.", "evidence": ["test/test_trailing_sync.py::test_trailing_sync_surface*", "test/test_trailing_sync.py::test_trailing_sync_cublasdx_gemm*" ]},
-    {"id": "installed_examples", "shard": "integration", "description": "All supported examples compile and execute as integration canaries.", "evidence": ["test/test_examples.py::test_simt_example*", "test/test_examples.py::test_nvidia_example*" ]},
-    {"id": "overload_compile_canaries", "shard": "mixed", "description": "All overload-only gaps have dedicated nvcc instantiation canaries.", "evidence": ["test/test_api_vector.py::test_vector_overload_compile_canary", "test/test_api_dense.py::test_dense_overload_compile_canary", "test/test_api_factor.py::test_factor_overload_compile_canary", "test/test_api_robotics.py::test_robotics_overload_compile_canary" ]}
-  ]
+ "schema": 1,
+ "rule": "Every evidence pattern must match at least one collected test; with a receipt, every match used as evidence must have passed in the declared shard.",
+ "obligations": [
+  {
+   "id": "vector_external_oracles",
+   "shard": "vector",
+   "description": "L1 arithmetic and reductions match NumPy-style references.",
+   "evidence": [
+    "test/test_l1.py::test_axpy[*",
+    "test/test_l1.py::test_dot[*",
+    "test/test_l1.py::test_prefix_sum_*"
+   ]
+  },
+  {
+   "id": "vector_thread_invariance",
+   "shard": "vector",
+   "description": "L1 results are invariant across ragged, warp-boundary, and multi-warp block sizes.",
+   "evidence": [
+    "test/test_l1.py::test_axpy_full_sweep*",
+    "test/test_l1.py::test_reduction_full_sweep*"
+   ]
+  },
+  {
+   "id": "dense_external_oracles",
+   "shard": "dense",
+   "description": "L2/L3 products match independent host references.",
+   "evidence": [
+    "test/test_l2.py::test_gemv[*",
+    "test/test_l3.py::test_gemm_rt[*"
+   ]
+  },
+  {
+   "id": "dense_layouts",
+   "shard": "dense",
+   "description": "Transpose, row-major, rectangular, and strided contracts are exercised.",
+   "evidence": [
+    "test/test_l2.py::test_gemv_rowmajor*",
+    "test/test_l3.py::test_gemm_rowmajor_is_transpose*",
+    "test/test_l3.py::test_gemm_strided*"
+   ]
+  },
+  {
+   "id": "beta_zero_no_read",
+   "shard": "dense",
+   "description": "beta=0 destinations are NaN-poisoned to enforce the no-read contract.",
+   "evidence": [
+    "test/test_l2.py::test_gemv_beta0_poisoned_y_no_read*",
+    "test/test_l3.py::test_gemm_rt_beta0_no_read*"
+   ]
+  },
+  {
+   "id": "factor_reconstruction",
+   "shard": "factor",
+   "description": "LU, LDLT, and Cholesky factors reconstruct their inputs.",
+   "evidence": [
+    "test/test_getrf.py::test_getrf_reconstruction*",
+    "test/test_ldlt.py::test_ldlt_factor*",
+    "test/test_factor_check.py::test_chol_check_pd*"
+   ]
+  },
+  {
+   "id": "solve_residuals_conditioning",
+   "shard": "mixed",
+   "description": "Dense solves use independent solutions/backward residuals across scale and conditioning.",
+   "evidence": [
+    "test/test_posv.py::test_posv_scale_conditioning*",
+    "test/test_l3.py::test_trsm_conditioning*",
+    "test/test_getrf.py::test_gesv[*"
+   ]
+  },
+  {
+   "id": "eigensolver_oracles",
+   "shard": "factor",
+   "description": "syev/eigh and PSD projection match NumPy and structural identities.",
+   "evidence": [
+    "test/test_syev.py::test_syev_vs_numpy*",
+    "test/test_syev.py::test_eigh_oracle_parity*",
+    "test/test_syev.py::test_psd_project*"
+   ]
+  },
+  {
+   "id": "base_f64",
+   "shard": "factor",
+   "description": "Base and warp contracts are numerically exercised in double precision.",
+   "evidence": [
+    "test/test_base_f64.py::test_base_f64_correctness*",
+    "test/test_base_f64.py::test_base_f64_thread_invariance*"
+   ]
+  },
+  {
+   "id": "tier_and_bare_agreement",
+   "shard": "tiers",
+   "description": "Thread/warp/block tiers and the bare measured-default face agree on shared contracts.",
+   "evidence": [
+    "test/test_thread.py::test_gemm*",
+    "test/test_warp.py::test_gemm*",
+    "test/test_dispatch.py::test_bare_face_matches_block*"
+   ]
+  },
+  {
+   "id": "structured_solvers",
+   "shard": "solvers",
+   "description": "PCG, block-banded solvers, and box QP match dense/SciPy references and invariance checks.",
+   "evidence": [
+    "test/test_pcg.py::test_pcg_solve*",
+    "test/test_qp.py::test_coupled_vs_scipy*",
+    "test/test_qp.py::test_thread_invariance*"
+   ]
+  },
+  {
+   "id": "robotics_external_oracles",
+   "shard": "robotics",
+   "description": "SO(3)/SE(3) operations agree with SciPy/Pinocchio references.",
+   "evidence": [
+    "test/test_robotics.py::test_se3_retract_vs_pinocchio*",
+    "test/test_robotics.py::test_so3_maps_vs_pinocchio*",
+    "test/test_robotics.py::test_quat_exp_oracle*"
+   ]
+  },
+  {
+   "id": "robotics_finite_differences",
+   "shard": "robotics",
+   "description": "SE(3) Jacobians and Hessians agree with finite differences.",
+   "evidence": [
+    "test/test_robotics.py::test_se3_jacobians_fd*",
+    "test/test_robotics.py::test_se3_hessian_fd*"
+   ]
+  },
+  {
+   "id": "robotics_spatial_geometry",
+   "shard": "robotics",
+   "description": "Spatial algebra, projections, geometry, and estimation kits have independent or identity oracles.",
+   "evidence": [
+    "test/test_robotics.py::test_motion_force_cross_oracle*",
+    "test/test_robotics.py::test_soc_project_oracle*",
+    "test/test_robotics.py::test_sphere_sphere*",
+    "test/test_robotics.py::test_svd3_oracle*"
+   ]
+  },
+  {
+   "id": "mathdx_core",
+   "shard": "mathdx",
+   "description": "cuBLASDx/cuSOLVERDx paths match independent references in f32 and f64.",
+   "evidence": [
+    "test/test_nvidia_dispatch.py::test_dispatch_op*",
+    "test/test_nvidia_f64.py::test_posv_f64*",
+    "test/test_nvidia_f64.py::test_gels*"
+   ]
+  },
+  {
+   "id": "nvidia_batched",
+   "shard": "mathdx",
+   "description": "Nvidia batched, strided, indexed, transpose, and atomic variants are exercised.",
+   "evidence": [
+    "test/test_nvidia_dispatch.py::test_gemm_batched_1d_colmajor*",
+    "test/test_nvidia_dispatch.py::test_gemm_strided_batched_1d_padded*",
+    "test/test_nvidia_dispatch.py::test_gemm_batched_indexed_atomic*"
+   ]
+  },
+  {
+   "id": "trailing_sync",
+   "shard": "integration",
+   "description": "TRAILING_SYNC true/false variants compile and agree numerically.",
+   "evidence": [
+    "test/test_trailing_sync.py::test_trailing_sync_surface*",
+    "test/test_trailing_sync.py::test_trailing_sync_cublasdx_gemm*"
+   ]
+  },
+  {
+   "id": "installed_examples",
+   "shard": "integration",
+   "description": "All supported examples compile and execute as integration canaries.",
+   "evidence": [
+    "test/test_examples.py::test_simt_example*",
+    "test/test_examples.py::test_nvidia_example*"
+   ]
+  },
+  {
+   "id": "overload_compile_canaries",
+   "shard": "mixed",
+   "description": "All overload-only gaps have dedicated nvcc instantiation canaries.",
+   "evidence": [
+    "test/test_api_vector.py::test_vector_overload_compile_canary",
+    "test/test_api_dense.py::test_dense_overload_compile_canary",
+    "test/test_api_factor.py::test_factor_overload_compile_canary",
+    "test/test_api_robotics.py::test_robotics_overload_compile_canary"
+   ]
+  },
+  {
+   "id": "linsys_layout_compatibility",
+   "shard": "solvers",
+   "description": "pcg and bdsv solve the same system from bit-identical [L|D|R] strips and padded vectors (the contract enabling per-solve iterative<->direct hybrids downstream).",
+   "evidence": [
+    "test/test_pcg.py::test_pcg_bdsv_shared_layout_contract*"
+   ]
+  }
+ ]
 }

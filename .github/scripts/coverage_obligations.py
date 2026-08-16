@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the 19 declared behavioral obligations (test/coverage-obligations.json)
+"""Check the 20 declared behavioral obligations (test/coverage-obligations.json)
 have passing evidence in collection and the signed receipt. This is an
 obligation-presence check, not line or semantic coverage."""
 

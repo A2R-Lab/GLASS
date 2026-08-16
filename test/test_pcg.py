@@ -74,6 +74,34 @@ def test_pcg_solve(bins, SS, KP, threads):
     assert 0 < iters <= 100
 
 
+@pytest.mark.parametrize("SS,KP", [(2, 3), (6, 4)])
+def test_pcg_bdsv_shared_layout_contract(bins, SS, KP):
+    """DECLARED OBLIGATION (linsys_layout_compatibility): glass::pcg and
+    glass::bdsv consume bit-identical [L|D|R] strips and padded vectors. The
+    SAME bytes are fed to both solvers and both must reach the dense oracle
+    (and each other) — this contract is what makes a per-solve
+    iterative<->direct hybrid a mode flag for consumers (GATO's linsys=auto),
+    so it must never drift silently."""
+    Sd, band, pinv = make_spd_banded(SS, KP, seed=SS * 7 + KP)
+    bvec = np.random.default_rng(41 + SS + KP).standard_normal(SS * KP)
+    xref = np.linalg.solve(Sd, bvec)
+    band32 = band.ravel().astype(np.float32)
+    b_pad = to_padded(bvec, SS, KP).astype(np.float32)
+
+    out_pcg = run_op(bins["pcg"], "solve", "simple",
+                     [SS, KP, 64, 200, 1e-7, 1e-12],
+                     [band32.copy(), pinv.ravel().astype(np.float32), b_pad.copy()])
+    x_pcg = from_padded(out_pcg[0], SS, KP)
+
+    out_dir = run_op(bins["bdsv"], "bdsv", "simple", args=[SS, KP, 64],
+                     inputs=[band32.copy(), b_pad.copy()])
+    x_dir = from_padded(out_dir, SS, KP)
+
+    np.testing.assert_allclose(x_pcg, xref, rtol=1e-2, atol=1e-3)
+    np.testing.assert_allclose(x_dir, xref, rtol=1e-3, atol=1e-3)
+    np.testing.assert_allclose(x_pcg, x_dir, rtol=1e-2, atol=1e-3)
+
+
 def test_pcg_warm_start_early_out(bins):
     """Seeding the exact solution should converge in 0 iterations."""
     SS, KP = 2, 3
