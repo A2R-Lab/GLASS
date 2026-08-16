@@ -3,10 +3,14 @@
 //   BLOCK  — one block per problem,   <<<NPROB, TB>>>, TB ∈ {32,64,128,256} (pure-SIMT glass::block::)
 //   NVIDIA — cuBLASDx/cuSOLVERDx,     <<<NPROB, nv_threads(N)>>>, descriptor-fixed (f32 to N128; f64 to N64)
 //   AUTO   — bare glass::op at the BLOCK launch shapes: the shipped measured-default
-//            face (constexpr device-level body dispatch via -DSMS). FIGURE-ONLY —
+//            face (constexpr device-level body dispatch via -DSMS). AUDIT-ONLY —
 //            the AUTO segment/token is ignored by tune.py's table parsers and never
-//            feeds a verdict; it exists to show how close the shipped default face
-//            tracks the best per-cell body.
+//            feeds a verdict or a plotted figure line (a line invites misreading vs
+//            the warp/thread launch-packing tiers — 08-16 ruling). It validates that
+//            the shipped face tracks the best block-contract body (reported as a
+//            prose stat by the paper's make_figs.py) and doubles as a harness canary:
+//            identical-code AUTO-vs-BLOCK deltas exposed the 2026-08-15 in-place
+//            input-drift bias that the per-trial reset hook now prevents.
 //
 // Answers "where do the breakevens fall on the warp → SIMT-block → MathDx ladder?" across
 // problem size N and batch count NPROB (single-problem latency → GPU-saturating throughput).
@@ -444,8 +448,8 @@ static void bench_size(Op op, int reps) {
         }
     }
     // AUTO: the bare shipped-default face at the block launch shapes.
-    // FIGURE-ONLY — excluded from the winner verdict and ignored by tune.py's
-    // parsers (its summary token trails the ones _ROW_RE captures).
+    // AUDIT-ONLY (see header) — excluded from the winner verdict and ignored by
+    // tune.py's parsers (its summary token trails the ones _ROW_RE captures).
     double best_auto = 1e30; int best_atb = 0;
     printf("  | AUTO");
     for (int TB : {32, 64, 128, 256}) {
