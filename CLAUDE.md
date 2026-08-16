@@ -36,6 +36,12 @@ emit `glass::block::` from codegen and anywhere determinism is load-bearing.
 (dot/gemv/potrf/trsv/posv/eig3/softmax today) must ALSO be restated in
 `src/base/dispatch.cuh`, or the bare face silently loses it.
 
+⚠ MAINTENANCE: `test/api-contracts.json` line-pins every documented overload.
+Regenerate it (`api_contract_coverage.py --manifest`) as the LAST step of any
+change that touches a documented header — INCLUDING `tune.py` table regens of
+`glass-defaults.cuh` — or CI fails with "manifest stale". It is not under the
+receipt fingerprint, so the fix commit needs no new receipt.
+
 The naming rule is:
 
 - namespace = execution scope or backend;
