@@ -36,6 +36,14 @@ LEGS = {
     # name -> (source, extra nvcc flags, runtime args builder)
     "hostblas": ("bench_paper_hostblas.cu", ["-lcublas", "-lcusolver"]),
     "fusion":   ("bench_paper_fusion.cu",   ["-lcublas", "-lcusolver"]),
+    # opt-in (--legs eigen): Eigen-in-kernel thread-serial baseline; Eigen is a
+    # BENCH-ONLY header dep (apt libeigen3-dev, or EIGEN_ROOT). -diag-suppress
+    # 20012 quiets Eigen's known defaulted-function annotation warnings.
+    "eigen":    ("bench_eigen_ladder.cu",
+                 [f"-I{os.environ.get('EIGEN_ROOT', '/usr/include/eigen3')}",
+                  "-DEIGEN_DONT_VECTORIZE", "-DEIGEN_NO_DEBUG",
+                  "-DEIGEN_DEFAULT_DENSE_INDEX_TYPE=int",
+                  "-diag-suppress", "20012"]),
 }
 
 

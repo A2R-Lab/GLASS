@@ -52,6 +52,24 @@ This comparison is intentionally narrow: it selects the best of several GLASS
 launch configurations against a single default vendor API configuration. Do not
 summarize it as a universal "GLASS vs vendor" result.
 
+### New-baseline legs (2026-08-16, paper "other device-side alternatives")
+
+`--legs eigen` runs `bench_eigen_ladder.cu`: Eigen-in-kernel thread-serial
+baseline vs `glass::thread::` (identical operand staging — the delta isolates
+the math library) plus a `glass::block::` anchor; ops dot/gemv/gemm only and
+N ≤ 32 by design (Eigen device code has no cooperative path and essentially no
+device-side decompositions — that absence is the paper's point, disclosed in
+the harness header). Sweeps NPROB ∈ {64, 1024, 8192} internally; every
+(op, N, dtype) contender is cross-checked against a host double reference
+before any timed trial. Eigen is a BENCH-ONLY dependency (`libeigen3-dev`, or
+`EIGEN_ROOT`); it is never linked into the library or tests. The leg is
+opt-in: it does not run under the default `--legs`.
+
+Planned same-pattern legs (harnesses not yet authored): MAGMA batched columns
+for the hostblas comparison and a Kokkos Kernels TeamPolicy ladder — both
+bench-only with guarded deps, both correctness-cross-checked before timing;
+their installs are deferred to a free machine window.
+
 ## Jetson / Orin runbook (when the box lands)
 
 1. Clone + `python3 bench/paper_sweeps.py --build-only` — arch auto-detects
