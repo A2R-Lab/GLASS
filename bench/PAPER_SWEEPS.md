@@ -99,6 +99,15 @@ figures and prose numbers regenerate from (superseding the 2026-07-08 pair);
 the -O1-era 08-13/08-14 captures above remain archived as conservative
 validation runs only.
 
+Same-evening companions (all archived externally alongside the pair above):
+a 500-rep hostblas confirmation `paper_hostblas_20260815_173550.txt` (agrees
+with the 135938 primary within jitter — including the single-call latency
+lane), the robotics sweep `perf_robotics_paper_20260815_140911.txt` (drives
+the paper's robotics panel and tables; correctness-receipt fingerprint in its
+header), and the pinned ladder capture `mega_sweep_20260815_205919.txt`
+(drift-fixed v2 harness; source of the 2026-08-15 dispatch-table re-gate and
+the paper's ladder/heatmap figures — see `bench/RESULTS.md`).
+
 **Numerics finding (valid despite shared load — maxerr is deterministic):**
 the `vendor_tf32` CHECK column doubles as a tensor-core ENGAGEMENT detector.
 On CUDA 13.2 / sm_120, with TF32 allowed, cuBLAS still runs FP32-FFMA kernels

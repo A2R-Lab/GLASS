@@ -20,12 +20,15 @@ labor (2026-08-11 consolidation):
 
 ## ladder (mega sweep — thread/warp/block/nvidia)
 
-Captures: 3-way 2026-06-23, 4-way (thread tier) 2026-07-19, both quiet RTX
-5090/sm_120 (archived externally). The winners ARE the
-shipped `ideal_sm120` table; sm_87 (Jetson Orin, three power modes,
-byte-identical tables) landed 2026-08-03. Ladder analysis, thread-tier
-verdict tables, and figures live on the docs site; the winner-per-(op,N)
-table renders from `docs/source/_static/sweep_winners.txt`.
+The shipped `ideal_sm120` table was re-gated 2026-08-15 from the pinned quiet
+capture `mega_sweep_20260815_205919.txt` (archived externally), taken with the
+drift-fixed v2 harness (untimed per-trial input reset in `timing_common.cuh`);
+it is the cleanest capture recorded (40/396 rows jitter-flagged, each verified
+cell-by-cell at re-gate). Earlier captures (3-way 2026-06-23, 4-way thread
+tier 2026-07-19) are superseded for table generation. sm_87 (Jetson Orin,
+three power modes, byte-identical tables) landed 2026-08-03. Ladder analysis,
+thread-tier verdict tables, and figures live on the docs site; the
+winner-per-(op,N) table renders from `docs/source/_static/sweep_winners.txt`.
 
 ## blas2 (warp vs block for syrk/syr2k/ldlt/ldltsv/inv/trmv/ger)
 
