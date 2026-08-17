@@ -139,6 +139,17 @@ figures and prose numbers regenerate from (superseding the 2026-07-08 pair);
 the -O1-era 08-13/08-14 captures above remain archived as conservative
 validation runs only.
 
+Baseline-leg captures (2026-08-16/17, all archived externally): eigen
+`paper_eigen_20260816_171111.txt` (378/378 checks; parity vs glass::thread,
+block anchor 2--12x at N>=8 — the execution-model finding);
+magma `paper_hostblas_magma_20260817_005316.txt` (72/72 checks; MAGMA beats
+the vendor's batched routines 1.4--8.3x at robot sizes AND beats our block
+f64 factorizations at every batch — reported honestly in the paper);
+kokkos `paper_kokkos_20260817_011717.txt` (972 checks, with the
+glass_thread anchor; supersedes the same-night 002516 capture, which
+compared Kokkos' serial mode against the wrong GLASS tier for small-N
+trsv — archived for provenance only).
+
 Same-evening companions (all archived externally alongside the pair above):
 a 500-rep hostblas confirmation `paper_hostblas_20260815_173550.txt` (agrees
 with the 135938 primary within jitter — including the single-call latency

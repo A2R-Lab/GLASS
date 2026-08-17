@@ -251,6 +251,38 @@ __global__ void k_warp_potrf(T* A, int nprob) {
     if (w >= (size_t)nprob) return;
     glass::warp::potrf<T, N>(A + w*N*N);
 }
+// glass thread tier: one problem per thread, operands staged global ->
+// registers -> global in the ladder's per-problem-contiguous layout (the
+// layout tax is IN the timing, mirroring bench_mega_sweep's THREAD model).
+// Included because the shipped ladder picks route chol/posv f64 (and posv
+// f32) small-N cells to THIS tier — without it, host-batched factorization
+// baselines (vendor, MAGMA) would be compared against the wrong GLASS tier
+// exactly where they are strongest in f64.
+template <typename T, uint32_t N>
+__global__ void k_thread_gemm(const T* A, const T* B, T* C, int nprob) {
+    int p = blockIdx.x*blockDim.x + threadIdx.x; if (p >= nprob) return;
+    T a[N*N], b[N*N], c[N*N];
+    for (uint32_t i = 0; i < N*N; i++) { a[i] = A[(size_t)p*N*N+i]; b[i] = B[(size_t)p*N*N+i]; }
+    glass::thread::gemm<T,N,N,N>((T)1, a, b, c);
+    for (uint32_t i = 0; i < N*N; i++) C[(size_t)p*N*N+i] = c[i];
+}
+template <typename T, uint32_t N>
+__global__ void k_thread_potrf(T* A, int nprob) {
+    int p = blockIdx.x*blockDim.x + threadIdx.x; if (p >= nprob) return;
+    T a[N*N];
+    for (uint32_t i = 0; i < N*N; i++) a[i] = A[(size_t)p*N*N+i];
+    glass::thread::potrf<T,N>(a);
+    for (uint32_t i = 0; i < N*N; i++) A[(size_t)p*N*N+i] = a[i];
+}
+template <typename T, uint32_t N>
+__global__ void k_thread_posv(T* A, T* b, int nprob) {
+    int p = blockIdx.x*blockDim.x + threadIdx.x; if (p >= nprob) return;
+    T a[N*N], bv[N];
+    for (uint32_t i = 0; i < N*N; i++) a[i] = A[(size_t)p*N*N+i];
+    for (uint32_t i = 0; i < N; i++)   bv[i] = b[(size_t)p*N+i];
+    glass::thread::posv<T,N>(a, bv);
+    for (uint32_t i = 0; i < N; i++)   b[(size_t)p*N+i] = bv[i];
+}
 
 // ─── timing helpers ──────────────────────────────────────────────────────────
 static double elapsed_us(struct timespec a, struct timespec b) {
@@ -379,6 +411,9 @@ static void run_for_N(Handles H, const char* dt, bool do_thru, bool do_lat) {
         k_warp_gemm<T, N><<<1, dim3(32, B)>>>(dA, dB, dC, B); CK(cudaDeviceSynchronize());
         check_or_die("gemm", dt, N, "warp", upload_and_maxerr(dC, refC.data(), MM, false, N), tol);
         CK(cudaMemset(dC, 0, MM*B*sizeof(T)));
+        k_thread_gemm<T, N><<<1, B>>>(dA, dB, dC, B); CK(cudaDeviceSynchronize());
+        check_or_die("gemm", dt, N, "thread", upload_and_maxerr(dC, refC.data(), MM, false, N), tol);
+        CK(cudaMemset(dC, 0, MM*B*sizeof(T)));
         xgemm_sb(H.cb, N, (T)1, dA, MM, dB, MM, (T)0, dC, MM, B); CK(cudaDeviceSynchronize());
         check_or_die("gemm", dt, N, "vendor", upload_and_maxerr(dC, refC.data(), MM, false, N), tol);
         if (sizeof(T) == 4) {   // TF32 rounding cost — recorded, sanity-bounded only
@@ -392,12 +427,16 @@ static void run_for_N(Handles H, const char* dt, bool do_thru, bool do_lat) {
         check_or_die("potrf", dt, N, "block", upload_and_maxerr(dS, refL.data(), MM, true, N), tol);
         restoreS(); k_warp_potrf<T, N><<<1, dim3(32, B)>>>(dS, B); CK(cudaDeviceSynchronize());
         check_or_die("potrf", dt, N, "warp", upload_and_maxerr(dS, refL.data(), MM, true, N), tol);
+        restoreS(); k_thread_potrf<T, N><<<1, B>>>(dS, B); CK(cudaDeviceSynchronize());
+        check_or_die("potrf", dt, N, "thread", upload_and_maxerr(dS, refL.data(), MM, true, N), tol);
         restoreS(); xpotrf_batched(H.cs, N, dSp, dinfo, B); CK(cudaDeviceSynchronize());
         check_or_die("potrf", dt, N, "vendor", upload_and_maxerr(dS, refL.data(), MM, true, N), tol);
 
         // posv (nrhs=1)
         restoreSb(); k_block_posv<T, N><<<B, 128>>>(dS, db, B); CK(cudaDeviceSynchronize());
         check_or_die("posv", dt, N, "block", upload_and_maxerr(db, refX.data(), N, false, N), tol);
+        restoreSb(); k_thread_posv<T, N><<<1, B>>>(dS, db, B); CK(cudaDeviceSynchronize());
+        check_or_die("posv", dt, N, "thread", upload_and_maxerr(db, refX.data(), N, false, N), tol);
         restoreSb(); xpotrf_batched(H.cs, N, dSp, dinfo, B);
         xpotrs_batched(H.cs, N, dSp, dbp, dinfo + B, B); CK(cudaDeviceSynchronize());
         check_or_die("posv", dt, N, "vendor", upload_and_maxerr(db, refX.data(), N, false, N), tol);
@@ -475,20 +514,24 @@ static void run_for_N(Handles H, const char* dt, bool do_thru, bool do_lat) {
         auto restoreS  = [&]{ CK(cudaMemcpyAsync(dS, dS0, MM*(size_t)B*sizeof(T), cudaMemcpyDeviceToDevice)); };
         auto restoreSb = [&]{ restoreS();
                               CK(cudaMemcpyAsync(db, db0, (size_t)N*B*sizeof(T), cudaMemcpyDeviceToDevice)); };
-        const int wgrid = (B + 7) / 8;   // WPB=8
+        const int wgrid = (B + 7) / 8;     // WPB=8
+        const int tgrid = (B + 127) / 128; // thread tier, TPB=128
 
         struct Row { const char* op; const char* impl; std::function<void()> restore, work; bool on; };
         std::vector<Row> rows = {
             {"gemm",  "block32",  nop,       [&]{ k_block_gemm<T,N><<<B, 32>>>(dA, dB, dC, B); },  true},
             {"gemm",  "block128", nop,       [&]{ k_block_gemm<T,N><<<B, 128>>>(dA, dB, dC, B); }, true},
             {"gemm",  "warp8",    nop,       [&]{ k_warp_gemm<T,N><<<wgrid, dim3(32,8)>>>(dA, dB, dC, B); }, true},
+            {"gemm",  "thread128", nop,      [&]{ k_thread_gemm<T,N><<<tgrid, 128>>>(dA, dB, dC, B); }, true},
             {"gemm",  "vendor",   nop,       [&]{ xgemm_sb(H.cb, N, (T)1, dA, MM, dB, MM, (T)0, dC, MM, B); }, true},
             {"potrf", "block32",  restoreS,  [&]{ k_block_potrf<T,N><<<B, 32>>>(dS, B); },  true},
             {"potrf", "block128", restoreS,  [&]{ k_block_potrf<T,N><<<B, 128>>>(dS, B); }, true},
             {"potrf", "warp8",    restoreS,  [&]{ k_warp_potrf<T,N><<<wgrid, dim3(32,8)>>>(dS, B); }, true},
+            {"potrf", "thread128", restoreS, [&]{ k_thread_potrf<T,N><<<tgrid, 128>>>(dS, B); }, true},
             {"potrf", "vendor",   restoreS,  [&]{ xpotrf_batched(H.cs, N, dSp, dinfo, B); }, true},
             {"posv",  "block32",  restoreSb, [&]{ k_block_posv<T,N><<<B, 32>>>(dS, db, B); },  true},
             {"posv",  "block128", restoreSb, [&]{ k_block_posv<T,N><<<B, 128>>>(dS, db, B); }, true},
+            {"posv",  "thread128", restoreSb,[&]{ k_thread_posv<T,N><<<tgrid, 128>>>(dS, db, B); }, true},
             {"posv",  "vendor",   restoreSb, [&]{ xpotrf_batched(H.cs, N, dSp, dinfo, B);
                                                   xpotrs_batched(H.cs, N, dSp, dbp, dinfo + B, B); }, true},
         };
@@ -554,16 +597,38 @@ static void run_for_N(Handles H, const char* dt, bool do_thru, bool do_lat) {
         int lwork = xpotrf_bufsize(H.cs, N, dS);
         CK(cudaMalloc(&dwork, (size_t)lwork * sizeof(T)));
 
+#if defined(GLASS_BENCH_MAGMA)
+        // Per-call pointer arrays so the batched MAGMA entry points run at
+        // batch=1 on call r's pristine copy (measures MAGMA's real
+        // single-call API floor instead of asserting it).
+        T **dSp_lat, **dbp_lat;
+        {
+            std::vector<T*> hp(R);
+            CK(cudaMalloc(&dSp_lat, R*sizeof(T*))); CK(cudaMalloc(&dbp_lat, R*sizeof(T*)));
+            for (int r = 0; r < R; r++) hp[r] = dS + (size_t)r*MM;
+            CK(cudaMemcpy(dSp_lat, hp.data(), R*sizeof(T*), cudaMemcpyHostToDevice));
+            for (int r = 0; r < R; r++) hp[r] = db + (size_t)r*N;
+            CK(cudaMemcpy(dbp_lat, hp.data(), R*sizeof(T*), cudaMemcpyHostToDevice));
+        }
+#endif
         struct Lat { const char* op; const char* impl; std::function<void(int)> call; };
         std::vector<Lat> lats = {
             {"gemm",  "block", [&](int r){ k_block_gemm<T,N><<<1, 64>>>(dA + (size_t)r*MM, dB + (size_t)r*MM, dC + (size_t)r*MM, 1); }},
+            {"gemm",  "thread",[&](int r){ k_thread_gemm<T,N><<<1, 1>>>(dA + (size_t)r*MM, dB + (size_t)r*MM, dC + (size_t)r*MM, 1); }},
             {"gemm",  "vendor",[&](int r){ xgemm(H.cb, N, (T)1, dA + (size_t)r*MM, dB + (size_t)r*MM, (T)0, dC + (size_t)r*MM); }},
             {"potrf", "block", [&](int r){ k_block_potrf<T,N><<<1, 32>>>(dS + (size_t)r*MM, 1); }},
+            {"potrf", "thread",[&](int r){ k_thread_potrf<T,N><<<1, 1>>>(dS + (size_t)r*MM, 1); }},
             {"potrf", "vendor",[&](int r){ xpotrf(H.cs, N, dS + (size_t)r*MM, dwork, lwork, dinfo); }},
             {"posv",  "block", [&](int r){ k_block_posv<T,N><<<1, 32>>>(dS + (size_t)r*MM, db + (size_t)r*N, 1); }},
+            {"posv",  "thread",[&](int r){ k_thread_posv<T,N><<<1, 1>>>(dS + (size_t)r*MM, db + (size_t)r*N, 1); }},
             {"posv",  "vendor",[&](int r){ xpotrf(H.cs, N, dS + (size_t)r*MM, dwork, lwork, dinfo);
                                            xpotrs(H.cs, N, dS + (size_t)r*MM, db + (size_t)r*N, dinfo); }},
         };
+#if defined(GLASS_BENCH_MAGMA)
+        lats.push_back({"gemm",  "magma", [&](int r){ mgemm_sb(H.mq, N, (T)1, dA + (size_t)r*MM, MM, dB + (size_t)r*MM, MM, (T)0, dC + (size_t)r*MM, MM, 1); }});
+        lats.push_back({"potrf", "magma", [&](int r){ mpotrf_batched(H.mq, N, dSp_lat + r, dinfo, 1); }});
+        lats.push_back({"posv",  "magma", [&](int r){ mposv_batched(H.mq, N, dSp_lat + r, dbp_lat + r, dinfo, 1); }});
+#endif
         if (sizeof(T) == 4)
             lats.push_back({"gemm", "vendor_tf32",
                             [&](int r){ xgemm(H.cb_tf32, N, (T)1, dA + (size_t)r*MM,
@@ -593,6 +658,9 @@ static void run_for_N(Handles H, const char* dt, bool do_thru, bool do_lat) {
         CK(cudaFree(dA)); CK(cudaFree(dB)); CK(cudaFree(dC)); CK(cudaFree(dS));
         CK(cudaFree(dS0)); CK(cudaFree(db)); CK(cudaFree(db0));
         CK(cudaFree(dwork)); CK(cudaFree(dinfo));
+#if defined(GLASS_BENCH_MAGMA)
+        CK(cudaFree(dSp_lat)); CK(cudaFree(dbp_lat));
+#endif
     }
 }
 
