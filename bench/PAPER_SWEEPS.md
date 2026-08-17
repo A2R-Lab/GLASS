@@ -153,6 +153,15 @@ GLASS tier the shipped dispatch routes to in the measured domain. Both v2
 captures are jitterier than the pinned ones (ambient load); overlapping rows
 agree with their independent v1 twins (median ratios 0.995/1.001), paper
 claims use >=1.2x deltas, and near-parity cells are reported as ties.
+Quiet confirmation captures (2026-08-17, idle box) reproduce both v2
+captures and close the single-capture caveat:
+`paper_hostblas_magma_20260817_110407.txt` (reps=100, 279/279 checks,
+median ratio 1.000 over all 2556 common rows; thread and MAGMA rows
+0.992--1.000 with zero >20% drifts outside four MAGMA gemm-latency cells)
+and `paper_kokkos_20260817_110746.txt` (reps=500, 972/972 checks, only
+19/3672 rows above 5% spread — the cleanest kokkos capture; glass_thread
+rows median 0.997, zero >20% drifts). Paper numbers are the conservative
+envelope of the v2 + confirmation pairs.
 
 Same-evening companions (all archived externally alongside the pair above):
 a 500-rep hostblas confirmation `paper_hostblas_20260815_173550.txt` (agrees
