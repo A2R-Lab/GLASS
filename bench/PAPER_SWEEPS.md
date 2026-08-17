@@ -65,10 +65,22 @@ before any timed trial. Eigen is a BENCH-ONLY dependency (`libeigen3-dev`, or
 `EIGEN_ROOT`); it is never linked into the library or tests. The leg is
 opt-in: it does not run under the default `--legs`.
 
-Planned same-pattern legs (harnesses not yet authored): MAGMA batched columns
-for the hostblas comparison and a Kokkos Kernels TeamPolicy ladder — both
-bench-only with guarded deps, both correctness-cross-checked before timing;
-their installs are deferred to a free machine window.
+`--legs kokkos` runs `bench_kokkos_ladder.cu`: Kokkos Kernels team-scope
+baseline — kk_serial (thread-per-problem), kk_team (TeamPolicy, ts swept,
+Unblocked + Blocked tags for gemm), kk_teamvector (ts × 32 lanes), vs
+`glass::block::` and `glass::warp::` anchors in the same TU. Ops
+gemm/gemv/trsv only (the KokkosBatched team set has no Cholesky/posv —
+measured-where-comparable, prose-where-absent); N ≤ 64. Notes from
+validation: `KokkosBatched::SerialGemv` is deprecated (device-aborts) and
+their Team/TeamVector gemv takes a rank-3 multi-problem-per-team view, so
+the gemv paths use the single-matrix `KokkosBlas::{Serial,Team,TeamVector}Gemv`
+forms (their own batch-1 delegation target); `TeamVectorGemm<Blocked>` is
+declared but unimplemented upstream. Kokkos + kokkos-kernels are BENCH-ONLY
+installs (`KOKKOS_ROOT`/`KOKKOSKERNELS_ROOT`, default `~/opt`). Opt-in leg.
+
+Planned same-pattern leg (harness not yet authored): MAGMA batched columns
+for the hostblas comparison — bench-only with guarded deps,
+correctness-cross-checked before timing.
 
 ## Jetson / Orin runbook (when the box lands)
 

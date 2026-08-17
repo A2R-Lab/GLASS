@@ -44,6 +44,17 @@ LEGS = {
                   "-DEIGEN_DONT_VECTORIZE", "-DEIGEN_NO_DEBUG",
                   "-DEIGEN_DEFAULT_DENSE_INDEX_TYPE=int",
                   "-diag-suppress", "20012"]),
+    # opt-in (--legs kokkos): Kokkos Kernels team-scope baseline; needs Kokkos
+    # core + kokkos-kernels (BATCHED component) installed — BENCH-ONLY deps
+    # (KOKKOS_ROOT / KOKKOSKERNELS_ROOT override the ~/opt defaults).
+    "kokkos":   ("bench_kokkos_ladder.cu",
+                 ["--expt-extended-lambda",
+                  f"-I{os.environ.get('KOKKOS_ROOT', os.path.expanduser('~/opt/kokkos'))}/include",
+                  f"-I{os.environ.get('KOKKOSKERNELS_ROOT', os.path.expanduser('~/opt/kokkos-kernels'))}/include",
+                  f"-L{os.environ.get('KOKKOS_ROOT', os.path.expanduser('~/opt/kokkos'))}/lib",
+                  f"-L{os.environ.get('KOKKOSKERNELS_ROOT', os.path.expanduser('~/opt/kokkos-kernels'))}/lib",
+                  "-lkokkoskernels", "-lkokkoscore", "-lkokkoscontainers",
+                  "-lkokkossimd", "-lcuda", "-ldl"]),
 }
 
 
