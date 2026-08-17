@@ -141,14 +141,18 @@ validation runs only.
 
 Baseline-leg captures (2026-08-16/17, all archived externally): eigen
 `paper_eigen_20260816_171111.txt` (378/378 checks; parity vs glass::thread,
-block anchor 2--12x at N>=8 — the execution-model finding);
-magma `paper_hostblas_magma_20260817_005316.txt` (72/72 checks; MAGMA beats
-the vendor's batched routines 1.4--8.3x at robot sizes AND beats our block
-f64 factorizations at every batch — reported honestly in the paper);
-kokkos `paper_kokkos_20260817_011717.txt` (972 checks, with the
-glass_thread anchor; supersedes the same-night 002516 capture, which
-compared Kokkos' serial mode against the wrong GLASS tier for small-N
-trsv — archived for provenance only).
+block anchor 2--12x at N>=8 — the execution-model finding); magma v2
+`paper_hostblas_magma_20260817_021730.txt` (279/279 checks; thread-tier rows
++ MAGMA latency rows — supersedes 005316, which compared factorizations
+against the wrong GLASS tier; posv small-N is GLASS 1.5--5x at every batch,
+potrf N>=8 is MAGMA 1.2--3.2x, MAGMA's measured latency floor ~6.5--11us);
+kokkos v2 `paper_kokkos_20260817_011717.txt` (972/972 checks, glass_thread
+anchor; supersedes 002516 — same wrong-tier flaw on trsv). RULE adopted
+after that flaw bit twice: an external-baseline harness MUST include every
+GLASS tier the shipped dispatch routes to in the measured domain. Both v2
+captures are jitterier than the pinned ones (ambient load); overlapping rows
+agree with their independent v1 twins (median ratios 0.995/1.001), paper
+claims use >=1.2x deltas, and near-parity cells are reported as ties.
 
 Same-evening companions (all archived externally alongside the pair above):
 a 500-rep hostblas confirmation `paper_hostblas_20260815_173550.txt` (agrees
