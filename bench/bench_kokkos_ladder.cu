@@ -14,6 +14,9 @@
 //   kk_teamvector  one problem per TEAM   (TeamPolicy ts∈{1,2,4,8}, vlen=32)
 //   glass_block    one problem per BLOCK  (TB swept — raw kernel)
 //   glass_warp     one problem per WARP   (WPB swept — raw kernel)
+//   glass_thread   one problem per THREAD (TPB swept; staged global->regs->
+//                  global, mega-sweep style — the tier the shipped dispatch
+//                  actually routes small-N trsv/gemv cells to)
 // Kokkos algorithm tags: Unblocked everywhere; gemm additionally sweeps
 // Blocked (their register-blocking variant). Their best tag/shape is reported
 // per cell — we compare against the BEST Kokkos configuration, disclosed.
@@ -196,6 +199,35 @@ template<typename T,int N> __global__ void gw_trsv(T* A, T* x, int np) {
     int p = blockIdx.x*blockDim.y+threadIdx.y; if (p>=np) return;
     glass::warp::trsv<T,N>(A+(size_t)p*N*N, x+(size_t)p*N);
 }
+// glass thread anchor: one problem per thread, operands staged
+// global -> registers -> global (the ladder's thread model — the layout tax
+// is in the timing, mirroring bench_mega_sweep). Included because the
+// shipped dispatch routes exactly the small-N cells kk_serial competes in
+// to this tier; without it the trsv column would compare Kokkos' serial
+// mode against the wrong GLASS tier.
+template<typename T,int N> __global__ void gt_gemm(T* A, T* B, T* C, int np) {
+    int p = blockIdx.x*blockDim.x+threadIdx.x; if (p>=np) return;
+    T a[N*N], b[N*N], c[N*N];
+    for (int i=0;i<N*N;i++) { a[i]=A[(size_t)p*N*N+i]; b[i]=B[(size_t)p*N*N+i]; }
+    glass::thread::gemm<T,N,N,N>((T)1, a, b, c);
+    for (int i=0;i<N*N;i++) C[(size_t)p*N*N+i]=c[i];
+}
+template<typename T,int N> __global__ void gt_gemv(T* A, T* x, T* y, int np) {
+    int p = blockIdx.x*blockDim.x+threadIdx.x; if (p>=np) return;
+    T a[N*N], xv[N], yv[N];
+    for (int i=0;i<N*N;i++) a[i]=A[(size_t)p*N*N+i];
+    for (int i=0;i<N;i++)   xv[i]=x[(size_t)p*N+i];
+    glass::thread::gemv<T,N,N>((T)1, a, xv, yv);
+    for (int i=0;i<N;i++)   y[(size_t)p*N+i]=yv[i];
+}
+template<typename T,int N> __global__ void gt_trsv(T* A, T* x, int np) {
+    int p = blockIdx.x*blockDim.x+threadIdx.x; if (p>=np) return;
+    T a[N*N], bv[N];
+    for (int i=0;i<N*N;i++) a[i]=A[(size_t)p*N*N+i];
+    for (int i=0;i<N;i++)   bv[i]=x[(size_t)p*N+i];
+    glass::thread::trsv<T,N>(a, bv);
+    for (int i=0;i<N;i++)   x[(size_t)p*N+i]=bv[i];
+}
 
 // ─── host double reference over the first k problems ─────────────────────────
 template<typename T>
@@ -231,8 +263,10 @@ static double ref_maxerr(Op op, int N, int k, const T* hA, const T* hB, const T*
     return maxerr;
 }
 
-// contender ids: 0 kk_serial 1 kk_team 2 kk_teamvector 3 glass_block 4 glass_warp
-static const char* impls[5] = {"kk_serial","kk_team","kk_teamvector","glass_block","glass_warp"};
+// contender ids: 0 kk_serial 1 kk_team 2 kk_teamvector 3 glass_block
+//                4 glass_warp 5 glass_thread
+static const char* impls[6] = {"kk_serial","kk_team","kk_teamvector",
+                               "glass_block","glass_warp","glass_thread"};
 
 template<typename T,int N>
 static void bench_size(Op op, int reps, const char* dt) {
@@ -260,8 +294,8 @@ static void bench_size(Op op, int reps, const char* dt) {
     const int kcheck = NPROB < 64 ? NPROB : 64;
     const double tol = (sizeof(T) == 4) ? 1e-4 * N : 1e-12 * N;
     T* outC = (T*)malloc(mm*sizeof(T)); T* outx = (T*)malloc(vv*sizeof(T));
-    bool ok[5];
-    for (int c = 0; c < 5; c++) {
+    bool ok[6];
+    for (int c = 0; c < 6; c++) {
         g_pre_trial(); cudaMemset(C, 0, mm*sizeof(T)); cudaGetLastError();
         switch (c) {
             case 0: kk_launch<T,N,0>(op, 0, 0, 0, A, B, C, x); break;
@@ -277,6 +311,13 @@ static void bench_size(Op op, int reps, const char* dt) {
                 if (op == GEMM) gw_gemm<T,N><<<g,b>>>(A, B, C, NPROB);
                 if (op == GEMV) gw_gemv<T,N><<<g,b>>>(A, x, C, NPROB);
                 if (op == TRSV) gw_trsv<T,N><<<g,b>>>(A, x, NPROB);
+                break;
+            }
+            case 5: {
+                int TPB = 128; dim3 g((NPROB+TPB-1)/TPB), b(TPB);
+                if (op == GEMM) gt_gemm<T,N><<<g,b>>>(A, B, C, NPROB);
+                if (op == GEMV) gt_gemv<T,N><<<g,b>>>(A, x, C, NPROB);
+                if (op == TRSV) gt_trsv<T,N><<<g,b>>>(A, x, NPROB);
                 break;
             }
         }
@@ -352,6 +393,18 @@ static void bench_size(Op op, int reps, const char* dt) {
         snprintf(cfg, sizeof cfg, "w%d", WPB);
         ns = ok[4] ? tc_time_ns_per_prob_pre(launch, pre, reps, NPROB) : 1e30;
         emit(4, cfg, ns);
+    }
+    // glass_thread (staged, mega-style)
+    for (int TPB : {32, 64, 128, 256}) {
+        auto launch = [&]{
+            dim3 g((NPROB+TPB-1)/TPB), b(TPB);
+            if (op == GEMM) gt_gemm<T,N><<<g,b>>>(A, B, C, NPROB);
+            if (op == GEMV) gt_gemv<T,N><<<g,b>>>(A, x, C, NPROB);
+            if (op == TRSV) gt_trsv<T,N><<<g,b>>>(A, x, NPROB);
+        };
+        snprintf(cfg, sizeof cfg, "t%d", TPB);
+        ns = ok[5] ? tc_time_ns_per_prob_pre(launch, pre, reps, NPROB) : 1e30;
+        emit(5, cfg, ns);
     }
     fflush(stdout);
     g_pre_trial = nullptr;
