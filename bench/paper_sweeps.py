@@ -44,6 +44,19 @@ LEGS = {
                   "-DEIGEN_DONT_VECTORIZE", "-DEIGEN_NO_DEBUG",
                   "-DEIGEN_DEFAULT_DENSE_INDEX_TYPE=int",
                   "-diag-suppress", "20012"]),
+    # opt-in (--legs hostblas_magma): the hostblas harness with MAGMA columns
+    # (gemm strided + pointer-array, potrf, fused posv). Needs MAGMA built at
+    # MAGMA_ROOT (default ~/opt/src/magma-git: headers + build/lib/libmagma.a)
+    # and a static OpenBLAS at OPENBLAS_ROOT (default ~/opt/openblas) — both
+    # BENCH-ONLY deps. Same source file as hostblas; the define adds columns.
+    "hostblas_magma": ("bench_paper_hostblas.cu",
+                 ["-DGLASS_BENCH_MAGMA",
+                  f"-I{os.environ.get('MAGMA_ROOT', os.path.expanduser('~/opt/src/magma-git'))}/include",
+                  f"-I{os.environ.get('MAGMA_ROOT', os.path.expanduser('~/opt/src/magma-git'))}/build/include",
+                  f"-L{os.environ.get('MAGMA_ROOT', os.path.expanduser('~/opt/src/magma-git'))}/build/lib",
+                  "-lmagma",
+                  os.path.expanduser(os.environ.get('OPENBLAS_ROOT', '~/opt/openblas')) + "/lib/libopenblas.a",
+                  "-lcublas", "-lcusolver", "-lcusparse", "-lgomp", "-lpthread"]),
     # opt-in (--legs kokkos): Kokkos Kernels team-scope baseline; needs Kokkos
     # core + kokkos-kernels (BATCHED component) installed — BENCH-ONLY deps
     # (KOKKOS_ROOT / KOKKOSKERNELS_ROOT override the ~/opt defaults).
@@ -110,7 +123,9 @@ def provenance(leg, arch, reps, dtype):
 def build(leg, arch):
     src, libs = LEGS[leg]
     BUILD_DIR.mkdir(exist_ok=True)
-    out = BUILD_DIR / f"{src.replace('.cu', '')}_{arch}"
+    # Named by LEG (not source): hostblas and hostblas_magma share a source
+    # file and must never collide on the binary path.
+    out = BUILD_DIR / f"bench_{leg}_{arch}"
     # skip if fresh: binary newer than the harness source AND every library
     # header (precompile via --build-only, then the quiet run starts instantly).
     # arch is baked into the name so a build dir synced from another GPU

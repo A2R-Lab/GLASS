@@ -78,9 +78,19 @@ forms (their own batch-1 delegation target); `TeamVectorGemm<Blocked>` is
 declared but unimplemented upstream. Kokkos + kokkos-kernels are BENCH-ONLY
 installs (`KOKKOS_ROOT`/`KOKKOSKERNELS_ROOT`, default `~/opt`). Opt-in leg.
 
-Planned same-pattern leg (harness not yet authored): MAGMA batched columns
-for the hostblas comparison — bench-only with guarded deps,
-correctness-cross-checked before timing.
+`--legs hostblas_magma` runs the hostblas harness with `-DGLASS_BENCH_MAGMA`
+columns: `magma` gemm (`gemm_batched_strided`, exact mirror of the cuBLAS
+strided call), `magma_pa` gemm (pointer-array `gemm_batched`, which dispatches
+to MAGMA's tuned small-square kernels), `magma` potrf (`potrf_batched`) and
+`magma` posv (MAGMA's fused one-call `posv_batched` — favorable to MAGMA vs
+the vendor's potrf+potrs pair; disclosed). The MAGMA queue is created on the
+default stream so the shared event bracketing times it identically. MAGMA
+(master, Blackwell/sm_120-native) + a static no-Fortran OpenBLAS (C LAPACK)
+are BENCH-ONLY deps (`MAGMA_ROOT`/`OPENBLAS_ROOT`, defaults
+`~/opt/src/magma-git` and `~/opt/openblas`). Same source file as `hostblas`;
+binaries are named by LEG so the two never collide. Disclosure: MAGMA is a
+research library measured in addition to our documented default-vendor scope.
+Opt-in leg.
 
 ## Jetson / Orin runbook (when the box lands)
 

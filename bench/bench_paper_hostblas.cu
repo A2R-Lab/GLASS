@@ -128,6 +128,52 @@ static bool ref_chol_solve(int n, double* A, double* b) {   // A destroyed, b→
     return true;
 }
 
+// ─── optional MAGMA columns (research host-batched library; BENCH-ONLY dep) ──
+// Enabled with -DGLASS_BENCH_MAGMA + MAGMA include/lib flags. The MAGMA queue
+// is created on the DEFAULT stream so the same event bracketing times it.
+// gemm gets two rows: "magma" = gemm_batched_strided (exact mirror of the
+// cuBLAS strided call) and "magma_pa" = pointer-array gemm_batched (their
+// canonical entry, which dispatches to their tuned small-square kernels);
+// potrf/posv use the pointer-array batched routines (posv is MAGMA's fused
+// one-call form — favorable to MAGMA vs the vendor's potrf+potrs pair;
+// disclosed). Disclosure for the paper: MAGMA is a research library compared
+// here IN ADDITION to our documented default-vendor scope.
+#if defined(GLASS_BENCH_MAGMA)
+#include <magma_v2.h>
+static void mgemm_sb(magma_queue_t q, int n, float alpha, const float* A, long long sA,
+                     const float* B, long long sB, float beta, float* C, long long sC, int batch) {
+    magmablas_sgemm_batched_strided(MagmaNoTrans, MagmaNoTrans, n, n, n, alpha,
+                                    A, n, sA, B, n, sB, beta, C, n, sC, batch, q);
+}
+static void mgemm_sb(magma_queue_t q, int n, double alpha, const double* A, long long sA,
+                     const double* B, long long sB, double beta, double* C, long long sC, int batch) {
+    magmablas_dgemm_batched_strided(MagmaNoTrans, MagmaNoTrans, n, n, n, alpha,
+                                    A, n, sA, B, n, sB, beta, C, n, sC, batch, q);
+}
+static void mgemm_pa(magma_queue_t q, int n, float alpha, float** Ap, float** Bp,
+                     float beta, float** Cp, int batch) {
+    magmablas_sgemm_batched(MagmaNoTrans, MagmaNoTrans, n, n, n, alpha,
+                            Ap, n, Bp, n, beta, Cp, n, batch, q);
+}
+static void mgemm_pa(magma_queue_t q, int n, double alpha, double** Ap, double** Bp,
+                     double beta, double** Cp, int batch) {
+    magmablas_dgemm_batched(MagmaNoTrans, MagmaNoTrans, n, n, n, alpha,
+                            Ap, n, Bp, n, beta, Cp, n, batch, q);
+}
+static void mpotrf_batched(magma_queue_t q, int n, float** Ap, int* info, int batch) {
+    magma_spotrf_batched(MagmaLower, n, Ap, n, info, batch, q);
+}
+static void mpotrf_batched(magma_queue_t q, int n, double** Ap, int* info, int batch) {
+    magma_dpotrf_batched(MagmaLower, n, Ap, n, info, batch, q);
+}
+static void mposv_batched(magma_queue_t q, int n, float** Ap, float** bp, int* info, int batch) {
+    magma_sposv_batched(MagmaLower, n, 1, Ap, n, bp, n, info, batch, q);
+}
+static void mposv_batched(magma_queue_t q, int n, double** Ap, double** bp, int* info, int batch) {
+    magma_dposv_batched(MagmaLower, n, 1, Ap, n, bp, n, info, batch, q);
+}
+#endif
+
 // ─── vendor call wrappers, overloaded on dtype ───────────────────────────────
 static void xgemm_sb(cublasHandle_t h, int n, float alpha, const float* A, long long sA,
                      const float* B, long long sB, float beta, float* C, long long sC, int batch) {
@@ -239,7 +285,11 @@ static double time_thru_ns_per_prob(int B, const std::function<void()>& restore,
 }
 
 // ─── per-(dtype, N) driver ───────────────────────────────────────────────────
-struct Handles { cublasHandle_t cb; cublasHandle_t cb_tf32; cusolverDnHandle_t cs; };
+struct Handles { cublasHandle_t cb; cublasHandle_t cb_tf32; cusolverDnHandle_t cs;
+#if defined(GLASS_BENCH_MAGMA)
+                 magma_queue_t mq;
+#endif
+};
 
 template <typename T>
 static double upload_and_maxerr(const T* d_out, const double* ref, int cnt, bool lower_only, int n) {
@@ -352,6 +402,33 @@ static void run_for_N(Handles H, const char* dt, bool do_thru, bool do_lat) {
         xpotrs_batched(H.cs, N, dSp, dbp, dinfo + B, B); CK(cudaDeviceSynchronize());
         check_or_die("posv", dt, N, "vendor", upload_and_maxerr(db, refX.data(), N, false, N), tol);
 
+#if defined(GLASS_BENCH_MAGMA)
+        {   // MAGMA correctness (same refs, same tolerance)
+            std::vector<T*> hp(B);
+            T **dAp, **dBp, **dCp;
+            CK(cudaMalloc(&dAp, B*sizeof(T*))); CK(cudaMalloc(&dBp, B*sizeof(T*)));
+            CK(cudaMalloc(&dCp, B*sizeof(T*)));
+            for (int p = 0; p < B; p++) hp[p] = dA + p*MM;
+            CK(cudaMemcpy(dAp, hp.data(), B*sizeof(T*), cudaMemcpyHostToDevice));
+            for (int p = 0; p < B; p++) hp[p] = dB + p*MM;
+            CK(cudaMemcpy(dBp, hp.data(), B*sizeof(T*), cudaMemcpyHostToDevice));
+            for (int p = 0; p < B; p++) hp[p] = dC + p*MM;
+            CK(cudaMemcpy(dCp, hp.data(), B*sizeof(T*), cudaMemcpyHostToDevice));
+
+            CK(cudaMemset(dC, 0, MM*B*sizeof(T)));
+            mgemm_sb(H.mq, N, (T)1, dA, MM, dB, MM, (T)0, dC, MM, B); CK(cudaDeviceSynchronize());
+            check_or_die("gemm", dt, N, "magma", upload_and_maxerr(dC, refC.data(), MM, false, N), tol);
+            CK(cudaMemset(dC, 0, MM*B*sizeof(T)));
+            mgemm_pa(H.mq, N, (T)1, dAp, dBp, (T)0, dCp, B); CK(cudaDeviceSynchronize());
+            check_or_die("gemm", dt, N, "magma_pa", upload_and_maxerr(dC, refC.data(), MM, false, N), tol);
+            restoreS(); mpotrf_batched(H.mq, N, dSp, dinfo, B); CK(cudaDeviceSynchronize());
+            check_or_die("potrf", dt, N, "magma", upload_and_maxerr(dS, refL.data(), MM, true, N), tol);
+            restoreSb(); mposv_batched(H.mq, N, dSp, dbp, dinfo, B); CK(cudaDeviceSynchronize());
+            check_or_die("posv", dt, N, "magma", upload_and_maxerr(db, refX.data(), N, false, N), tol);
+            CK(cudaFree(dAp)); CK(cudaFree(dBp)); CK(cudaFree(dCp));
+        }
+#endif
+
         CK(cudaFree(dA)); CK(cudaFree(dB)); CK(cudaFree(dC)); CK(cudaFree(dS));
         CK(cudaFree(dS0)); CK(cudaFree(db)); CK(cudaFree(db0));
         CK(cudaFree(dSp)); CK(cudaFree(dbp)); CK(cudaFree(dinfo));
@@ -418,6 +495,24 @@ static void run_for_N(Handles H, const char* dt, bool do_thru, bool do_lat) {
         if (sizeof(T) == 4)
             rows.push_back({"gemm", "vendor_tf32", nop,
                             [&]{ xgemm_sb(H.cb_tf32, N, (T)1, dA, MM, dB, MM, (T)0, dC, MM, B); }, true});
+#if defined(GLASS_BENCH_MAGMA)
+        T **dAp = nullptr, **dBp = nullptr, **dCp = nullptr;
+        {
+            std::vector<T*> hp(B);
+            CK(cudaMalloc(&dAp, B*sizeof(T*))); CK(cudaMalloc(&dBp, B*sizeof(T*)));
+            CK(cudaMalloc(&dCp, B*sizeof(T*)));
+            for (int p = 0; p < B; p++) hp[p] = dA + (size_t)p*MM;
+            CK(cudaMemcpy(dAp, hp.data(), B*sizeof(T*), cudaMemcpyHostToDevice));
+            for (int p = 0; p < B; p++) hp[p] = dB + (size_t)p*MM;
+            CK(cudaMemcpy(dBp, hp.data(), B*sizeof(T*), cudaMemcpyHostToDevice));
+            for (int p = 0; p < B; p++) hp[p] = dC + (size_t)p*MM;
+            CK(cudaMemcpy(dCp, hp.data(), B*sizeof(T*), cudaMemcpyHostToDevice));
+        }
+        rows.push_back({"gemm",  "magma",    nop,       [&]{ mgemm_sb(H.mq, N, (T)1, dA, MM, dB, MM, (T)0, dC, MM, B); }, true});
+        rows.push_back({"gemm",  "magma_pa", nop,       [&]{ mgemm_pa(H.mq, N, (T)1, dAp, dBp, (T)0, dCp, B); }, true});
+        rows.push_back({"potrf", "magma",    restoreS,  [&]{ mpotrf_batched(H.mq, N, dSp, dinfo, B); }, true});
+        rows.push_back({"posv",  "magma",    restoreSb, [&]{ mposv_batched(H.mq, N, dSp, dbp, dinfo, B); }, true});
+#endif
         std::mt19937 order_rng(0x474c4153u ^ (N << 16) ^ (uint32_t)B ^ (uint32_t)sizeof(T));
         std::shuffle(rows.begin(), rows.end(), order_rng);
         for (auto& r : rows) {
@@ -426,6 +521,9 @@ static void run_for_N(Handles H, const char* dt, bool do_thru, bool do_lat) {
                    r.op, dt, N, B, r.impl, ns, last_spread_pct);
             fflush(stdout);
         }
+#if defined(GLASS_BENCH_MAGMA)
+        CK(cudaFree(dAp)); CK(cudaFree(dBp)); CK(cudaFree(dCp));
+#endif
         CK(cudaFree(dA)); CK(cudaFree(dB)); CK(cudaFree(dC)); CK(cudaFree(dS));
         CK(cudaFree(dS0)); CK(cudaFree(db)); CK(cudaFree(db0));
         CK(cudaFree(dSp)); CK(cudaFree(dbp)); CK(cudaFree(dinfo));
@@ -525,8 +623,20 @@ int main(int argc, char** argv) {
     CB(cublasCreate(&H.cb_tf32));
     CB(cublasSetMathMode(H.cb_tf32, CUBLAS_TF32_TENSOR_OP_MATH));
     CS(cusolverDnCreate(&H.cs));
+#if defined(GLASS_BENCH_MAGMA)
+    magma_init();
+    // Queue on the DEFAULT stream so the shared event bracketing times MAGMA
+    // work exactly like the cuBLAS/cuSOLVER rows.
+    magma_queue_create_from_cuda(0, nullptr, H.cb, nullptr, &H.mq);
+    printf("# magma columns enabled (version %d.%d.%d)\n",
+           MAGMA_VERSION_MAJOR, MAGMA_VERSION_MINOR, MAGMA_VERSION_MICRO);
+#endif
     if (dt == "f32" || dt == "both") run_dtype<float >(H, "f32", do_thru, do_lat);
     if (dt == "f64" || dt == "both") run_dtype<double>(H, "f64", do_thru, do_lat);
+#if defined(GLASS_BENCH_MAGMA)
+    magma_queue_destroy(H.mq);
+    magma_finalize();
+#endif
     CB(cublasDestroy(H.cb));
     CB(cublasDestroy(H.cb_tf32));
     CS(cusolverDnDestroy(H.cs));
