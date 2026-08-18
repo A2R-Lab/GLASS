@@ -1,1 +1,1 @@
-{"allow_carried": false, "signer_mode": "restricted", "allowed_signers": ["plancherb1"]}
+{"allow_carried": false, "signer_mode": "restricted", "allowed_signers": ["plancherb1"], "min_schema": 3, "required_fingerprint_paths": ["glass-cgrps.cuh", "glass-defaults.cuh", "glass-dispatch.cuh", "glass-nvidia.cuh", "glass.cuh", "src", "test/conftest.py", "test/cuda"]}
