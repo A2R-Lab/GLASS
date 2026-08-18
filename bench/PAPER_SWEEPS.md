@@ -110,10 +110,24 @@ Opt-in leg.
 
 sm_120 timing landed in the 2026-07-08 quiet window (captures
 `paper_hostblas_20260708_0054.txt` / `paper_fusion_20260708_0055.txt`; F2/F3/F4
-rendered from them until the 2026-08-15 recapture below). Jetson/Orin legs of THESE harnesses
-(hostblas/fusion at sm_87, optional tegrastats energy) remain un-run — the
-Orin runbook below is still pending for that leg only. (Original smoke
+rendered from them until the 2026-08-15 recapture below). (Original smoke
 validation 2026-07-06 on a shared box; those numbers were discarded.)
+
+The Jetson legs ran 2026-08-17 on BOTH embedded boards, closing the runbook:
+Orin AGX (sm_87, CUDA 13.2, MODE_50W + pinned clocks) captures
+`paper_hostblas_20260817_171835.txt` / `paper_fusion_20260817_173005.txt`,
+and Xavier AGX (sm_72, CUDA 11.4/JetPack 5, MODE_30W_ALL + pinned clocks,
+explicit `--arch sm_72` — auto-detect has no nvidia-smi there) captures
+`paper_hostblas_20260817_172417.txt` / `paper_fusion_20260817_174837.txt`.
+All four: full row counts, zero FAIL/INVALID — the same source builds and
+passes its host-double cross-checks from CUDA 11.4 through 13.2 without a
+single source change, which doubles as the long-pending Xavier run-proof.
+Spreads are wider than desktop (Orin max 22%, Xavier max 31%); only >=1.2x
+deltas are publishable from these captures and near-parity cells are ties.
+An Orin tegrastats energy companion (100 ms, GPU/CPU rails) was captured
+against a separate fusion repeat; Xavier's power rails are root-locked on
+JetPack 5, so its energy pass awaits a sudo run. Archived externally with
+the paper materials (shas recorded).
 
 The audited 2026-08-14 rerun validated the refreshed harnesses (fusion capture
 `paper_fusion_20260813_231910.txt`; 500-rep host confirmation
