@@ -1,1 +1,1 @@
-{"allow_carried": true, "carried_max_age_days": 30}
+{"allow_carried": true, "carried_max_age_days": 30, "signer_mode": "restricted", "allowed_signers": ["plancherb1"]}

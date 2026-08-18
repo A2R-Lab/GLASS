@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run the GPU suite as EIGHT schema-2 shards and merge into one signed receipt
+# Run the GPU suite as EIGHT schema-3 shards and merge into one signed receipt
 # (test/gpu-proof.json). Shards carry DAG-scoped fingerprints so an untouched
 # family can carry forward from the last committed receipt instead of re-running:
 #
@@ -28,7 +28,7 @@
 # Merge always attempts --carry-from the last committed test/gpu-proof.json
 # when a subset ran: freshly-run shards win; absent shards graft in iff their
 # narrow fingerprint recomputes identical AND the old commit is an ancestor
-# (schema-2 rules — a stale family can never ride along silently). CI verifies
+# (schema-3 rules — a stale family can never ride along silently). CI verifies
 # carried shards under the policy in test/gpu-proof-policy.json (allow_carried +
 # carried_max_age_days); see pytest-gpu-proof docs/sharding.md.
 #
