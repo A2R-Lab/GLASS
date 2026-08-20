@@ -43,6 +43,9 @@
 #include <cstring>
 #include <ctime>
 #include <functional>
+#include <vector>
+#include <algorithm>
+#include <random>
 #include "timing_common.cuh"
 #include <type_traits>
 
@@ -316,6 +319,14 @@ static double g_row_spread = 0.0;
 // trajectory in every trial of every contender.
 static std::function<void()> g_pre_trial;
 
+// Opt-in randomized measurement order (GLASS_SHUFFLE_ORDER=<seed>, nonzero):
+// each row's (contender, launch-shape) cells execute in a shuffled order while
+// the printed row keeps the canonical BLOCK|WARP|THREAD|AUTO|NV layout, so
+// parsers and the default protocol are byte-identical. Guards against
+// systematic order effects (thermal/clock ramp) biasing later contenders.
+static uint64_t g_shuffle_seed = 0;
+static std::mt19937_64 g_shuffle_rng;
+
 template<typename F>
 static double time_ns_per_prob(F launch, int reps) {
     double ns = tc_time_ns_per_prob_pre(
@@ -423,41 +434,73 @@ static void bench_size(Op op, int reps) {
         cudaDeviceSynchronize();
     };
 
-    double best_block=1e30, best_warp=1e30, best_thread=1e30;
-    int best_tb=0, best_wpb=0, best_tpb=0;
     g_row_spread = 0.0;
-    printf("%-5s N=%-3d | BLOCK", op_name(op), N);
-    for (int TB : {32, 64, 128, 256}) {
-        double ns = time_ns_per_prob([&]{ launch_block<T,N>(op, TB, A, B, C, x, y); }, reps);
-        if (ns < 1e29) printf("  tb%d=%.4f", TB, ns); else printf("  tb%d=FAIL", TB);
-        if (ns < best_block) { best_block = ns; best_tb = TB; }
-    }
-    printf("  | WARP");
-    for (int WPB : {1, 2, 4, 8, 16, 32}) {
-        if (WPB > NPROB) break;
-        double ns = time_ns_per_prob([&]{ launch_warp<T,N>(op, WPB, A, B, C, x, y); }, reps);
-        if (ns < 1e29) printf("  w%d=%.4f", WPB, ns); else printf("  w%d=FAIL", WPB);
-        if (ns < best_warp) { best_warp = ns; best_wpb = WPB; }
+    // MEASURE phase: every (contender, launch-shape) cell is one item; with
+    // GLASS_SHUFFLE_ORDER set the items execute in shuffled order. The PRINT
+    // phase below always emits the canonical row layout from the stored
+    // results, so output is byte-identical either way.
+    constexpr int TBS[4]  = {32, 64, 128, 256};
+    constexpr int WPBS[6] = {1, 2, 4, 8, 16, 32};
+    double r_block[4], r_warp[6], r_thread[4], r_auto[4], r_nv = -1.0;
+    for (double* a : {r_block, r_auto, r_thread}) for (int i=0;i<4;i++) a[i] = 1e30;
+    for (int i=0;i<6;i++) r_warp[i] = 1e30;
+    std::vector<std::function<void()>> items;
+    for (int i=0;i<4;i++) items.push_back([&,i]{
+        int TB = TBS[i];
+        r_block[i] = time_ns_per_prob([&]{ launch_block<T,N>(op, TB, A, B, C, x, y); }, reps); });
+    for (int i=0;i<6;i++) {
+        if (WPBS[i] > NPROB) break;
+        items.push_back([&,i]{
+            int WPB = WPBS[i];
+            r_warp[i] = time_ns_per_prob([&]{ launch_warp<T,N>(op, WPB, A, B, C, x, y); }, reps); });
     }
     if constexpr (thread_ok<T,N>()) {
-        printf("  | THREAD");
-        for (int TPB : {32, 64, 128, 256}) {
-            double ns = time_ns_per_prob([&]{ launch_thread<T,N>(op, TPB, A, B, C, x, y); }, reps);
-            if (ns < 1e29) printf("  t%d=%.4f", TPB, ns); else printf("  t%d=FAIL", TPB);
-            if (ns < best_thread) { best_thread = ns; best_tpb = TPB; }
-        }
+        for (int i=0;i<4;i++) items.push_back([&,i]{
+            int TPB = TBS[i];
+            r_thread[i] = time_ns_per_prob([&]{ launch_thread<T,N>(op, TPB, A, B, C, x, y); }, reps); });
     }
     // AUTO: the bare shipped-default face at the block launch shapes.
     // AUDIT-ONLY (see header) — excluded from the winner verdict and ignored by
     // tune.py's parsers (its summary token trails the ones _ROW_RE captures).
+    for (int i=0;i<4;i++) items.push_back([&,i]{
+        int TB = TBS[i];
+        r_auto[i] = time_ns_per_prob([&]{ launch_auto<T,N>(op, TB, A, B, C, x, y); }, reps); });
+    items.push_back([&]{ r_nv = nv_dispatch<T,N>(op, A, B, C, x, y, reps); });
+    if (g_shuffle_seed) std::shuffle(items.begin(), items.end(), g_shuffle_rng);
+    for (auto& it : items) it();
+
+    // PRINT phase: canonical layout, identical to the historical in-order path.
+    double best_block=1e30, best_warp=1e30, best_thread=1e30;
+    int best_tb=0, best_wpb=0, best_tpb=0;
+    printf("%-5s N=%-3d | BLOCK", op_name(op), N);
+    for (int i=0;i<4;i++) {
+        double ns = r_block[i];
+        if (ns < 1e29) printf("  tb%d=%.4f", TBS[i], ns); else printf("  tb%d=FAIL", TBS[i]);
+        if (ns < best_block) { best_block = ns; best_tb = TBS[i]; }
+    }
+    printf("  | WARP");
+    for (int i=0;i<6;i++) {
+        if (WPBS[i] > NPROB) break;
+        double ns = r_warp[i];
+        if (ns < 1e29) printf("  w%d=%.4f", WPBS[i], ns); else printf("  w%d=FAIL", WPBS[i]);
+        if (ns < best_warp) { best_warp = ns; best_wpb = WPBS[i]; }
+    }
+    if constexpr (thread_ok<T,N>()) {
+        printf("  | THREAD");
+        for (int i=0;i<4;i++) {
+            double ns = r_thread[i];
+            if (ns < 1e29) printf("  t%d=%.4f", TBS[i], ns); else printf("  t%d=FAIL", TBS[i]);
+            if (ns < best_thread) { best_thread = ns; best_tpb = TBS[i]; }
+        }
+    }
     double best_auto = 1e30; int best_atb = 0;
     printf("  | AUTO");
-    for (int TB : {32, 64, 128, 256}) {
-        double ns = time_ns_per_prob([&]{ launch_auto<T,N>(op, TB, A, B, C, x, y); }, reps);
-        if (ns < 1e29) printf("  a%d=%.4f", TB, ns); else printf("  a%d=FAIL", TB);
-        if (ns < best_auto) { best_auto = ns; best_atb = TB; }
+    for (int i=0;i<4;i++) {
+        double ns = r_auto[i];
+        if (ns < 1e29) printf("  a%d=%.4f", TBS[i], ns); else printf("  a%d=FAIL", TBS[i]);
+        if (ns < best_auto) { best_auto = ns; best_atb = TBS[i]; }
     }
-    double nv = nv_dispatch<T,N>(op, A, B, C, x, y, reps);
+    double nv = r_nv;
 
     // 4-way winner. thread/warp/block are all dependency-free pure SIMT, so they
     // compete on raw time; only nvidia (MathDx) must clear tune_pick's margin —
@@ -508,6 +551,12 @@ int main(int argc, char** argv) {
     printf("# mega sweep | NPROB=%d reps=%d dtype=%s | ns/problem (lower=better) | optin_smem=%zuKB\n", NPROB, reps, f64 ? "f64" : "f32", g_optin_smem/1024);
     printf("# contenders: BLOCK(SIMT, TB swept) | WARP(WPB swept) | THREAD(SIMT, TPB swept) | AUTO(bare glass::, shipped dispatch, TB swept; figure-only) | NV(cuBLASDx/cuSOLVERDx, forced; f32<=128, f64<=64)\n");
     printf("# THREAD stages operands global->registers->global in the per-problem-contiguous layout (uncoalesced; the layout tax is IN the timing).\n");
+    if (const char* s = getenv("GLASS_SHUFFLE_ORDER"); s && strtoull(s, nullptr, 10) != 0) {
+        g_shuffle_seed = strtoull(s, nullptr, 10);
+        g_shuffle_rng.seed(g_shuffle_seed);
+        printf("# measurement_order=shuffled seed=%llu (per-cell execution order randomized; printed layout canonical)\n",
+               (unsigned long long)g_shuffle_seed);
+    }
     tc_warm_gpu();                    // steady boost clocks before the first timed cell
     if (f64) run_all<double>(reps);
     else     run_all<float>(reps);
