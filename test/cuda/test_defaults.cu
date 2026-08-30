@@ -1,19 +1,19 @@
 // test_defaults.cu — compile-time validation of glass-defaults.cuh. The helpers are
 // constexpr, so the static_asserts ARE the test: if this compiles, the picks match the
-// sweep (bench/RESULTS.md). No MathDx needed — this TU links no vendor lib, so
-// suggested_backend<> exercises the no-nvidia COLLAPSE, while ideal_sm120() is checked
-// directly for the nvidia-tier picks (it's availability-independent).
+// sweep (bench/RESULTS.md). No MathDx is linked: recommend() still checks both
+// measured dependency policies because it returns metadata only.
 #include <cstdio>
 #include "glass.cuh"
 #include "glass-defaults.cuh"
 
-using glass::op; using glass::backend;
+using glass::op;
 namespace gd = glass::defaults;
+using backend = gd::backend;
 
-// Public backend ordinals are serialized by downstream codegen: append only.
+// Generated-table ordinals are serialized by archived tuner artifacts: append only.
 static_assert(static_cast<int>(backend::warp) == 0, "backend ordinal: warp");
 static_assert(static_cast<int>(backend::block) == 1, "backend ordinal: block");
-static_assert(static_cast<int>(backend::nvidia) == 2, "backend ordinal: nvidia");
+static_assert(static_cast<int>(backend::nvidia_block) == 2, "backend ordinal: nvidia_block");
 static_assert(static_cast<int>(backend::thread) == 3, "backend ordinal: thread");
 static_assert(static_cast<int>(backend::nvidia_thread) == 4,
               "backend ordinal: nvidia_thread appended");
@@ -25,16 +25,16 @@ static_assert(static_cast<int>(backend::nvidia_thread) == 4,
 static_assert(gd::ideal_sm120(op::gemm, 8,  false) == backend::warp,   "gemm8 f32");
 static_assert(gd::ideal_sm120(op::gemm, 12, false) == backend::warp,   "gemm12 f32");
 static_assert(gd::ideal_sm120(op::gemm, 24, false) == backend::block,  "gemm24 f32");
-static_assert(gd::ideal_sm120(op::gemm, 32, false) == backend::nvidia, "gemm32 f32");
+static_assert(gd::ideal_sm120(op::gemm, 32, false) == backend::nvidia_block, "gemm32 f32");
 static_assert(gd::ideal_sm120(op::gemm, 96, false) == backend::block,  "gemm96 f32 (smem cap)");
 // NVIDIA thread wins 17 throughput cells in both independent captures.
-static_assert(gd::ideal_sm120(op::chol, 4,   false) == backend::thread, "chol4 f32");
-static_assert(gd::ideal_sm120(op::chol, 8,   false) == backend::nvidia_thread, "chol8 f32 -> NVIDIA thread");
-static_assert(gd::ideal_sm120(op::chol, 24,  false) == backend::warp,   "chol24 f32");
-static_assert(gd::ideal_sm120(op::chol, 128, false) == backend::nvidia, "chol128 f32");
+static_assert(gd::ideal_sm120(op::potrf, 4,   false) == backend::thread, "potrf4 f32");
+static_assert(gd::ideal_sm120(op::potrf, 8,   false) == backend::nvidia_thread, "potrf8 f32 -> NVIDIA thread");
+static_assert(gd::ideal_sm120(op::potrf, 24,  false) == backend::warp,   "potrf24 f32");
+static_assert(gd::ideal_sm120(op::potrf, 128, false) == backend::nvidia_block, "potrf128 f32");
 static_assert(gd::ideal_sm120(op::trsv, 12, false) == backend::thread, "trsv12 f32");
 static_assert(gd::ideal_sm120(op::trsv, 24, false) == backend::nvidia_thread, "trsv24 f32 -> NVIDIA thread");
-static_assert(gd::ideal_sm120(op::trsv, 32, false) == backend::nvidia, "trsv32 f32 -> NVIDIA block");
+static_assert(gd::ideal_sm120(op::trsv, 32, false) == backend::nvidia_block, "trsv32 f32 -> NVIDIA block");
 static_assert(gd::ideal_sm120(op::trsv, 64, false) == backend::warp,   "trsv64 f32");
 static_assert(gd::ideal_sm120(op::dot,  8,   false) == backend::thread, "dot8");
 static_assert(gd::ideal_sm120(op::dot,  16,  false) == backend::warp,   "dot16 higher-repetition tie verdict");
@@ -43,8 +43,8 @@ static_assert(gd::ideal_sm120(op::dot,  128, false) == backend::warp,  "dot128")
 static_assert(gd::ideal_sm120(op::gemv, 4,   false) == backend::thread, "gemv4");
 static_assert(gd::ideal_sm120(op::gemv, 32,  false) == backend::warp,  "gemv32");
 static_assert(gd::ideal_sm120(op::gemv, 48,  false) == backend::block, "gemv48");
-static_assert(gd::ideal_sm120(op::chol, 8,  true) == backend::nvidia_thread, "chol8 f64 -> NVIDIA thread");
-static_assert(gd::ideal_sm120(op::chol, 48, true) == backend::block,  "chol48 f64");
+static_assert(gd::ideal_sm120(op::potrf, 8,  true) == backend::nvidia_thread, "potrf8 f64 -> NVIDIA thread");
+static_assert(gd::ideal_sm120(op::potrf, 48, true) == backend::block,  "potrf48 f64");
 static_assert(gd::ideal_sm120(op::gemm, 64, true) == backend::block,  "gemm64 f64");
 static_assert(gd::ideal_sm120(op::posv, 8,  true) == backend::nvidia_thread, "posv8 f64 -> NVIDIA thread");
 static_assert(gd::ideal_sm120(op::posv, 12, true) == backend::thread, "posv12 f64");
@@ -55,28 +55,28 @@ static_assert(gd::ideal_sm120(op::posv, 64, true) == backend::block,  "posv64 f6
 // LTO-IR fatbin. None of its 19 winning throughput rows was jitter-flagged.
 static_assert(gd::ideal_sm87(op::dot,   8,  false) == backend::thread, "dot8 f32");
 static_assert(gd::ideal_sm87(op::dot,   128, false) == backend::warp,  "dot128 f32");
-static_assert(gd::ideal_sm87(op::chol,  8,  false) == backend::nvidia_thread, "chol8 f32 -> NVIDIA thread");
-static_assert(gd::ideal_sm87(op::chol,  12, false) == backend::nvidia_thread, "chol12 f32 -> NVIDIA thread");
-static_assert(gd::ideal_sm87(op::chol,  48, false) == backend::nvidia, "chol48 f32 -> vendor");
+static_assert(gd::ideal_sm87(op::potrf,  8,  false) == backend::nvidia_thread, "potrf8 f32 -> NVIDIA thread");
+static_assert(gd::ideal_sm87(op::potrf,  12, false) == backend::nvidia_thread, "potrf12 f32 -> NVIDIA thread");
+static_assert(gd::ideal_sm87(op::potrf,  48, false) == backend::nvidia_block, "potrf48 f32 -> vendor");
 static_assert(gd::ideal_sm87(op::trsv,  16, false) == backend::nvidia_thread, "trsv16 f32 -> NVIDIA thread");
-static_assert(gd::ideal_sm87(op::posv,  32, false) == backend::nvidia, "posv32 f32 -> vendor");
+static_assert(gd::ideal_sm87(op::posv,  32, false) == backend::nvidia_block, "posv32 f32 -> vendor");
 static_assert(gd::ideal_sm87(op::posv,  16, false) == backend::thread, "posv16 f32");
-static_assert(gd::ideal_sm87(op::gemm,  64, false) == backend::nvidia, "gemm64 f32 -> vendor");
+static_assert(gd::ideal_sm87(op::gemm,  64, false) == backend::nvidia_block, "gemm64 f32 -> vendor");
 static_assert(gd::ideal_sm87(op::gemm,  64, true)  == backend::warp,   "gemm64 f64 (SIMT tie: warp within 1% of block to N=96)");
 static_assert(gd::ideal_sm87(op::gemm, 128, true)  == backend::block,  "gemm128 f64 (block's only real win, 24% faster)");
-static_assert(gd::ideal_sm87(op::chol,  8,  true)   == backend::nvidia_thread, "chol8 f64 -> NVIDIA thread");
-static_assert(gd::ideal_sm87(op::chol,  24, true)  == backend::thread, "chol24 f64 (thread reaches further than sm_120)");
+static_assert(gd::ideal_sm87(op::potrf,  8,  true)   == backend::nvidia_thread, "potrf8 f64 -> NVIDIA thread");
+static_assert(gd::ideal_sm87(op::potrf,  24, true)  == backend::thread, "potrf24 f64 (thread reaches further than sm_120)");
 static_assert(gd::ideal_sm87(op::posv,  8,  true)   == backend::nvidia_thread, "posv8 f64 -> NVIDIA thread");
 
 // ── per-arch dispatch: a measured SM hits its table, an unmeasured SM falls to generic ──
 static_assert(gd::ideal(op::gemm, 32, false, 1200u) == gd::ideal_sm120(op::gemm, 32, false), "sm_120 dispatches to its table");
 static_assert(gd::ideal(op::posv, 64, true,  1200u) == gd::ideal_sm120(op::posv, 64, true),  "sm_120 dispatches to its table (f64)");
-static_assert(gd::ideal(op::chol, 48, false, 870u)  == gd::ideal_sm87(op::chol, 48, false),  "sm_87 dispatches to its table");
+static_assert(gd::ideal(op::potrf, 48, false, 870u)  == gd::ideal_sm87(op::potrf, 48, false),  "sm_87 dispatches to its table");
 static_assert(gd::ideal(op::posv, 64, true,  870u)  == gd::ideal_sm87(op::posv, 64, true),   "sm_87 dispatches to its table (f64)");
 // (sentinel SMs no sweep will ever produce — a real new arch, e.g. sm_87 on Jetson,
 //  gets its own table + dispatch case from tune.py and must NOT be asserted generic here)
 static_assert(gd::ideal(op::gemm, 32, false, 0u) == gd::ideal_generic(op::gemm, 32, false), "unmeasured SM falls to generic");
-static_assert(gd::ideal(op::chol, 24, false, 1u) == gd::ideal_generic(op::chol, 24, false), "unmeasured SM falls to generic");
+static_assert(gd::ideal(op::potrf, 24, false, 1u) == gd::ideal_generic(op::potrf, 24, false), "unmeasured SM falls to generic");
 
 // ── blas2 family (warp-vs-block; tune.py blas2 leg, blas2_sweep_20260718_0327) ──
 static_assert(gd::blas2_sm120(op::syrk,  16, false) == backend::block, "syrk16 f32 -> block (2.2% gap just outside SIMT tie band, 2026-08-12 capture; band-edge cell)");
@@ -85,18 +85,22 @@ static_assert(gd::blas2_sm120(op::ldlt,  32, false) == backend::warp,  "ldlt32 f
 static_assert(gd::blas2_sm120(op::ldlt,  32, true)  == backend::block, "ldlt32 f64 -> block");
 static_assert(gd::blas2_sm120(op::syr2k,  8, true)  == backend::block, "syr2k8 f64 -> block (2.5% gap just outside SIMT tie band, 2026-08-12 capture; band-edge cell)");
 static_assert(gd::ideal(op::syrk, 16, false, 1200u) == gd::blas2_sm120(op::syrk, 16, false), "blas2 ops route through ideal()");
-static_assert(gd::ideal(op::ldltsv, 32, false, 870u) == backend::block, "blas2 unmeasured arch -> block incumbent");
-static_assert(glass::suggested_backend<op::ldlt, 32, float, 1200u>() == backend::warp, "public picker reaches blas2 table");
+static_assert(gd::ideal(op::ldlt_solve, 32, false, 870u) == backend::block, "blas2 unmeasured arch -> block incumbent");
+static_assert(glass::recommend<op::ldlt, float, 32>(glass::dependency_set::native_only, 1200u).execution_scope == glass::scope::warp,
+              "public plan reaches blas2 table");
 
 // ── rect exact-shape pickers (tune.py rect leg, rect_sweep_20260718_0328) ──
 static_assert(gd::rect_gemv_sm120( 64,  8, false) == backend::warp,  "gemv 64x8 f32 tall -> warp");
 static_assert(gd::rect_gemv_sm120(128, 16, false) == backend::block, "gemv 128x16 f32 -> block");
 static_assert(gd::rect_gemv_sm120(128, 16, true)  == backend::warp,  "gemv 128x16 f64 -> warp");
-static_assert(gd::rect_gemm_sm120( 6,  6, 64, false) == backend::block, "gemm 6x6x64 wide -> block");
-static_assert(gd::rect_gemm_sm120(32,  8, 32, false) == backend::warp,  "gemm 32x8x32 -> warp");
-static_assert(glass::suggested_backend_rect_gemv<64, 8, float, 1200u>() == backend::warp, "public rect gemv picker");
-static_assert(glass::suggested_backend_rect_gemm<7, 7, 7, float, 1200u>() == backend::block, "unmeasured rect shape -> block");
-static_assert(glass::suggested_backend_rect_gemv<64, 8, float, 870u>() == backend::block, "rect unmeasured arch -> block");
+static_assert(gd::rect_gemm_sm120( 6, 64,  6, false) == backend::block, "gemm M=6,N=64,K=6 wide -> block");
+static_assert(gd::rect_gemm_sm120(32, 32,  8, false) == backend::warp,  "gemm M=32,N=32,K=8 -> warp");
+static_assert(glass::recommend<op::gemv, float, 64, 8>(glass::dependency_set::native_only, 1200u).execution_scope == glass::scope::warp,
+              "public rectangular GEMV plan");
+static_assert(glass::recommend<op::gemm, float, 7, 7, 7>(glass::dependency_set::native_only, 1200u).execution_scope == glass::scope::block,
+              "unmeasured rectangular GEMM shape -> block");
+static_assert(glass::recommend<op::gemv, float, 64, 8>(glass::dependency_set::native_only, 870u).execution_scope == glass::scope::block,
+              "rectangular unmeasured arch -> block");
 
 // ── bare-namespace face: measured body pins (2026-08-14 sweep, sm_120) ──
 // dispatch_body() now carries the measured body_sm120 table
@@ -105,27 +109,27 @@ static_assert(glass::suggested_backend_rect_gemv<64, 8, float, 870u>() == backen
 // bounded at the largest measured N). Spot-pin the moved cells + the rule's
 // conservative refusals:
 using glass::body;
-static_assert(glass::dispatch_body(op::dot,   4, false) == body::block,           "dot4 f32 -> block body");
-static_assert(glass::dispatch_body(op::dot,   8, false) == body::thread_in_block, "dot8 f32 -> thread body");
-static_assert(glass::dispatch_body(op::dot,  16, false) == body::thread_in_block, "dot16 f32 -> thread body");
-static_assert(glass::dispatch_body(op::dot,  32, false) == body::warp_in_block,   "dot32 f32 -> warp body");
-static_assert(glass::dispatch_body(op::dot,  64, false) == body::warp_in_block,   "dot64 f32 -> warp body");
-static_assert(glass::dispatch_body(op::dot, 128, false) == body::block,           "dot128 f32 BOUNDED -> block");
-static_assert(glass::dispatch_body(op::trsv, 16, false) == body::warp_in_block,   "trsv16 f32 -> warp body");
-static_assert(glass::dispatch_body(op::trsv, 64, false) == body::block,           "trsv64 f32 stays block");
-static_assert(glass::dispatch_body(op::posv,  4, false) == body::thread_in_block, "posv4 f32 -> thread body");
-static_assert(glass::dispatch_body(op::posv, 16, true)  == body::block,           "posv f64 all block");
-static_assert(glass::dispatch_body(op::eig3,  3, true)  == body::thread_in_block, "eig3 f64 -> thread body");
-static_assert(glass::dispatch_body(op::eig3,  3, false) == body::block,           "eig3 f32 TB-unstable -> block");
-static_assert(glass::dispatch_body(op::softmax, 16, false) == body::warp_in_block, "softmax16 f32 -> warp body");
-static_assert(glass::dispatch_body(op::softmax, 4096, false) == body::block,      "softmax large-n BOUNDED -> block");
-static_assert(glass::dispatch_body(op::gemm, 16, false) == body::block,           "gemm never moves");
+static_assert(glass::dispatch_body(op::dot,   4, false, 1200u) == body::block,           "dot4 f32 -> block body");
+static_assert(glass::dispatch_body(op::dot,   8, false, 1200u) == body::thread_in_block, "dot8 f32 -> thread body");
+static_assert(glass::dispatch_body(op::dot,  16, false, 1200u) == body::thread_in_block, "dot16 f32 -> thread body");
+static_assert(glass::dispatch_body(op::dot,  32, false, 1200u) == body::warp_in_block,   "dot32 f32 -> warp body");
+static_assert(glass::dispatch_body(op::dot,  64, false, 1200u) == body::warp_in_block,   "dot64 f32 -> warp body");
+static_assert(glass::dispatch_body(op::dot, 128, false, 1200u) == body::block,           "dot128 f32 BOUNDED -> block");
+static_assert(glass::dispatch_body(op::trsv, 16, false, 1200u) == body::warp_in_block,   "trsv16 f32 -> warp body");
+static_assert(glass::dispatch_body(op::trsv, 64, false, 1200u) == body::block,           "trsv64 f32 stays block");
+static_assert(glass::dispatch_body(op::posv,  4, false, 1200u) == body::thread_in_block, "posv4 f32 -> thread body");
+static_assert(glass::dispatch_body(op::posv, 16, true, 1200u)  == body::block,           "posv f64 all block");
+static_assert(glass::dispatch_body(op::eig3,  3, true, 1200u)  == body::thread_in_block, "eig3 f64 -> thread body");
+static_assert(glass::dispatch_body(op::eig3,  3, false, 1200u) == body::block,           "eig3 f32 TB-unstable -> block");
+static_assert(glass::dispatch_body(op::softmax, 16, false, 1200u) == body::warp_in_block, "softmax16 f32 -> warp body");
+static_assert(glass::dispatch_body(op::softmax, 4096, false, 1200u) == body::block,      "softmax large-n BOUNDED -> block");
+static_assert(glass::dispatch_body(op::gemm, 16, false, 1200u) == body::block,           "gemm never moves");
 // sm_87 body table (body_dispatch_sweep_20260803_0936.txt, 50W, archived externally): the same rule
 // moves 23 cells there; softmax/eig3 land identically, dot's warp band runs wider.
 static_assert(glass::dispatch_body(op::dot,   8, false, 870u) == body::thread_in_block, "sm_87 dot8 -> thread body");
 static_assert(glass::dispatch_body(op::dot,  32, false, 870u) == body::warp_in_block,   "sm_87 dot32 -> warp body");
 static_assert(glass::dispatch_body(op::dot, 128, false, 870u) == body::block,           "sm_87 dot128 BOUNDED -> block");
-static_assert(glass::dispatch_body(op::chol, 16, false, 870u) == body::block,           "sm_87 chol never moves");
+static_assert(glass::dispatch_body(op::potrf, 16, false, 870u) == body::block,           "sm_87 potrf never moves");
 static_assert(glass::dispatch_body(op::eig3,  3, true,  870u) == body::thread_in_block, "sm_87 eig3 f64 -> thread body");
 static_assert(glass::dispatch_body(op::softmax, 16, false, 870u) == body::warp_in_block, "sm_87 softmax16 -> warp body");
 // unmeasured arch: every cell stays the block body
@@ -139,25 +143,30 @@ static_assert(&glass::symmetrize<float, 8, true> == &glass::block::symmetrize<fl
 static_assert(&glass::warp::dot<float, 8>  == &glass::block::warp::dot<float, 8>,  "warp alias");
 static_assert(&glass::thread::dot<float, 8> == &glass::block::thread::dot<float, 8>, "thread alias");
 
-// ── no-nvidia collapse (this TU links no vendor lib) ──
-static_assert(!gd::have_nv_thread && !gd::nv_thread_available(op::chol),
-              "NVIDIA thread is unavailable without glass-nvidia.cuh/MathDx");
-static_assert(glass::suggested_backend<op::chol, 8, float>() == backend::warp,
-              "NVIDIA-thread chol collapses to dependency-free runner-up");
-static_assert(glass::suggested_backend<op::chol, 24, float>() == backend::warp,  "chol24 collapses to warp");
-static_assert(glass::suggested_backend<op::chol, 64, float>() == backend::block, "chol64 collapses to block");
-static_assert(glass::suggested_backend<op::gemm, 32, float>() == backend::block, "gemm32 collapses to block");
-static_assert(glass::suggested_backend<op::trsv, 24, float>() == backend::warp,  "trsv24 collapses to warp");
-static_assert(glass::suggested_backend<op::dot,  32, float>() == backend::warp,  "dot stays warp");
-static_assert(glass::suggested_backend<op::gemv, 48, float>() == backend::block, "gemv48 stays block");
-
-// ── launch-config helpers ──
-static_assert(glass::suggested_block_threads<op::chol, 32, float>() == 32u, "chol TB=32");
-static_assert(glass::suggested_block_threads<op::posv, 64, float>() == 32u, "posv TB=32");
-static_assert(glass::suggested_block_threads<op::gemm, 8,  float>() == 64u, "gemm8 TB=64");
-static_assert(glass::suggested_block_threads<op::gemm, 32, float>() == 256u, "gemm32 TB=256");
-static_assert(glass::suggested_warps_per_block<op::dot>()  == 8u, "dot WPB=8");
-static_assert(glass::suggested_warps_per_block<op::chol>() == 2u, "chol WPB=2");
+// ── public dependency policies ──
+constexpr auto native_potrf = glass::recommend<op::potrf, float, 8>();
+static_assert(native_potrf.implementation == glass::family::native &&
+              native_potrf.execution_scope == glass::scope::warp &&
+              native_potrf.block_threads == 64u && native_potrf.problems_per_block == 2u,
+              "native-only plan uses the measured native runner-up");
+constexpr auto mathdx_potrf = glass::recommend<op::potrf, float, 8>(
+    glass::dependency_set::mathdx, 1200u);
+static_assert(mathdx_potrf.implementation == glass::family::nvidia &&
+              mathdx_potrf.execution_scope == glass::scope::thread,
+              "MathDx plan admits the measured NVIDIA-thread winner");
+constexpr auto native_posv = glass::recommend<op::posv, float, 8>();
+static_assert(native_posv.implementation == glass::family::native &&
+              native_posv.execution_scope == glass::scope::thread,
+              "native-only plan preserves the measured native thread winner");
+constexpr auto native_gemm = glass::recommend<op::gemm, float, 32>();
+static_assert(native_gemm.implementation == glass::family::native &&
+              native_gemm.execution_scope == glass::scope::block &&
+              native_gemm.block_threads == 256u && native_gemm.problems_per_block == 1u,
+              "native-only plan includes the block launch");
+constexpr auto native_dot = glass::recommend<op::dot, float, 24>(glass::dependency_set::native_only, 1200u);
+static_assert(native_dot.execution_scope == glass::scope::thread &&
+              native_dot.block_threads == native_dot.problems_per_block,
+              "thread plan packs one problem per thread");
 
 // ── host-side query/size helpers: constexpr, so the asserts ARE the test.
 // Property-based (positive, monotone in threads/size) rather than exact —
@@ -180,6 +189,4 @@ constexpr uint32_t k_inv_dims[] = {4u, 6u};
 static_assert(glass::inv_fused_scratch_bytes<float>(2, k_inv_dims) > 0, "K-way fused inv scratch positive");
 static_assert(glass::eigh_sweeps<double>() > glass::eigh_sweeps<float>(), "f64 needs more Jacobi sweeps");
 static_assert(glass::syev_eps<float>() > 0 && glass::syev_eps<double>() < glass::syev_eps<float>(), "syev eps ordered by precision");
-static_assert(!glass::suggested_use_reduced<4, 8, 128>(), "reduced corner empty on sm_120 (bench/RESULTS.md reduced section)");
-
 int main() { printf("ok\n"); return 0; }

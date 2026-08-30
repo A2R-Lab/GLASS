@@ -12,7 +12,7 @@
 //   nvcc -std=c++17 -arch=sm_XX -O3
 //        -I.. -I../src
 //        -I$MATHDX_ROOT/include -I$MATHDX_ROOT/external/cutlass/include
-//        -DGLASS_BENCH_CUBLASDX -DSMS=XX0
+//        -DGLASS_BENCH_CUBLASDX -DGLASS_TARGET_SM=XX0
 //        -Xptxas -O1
 //        bench_gemm.cu -o bench_gemm
 // Usage: ./bench_gemm [m [n [k [iters]]]]
@@ -174,10 +174,6 @@ DEFINE_THREAD_GEMM_CT(6)
 // ─── cuBLASDx kernels (compile-time M/N/K) ────────────────────────────────────
 #ifdef GLASS_BENCH_CUBLASDX
 
-#ifndef SMS
-#define SMS 860
-#endif
-
 #define DEFINE_CUBLASDX_GEMM(M, N, K)                                                       \
     namespace cublasdx_gemm_##M##x##N##x##K {                                               \
         using GEMM = decltype(                                                               \
@@ -271,8 +267,8 @@ DEFINE_CUBLASDX_GEMM(4,  4,  64)
 
 // ─── glass::nvidia kernels (compile-time M/N/K, alongside raw cuBLASDx) ──────
 // Two variants per size:
-//   _nv_default — uses glass::nvidia::gemm<T,M,N,K>(...)            (no BlockDim)
-//   _nv_blockdim — uses glass::nvidia::gemm<T,M,N,K,THREADS>(...)   (BlockDim<THREADS>)
+//   _nv_default — uses glass::nvidia::block::gemm<T,M,N,K>(...)
+//   _nv_blockdim — uses glass::nvidia::block::gemm<T,M,N,K,THREADS>(...)
 //
 // Both write to a volatile sink each iteration to defeat dead-store elimination.
 

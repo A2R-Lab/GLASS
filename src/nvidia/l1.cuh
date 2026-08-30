@@ -20,8 +20,8 @@
 //
 // Example:
 //   extern __shared__ float scratch[];   // must be >= sizeof(T) * THREADS
-//   glass::nvidia::reduce<float, 64, 256>(x, scratch);                   // default sync
-//   glass::nvidia::reduce<float, 64, 256, /*TRAILING_SYNC=*/false>(...); // fused
+//   glass::nvidia::block::reduce<float, 64, 256>(x, scratch);                   // default sync
+//   glass::nvidia::block::reduce<float, 64, 256, /*TRAILING_SYNC=*/false>(...); // fused
 
 // Debug-only check that the launched blockDim.x matches CUB's THREADS template
 // arg. Mismatch (in either direction) silently corrupts the BlockReduce result.
@@ -146,4 +146,3 @@ inline constexpr std::size_t reduce_scratch_bytes()
 {
     return sizeof(typename cub::BlockReduce<T, THREADS>::TempStorage);
 }
-

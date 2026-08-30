@@ -1,7 +1,7 @@
 #pragma once
 /**
  * @file types.cuh
- * @brief Public types and shared helper macros for the `glass::nvidia::` wrappers.
+ * @brief Public types and shared helper macros for the `glass::nvidia::*` wrappers.
  *
  * Defines the user-facing `glass::nvidia::layout` enum (per-matrix memory
  * order, used as the LA/LB/LC template arguments of gemm/gemv/...) plus the
@@ -13,7 +13,7 @@
 #include <cassert>
 
 /**
- * @brief Matrix memory layout for the cuBLASDx-backed `glass::nvidia::` wrappers.
+ * @brief Matrix memory layout for the cuBLASDx-backed `glass::nvidia::block::` wrappers.
  *
  * Maps directly to `cublasdx::Arrangement<>`: `col_major` (Fortran/cuBLAS
  * default) and `row_major` (C-style). Passed per matrix as the LA/LB/LC

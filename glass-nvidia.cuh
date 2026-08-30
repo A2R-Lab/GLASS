@@ -1,7 +1,7 @@
 #pragma once
 /**
  * @file glass-nvidia.cuh
- * @brief Umbrella header for the `glass::nvidia::` backend (CUB / cuBLASDx / cuSOLVERDx).
+ * @brief Umbrella header for explicit `glass::nvidia::{block,warp,thread}` backends.
  *
  * Include this (instead of, or in addition to, glass.cuh) to access the
  * vendor-accelerated single-block linear-algebra paths. It pulls in:
@@ -23,8 +23,8 @@
  * The L2/L3/LAPACK wrappers gate themselves on GLASS_HAVE_CUBLASDX /
  * GLASS_HAVE_CUSOLVERDX, auto-detected from include order. Set MATHDX_ROOT and
  * define GLASS_BENCH_CUBLASDX / GLASS_BENCH_CUSOLVERDX to force-enable them. The
- * `glass::nvidia::*` primary templates auto-dispatch between pure-SIMT and the
- * vendor backend at compile time via the size heuristic / tuning table.
+ * `glass::nvidia::block::*` primary templates auto-dispatch between pure-SIMT
+ * and the vendor backend at compile time via the size heuristic / tuning table.
  */
 #include "glass.cuh"
 
@@ -142,7 +142,7 @@ namespace block {
     // but these aliases make consumer code self-documenting:
     //
     //   constexpr std::size_t smem =
-    //       glass::nvidia::required_smem_for_dispatch_gemm<float, M, N, K>();
+    //       glass::nvidia::block::required_smem_for_dispatch_gemm<float, M, N, K>();
     //   __shared__ char buf[smem];  // 0 bytes if the call SIMT-routes
     //
     // Codegen that accumulates scratch across many call sites can take
@@ -267,18 +267,9 @@ namespace block {
 
 }  // namespace block
 
-/*  Bare glass::nvidia:: face — same contract as the bare glass:: face
-    (glass.cuh): the block-scope vendor surface re-exported, so existing
-    glass::nvidia::op spellings resolve to the SAME entities as
-    glass::nvidia::block::op. The warp-scope vendor forms (cub::WarpReduce)
-    live in their own sub-namespace below, included at nvidia:: scope so the
-    spelling is glass::nvidia::warp:: (a warp tier is not a block-scope
-    body, so it does NOT nest under block::).  */
-using namespace block;
-
 #if GLASS_HAVE_CUSOLVERDX_THREAD
 // One independent packed problem per CUDA thread; no shared scratch or
-// block-wide synchronization. The bare nvidia:: surface remains block-scoped.
+// block-wide synchronization.
 #include "./src/nvidia/lapack_thread.cuh"
 #endif
 

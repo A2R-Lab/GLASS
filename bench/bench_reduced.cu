@@ -8,7 +8,7 @@
 // Emits one parseable row per (dtype,M,N,K,blockDim):
 //     REDUCED dtype M N K blockDim n_out serial_us reduced_us ratio spreads
 // where ratio = serial_us / reduced_us  (>1 ⇒ reduced wins). Used to seed
-// glass::suggested_use_reduced<>() and the contraction_parallel concepts page.
+// the conservative standard policy and the contraction_parallel concepts page.
 //
 // Build: nvcc -std=c++17 -arch=sm_XX -O3 -I.. -I../src bench_reduced.cu -o bench_reduced
 // Usage: ./bench_reduced [iters] [f32|f64|both]

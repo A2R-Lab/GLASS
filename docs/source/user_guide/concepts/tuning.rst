@@ -4,12 +4,13 @@ Tuning for Your Hardware
 One command — ``bench/tune.py``
 -------------------------------
 
-GLASS ships three measured defaults tables: the native and NVIDIA
+GLASS ships measured native/NVIDIA execution plans, a vendor implementation
+table, and explicit-algorithm characterization. The native and NVIDIA
 thread/warp/block **backend ladder** (``glass-defaults.cuh``, consumed by
-``glass::suggested_backend<>``),
+``glass::recommend<>``),
 the per-(M,N,K) **cuBLASDx-vs-SIMT table** (``src/nvidia/tuning_table.cuh``, the
-main subject below), and the serial-vs-reduced **``suggested_use_reduced<>``**
-predicate. ``bench/tune.py`` remeasures all of them on your GPU and regenerates
+main subject below), and the serial-vs-reduced characterization are all driven
+by ``bench/tune.py``. It remeasures them on your GPU and regenerates
 them under **one shared noise margin**, so nothing bakes sub-noise jitter and a
 pure-noise re-run reproduces the same tables:
 
@@ -58,7 +59,7 @@ before continuing.
 The cuBLASDx-vs-SIMT table
 --------------------------
 
-GLASS's ``glass::nvidia::*`` wrappers — ``gemm``, ``gemv``, ``row_strided_*``,
+GLASS's ``glass::nvidia::block::*`` wrappers — ``gemm``, ``gemv``, ``row_strided_*``,
 ``gemm_batched_1d`` — auto-dispatch between a pure-SIMT path and cuBLASDx at
 compile time (see :doc:`backend_dispatch`). The decision lives in
 ``src/nvidia/query_simt.cuh::should_use_cublasdx*<>()`` and consults, in order:
@@ -104,7 +105,7 @@ GPUs, so re-run the sweep on yours.
      - **warp** ≤ N≈8, else **block**
      - scale 64→256 with N
      - 2–4
-   * - ``chol`` / ``trsv`` / ``posv``
+   * - ``potrf`` / ``trsv`` / ``posv``
      - **warp**; block fallback **TB=32**
      - 32
      - 2–4
@@ -113,25 +114,26 @@ Rule of thumb: **warp-per-problem by default**; ``gemv`` → block past N≈48, 
 block once non-tiny. Factor/solve want block ``TB=32`` — extra threads idle on the
 serial pivot and TB>32 *hurts*.
 
-**If you link MathDx** (``glass::nvidia::``), both its block and thread
+**If you link MathDx**, both ``glass::nvidia::block`` and
+``glass::nvidia::thread``
 interfaces enter the ladder where supported. Which one wins is not monotonic:
 the current sm_120 and sm_87 tables select NVIDIA thread for some small
-``chol``/``trsv``/``posv`` cells, NVIDIA block elsewhere, and native tiers in
+``potrf``/``trsv``/``posv`` cells, NVIDIA block elsewhere, and native tiers in
 the remaining bands. See :doc:`../tutorials/sweep_results` and
 ``bench/RESULTS.md`` for the dated per-op × per-precision results.
 
-These defaults are also exposed as ``constexpr`` helpers in ``glass-defaults.cuh`` —
-``glass::suggested_backend<op, N, T>()``, ``suggested_block_threads<>()`` and
-``suggested_warps_per_block<>()`` — so callers and codegen can pick a backend + launch
-config without hand-copying the table. Include it after ``glass.cuh`` (and after
-``glass-nvidia.cuh`` to make the NVIDIA tiers eligible; otherwise a vendor pick
-collapses to a dependency-free fallback). The pick is host-/codegen-side because
+The ``constexpr`` ``glass::recommend<op, T, dims...>()`` query returns one
+``execution_plan`` containing family, scope, and launch packing.
+Pass ``dependency_set::mathdx`` explicitly to admit NVIDIA candidates;
+``native_only`` is the default. Each measured architecture stores both the
+full winner and the measured native-only winner for every cell. The pick is
+host-/codegen-side because
 the tiers need different ``<<<grid, block>>>`` launches. Tables are per-arch
 (``ideal_sm120`` and ``ideal_sm87`` today)
 behind an SM dispatch; ``bench/tune.py --sm auto`` adds or refreshes your GPU's table
 (and the tables below) in-tree, leaving other arches' tables untouched.
 
-Note that ``suggested_backend<>`` advises **launch-level** packing — the caller
+Note that ``recommend<>`` advises **launch-level** packing — the caller
 changes the ``<<<grid, block>>>``. Distinct from it, ``glass::dispatch_body()``
 (``glass-dispatch.cuh``) picks the **in-block body** behind the bare
 ``glass::op`` face under a *fixed* block-scope calling contract — the launch
@@ -297,10 +299,10 @@ Debugging dispatch decisions
    #include "glass-nvidia.cuh"
 
    int main() {
-       glass::nvidia::print_dispatch<float, 6, 6, 6>();
-       // → "glass::nvidia::gemm<T,6,6,6,SM=860>: SIMT fallback"
-       glass::nvidia::print_dispatch_gemv<float, 64, 64>();
-       // → "glass::nvidia::gemv<T,64,64,SM=860>: cuBLASDx (needs DEFINE_NVIDIA_GEMV*)"
+       glass::nvidia::block::print_dispatch<float, 6, 6, 6>();
+       // → "glass::nvidia::block::gemm<T,6,6,6,SM=860>: SIMT fallback"
+       glass::nvidia::block::print_dispatch_gemv<float, 64, 64>();
+       // → "glass::nvidia::block::gemv<T,64,64,SM=860>: cuBLASDx"
    }
 
 These are ``__host__ __device__`` so you can call them from ``main`` for

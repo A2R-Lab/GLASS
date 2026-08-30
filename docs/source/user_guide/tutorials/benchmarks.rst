@@ -16,24 +16,24 @@ What's in ``bench/``
      - Comparison
    * - ``bench_reduce.cu``
      - ``glass::*::reduce/dot/nrm2`` (plain, low_memory, high_speed,
-       compile-time) vs CUB ``BlockReduce`` vs ``glass::nvidia::reduce``
+       compile-time) vs CUB ``BlockReduce`` vs ``glass::nvidia::block::reduce``
    * - ``bench_gemv.cu``
      - ``glass::gemv`` (runtime + compile-time) vs raw cuBLASDx vs
-       ``glass::nvidia::gemv`` (default + caller-pinned ``BlockDim<256>``)
+       ``glass::nvidia::block::gemv`` (default + caller-pinned ``BlockDim<256>``)
    * - ``bench_gemm.cu``
      - ``glass::gemm`` (plain, tiled, compile-time) vs raw cuBLASDx vs
-       ``glass::nvidia::gemm`` (default + caller-pinned)
+       ``glass::nvidia::block::gemm`` (default + caller-pinned)
    * - ``bench_blockdim.cu``
-     - ``glass::nvidia::gemm`` cuBLASDx-chosen block_dim vs caller-pinned
+     - ``glass::nvidia::block::gemm`` cuBLASDx-chosen block_dim vs caller-pinned
        ``BlockDim<128>`` vs ``BlockDim<352>``
    * - ``bench_gemm_batched.cu``
-     - ``glass::nvidia::gemm_batched<...,BATCH>`` vs a naive ``for(b)`` loop, for
+     - ``glass::nvidia::block::gemm_batched<...,BATCH>`` vs a naive ``for(b)`` loop, for
        BATCH ∈ {4, 8, 16, 32}
    * - ``bench_gemm_batched_1d.cu``
      - 1D-launch ``gemm_batched_1d`` (SIMT vs cuBLASDx) — feeds the autotune table
    * - ``bench_lapack.cu`` *(needs cuSOLVERDx)*
      - pure-SIMT ``glass::potrf`` / ``trsm`` vs
-       ``glass::nvidia::potrf`` / ``trsm`` / ``posv`` (fused)
+       ``glass::nvidia::block::potrf`` / ``trsm`` / ``posv`` (fused)
 
 CUB ships with CUDA 11+. cuBLASDx and cuSOLVERDx ship together in NVIDIA MathDx
 — see :doc:`../getting_started/installation`.

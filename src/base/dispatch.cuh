@@ -176,7 +176,7 @@ __device__ void potrf(uint32_t dimA, uint32_t dimB, uint32_t dimC, uint32_t MAX_
 template <typename T, uint32_t N, bool CHECK = false>
 __device__ void potrf(T *s_A, int *s_fail = nullptr) {
     constexpr body b = CHECK ? body::block
-                             : dispatch_body(op::chol, N, sizeof(T) == 8);
+                             : dispatch_body(op::potrf, N, sizeof(T) == 8);
     if constexpr (b == body::warp_in_block) {
         if (dispatch_detail::full_first_warp()) {
             dispatch_detail::warp0([&] { warp::potrf<T, N, CHECK>(s_A, s_fail); });

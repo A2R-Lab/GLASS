@@ -4,7 +4,7 @@ every shipped defaults table + figure under a single noise margin.
 
     python bench/tune.py --sm auto [--margin 0.05] [--quick] [--legs ...]
 
-It drives the three measurement harnesses and routes every verdict through the
+It drives the measurement harnesses and routes every verdict through the
 one shared tie rule in ``bench/tune_pick.py`` (a dependency-carrying impl wins
 only if it clears the margin; between SIMT tiers, any tier within the ±2% SIMT
 tie band of the fastest takes the cell if it is simpler — thread ≻ warp ≻
@@ -19,16 +19,18 @@ the same tables. The legs:
                                   the simpler tier — so a fresh sweep emits
                                   `backend::thread` wherever the low-DOF packing
                                   actually wins)
-                                  (per-arch constexpr ideal_sm* tables + the SM
+                                  (paired per-arch MathDx/native-only tables + the SM
                                   dispatch switch; a first-time arch — e.g. sm_87
                                   on a Jetson Orin — gets a new table + case,
                                   other arches' tables are left untouched)
+  body     bench_body_dispatch.cu → compatible thread-0/warp-0/block bodies
+                                  behind the fixed block-scope bare interface
   shapes   bench/autotune.py    → per-(M,N,K) cuBLASDx-vs-SIMT table in
                                   src/nvidia/tuning_table.cuh  (needs MATHDX_ROOT)
-  reduced  bench_reduced.cu     → validates serial-vs-reduced crossover against
-                                  suggested_use_reduced<>; rewrites the reduced section of RESULTS.md
+  reduced  bench_reduced.cu     → characterizes serial-vs-reduced crossover and
+                                  validates the conservative standard policy; rewrites RESULTS.md
   blas2    bench_blas2.cu       → warp/block sweep of the ops the ladder misses
-                                  (syrk/syr2k/ldlt/ldltsv/inv/trmv/ger); reports picks
+                                  (syrk/syr2k/ldlt/ldlt_solve/inv/trmv/ger); reports picks
                                   into RESULTS.md (blas2 section) + regenerates the
                                   per-arch blas2_sm* table (2-impl ops only)
   rect     bench_rect.cu        → warp/block sweep of rectangular gemv/gemm shapes;
@@ -42,8 +44,9 @@ the same tables. The legs:
   figures  export_sweep_figures → docs _static/*.png ladders + sweep_winners.txt
 
 All ops are *measured and recorded*; a dispatch picker is regenerated only for
-ops with ≥2 genuinely-competing impls (the 6 ladder ops, the per-shape cuBLASDx
-table, and the reduced corner). Single-impl families are reported, not picked.
+ops with ≥2 genuinely competing implementations. Reduced GEMM remains an
+explicit opt-in because its isolated wins do not justify another public advisor
+axis. Single-implementation families are reported, not picked.
 
 EXECUTION DISCIPLINE: perf timing must be ISOLATED — run on a quiet GPU with no
 concurrent CPU/GPU load. Build/iterate the tool offline with the ``--from-*``
@@ -189,7 +192,8 @@ def _fatbin_build_mega(sms, mdx):
     common = ["-std=c++17", f"-arch=sm_{sms // 10}", "-O3",
               "--expt-relaxed-constexpr", "-Xptxas", "-O1", "-I..", "-I../src",
               f"-I{mdx/'include'}", f"-I{mdx/'external'/'cutlass'/'include'}",
-              "-DGLASS_BENCH_CUBLASDX", "-DGLASS_BENCH_CUSOLVERDX", f"-DSMS={sms}",
+              "-DGLASS_BENCH_CUBLASDX", "-DGLASS_BENCH_CUSOLVERDX",
+              f"-DGLASS_TARGET_SM={sms}",
               "-DCUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT"]
     src = (BENCH_DIR / "bench_mega_sweep.cu").read_bytes()
     key = hashlib.sha256(src + lib_digest().encode()
@@ -226,7 +230,7 @@ def build_mega_sweep(sms, mdx, allow_no_mathdx=False):
         print("  bench_mega_sweep: MathDx absent -> 3-tier (thread/warp/block)")
         flags = ["nvcc", "-std=c++17", f"-arch=sm_{sms // 10}", "-O3",
                  "--expt-relaxed-constexpr", "-Xptxas", "-O1", "-I..", "-I../src",
-                 f"-DSMS={sms}", "bench_mega_sweep.cu"]
+                 f"-DGLASS_TARGET_SM={sms}", "bench_mega_sweep.cu"]
         binp, status = cached_build("mega_sweep_simt", "bench_mega_sweep.cu",
                                     flags, sms)
     elif platform.machine() != "x86_64":
@@ -237,7 +241,8 @@ def build_mega_sweep(sms, mdx, allow_no_mathdx=False):
         flags = ["nvcc", "-std=c++17", f"-arch=sm_{sms // 10}", "-O3",
                  "--expt-relaxed-constexpr", "-Xptxas", "-O1", "-I..", "-I../src",
                  f"-I{mdx/'include'}", f"-I{mdx/'external'/'cutlass'/'include'}",
-                 "-DGLASS_BENCH_CUBLASDX", "-DGLASS_BENCH_CUSOLVERDX", f"-DSMS={sms}",
+                 "-DGLASS_BENCH_CUBLASDX", "-DGLASS_BENCH_CUSOLVERDX",
+                 f"-DGLASS_TARGET_SM={sms}",
                  "-DCUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT", "-rdc=true", "-dlto",
                  f"-L{mdx/'lib'}", "-lcusolverdx", "-lcublas", "-lcusolver", "-lcudart",
                  "bench_mega_sweep.cu"]
@@ -305,10 +310,12 @@ def _ladder_expr(winners, dtype, op):
             runs[-1] = (N, be)
         else:
             runs.append((N, be))
+    def cpp_backend(name):
+        return "nvidia_block" if name == "nvidia" else name
     if len(runs) == 1:
-        return f"backend::{runs[0][1]}"
-    parts = [f"N <= {hi}u ? backend::{be}" for hi, be in runs[:-1]]
-    return " : ".join(parts) + f" : backend::{runs[-1][1]}"
+        return f"backend::{cpp_backend(runs[0][1])}"
+    parts = [f"N <= {hi}u ? backend::{cpp_backend(be)}" for hi, be in runs[:-1]]
+    return " : ".join(parts) + f" : backend::{cpp_backend(runs[-1][1])}"
 
 
 # Ladder-style rows print `spread<=X%` (row-max over cells); the reduced and
@@ -336,11 +343,19 @@ def warn_jittery_rows(text, margin, label):
     return len(jittery)
 
 
-def winners_from_sweep(text, margin):
-    """(dtype, op) -> {N: backend} under the shared dependency margin."""
+def winners_from_sweep(text, margin, native_only=False):
+    """(dtype, op) -> {N: backend} under the shared dependency margin.
+
+    ``native_only`` removes both vendor measurements before applying the same
+    native SIMT tie rule. This emits an actual measured runner-up table instead
+    of approximating vendor cells with a size heuristic.
+    """
     cells = tp.parse_mega_sweep(text, nprob=8192)
     winners = {}
     for (dt, op, N), times in cells.items():
+        if native_only:
+            times = {name: value for name, value in times.items()
+                     if name not in {"nvidia", "nvidia_thread"}}
         win = tp.pick(times, margin, {"nvidia", "nvidia_thread"})
         if win:
             winners.setdefault((dt, op), {})[N] = win
@@ -374,6 +389,7 @@ def regen_ladder(sweep_text, margin, src_name, sms):
     arch = sms // 10
     warn_jittery_rows(sweep_text, margin, "ladder")
     winners = winners_from_sweep(sweep_text, margin)
+    native_winners = winners_from_sweep(sweep_text, margin, native_only=True)
     if not winners:
         sys.exit("ERROR: no NPROB=8192 verdicts parsed from the sweep.")
     begin, end = _LAD_BEGIN.format(a=arch), _LAD_END.format(a=arch)
@@ -381,9 +397,11 @@ def regen_ladder(sweep_text, margin, src_name, sms):
         begin,
         f"// Source sweep: {src_name}   tie margin: ±{margin*100:.0f}% "
         "(NVIDIA block/thread must clear it; SIMT ties ±2% prefer thread>warp>block)",
-        "// Returns the *ideal* tier assuming NVIDIA dependencies are linked;",
-        "// availability predicates collapse either vendor tier after selection.",
+        "// Paired tables preserve the measured native runner-up for callers that",
+        "// do not opt into MathDx; both use the same capture and SIMT tie rule.",
         emit_ideal_body(winners, f"ideal_sm{arch}"),
+        "",
+        emit_ideal_body(native_winners, f"native_sm{arch}"),
         end])
     text = DEFAULTS.read_text()
     if begin in text:
@@ -401,7 +419,8 @@ def regen_ladder(sweep_text, margin, src_name, sms):
     arches = sorted(int(a) for a in _LAD_RE.findall(text))
     if _DIS_BEGIN not in text or _DIS_END not in text:
         sys.exit(f"ERROR: dispatch markers missing from {DEFAULTS.name}.")
-    cases = "".join(f"        case {a * 10}u: return ideal_sm{a}(o, N, f64);\n"
+    cases = "".join(f"        case {a * 10}u: return allow_nvidia "
+                    f"? ideal_sm{a}(o, N, f64) : native_sm{a}(o, N, f64);\n"
                     for a in arches)
     pre, _, rest = text.partition(_DIS_BEGIN)
     _, _, post = rest.partition(_DIS_END)
@@ -417,7 +436,7 @@ def regen_ladder(sweep_text, margin, src_name, sms):
 # 2-impl blas2 ops are tabled — inv/trmv/ger are block-only and stay
 # report-only by the "single-impl families are reported, not picked" rule.
 
-B2_TABLE_OPS = ("syrk", "syr2k", "ldlt", "ldltsv")
+B2_TABLE_OPS = ("syrk", "syr2k", "ldlt", "ldlt_solve")
 
 _B2_BEGIN = "// === BEGIN tune.py blas2 sm_{a} ==="
 _B2_END   = "// === END tune.py blas2 sm_{a} ==="
@@ -499,8 +518,13 @@ def _emit_rect_fn(cells, op_name, fname, dims_names, margin):
             continue
         lines.append(f"    if ({'f64' if f64 else '!f64'}) {{")
         for dims, be in rows:
+            # The benchmark grammar retains its historical (M,K,N) tuple;
+            # the public C++ API is uniformly (M,N,K).
+            if op_name == "gemm":
+                dims = (dims[0], dims[2], dims[1])
             cond = " && ".join(f"{n} == {v}u" for n, v in zip(dims_names, dims))
-            lines.append(f"        if ({cond}) return backend::{be};")
+            cpp_backend = "nvidia_block" if be == "nvidia" else be
+            lines.append(f"        if ({cond}) return backend::{cpp_backend};")
         lines.append("    }")
     lines += ["    return backend::block;", "}"]
     return "\n".join(lines)
@@ -519,14 +543,14 @@ def regen_rect_table(sweep_text, margin, src_name, sms):
         f"// Source sweep: {src_name}   tie margin: ±{margin*100:.0f}% "
         "(SIMT ties ±2% prefer the simpler tier); exact shapes only",
         _emit_rect_fn(cells, "gemv", f"rect_gemv_sm{arch}", ("M", "N"), margin),
-        _emit_rect_fn(cells, "gemm", f"rect_gemm_sm{arch}", ("M", "K", "N"), margin),
+        _emit_rect_fn(cells, "gemm", f"rect_gemm_sm{arch}", ("M", "N", "K"), margin),
         end])
     text = _splice_arch_block(DEFAULTS.read_text(), begin, end, _RECT_END_RE, region)
     arches = sorted(int(a) for a in _RECT_RE.findall(text))
     for dis_begin, dis_end, fn_prefix in _RECT_DIS:
         if dis_begin not in text or dis_end not in text:
             sys.exit(f"ERROR: rect dispatch markers missing from {DEFAULTS.name}.")
-        argstr = "M, N, f64" if "gemv" in fn_prefix else "M, K, N, f64"
+        argstr = "M, N, f64" if "gemv" in fn_prefix else "M, N, K, f64"
         text = _rebuild_dispatch(text, dis_begin, dis_end, arches, fn_prefix, argstr)
     return text, len(cells)
 
@@ -551,7 +575,7 @@ _BODY_SM_END   = "// === END tune.py body sm_{a} ==="
 _BODY_SM_RE    = re.compile(r"// === BEGIN tune\.py body sm_(\d+) ===")
 _BODY_DIS_BEGIN = "// === BEGIN tune.py body dispatch ==="
 _BODY_DIS_END   = "// === END tune.py body dispatch ==="
-BODY_OPS = ("dot", "gemv", "gemm", "chol", "trsv", "posv", "eig3", "softmax")
+BODY_OPS = ("dot", "gemv", "gemm", "potrf", "trsv", "posv", "eig3", "softmax")
 _BODY_HDR_RE = re.compile(r"NPROB=(\d+)\s+reps=\d+\s+dtype=(f32|f64)")
 _BODY_SEG_RE = re.compile(r"(BLOCKBODY|WARPBODY|THREADBODY)((?:\s+tb\d+=[0-9.]+)+)")
 _BODY_NAME = {"BLOCKBODY": "block", "WARPBODY": "warp_in_block",
@@ -560,7 +584,7 @@ _BODY_NAME = {"BLOCKBODY": "block", "WARPBODY": "warp_in_block",
 
 def build_body(sms):
     flags = ["nvcc", "-std=c++17", f"-arch=sm_{sms//10}", "-O3", "-I..", "-I../src",
-             f"-DSMS={sms}", "bench_body_dispatch.cu"]
+             f"-DGLASS_TARGET_SM={sms}", "bench_body_dispatch.cu"]
     binp, status = cached_build("body_dispatch", "bench_body_dispatch.cu", flags, sms)
     if status == "fail":
         sys.exit("ERROR: bench_body_dispatch compile failed.")
@@ -579,9 +603,12 @@ def parse_body_sweep(text):
         if "||" not in line or nprob is None or "FAIL" in line:
             continue
         m = re.match(r"\s*(\w+?)_n(\d+)\s*\|", line)
-        if not m or m.group(1) not in BODY_OPS:
+        if not m:
             continue
-        key = (dt, m.group(1), int(m.group(2)))
+        opn = "potrf" if m.group(1) == "chol" else m.group(1)
+        if opn not in BODY_OPS:
+            continue
+        key = (dt, opn, int(m.group(2)))
         for bname, tbs in _BODY_SEG_RE.findall(line.split("||")[0]):
             pts = cells.setdefault(key, {}).setdefault(_BODY_NAME[bname], {})
             for tb, ns in re.findall(r"tb(\d+)=([0-9.]+)", tbs):
@@ -699,7 +726,7 @@ def regen_body(sweep_text, margin, src_name, sms):
         _BODY_DIS_BEGIN,
         "// Bodies for the bare block-scope face; unmeasured arches stay block.",
         "GLASS_DISPATCH_HD constexpr body dispatch_body(op o, uint32_t N, bool f64,",
-        "                                               uint32_t sm = GLASS_DEFAULTS_SM) {",
+        "                                               uint32_t sm = GLASS_TARGET_SM) {",
         "    switch (sm) {",
         cases.rstrip("\n"),
         "        default: break;",
@@ -713,7 +740,7 @@ def regen_body(sweep_text, margin, src_name, sms):
     return text, moved
 
 
-# ─── reduced leg: bench_reduced → validate suggested_use_reduced<> ────────────
+# ─── reduced leg: bench_reduced → characterize the explicit reduced path ───
 
 def build_reduced(sms):
     flags = ["nvcc", "-std=c++17", f"-arch=sm_{sms//10}", "-O3", "-I..", "-I../src",
@@ -725,13 +752,11 @@ def build_reduced(sms):
     return binp
 
 
-def predicate_use_reduced(n_out, K, blockDim):
-    """Mirror of glass::suggested_use_reduced<n_out,K_contract,blockDim>().
+def plan_uses_reduced(n_out, K, blockDim):
+    """Conservative policy for the measured standard/reduced leg.
 
-    Kept constant False after the 2026-08-14 sm_120 sweep: f32 had 0/48 wins;
-    f64 had 2/48 at one shape, which this dtype-independent signature cannot
-    encode safely. A future type-aware predicate may promote a repeatable
-    region; keep this mirror synchronized with the .cuh predicate."""
+    Kept false after the 2026-08-14 sm_120 sweep: f32 had 0/48 wins and f64
+    had 2/48 at one shape. A future plan may promote a repeatable region."""
     return False
 
 
@@ -743,8 +768,8 @@ def analyze_reduced(text, margin):
                       margin, {"reduced"})
         measured_reduced = (win == "reduced")
         # bench_reduced computes C(M,K)=A(M,N)·B(N,K): the contracted dim is N
-        # (n_out = M*K), so the predicate's K_contract is the N column.
-        predicted = predicate_use_reduced(r["n_out"], r["N"], r["blockDim"])
+        # (n_out = M*K); keep these arguments if the plan gains a typed region.
+        predicted = plan_uses_reduced(r["n_out"], r["N"], r["blockDim"])
         r["winner"] = win
         if measured_reduced:
             wins.append(r)
@@ -776,18 +801,16 @@ def gen_reduced_block(rows, wins, mism, margin, src):
                      f"{r['blockDim']} | {r['serial']:.4f} | {r['reduced']:.4f} | "
                      f"**{r['serial']/r['reduced']:.2f}** |")
         L.append("")
-    L.append("Predicate `suggested_use_reduced<n_out,K_contract,blockDim>()` = "
-             "`false` on every cell (K_contract is the N column here).")
+    L.append("The public advisor stays two-axis; reduced GEMM remains an explicit opt-in.")
     if mism:
-        L += ["", f"⚠️ **{len(mism)} config(s) disagree** with the predicate — "
-              "review before trusting the formula on this GPU:", ""]
+        L += ["", f"⚠️ **{len(mism)} config(s) favor the explicit reduced "
+              "variant while the conservative plan stays standard:**", ""]
         for r in mism:
-            pred = "reduced" if predicate_use_reduced(r['n_out'], r['N'], r['blockDim']) else "serial"
+            pred = "reduced" if plan_uses_reduced(r['n_out'], r['N'], r['blockDim']) else "serial"
             L.append(f"- {r['dtype']} {r['M']}×{r['N']}×{r['K']} bd={r['blockDim']} "
-                     f"(n_out={r['n_out']}): measured **{r['winner']}**, predicate **{pred}**")
+                     f"(n_out={r['n_out']}): measured **{r['winner']}**, plan **{pred}**")
     else:
-        L += ["", "✅ Measurement matches the predicate for every swept config — "
-              "the formula needs no change."]
+        L += ["", "✅ Measurement matches the plan for every swept config."]
     L += ["", _md_end("reduced")]
     return "\n".join(L)
 
@@ -903,14 +926,14 @@ def report_pick_leg(name, txt, txt_name, md_path, margin, parse, dry_run,
 
 _BLAS2_NOTE = ("inv/trmv/ger are BLOCK-ONLY (no `glass::warp::` variant, so "
                "nothing competes — reported, never picked); none of these ops "
-               "has a `glass::nvidia::` counterpart. The 2-impl ops "
-               "(syrk/syr2k/ldlt/ldltsv) regenerate the shipped per-arch "
+               "has an NVIDIA counterpart. The 2-impl ops "
+               "(syrk/syr2k/ldlt/ldlt_solve) regenerate the shipped per-arch "
                "`blas2_sm*` table in glass-defaults.cuh (since 2026-08-06).")
 _RECT_NOTE = ("nvidia leg skipped for rectangular shapes (needs new per-shape "
               "DEFINE_NVIDIA_* machinery; cuBLASDx-vs-SIMT per (M,N,K) lives in "
               "the `shapes` leg). Measured shapes regenerate the shipped "
               "exact-shape `rect_*_sm*` pickers in glass-defaults.cuh "
-              "(`suggested_backend_rect_gemv/gemm<>`, since 2026-08-06); "
+              "(`recommend<op::gemv/gemm,T,dims...>`, since 2026-08-06); "
               "unmeasured shapes stay block.")
 
 
@@ -1280,9 +1303,9 @@ def main():
             warn_jittery_rows(rtxt, args.margin, "reduced")
             rows, wins, mism = analyze_reduced(rtxt, args.margin)
             print(f"  {len(rows)} configs, reduced wins {len(wins)}, "
-                  f"predicate mismatches {len(mism)}")
+                  f"conservative-plan exceptions {len(mism)}")
             if mism:
-                print("  ⚠️ predicate disagrees with measurement — see bench/RESULTS.md")
+                print("  ⚠️ explicit reduced wins remain outside the conservative plan")
             block = gen_reduced_block(rows, wins, mism, args.margin, rtxt_path.name)
             md = splice_results_md(RESULTS_MD.read_text(), block, "reduced")
             if args.dry_run:

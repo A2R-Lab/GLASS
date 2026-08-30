@@ -10,7 +10,7 @@ Axis A — scope / backend (the namespace)
 The namespace says **who cooperates and how**, never *what* the operation is.
 There are three execution scopes (block, warp, thread) and two implementation
 families (dependency-free GLASS and optional NVIDIA, where supported), plus
-``glass::cgrps::``, a convenience alias of the Block interface, and the
+``glass::cgrps::``, a cooperative-groups adapter for the Block interface, and the
 **bare** ``glass::`` face described below. Scope determines placement; the
 family determines the implementation and dependency contract:
 
@@ -23,8 +23,8 @@ Namespace                         Scope   What it is
 ``glass::nvidia::block::``        block   **Nvidia** — CUB / cuBLASDx / cuSOLVERDx, auto-dispatched by size at compile time.
 ``glass::nvidia::warp::``         warp    **Nvidia-warp** — CUB ``WarpReduce`` L1 reductions (``reduce`` / ``dot`` / ``nrm2``), one FULL 32-lane warp per problem; per-warp scratch sized by ``warp_reduce_scratch_bytes<T>()``; ``TRAILING_SYNC`` emits ``__syncwarp()``.
 ``glass::nvidia::thread::``       thread  **Nvidia-thread** — cuSOLVERDx 0.4+ LAPACK, one packed problem per CUDA thread; smem-less signatures and no block-wide synchronization.
-``glass::`` *(bare)*              block   **Measured default** — block-scope calling contract, body chosen by ``glass::dispatch_body()``; see below. (Likewise bare ``glass::nvidia::``.)
-``glass::cgrps::``                block   *Convenience alias* of Block via a cooperative-groups handle (same numerics; not a separately-tuned backend).
+``glass::`` *(bare)*              block   **Measured default** — block-scope calling contract, body chosen by ``glass::dispatch_body()``; see below.
+``glass::cgrps::``                block   *Adapter* for callers that already hold a cooperative-groups handle (same numerics; not a separately-tuned backend).
 ================================  ======  =================================================
 
 ``glass::thread::`` mirrors the branch-free surface only: reduction *strategy*
@@ -48,8 +48,8 @@ The bare and explicit spellings make a deliberate implementation choice:
   / ``glass::nvidia::warp::`` / ``glass::nvidia::thread::``) is never
   re-dispatched. Use these from codegen
   and wherever implementation or reduction order is load-bearing.
-- **Bare** ``glass::gemm`` (and bare ``glass::nvidia::gemm``) **is the
-  measured-default face**: the same block-scope *calling* contract — all block
+- **Bare** ``glass::gemm`` **is the measured-default face**: the same
+  block-scope *calling* contract — all block
   threads enter, any thread count, the result is valid after return — with
   the implementation *body* chosen per
   (op, size, dtype) by ``glass::dispatch_body()`` in ``glass-dispatch.cuh``.
@@ -66,6 +66,12 @@ Retuning is therefore a receipt-gated source change; see :doc:`tuning`.
 
 Rule of thumb: **explicit namespace = contract tier; bare namespace =
 performance tier.**
+
+There is intentionally no bare ``glass::nvidia::op`` re-export. NVIDIA calls
+must name ``block``, ``warp``, or ``thread`` because that scope changes the
+launch contract. This keeps ``glass::nvidia::*`` aligned with the explicit
+native interfaces and prevents a block-only alias from looking like an
+autotuned counterpart to bare ``glass::*``.
 
 Axis B — reduction strategy (function-name suffixes, vector reductions only)
 -----------------------------------------------------------------------------

@@ -4,9 +4,7 @@ Using the NVIDIA Backend
 The ``glass::nvidia::block::`` interface routes to NVIDIA's device-side
 libraries — CUB (L1), cuBLASDx (L2/L3 GEMM/GEMV/batched), and cuSOLVERDx
 (LAPACK) — while preserving the same one-block ``__device__`` calling
-convention. These wrappers require **compile-time** matrix sizes. (Bare
-``glass::nvidia::`` spellings are the measured-default face; its measured
-dispatch is described in :doc:`../concepts/namespaces`. There is
+convention. These wrappers require **compile-time** matrix sizes. There is
 also ``glass::nvidia::warp::`` — CUB ``WarpReduce`` ``reduce`` / ``dot`` /
 ``nrm2``, one FULL 32-lane warp per problem, per-warp scratch via
 ``warp_reduce_scratch_bytes<T>()``, ``TRAILING_SYNC`` emitting
@@ -53,8 +51,10 @@ differ by which level you use.
         -lcusolverdx -lcublas -lcusolver -lcudart \
         my_kernel.cu -o my_kernel
 
-``SMS`` defaults to ``860`` and can be overridden with ``-DSMS=XXX`` so the
-dispatch heuristic and cuBLASDx code-gen target your arch.
+Define ``GLASS_TARGET_SM`` so the execution-plan table, native body dispatch,
+and MathDx descriptors target the same architecture, for example
+``-DGLASS_TARGET_SM=860``. It defaults to the shipped sm_120 seed. ``SMS`` is
+accepted as a legacy input alias.
 
 Calling ``glass::nvidia::block::`` — default form
 -------------------------------------------------
@@ -198,8 +198,8 @@ one packed problem.
            glass::nvidia::thread::potrf<float, N>(matrices + p * N * N);
    }
 
-Bare ``glass::nvidia::potrf`` still means the block-scope wrapper. Use the
-explicit ``thread`` namespace because this choice changes launch geometry.
+Use the explicit ``block`` or ``thread`` namespace because this choice changes
+launch geometry; no bare ``glass::nvidia::potrf`` alias is provided.
 
 See :doc:`../concepts/backend_dispatch` for how the auto-dispatch decides
 between cuBLASDx and SIMT, and :doc:`../concepts/batched_1d` for the 1D-launch

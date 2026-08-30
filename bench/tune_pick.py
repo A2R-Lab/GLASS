@@ -5,7 +5,7 @@ This is the *one* place the noise margin lives. Every defaults table GLASS ships
 — the native thread/warp/block plus NVIDIA block/thread ladder
 (``glass-defaults.cuh``), the per-shape
 cuBLASDx-vs-SIMT table (``src/nvidia/tuning_table.cuh``), and the
-serial-vs-reduced picker (``suggested_use_reduced<>``) — routes its verdict
+serial-vs-reduced characterization — routes its verdict
 through :func:`pick` so none of them bakes sub-noise jitter, and so a pure-noise
 re-run reproduces the same table.
 
@@ -120,7 +120,7 @@ def verdict(timings, margin=0.05, dependency=(), noise_floor=0.0,
 
 # ─── parsers ────────────────────────────────────────────────────────────────
 
-LADDER_OPS = ("dot", "gemv", "gemm", "chol", "trsv", "posv")
+LADDER_OPS = ("dot", "gemv", "gemm", "potrf", "trsv", "posv")
 
 _HDR_RE = re.compile(r"NPROB=(\d+).*dtype=(f32|f64)")
 # Raw per-backend ns from a mega_sweep row:
@@ -133,7 +133,7 @@ _HDR_RE = re.compile(r"NPROB=(\d+).*dtype=(f32|f64)")
 # (since lifted to the full domain so all contenders share the same points).
 # Keep it optional or old sweeps stop parsing and regen silently drops every op.
 _ROW_RE = re.compile(
-    r"^(dot|gemv|gemm|chol|trsv|posv)\s+N=(\d+)\b.*\|\|\s*"
+    r"^(dot|gemv|gemm|chol|potrf|trsv|posv)\s+N=(\d+)\b.*\|\|\s*"
     r"block\s+tb\d+=([\d.]+)\s+warp\s+w\d+=([\d.]+)"
     r"(?:\s+thread\s+t\d+=([\d.]+))?(?:\s+nv=([\d.]+))?"
     r"(?:\s+nvt\s+t\d+=([\d.]+))?")
@@ -161,6 +161,7 @@ def parse_mega_sweep(text, nprob=8192):
         m = _ROW_RE.match(line.strip())
         if m:
             op, N = m.group(1), int(m.group(2))
+            op = "potrf" if op == "chol" else op
             d = {"block": float(m.group(3)), "warp": float(m.group(4))}
             if m.group(5):
                 d["thread"] = float(m.group(5))   # absent in pre-tier sweeps and at N>16
@@ -172,13 +173,13 @@ def parse_mega_sweep(text, nprob=8192):
     return data
 
 
-BLAS2_OPS = ("syrk", "syr2k", "ldlt", "ldltsv", "inv", "trmv", "ger")
+BLAS2_OPS = ("syrk", "syr2k", "ldlt", "ldlt_solve", "inv", "trmv", "ger")
 
 # Raw per-backend ns from a bench_blas2 row (same grammar as the mega sweep, but
 # 2-way: the warp leg is absent for the block-only ops inv/trmv/ger):
 #   "<op>  N=<N> | BLOCK ... [| WARP ...] || block tb<TB>=<ns> [warp w<WPB>=<ns>] -> ..."
 _B2_ROW_RE = re.compile(
-    r"^(syr2k|syrk|ldltsv|ldlt|inv|trmv|ger)\s+N=(\d+)\b.*\|\|\s*"
+    r"^(syr2k|syrk|ldlt_solve|ldltsv|ldlt|inv|trmv|ger)\s+N=(\d+)\b.*\|\|\s*"
     r"block\s+tb\d+=([\d.]+)(?:\s+warp\s+w\d+=([\d.]+))?")
 
 
@@ -201,6 +202,7 @@ def parse_blas2(text, nprob=8192):
         m = _B2_ROW_RE.match(line.strip())
         if m:
             op, N = m.group(1), int(m.group(2))
+            op = "ldlt_solve" if op == "ldltsv" else op
             d = {"block": float(m.group(3))}
             if m.group(4):
                 d["warp"] = float(m.group(4))
@@ -327,7 +329,7 @@ if __name__ == "__main__":
     assert pick(_mc[("f32", "dot", 4)], 0.05,
                 {"nvidia", "nvidia_thread"}) == "nvidia_thread", \
         "new trailing dependency tier parses and clears the margin"
-    # parse_blas2(): 2-way rows, warp leg optional, ldlt/ldltsv disambiguation.
+    # parse_blas2(): 2-way rows, warp leg optional, old label compatibility.
     _b2 = "\n".join([
         "################ NPROB=8192  reps=250  dtype=f32 ################",
         "syrk   N=8   | BLOCK  tb32=1.10  tb64=1.00  | WARP  w1=0.80  w2=0.90"
@@ -342,7 +344,7 @@ if __name__ == "__main__":
     ])
     _c = parse_blas2(_b2)
     assert _c[("f32", "syrk", 8)] == {"block": 1.00, "warp": 0.80}, _c
-    assert _c[("f32", "ldltsv", 16)] == {"block": 3.00, "warp": 2.00}, _c
+    assert _c[("f32", "ldlt_solve", 16)] == {"block": 3.00, "warp": 2.00}, _c
     assert _c[("f32", "ldlt", 16)] == {"block": 2.50, "warp": 2.40}, _c
     assert _c[("f32", "inv", 8)] == {"block": 4.00}, "block-only op parses without warp"
     assert ("f32", "ger", 8) not in _c, "NPROB=64 section must be filtered out"

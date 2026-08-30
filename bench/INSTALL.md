@@ -11,7 +11,7 @@ benches. All three are auto-detected by `bench/run_bench.py`.
 
 | Library | Required for | Header-only? |
 |---------|-------------|--------------|
-| CUB    | `bench_reduce` (CUB baseline + `glass::nvidia::reduce` variant) | Yes (bundled with CUDA) |
+| CUB    | `bench_reduce` (CUB baseline + `glass::nvidia::block::reduce`) | Yes (bundled with CUDA) |
 | cuBLASDx | `bench_gemv`, `bench_gemm`, `bench_blockdim`, `bench_gemm_batched`, `bench_lapack` | Yes |
 | cuSOLVERDx | `bench_lapack` (Cholesky / TRSM / posv / etc.) | **No** — links a precompiled device fatbin |
 

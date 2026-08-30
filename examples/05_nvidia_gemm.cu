@@ -1,4 +1,4 @@
-// 05_nvidia_gemm.cu — cuBLASDx-backed GEMM via glass::nvidia::  (REQUIRES MathDx).
+// 05_nvidia_gemm.cu — cuBLASDx GEMM via glass::nvidia::block (REQUIRES MathDx).
 //
 // This is the ONLY example that needs NVIDIA MathDx (cuBLASDx). The pure-SIMT
 // examples 01-05 build with plain nvcc; this one does not.
@@ -7,7 +7,7 @@
 // install (see ../bench/INSTALL.md):
 //
 //   nvcc -std=c++17 -arch=sm_86 -I.. \
-//        -DGLASS_BENCH_CUBLASDX -DSMS=860 \
+//        -DGLASS_BENCH_CUBLASDX -DGLASS_TARGET_SM=860 \
 //        --expt-relaxed-constexpr -Xptxas -O1 \
 //        -I$MATHDX_ROOT/include \
 //        -I$MATHDX_ROOT/external/cutlass/include \
@@ -15,7 +15,7 @@
 //
 // Notes:
 //   * -DGLASS_BENCH_CUBLASDX force-includes <cublasdx.hpp> from glass-nvidia.cuh.
-//   * -DSMS=XXX must match your -arch (860 for sm_86, 1200 for sm_120, ...);
+//   * -DGLASS_TARGET_SM=XXX must match -arch (860 for sm_86, 1200 for sm_120);
 //     it selects the cuBLASDx-tuned config and the pre-instantiated GEMM table.
 //   * 16x16x16 is a pre-instantiated cuBLASDx shape (see glass-nvidia.cuh); the
 //     default form launches with EXACTLY gemm_threads<>() threads and
@@ -55,7 +55,7 @@ int main() {
     cudaDeviceSynchronize();
 
     cudaMemcpy(hC, dC, sizeof(hC), cudaMemcpyDeviceToHost);
-    printf("glass::nvidia::gemm  C = I*B  (threads=%u smem=%zu)\n",
+    printf("glass::nvidia::block::gemm  C = I*B  (threads=%u smem=%zu)\n",
            (unsigned)THREADS, (size_t)SMEM);
     printf("C[0]=%.0f C[17]=%.0f C[255]=%.0f (expect 0 17 255)\n",
            hC[0], hC[17], hC[255]);

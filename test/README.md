@@ -23,7 +23,7 @@ gracefully** when it is absent.
 | `test_l1.py` | L1 vector ops (axpy, copy, dot, reduce, norms, elementwise, …) |
 | `test_l2.py` | L2 matrix-vector ops (gemv, ger, strided/segmented) |
 | `test_l3.py` | L3 matrix ops (gemm family, inv, chol, trsm, batched-1D) |
-| `test_nvidia_dispatch.py` | `glass::nvidia::` SIMT-vs-cuBLASDx auto-dispatch (needs MathDx) |
+| `test_nvidia_dispatch.py` | `glass::nvidia::block::` SIMT-vs-cuBLASDx dispatch (needs MathDx) |
 | `test_trailing_sync.py` | the `TRAILING_SYNC` template parameter across the surface |
 | `cuda/*.cu` | the CUDA programs the Python tests invoke (`helpers.cuh` shared) |
 | `conftest.py` | arch detection, compile caching, fixtures, `run_op` harness |

@@ -12,8 +12,8 @@
 // This is a thread-utilization experiment, NOT a FLOP reduction — total MAC
 // work is identical. The 2026-08-14 sm_120 sweep found two f64-only wins among
 // 96 cells, both at one 4x4x64 shape; no f32 cell won. Because the existing
-// picker is dtype-independent, suggested_use_reduced() remains conservatively
-// false everywhere. See bench/RESULTS.md for the dated measurement.
+// measured default remains the standard algorithm everywhere. The explicit
+// `*_reduced` operations remain available for controlled experiments.
 //
 // Thread-count invariance: each output is reduced by the SAME fixed 32-way tree
 // regardless of how many warps the block has, so results are bit-identical at
@@ -25,29 +25,6 @@
 // reduced_tree32 (the 32-way register tree that matches glass::warp::reduce's
 // lane-0 rounding bit-for-bit) lives in L1/reduce.cuh so every L2/L3 *_reduced
 // engine can share it. The sub-warp fallback below uses it for invariance.
-
-/**
- * @brief Should a contraction-parallel `*_reduced` op be preferred over the serial one?
- *
- * Codegen / launch-time picker seeded by the measured crossover sweep
- * (`bench/RESULTS.md`, reduced section). The quiet-GPU sm_120 sweep of
- * 2026-08-14 found no f32 win in 48 cells and two f64 wins in 48 cells, both
- * for `4x4x64` with 128 or 256 threads. That is too narrow and dtype-specific
- * for this picker: its public parameters describe shape and launch, not scalar
- * type. It returns `false` rather than silently selecting a path that regresses
- * f32. A future dtype-aware picker can promote a repeatable region without
- * changing the explicit `*_reduced` operations. `constexpr` lets
- * `if constexpr` call sites fold with zero cost.
- *
- * @tparam n_out       Output element count (e.g. M*K for gemm, M for gemv).
- * @tparam K_contract  Length of the contracted dimension.
- * @tparam blockDim    Launch thread count.
- * @return true to use the `*_reduced` variant, false to use the serial op.
- */
-template <uint32_t n_out, uint32_t K_contract, uint32_t blockDim>
-__host__ __device__ constexpr bool suggested_use_reduced() {
-    return false;  // sm_120 2026-08-14: f32 0/48; f64 2/48 at one shape; no dtype parameter
-}
 
 // Core: explicit (rank,size), compile-time dims + standard-BLAS layout flags
 // (C is M×N, contraction K; op(A) M×K, op(B) K×N — see gemm.cuh). HAS_BETA
@@ -115,7 +92,7 @@ __device__ void gemm_reduced_impl_ct(uint32_t rank, uint32_t size,
  * split the inner sum (combined with a single warp-shuffle reduce) instead of
  * one thread summing serially. A utilization win when the output count is
  * smaller than the block — see :doc:`../../user_guide/concepts/contraction_parallel`
- * and `glass::suggested_use_reduced`. Total MAC work is unchanged.
+ * and `glass::recommend`. Total MAC work is unchanged.
  *
  * Thread-count invariant: bit-identical at any block size (a trailing partial
  * warp idles; below 32 threads a register path reproduces the same rounding).

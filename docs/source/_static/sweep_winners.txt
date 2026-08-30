@@ -1,45 +1,9 @@
-NPROB=64  f32 winner by op x N:
-op                  4             6             8            12            16            24            32            48            64            96           128
-dot            thread        thread        thread        thread        thread        thread          warp          warp          warp          warp          warp
-gemv           thread          warp          warp          warp          warp        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia
-gemm           thread          warp          warp          warp          warp        nvidia        nvidia        nvidia        nvidia         block         block
-chol           thread        thread        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia
-trsv           thread        thread        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia
-posv           thread        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia
-
-NPROB=64  f64 winner by op x N:
-op                  4             6             8            12            16            24            32            48            64            96           128
-dot            thread        thread        thread        thread        thread          warp          warp          warp          warp          warp          warp
-gemv           thread          warp          warp          warp          warp          warp          warp         block         block         block         block
-gemm             warp          warp          warp        nvidia        nvidia         block         block        nvidia         block         block         block
-chol    nvidia_thread nvidia_thread nvidia_thread        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia         block         block
-trsv           nvidia        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia         block         block
-posv           nvidia        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia         block         block
-
-NPROB=1024  f32 winner by op x N:
-op                  4             6             8            12            16            24            32            48            64            96           128
-dot            nvidia         block         block         block        thread        thread          warp          warp          warp          warp          warp
-gemv           thread         block          warp          warp          warp          warp          warp         block         block         block         block
-gemm           thread          warp          warp         block          warp         block        nvidia        nvidia        nvidia         block         block
-chol           thread        thread nvidia_thread        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia
-trsv           thread        thread        thread        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia         block         block
-posv           thread        thread        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia
-
-NPROB=1024  f64 winner by op x N:
-op                  4             6             8            12            16            24            32            48            64            96           128
-dot            thread        thread        thread        thread          warp          warp          warp          warp          warp          warp          warp
-gemv            block         block          warp          warp          warp          warp          warp         block         block         block         block
-gemm             warp          warp          warp          warp          warp         block          warp          warp         block         block         block
-chol    nvidia_thread nvidia_thread nvidia_thread         block         block         block         block         block         block         block         block
-trsv    nvidia_thread nvidia_thread        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia         block         block         block
-posv    nvidia_thread nvidia_thread nvidia_thread         block         block         block        nvidia         block         block         block         block
-
 NPROB=8192  f32 winner by op x N:
 op                  4             6             8            12            16            24            32            48            64            96           128
-dot            thread        thread        thread        thread        thread        thread          warp          warp          warp          warp          warp
+dot            thread        thread        thread        thread          warp        thread          warp          warp          warp          warp          warp
 gemv           thread        thread          warp          warp          warp          warp          warp         block          warp          warp          warp
 gemm             warp          warp          warp          warp          warp         block        nvidia         block         block         block         block
-chol           thread nvidia_thread nvidia_thread          warp          warp          warp        nvidia        nvidia        nvidia        nvidia        nvidia
+potrf          thread nvidia_thread nvidia_thread          warp          warp          warp        nvidia        nvidia        nvidia        nvidia        nvidia
 trsv           thread        thread        thread        thread        thread nvidia_thread        nvidia          warp          warp          warp          warp
 posv           thread        thread nvidia_thread        thread        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia        nvidia
 
@@ -48,6 +12,6 @@ op                  4             6             8            12            16   
 dot            thread        thread        thread        thread        thread        thread        thread          warp          warp          warp          warp
 gemv           thread        thread          warp          warp          warp          warp          warp          warp          warp          warp          warp
 gemm             warp          warp          warp         block         block         block         block         block         block         block         block
-chol    nvidia_thread nvidia_thread nvidia_thread        thread        thread        thread         block         block         block         block         block
+potrf   nvidia_thread nvidia_thread nvidia_thread        thread        thread        thread         block         block         block         block         block
 trsv    nvidia_thread nvidia_thread nvidia_thread nvidia_thread nvidia_thread nvidia_thread nvidia_thread        nvidia          warp          warp          warp
 posv    nvidia_thread nvidia_thread nvidia_thread        thread        thread        thread        nvidia         block         block         block         block

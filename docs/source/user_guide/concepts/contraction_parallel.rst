@@ -27,8 +27,8 @@ All ship in the three SIMT surfaces (``glass::`` block, ``glass::warp::``,
    quiet RTX 5090 (sm_120) sweep, reduced cleared the ±5% decision margin in
    0/48 f32 cells and 2/48 f64 cells. Both f64 wins were the same 4×4×64
    shape at 128/256 threads (full table: ``bench/RESULTS.md``). The
-   dtype-independent ``glass::suggested_use_reduced`` picker therefore
-   declines it everywhere rather than regressing f32.
+   measured ``glass::recommend`` plan therefore keeps the standard algorithm
+   everywhere rather than regressing f32.
    **Prefer the plain ops** (``gemm`` / ``gemv`` / ``syrk``) for throughput;
    reach for this family only for the fused forms (``tensor_vec_contract``,
    ``vec_tensor_vec``, ``congruence_sym``, ``bilinear``) that the serial surface
@@ -67,17 +67,15 @@ idle. The two wins are f64 4×4×64 at 128/256 threads (1.41× and 1.97×).
 That single dtype-specific shape is worth a future targeted sweep, but it does
 not justify a general or dtype-blind default.
 
-``glass::suggested_use_reduced`` encodes that measurement — it returns
-``false`` unconditionally on sm_120. Its ``<n_out, K_contract, blockDim>``
-signature has no scalar-type parameter, so it cannot safely encode the observed
-f64-only corner:
+The public advisor stays focused on implementation family and execution scope;
+it does not add a third axis for a path that is never broadly recommended:
 
 .. code-block:: cuda
 
-   if constexpr (glass::suggested_use_reduced<n_out, K, blockDim>())
-       glass::gemm_reduced<float, M, N, K>(1.f, A, B, 0.f, C);
-   else
-       glass::gemm<float, M, N, K>(1.f, A, B, 0.f, C);
+   glass::gemm<float, M, N, K>(1.f, A, B, 0.f, C);
+
+The explicit ``gemm_reduced`` spelling remains available when a caller has
+its own shape-specific evidence.
 
 .. note::
 

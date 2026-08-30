@@ -1,8 +1,8 @@
-// bench_gemm_batched.cu — batched GEMM: glass::nvidia::gemm_batched vs. naive loop.
+// bench_gemm_batched.cu — glass::nvidia::block::gemm_batched vs. naive loop.
 //
 // Demonstrates the P2-7 single-block batching speedup. For each (M, N, K, BATCH):
-//   naive:    BATCH × glass::nvidia::gemm<...>  in a single block, BlockDim<TC>
-//   batched:  one  glass::nvidia::gemm_batched<...,BATCH,TC> call, dim3(TC, BATCH) launch
+//   naive:    BATCH × glass::nvidia::block::gemm<...> in one block
+//   batched:  one glass::nvidia::block::gemm_batched<...,BATCH,TC> call
 //
 // Anti-optimization: per-iteration sink writes; -Xptxas -O1 (set in run_bench.py);
 // --expt-relaxed-constexpr.
@@ -11,7 +11,7 @@
 //   nvcc -std=c++17 -arch=sm_XX -O3 --expt-relaxed-constexpr -Xptxas -O1
 //        -I.. -I../src
 //        -I$MATHDX_ROOT/include -I$MATHDX_ROOT/external/cutlass/include
-//        -DGLASS_BENCH_CUBLASDX -DSMS=XX0
+//        -DGLASS_BENCH_CUBLASDX -DGLASS_TARGET_SM=XX0
 //        bench_gemm_batched.cu -o bench_gemm_batched
 
 #include <cstdio>

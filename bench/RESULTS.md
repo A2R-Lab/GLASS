@@ -34,7 +34,7 @@ ladder table generation. Current analysis and figures live on the docs site;
 the winner-per-(op,N) table renders from
 `docs/source/_static/sweep_winners.txt`.
 
-## blas2 (warp vs block for syrk/syr2k/ldlt/ldltsv/inv/trmv/ger)
+## blas2 (warp vs block for syrk/syr2k/ldlt/ldlt_solve/inv/trmv/ger)
 
 Ops the ladder misses. No nvidia counterparts (2-way); inv/trmv/ger are
 block-only (reported, never picked). The 2-impl ops regenerate the shipped
@@ -45,7 +45,7 @@ per-arch `blas2_sm*` table in glass-defaults.cuh (since 2026-08-06).
 
 _Source: `blas2_sweep_20260814_011659.txt` · NPROB=8192 ns/problem · margin ±5% (warp/block are both dependency-free; pick = cheapest, note flags sub-margin gaps) · warp picked in 30 of 154 cells._
 
-inv/trmv/ger are BLOCK-ONLY (no `glass::warp::` variant, so nothing competes — reported, never picked); none of these ops has a `glass::nvidia::` counterpart. The 2-impl ops (syrk/syr2k/ldlt/ldltsv) regenerate the shipped per-arch `blas2_sm*` table in glass-defaults.cuh (since 2026-08-06).
+inv/trmv/ger are BLOCK-ONLY (no `glass::warp::` variant, so nothing competes — reported, never picked); none of these ops has an NVIDIA counterpart. The 2-impl ops (syrk/syr2k/ldlt/ldlt_solve) regenerate the shipped per-arch `blas2_sm*` table in glass-defaults.cuh (since 2026-08-06).
 
 | op | shape | dtype | block ns | warp ns | pick | note |
 |----|-------|-------|----------|---------|------|------|
@@ -115,28 +115,28 @@ inv/trmv/ger are BLOCK-ONLY (no `glass::warp::` variant, so nothing competes —
 | ldlt | N=96 | f64 | 1022.24 | 1075.16 | **block** | block wins (1022.240 vs warp 1075.160, 5.2%) |
 | ldlt | N=128 | f32 | 665.47 | 807.69 | **block** | block wins (665.470 vs warp 807.690, 21.4%) |
 | ldlt | N=128 | f64 | 2038.77 | 2462.17 | **block** | block wins (2038.770 vs warp 2462.170, 20.8%) |
-| ldltsv | N=4 | f32 | 0.73 | 0.58 | **warp** | warp wins (0.580 vs block 0.730, 25.9%) |
-| ldltsv | N=4 | f64 | 2.98 | 4.39 | **block** | block wins (2.980 vs warp 4.390, 47.3%) |
-| ldltsv | N=6 | f32 | 1.43 | 1.02 | **warp** | warp wins (1.020 vs block 1.430, 40.2%) |
-| ldltsv | N=6 | f64 | 5.76 | 7.61 | **block** | block wins (5.760 vs warp 7.610, 32.1%) |
-| ldltsv | N=8 | f32 | 2.13 | 1.54 | **warp** | warp wins (1.540 vs block 2.130, 38.3%) |
-| ldltsv | N=8 | f64 | 8.56 | 11.34 | **block** | block wins (8.560 vs warp 11.340, 32.5%) |
-| ldltsv | N=12 | f32 | 3.92 | 2.83 | **warp** | warp wins (2.830 vs block 3.920, 38.5%) |
-| ldltsv | N=12 | f64 | 16.02 | 20.66 | **block** | block wins (16.020 vs warp 20.660, 29.0%) |
-| ldltsv | N=16 | f32 | 5.81 | 4.43 | **warp** | warp wins (4.430 vs block 5.810, 31.2%) |
-| ldltsv | N=16 | f64 | 26.48 | 32.44 | **block** | block wins (26.480 vs warp 32.440, 22.5%) |
-| ldltsv | N=24 | f32 | 10.87 | 8.82 | **warp** | warp wins (8.820 vs block 10.870, 23.2%) |
-| ldltsv | N=24 | f64 | 54.94 | 63.42 | **block** | block wins (54.940 vs warp 63.420, 15.4%) |
-| ldltsv | N=32 | f32 | 19.77 | 15.91 | **warp** | warp wins (15.910 vs block 19.770, 24.3%) |
-| ldltsv | N=32 | f64 | 94.23 | 104.42 | **block** | block wins (94.230 vs warp 104.420, 10.8%) |
-| ldltsv | N=48 | f32 | 52.09 | 48.92 | **warp** | warp wins (48.920 vs block 52.090, 6.5%) |
-| ldltsv | N=48 | f64 | 223.69 | 243.07 | **block** | block wins (223.690 vs warp 243.070, 8.7%) |
-| ldltsv | N=64 | f32 | 105.38 | 103.67 | **warp** | warp wins (103.670 vs block 105.380, 1.6%) |
-| ldltsv | N=64 | f64 | 416.28 | 444.67 | **block** | block wins (416.280 vs warp 444.670, 6.8%) |
-| ldltsv | N=96 | f32 | 300.68 | 321.69 | **block** | block wins (300.680 vs warp 321.690, 7.0%) |
-| ldltsv | N=96 | f64 | 1047.14 | 1097.29 | **block** | block wins (1047.140 vs warp 1097.290, 4.8%) |
-| ldltsv | N=128 | f32 | 734.13 | 863.41 | **block** | block wins (734.130 vs warp 863.410, 17.6%) |
-| ldltsv | N=128 | f64 | 2050.26 | 2534.78 | **block** | block wins (2050.260 vs warp 2534.780, 23.6%) |
+| ldlt_solve | N=4 | f32 | 0.73 | 0.58 | **warp** | warp wins (0.580 vs block 0.730, 25.9%) |
+| ldlt_solve | N=4 | f64 | 2.98 | 4.39 | **block** | block wins (2.980 vs warp 4.390, 47.3%) |
+| ldlt_solve | N=6 | f32 | 1.43 | 1.02 | **warp** | warp wins (1.020 vs block 1.430, 40.2%) |
+| ldlt_solve | N=6 | f64 | 5.76 | 7.61 | **block** | block wins (5.760 vs warp 7.610, 32.1%) |
+| ldlt_solve | N=8 | f32 | 2.13 | 1.54 | **warp** | warp wins (1.540 vs block 2.130, 38.3%) |
+| ldlt_solve | N=8 | f64 | 8.56 | 11.34 | **block** | block wins (8.560 vs warp 11.340, 32.5%) |
+| ldlt_solve | N=12 | f32 | 3.92 | 2.83 | **warp** | warp wins (2.830 vs block 3.920, 38.5%) |
+| ldlt_solve | N=12 | f64 | 16.02 | 20.66 | **block** | block wins (16.020 vs warp 20.660, 29.0%) |
+| ldlt_solve | N=16 | f32 | 5.81 | 4.43 | **warp** | warp wins (4.430 vs block 5.810, 31.2%) |
+| ldlt_solve | N=16 | f64 | 26.48 | 32.44 | **block** | block wins (26.480 vs warp 32.440, 22.5%) |
+| ldlt_solve | N=24 | f32 | 10.87 | 8.82 | **warp** | warp wins (8.820 vs block 10.870, 23.2%) |
+| ldlt_solve | N=24 | f64 | 54.94 | 63.42 | **block** | block wins (54.940 vs warp 63.420, 15.4%) |
+| ldlt_solve | N=32 | f32 | 19.77 | 15.91 | **warp** | warp wins (15.910 vs block 19.770, 24.3%) |
+| ldlt_solve | N=32 | f64 | 94.23 | 104.42 | **block** | block wins (94.230 vs warp 104.420, 10.8%) |
+| ldlt_solve | N=48 | f32 | 52.09 | 48.92 | **warp** | warp wins (48.920 vs block 52.090, 6.5%) |
+| ldlt_solve | N=48 | f64 | 223.69 | 243.07 | **block** | block wins (223.690 vs warp 243.070, 8.7%) |
+| ldlt_solve | N=64 | f32 | 105.38 | 103.67 | **warp** | warp wins (103.670 vs block 105.380, 1.6%) |
+| ldlt_solve | N=64 | f64 | 416.28 | 444.67 | **block** | block wins (416.280 vs warp 444.670, 6.8%) |
+| ldlt_solve | N=96 | f32 | 300.68 | 321.69 | **block** | block wins (300.680 vs warp 321.690, 7.0%) |
+| ldlt_solve | N=96 | f64 | 1047.14 | 1097.29 | **block** | block wins (1047.140 vs warp 1097.290, 4.8%) |
+| ldlt_solve | N=128 | f32 | 734.13 | 863.41 | **block** | block wins (734.130 vs warp 863.410, 17.6%) |
+| ldlt_solve | N=128 | f64 | 2050.26 | 2534.78 | **block** | block wins (2050.260 vs warp 2534.780, 23.6%) |
 | inv | N=4 | f32 | 0.71 | — | **block** | block only impl measured (0.710) |
 | inv | N=4 | f64 | 1.44 | — | **block** | block only impl measured (1.440) |
 | inv | N=6 | f32 | 1.12 | — | **block** | block only impl measured (1.120) |
@@ -211,7 +211,8 @@ inv/trmv/ger are BLOCK-ONLY (no `glass::warp::` variant, so nothing competes —
 Tall/wide gemv + rectangular gemm shapes (consumers' Jacobians are
 rectangular; the ladder is square-only). nvidia leg skipped — per-shape
 cuBLASDx decisions live in the `shapes` leg. Measured shapes regenerate the
-shipped exact-shape `rect_*_sm*` pickers (`suggested_backend_rect_gemv/gemm<>`).
+shipped exact-shape `rect_*_sm*` pickers (publicly queried through
+`recommend<op::gemv/gemm,T,dims...>`).
 
 > ⚠ **2026-08-11 audit:** the 2026-07-18 capture below predates
 > `bench_rect`'s launch-FAIL guard; its five `warp 0.04 ns` gemm cells
@@ -225,7 +226,7 @@ shipped exact-shape `rect_*_sm*` pickers (`suggested_backend_rect_gemv/gemm<>`).
 
 _Source: `rect_sweep_20260814_031430.txt` · NPROB=8192 ns/problem · margin ±5% (warp/block are both dependency-free; pick = cheapest, note flags sub-margin gaps) · warp picked in 16 of 24 cells._
 
-nvidia leg skipped for rectangular shapes (needs new per-shape DEFINE_NVIDIA_* machinery; cuBLASDx-vs-SIMT per (M,N,K) lives in the `shapes` leg). Measured shapes regenerate the shipped exact-shape `rect_*_sm*` pickers in glass-defaults.cuh (`suggested_backend_rect_gemv/gemm<>`, since 2026-08-06); unmeasured shapes stay block.
+nvidia leg skipped for rectangular shapes (needs new per-shape DEFINE_NVIDIA_* machinery; cuBLASDx-vs-SIMT per (M,N,K) lives in the `shapes` leg). Measured shapes regenerate the shipped exact-shape `rect_*_sm*` pickers in glass-defaults.cuh (`recommend<op::gemv/gemm,T,dims...>`, since 2026-08-06); unmeasured shapes stay block.
 
 | op | shape | dtype | block ns | warp ns | pick | note |
 |----|-------|-------|----------|---------|------|------|
@@ -343,12 +344,12 @@ _Source: `reduced_sweep_20260814_011659.txt` · tie margin ±5% (reduced must cl
 | f64 | 4 | 4 | 64 | 256 | 128 | 1.9115 | 1.3604 | **1.41** |
 | f64 | 4 | 4 | 64 | 256 | 256 | 1.9163 | 0.9705 | **1.97** |
 
-Predicate `suggested_use_reduced<n_out,K_contract,blockDim>()` = `false` on every cell (K_contract is the N column here).
+The public advisor stays two-axis; reduced GEMM remains an explicit opt-in.
 
-⚠️ **2 config(s) disagree** with the predicate — review before trusting the formula on this GPU:
+⚠️ **2 config(s) favor the explicit reduced variant while the conservative plan stays standard:**
 
-- f64 4×4×64 bd=128 (n_out=256): measured **reduced**, predicate **serial**
-- f64 4×4×64 bd=256 (n_out=256): measured **reduced**, predicate **serial**
+- f64 4×4×64 bd=128 (n_out=256): measured **reduced**, plan **serial**
+- f64 4×4×64 bd=256 (n_out=256): measured **reduced**, plan **serial**
 
 <!-- END tune.py reduced -->
 

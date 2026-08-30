@@ -8,12 +8,12 @@
 #include <cmath>
 #include <cub/cub.cuh>
 #include "../glass.cuh"
-#include "../glass-nvidia.cuh"  // pulls in glass::nvidia::reduce/dot/nrm2 (CUB-backed)
+#include "../glass-nvidia.cuh"  // glass::nvidia::block CUB reductions
 
 static const int THREADS = 256;
 
 // ─── glass::nvidia kernels (CUB-backed via glass-nvidia.cuh) ─────────────────
-// One variant: glass::nvidia::reduce<float,N,THREADS>. Writes a per-iter sink
+// One variant: glass::nvidia::block::reduce<float,N,THREADS>. Writes a per-iter sink
 // to defeat dead-store elimination.
 template<int N>
 __global__ void k_nv_reduce(float* x, volatile float* sink, int iters) {
@@ -312,19 +312,19 @@ int main(int argc, char** argv) {
             k_nv_reduce<N><<<1, THREADS, nv_smem_total>>>(dx, dSink, iters);                 \
             cudaDeviceSynchronize();                                                          \
             clock_gettime(CLOCK_MONOTONIC, &t1);                                              \
-            printf("glass::nvidia::reduce<CT>    n=%3d  %.3f us/op\n",                       \
+            printf("glass::nvidia::block::reduce<CT> n=%3d  %.3f us/op\n",                    \
                    N, elapsed_us(t0, t1) / iters);                                            \
             clock_gettime(CLOCK_MONOTONIC, &t0);                                              \
             k_nv_dot<N><<<1, THREADS, nv_smem>>>(dx, dy, dSink, iters);                      \
             cudaDeviceSynchronize();                                                          \
             clock_gettime(CLOCK_MONOTONIC, &t1);                                              \
-            printf("glass::nvidia::dot<CT>       n=%3d  %.3f us/op\n",                       \
+            printf("glass::nvidia::block::dot<CT>    n=%3d  %.3f us/op\n",                    \
                    N, elapsed_us(t0, t1) / iters);                                            \
             clock_gettime(CLOCK_MONOTONIC, &t0);                                              \
             k_nv_nrm2<N><<<1, THREADS, nv_smem>>>(dx, dSink, iters);                       \
             cudaDeviceSynchronize();                                                          \
             clock_gettime(CLOCK_MONOTONIC, &t1);                                              \
-            printf("glass::nvidia::nrm2<CT>    n=%3d  %.3f us/op\n",                       \
+            printf("glass::nvidia::block::nrm2<CT>   n=%3d  %.3f us/op\n",                    \
                    N, elapsed_us(t0, t1) / iters);                                            \
         }
     MAYBE_NV_REDUCE_CT(4)

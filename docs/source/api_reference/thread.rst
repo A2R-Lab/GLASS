@@ -6,7 +6,7 @@ a single thread owns the whole operation — **no barriers, no shuffles, no**
 ``threadIdx`` **read** — so 32 independent problems pack into one warp. They
 target the *low-DOF corner* (robot DOF ≲ 7) where even a warp per problem
 leaves most lanes idle: a thread-per-problem launch
-(``<<<ceil(P/TPB), TPB>>>``, see ``glass::suggested_threads_per_block<>()``)
+(``<<<ceil(P/TPB), TPB>>>``, with packing from ``glass::recommend()``)
 keeps every lane busy on its own problem.
 
 Contract: **compile-time sizes only.** The tier's value is operands that nvcc

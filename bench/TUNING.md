@@ -2,15 +2,15 @@
 
 ## One command — `bench/tune.py`
 
-GLASS ships three measured defaults tables: the native and NVIDIA
+GLASS ships measured execution plans and implementation tables. The native and NVIDIA
 thread/warp/block **backend ladder** (`glass-defaults.cuh`, consumed by
-`glass::suggested_backend<>`; the
+`glass::recommend<>`; the
 tables are **per-arch** — the ladder leg replaces the marker block + dispatch
 case for the arch it measured, so a first-time GPU like a Jetson Orin gains an
 `ideal_sm87` alongside the shipped `ideal_sm120` instead of overwriting it), the
 per-(M,N,K) **cuBLASDx-vs-SIMT table** (`src/nvidia/tuning_table.cuh`, this
-document's main subject), and the serial-vs-reduced **`suggested_use_reduced<>`**
-predicate. `bench/tune.py` remeasures all of them on your GPU and regenerates
+document's main subject), plus serial-vs-reduced characterization.
+`bench/tune.py` remeasures all of them on your GPU and regenerates
 them under **one shared noise margin**, so nothing bakes sub-noise jitter:
 
 ```bash
@@ -60,23 +60,23 @@ needed), prebuild-cached like the others, and route every verdict through the
 same `tune_pick` margin rule:
 
 - **`blas2`** (`bench/bench_blas2.cu`) — warp-vs-block for `syrk`, `syr2k`,
-  `ldlt`, `ldltsv` (factor+solve), `inv` (augmented `[A|I]` Gauss-Jordan),
+  `ldlt`, `ldlt_solve` (factor+solve), `inv` (augmented `[A|I]` Gauss-Jordan),
   `trmv`, `ger` over the ladder's square-N set, f32+f64. `inv`/`trmv`/`ger` are
   block-only (no `warp::` variant); none of these ops has a `glass::nvidia::`
   counterpart, so there is no vendor column.
 - **`rect`** (`bench/bench_rect.cu`) — warp-vs-block for rectangular `gemv`
   (tall 64×8/128×16/256×32, wide 8×64/16×128/32×256) and `gemm`
-  ((M,K,N) ∈ {(32,8,32),(8,32,8),(64,16,16),(16,64,16),(6,6,64),(64,6,6)}).
+  ((M,N,K) ∈ {(32,32,8),(8,8,32),(64,16,16),(16,16,64),(6,64,6),(64,6,6)}).
   The nvidia leg is skipped (rectangular cuBLASDx forcing would need new
   `DEFINE_NVIDIA_*` instantiation machinery; per-shape vendor decisions belong
   to the `shapes` leg).
 
 Since 2026-08-06 both legs regenerate shipped header tables alongside their
 md reports: `blas2` splices a per-arch `blas2_sm*` block into
-`glass-defaults.cuh` for the 2-impl ops (syrk/syr2k/ldlt/ldltsv — reachable
-through the ordinary `suggested_backend<>`; inv/trmv/ger are single-impl and
+`glass-defaults.cuh` for the 2-impl ops (syrk/syr2k/ldlt/ldlt_solve — reachable
+through the ordinary `recommend<>`; inv/trmv/ger are single-impl and
 stay report-only), and `rect` splices exact-shape `rect_gemv_sm*` /
-`rect_gemm_sm*` pickers (public face `suggested_backend_rect_gemv/gemm<>`;
+`rect_gemm_sm*` pickers (public face `recommend<op::gemv/gemm,T,dims...>`;
 unmeasured shapes and arches fall to block). Offline hooks
 `--from-blas2 <txt>` / `--from-rect <txt>` regenerate from an existing sweep
 capture without touching the GPU (pass `--sm` to name the capture's arch):
@@ -123,7 +123,7 @@ the documented workaround for a CUDA 12.9 ptxas failure on
 cuBLASDx/cuSOLVERDx TUs (it also damps dead-store elimination of benchmark
 outputs). The ladder-family harnesses (`ladder`, `blas2`, `rect`, `solvers`)
 keep those same flags even in SIMT-only builds, so every contender feeding
-the `suggested_backend<>` tables is measured under ONE flag set regardless
+the `recommend<>` tables is measured under ONE flag set regardless
 of whether the nvidia tier is present. The `body` and `reduced` legs and
 the characterization drivers (`perf_sweeps.py`, `paper_sweeps.py`, and
 `run_bench.py`'s non-MathDx builds) compile at plain `-O3`, matching
@@ -198,7 +198,7 @@ python bench/perf_sweeps.py --arch sm_120 --profile overnight  # release confirm
 
 ## The cuBLASDx-vs-SIMT table
 
-GLASS's `glass::nvidia::*` wrappers — `gemm`, `gemv`, `row_strided_*`,
+GLASS's `glass::nvidia::block::*` wrappers — `gemm`, `gemv`, `row_strided_*`,
 `gemm_batched_1d` — auto-dispatch between a pure-SIMT path and cuBLASDx at
 compile time. The decision lives in
 `src/nvidia/query_simt.cuh::should_use_cublasdx*<>()` and consults, in order:
@@ -215,7 +215,7 @@ specialized independently for a given (shape, SM).
 
 ## Why bother?
 
-A representative measurement (RTX 3080, sm_120):
+A representative measurement (RTX 5090, sm_120):
 
 | Shape          | Heuristic says | Measured winner | Speedup |
 |----------------|----------------|-----------------|---------|
@@ -303,10 +303,10 @@ Use the per-API `print_dispatch_*` host helpers from `query_simt.cuh`:
 #include "glass-nvidia.cuh"
 
 int main() {
-    glass::nvidia::print_dispatch<float, 6, 6, 6>();
-    // → "glass::nvidia::gemm<T,6,6,6,SM=860>: SIMT fallback"
-    glass::nvidia::print_dispatch_gemv<float, 64, 64>();
-    // → "glass::nvidia::gemv<T,64,64,SM=860>: cuBLASDx (needs DEFINE_NVIDIA_GEMV*)"
+    glass::nvidia::block::print_dispatch<float, 6, 6, 6>();
+    // → "glass::nvidia::block::gemm<T,6,6,6,SM=860>: SIMT fallback"
+    glass::nvidia::block::print_dispatch_gemv<float, 64, 64>();
+    // → "glass::nvidia::block::gemv<T,64,64,SM=860>: cuBLASDx"
 }
 ```
 

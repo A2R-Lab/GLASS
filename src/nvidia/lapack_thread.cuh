@@ -16,10 +16,6 @@
  */
 #include <cstdint>
 
-#ifndef SMS
-#define SMS 860
-#endif
-
 namespace thread {
 
 /** Factor an N-by-N SPD matrix in place as A = L*L^T. */

@@ -2,7 +2,7 @@
 """Render the native/NVIDIA execution-scope sweep into static docs assets.
 
 Reads a ``bench/mega_sweep_*.txt`` run (the same data behind
-``glass-defaults.cuh``'s ``suggested_backend<>()``) and writes, into
+``glass-defaults.cuh``'s ``recommend<>()``) and writes, into
 ``docs/source/_static/``:
 
 * ``mega_sweep_ladder_<dt>_n<nprob>.png`` — one figure per (dtype, NPROB regime)
@@ -35,10 +35,10 @@ import matplotlib.pyplot as plt
 
 import tune_pick as tp
 
-OPS = ["dot", "gemv", "gemm", "chol", "trsv", "posv"]
+OPS = ["dot", "gemv", "gemm", "potrf", "trsv", "posv"]
 _HDR = re.compile(r"NPROB=(\d+).*dtype=(f32|f64)")
 _ROW = re.compile(
-    r"^(dot|gemv|gemm|chol|trsv|posv)\s+N=(\d+).*\|\|\s*"
+    r"^(dot|gemv|gemm|chol|potrf|trsv|posv)\s+N=(\d+).*\|\|\s*"
     r"block\s+tb\d+=([\d.]+)\s+warp\s+w\d+=([\d.]+)"
     r"(?:\s+thread\s+t\d+=([\d.]+))?(?:\s+nv=([\d.]+))?"
     r"(?:\s+nvt\s+t\d+=([\d.]+))?"
@@ -67,6 +67,7 @@ def parse(text, regimes=REGIMES):
         m = _ROW.match(line.strip())
         if m:
             op, N = m.group(1), int(m.group(2))
+            op = "potrf" if op == "chol" else op
             d = {"block": float(m.group(3)), "warp": float(m.group(4))}
             if m.group(5):
                 d["thread"] = float(m.group(5))

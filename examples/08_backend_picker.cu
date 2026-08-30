@@ -1,13 +1,11 @@
-// 08_backend_picker.cu — choosing a backend + launch config with glass-defaults.cuh.
+// 08_backend_picker.cu — choosing an execution plan with glass-defaults.cuh.
 //
 // Build (from this examples/ dir, pure SIMT — no MathDx needed):
 //   nvcc -std=c++17 -arch=sm_75 -I.. 08_backend_picker.cu -o picker && ./picker
-//   (to make the `nvidia` tier eligible, include glass-nvidia.cuh first + link MathDx.)
 //
-// glass-defaults.cuh exposes the measured thread/warp/block/nvidia ladder (bench/RESULTS.md)
-// as constexpr helpers. The pick is host-/codegen-side because warp, block, and nvidia need
-// DIFFERENT <<<grid,block>>> launches — so you query at compile time and branch the launch.
-// With no MathDx linked (as here), the `nvidia` tier collapses to its warp/block runner-up.
+// recommend() exposes the measured native/NVIDIA and thread/warp/block ladder
+// as one constexpr plan. The choice is host-/codegen-side because scopes need
+// different launches. This example requests native-only implementations.
 
 #include "glass.cuh"
 #include "glass-defaults.cuh"
@@ -15,12 +13,13 @@
 #include <cuda_runtime.h>
 
 using glass::op;
-using glass::backend;
-
-static const char* name(backend b) {
-    return b == backend::warp   ? "warp"
-         : b == backend::block  ? "block"
-         : b == backend::thread ? "thread" : "nvidia";
+static const char* name(glass::execution_plan p) {
+    const char* family = p.implementation == glass::family::nvidia ? "nvidia" : "native";
+    const char* scope = p.execution_scope == glass::scope::thread ? "thread"
+                      : p.execution_scope == glass::scope::warp ? "warp" : "block";
+    static char text[32];
+    std::snprintf(text, sizeof(text), "%s/%s", family, scope);
+    return text;
 }
 
 // ── one SPD solve A x = b, dispatched to the picked backend ──────────────────
@@ -41,36 +40,33 @@ template <int N> __global__ void k_thread_posv(float* A, float* b) {
 template <int N>
 static void solve_dispatch(float* dA, float* db) {
     // Compile-time pick from the measured table (T=float, build's SM).
-    constexpr backend be = glass::suggested_backend<op::posv, N, float>();
-    printf("  posv N=%d -> backend=%s", N, name(be));
-    if constexpr (be == backend::thread) {
-        constexpr int TPB = glass::suggested_threads_per_block<op::posv, N, float>();
-        printf(" (TPB=%d)\n", TPB);
+    constexpr auto plan = glass::recommend<op::posv, float, N>();
+    printf("  posv N=%d -> plan=%s", N, name(plan));
+    if constexpr (plan.execution_scope == glass::scope::thread) {
+        printf(" (TPB=%u)\n", plan.block_threads);
         k_thread_posv<N><<<1, 1>>>(dA, db);                   // 1 problem here -> 1 thread
-    } else if constexpr (be == backend::warp) {
-        constexpr int WPB = glass::suggested_warps_per_block<op::posv>();
-        printf(" (WPB=%d)\n", WPB);
+    } else if constexpr (plan.execution_scope == glass::scope::warp) {
+        printf(" (WPB=%u)\n", plan.problems_per_block);
         k_warp_posv<N><<<1, dim3(32, 1)>>>(dA, db);           // 1 problem here -> 1 warp
-    } else { // block (or nvidia collapsed to block); a real nvidia tier would launch cuSOLVERDx
-        constexpr int TB = glass::suggested_block_threads<op::posv, N, float>();
-        printf(" (TB=%d)\n", TB);
-        k_block_posv<N><<<1, TB>>>(dA, db);
+    } else {
+        printf(" (TB=%u)\n", plan.block_threads);
+        k_block_posv<N><<<1, plan.block_threads>>>(dA, db);
     }
     cudaDeviceSynchronize();
 }
 
 int main() {
     // 1) Show what the picker chooses across ops/sizes (all compile-time constants).
-    printf("backend picks (T=float, this build's SM; no MathDx -> nvidia collapses):\n");
-    printf("  dot  N=8   : %s\n", name(glass::suggested_backend<op::dot,   8, float>()));
-    printf("  dot  N=64  : %s\n", name(glass::suggested_backend<op::dot,  64, float>()));
-    printf("  posv N=8   : %s\n", name(glass::suggested_backend<op::posv,  8, float>()));
-    printf("  gemv N=16  : %s\n", name(glass::suggested_backend<op::gemv, 16, float>()));
-    printf("  gemv N=64  : %s\n", name(glass::suggested_backend<op::gemv, 64, float>()));
-    printf("  gemm N=8   : %s\n", name(glass::suggested_backend<op::gemm,  8, float>()));
-    printf("  gemm N=32  : %s\n", name(glass::suggested_backend<op::gemm, 32, float>()));
-    printf("  chol N=8   : %s\n", name(glass::suggested_backend<op::chol,  8, float>()));
-    printf("  chol N=64  : %s\n", name(glass::suggested_backend<op::chol, 64, float>()));
+    printf("execution plans (T=float, this build's SM, native-only):\n");
+    printf("  dot   N=8  : %s\n", name(glass::recommend<op::dot, float, 8>()));
+    printf("  dot   N=64 : %s\n", name(glass::recommend<op::dot, float, 64>()));
+    printf("  posv  N=8  : %s\n", name(glass::recommend<op::posv, float, 8>()));
+    printf("  gemv  N=16 : %s\n", name(glass::recommend<op::gemv, float, 16>()));
+    printf("  gemv  N=64 : %s\n", name(glass::recommend<op::gemv, float, 64>()));
+    printf("  gemm  N=8  : %s\n", name(glass::recommend<op::gemm, float, 8>()));
+    printf("  gemm  N=32 : %s\n", name(glass::recommend<op::gemm, float, 32>()));
+    printf("  potrf N=8  : %s\n", name(glass::recommend<op::potrf, float, 8>()));
+    printf("  potrf N=64 : %s\n", name(glass::recommend<op::potrf, float, 64>()));
 
     // 2) Use the pick to dispatch a real solve. SPD A = M·Mᵀ + N·I (column-major), N=16.
     const int N = 16;

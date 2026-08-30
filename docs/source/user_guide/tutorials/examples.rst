@@ -37,7 +37,7 @@ which requires MathDx.
        host helper
      - pure SIMT
    * - ``05_nvidia_gemm``
-     - the cuBLASDx-backed ``glass::nvidia::gemm`` path
+     - the cuBLASDx-backed ``glass::nvidia::block::gemm`` path
      - **requires MathDx**
    * - ``06_warp_ops``
      - single-warp ``glass::warp::`` ops (reduce, 4×4 gemm, potrf+trsv),
@@ -47,7 +47,7 @@ which requires MathDx.
      - block-tridiagonal PCG solve ``glass::pcg`` (``[L|D|R]`` strips)
      - pure SIMT
    * - ``08_backend_picker``
-     - ``suggested_backend<>`` driving a warp/block/thread ``posv`` launch
+     - ``recommend<>`` driving a warp/block/thread ``posv`` launch
      - pure SIMT
    * - ``09_gemm_strided``
      - GEMM on sub-blocks with explicit leading dims (``gemm_strided``)

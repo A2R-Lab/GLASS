@@ -5,7 +5,7 @@ GLASS ships overlapping thread-, warp-, block-, and vendor-backed execution
 tiers. For operations present in more than one tier, the fastest choice depends
 on operation, size, dtype, launch shape, and batch regime. The **mega sweep**
 (``bench/tune.py``'s ladder leg) compares supported contenders — this is
-exactly the measurement behind ``glass-defaults.cuh``'s ``suggested_backend<>()``
+exactly the measurement behind ``glass-defaults.cuh``'s ``recommend<>()``
 (see :doc:`../../api_reference/defaults`).
 
 .. warning::
@@ -42,7 +42,7 @@ curve therefore marks an explicit instantiation or resource boundary, not a
 claim that larger sizes are unsupported by CUDA or cuSOLVERDx. NVIDIA block
 f64 curves may stop at their shared-memory feasibility limit.
 
-``suggested_backend<>()`` is keyed on the **NPROB=8192** throughput regime.
+``recommend<>()`` is keyed on the **NPROB=8192** throughput regime.
 Its policy first applies a ±2% tie band among dependency-free SIMT contenders,
 then requires an NVIDIA contender to clear the best native choice by more than
 5%. This keeps small or noisy gaps out of the generated table.
@@ -59,7 +59,7 @@ float32
    :width: 100%
 
 .. image:: /_static/mega_sweep_ladder_f32_n8192.png
-   :alt: f32 ladder, NPROB=8192 (throughput — feeds suggested_backend)
+   :alt: f32 ladder, NPROB=8192 (throughput — feeds recommend)
    :width: 100%
 
 float64
@@ -74,7 +74,7 @@ float64
    :width: 100%
 
 .. image:: /_static/mega_sweep_ladder_f64_n8192.png
-   :alt: f64 ladder, NPROB=8192 (throughput — feeds suggested_backend)
+   :alt: f64 ladder, NPROB=8192 (throughput — feeds recommend)
    :width: 100%
 
 Winner per (op, N), per regime

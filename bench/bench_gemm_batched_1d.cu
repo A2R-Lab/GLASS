@@ -2,8 +2,8 @@
 //
 // Three kernels per BATCH:
 //   naive_loop_1d:  BATCH × glass::gemm<T,M,N,K> in a single 1D block.
-//   batched_1d:     one glass::nvidia::gemm_batched_1d<...> call.
-//   strided_1d:     one glass::nvidia::gemm_strided_batched_1d<...> call
+//   batched_1d:     one glass::nvidia::block::gemm_batched_1d<...> call.
+//   strided_1d:     one glass::nvidia::block::gemm_strided_batched_1d<...> call
 //                   (shared A; strided B/C).
 //
 // Launch geometry: <<<grid, dim3(TC*BATCH, 1, 1)>>> (no smem needed).

@@ -4,7 +4,7 @@
 //   NVIDIA BLOCK  — cuBLASDx/cuSOLVERDx, <<<NPROB, nv_threads(N)>>>, descriptor-fixed
 //   NVIDIA THREAD — cuSOLVERDx 0.4+, one problem/thread, TPB swept (LAPACK ops)
 //   AUTO   — bare glass::op at the BLOCK launch shapes: the shipped measured-default
-//            face (constexpr device-level body dispatch via -DSMS). AUDIT-ONLY —
+//            face (constexpr device-level body dispatch via GLASS_TARGET_SM). AUDIT-ONLY —
 //            the AUTO segment/token is ignored by tune.py's table parsers and never
 //            feeds a verdict or a plotted figure line (a line invites misreading vs
 //            the warp/thread launch-packing tiers — 08-16 ruling). It validates that
@@ -17,13 +17,13 @@
 // dependency-backed NVIDIA block/thread ladder?" across
 // problem size N and batch count NPROB (single-problem latency → GPU-saturating throughput).
 //
-// Ops (each has glass::<op>, glass::warp::<op>, and a glass::nvidia::<op> form):
+// Ops each have native scope forms and, where supported, explicit NVIDIA scope forms:
 //   dot (L1)  gemv (L2)  gemm (L3)  chol (L3)  trsv (L3, nvidia=trsm)  posv (L3)
 //
 // dtype: f32 or f64. Native thread/warp/block and NVIDIA block are measured
 // across their supported domains; NVIDIA thread is instantiated through N=32.
 // The nvidia leg is FORCED at every N: a DEFINE_NVIDIA_* macro is in scope for each N, so
-// glass::nvidia::<op><float,N,...> resolves to the cuBLASDx/cuSOLVERDx specialization
+// glass::nvidia::block::<op><float,N,...> resolves to a MathDx specialization
 // unconditionally (bypassing the shipped size-heuristic auto-dispatch) — we want the full
 // vendor curve so the crossover with block/warp is visible, not just the heuristic's verdict.
 //
@@ -34,7 +34,7 @@
 // Compile (full ladder, needs MathDx — set MATHDX_ROOT):
 //   nvcc -std=c++17 -arch=sm_120 -O3 --expt-relaxed-constexpr -Xptxas -O1 -I.. -I../src
 //        -I$MATHDX_ROOT/include -I$MATHDX_ROOT/external/cutlass/include
-//        -DGLASS_BENCH_CUBLASDX -DGLASS_BENCH_CUSOLVERDX -DSMS=1200
+//        -DGLASS_BENCH_CUBLASDX -DGLASS_BENCH_CUSOLVERDX -DGLASS_TARGET_SM=1200
 //        -DCUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT -dlto
 //        -lcusolverdx -lcublas -lcusolver -lcudart bench_mega_sweep.cu -o bench_mega_sweep
 //   (omit the MathDx -I / -D / -l flags → compiles 2-way warp/block only, both dtypes.)
@@ -104,7 +104,7 @@ template<typename T,int N> __global__ void ka_posv(T* A, T* b) { int p=blockIdx.
 
 enum Op { DOT, GEMV, GEMM, CHOL, TRSV, POSV, NOP };
 static const char* op_name(Op o) {
-    const char* n[] = {"dot","gemv","gemm","chol","trsv","posv"};
+    const char* n[] = {"dot","gemv","gemm","potrf","trsv","posv"};
     return n[o];
 }
 
@@ -232,7 +232,7 @@ static void launch_thread(Op op, int TPB, T* A, T* B, T* C, T* x, T* y) {
 }
 
 // ─── NVIDIA model: cuBLASDx / cuSOLVERDx, one block per problem ──────────────
-// DEFINE_NVIDIA_* emit explicit specializations so the glass::nvidia::<op> call
+// DEFINE_NVIDIA_* emit specializations for the glass::nvidia::block::<op> call
 // resolves to the vendor path unconditionally (forced, no size-heuristic dispatch).
 // FLOAT: gemm 16/24/32/64 + gemv 4..64 are already cuBLASDx-specialized by
 // glass-nvidia.cuh/tuning_table.cuh (those shipped specializations ARE the forced
@@ -240,7 +240,7 @@ static void launch_thread(Op op, int TPB, T* A, T* B, T* C, T* x, T* y) {
 // defined via the *_PREC(..., double) macros. Double caps at N<=64 (smem: a 99KB
 // opt-in limit fits f64 gemm only to 64, f64 chol/posv to ~96; we define <=64).
 #if MEGA_NV_BLAS
-static const int NV_DOT_TB = 256;   // CUB BlockReduce thread count for nvidia::dot
+static const int NV_DOT_TB = 256;   // CUB BlockReduce thread count for nvidia::block::dot
 namespace glass { namespace nvidia { namespace block {
     // float gaps (shipped: gemm 16/24/32/64, gemv 4..64)
     DEFINE_NVIDIA_GEMM(4, 4, 4)  DEFINE_NVIDIA_GEMM(6, 6, 6)

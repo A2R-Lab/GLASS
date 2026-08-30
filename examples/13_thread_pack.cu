@@ -12,8 +12,7 @@
 //
 // The kernel is the caller's: it stages each problem global -> thread-local
 // registers, runs the op on its own arrays, and writes back. Launch shape comes
-// from glass::suggested_threads_per_block<>() (a seed heuristic, not a measured
-// table entry — see glass-defaults.cuh).
+// from glass::recommend() (see glass-defaults.cuh).
 
 #include "glass.cuh"
 #include "glass-defaults.cuh"
@@ -54,8 +53,10 @@ int main() {
     cudaMemcpy(dA, hA, sizeof(hA), cudaMemcpyHostToDevice);
     cudaMemcpy(db, hb, sizeof(hb), cudaMemcpyHostToDevice);
 
-    // One problem per thread; TPB from the defaults heuristic (N=6 -> 64).
-    constexpr uint32_t TPB = glass::suggested_threads_per_block<glass::op::posv, N, float>();
+    // One problem per thread; the plan carries its packing (N=6 -> 64).
+    constexpr auto plan = glass::recommend<glass::op::posv, float, N>();
+    static_assert(plan.execution_scope == glass::scope::thread);
+    constexpr uint32_t TPB = plan.block_threads;
     k_thread_posv<<<(P + TPB - 1) / TPB, TPB>>>(dA, db, dx, P);
     cudaMemcpy(hx, dx, sizeof(hx), cudaMemcpyDeviceToHost);
 

@@ -282,11 +282,13 @@ class LazyBins(Mapping):
 
     def _compile(self, key: str) -> pathlib.Path:
         mathdx, cublasdx = self._mathdx()
+        target_sm = CUDA_ARCH.replace("sm_", "") + "0"
         flags: list[str] = []
         if key == "nvidia_dispatch" and not cublasdx:
             raise KeyError(key)
         if key in {"nvidia_dispatch", "trailing_sync"} and cublasdx:
             flags = ["--expt-relaxed-constexpr", "-DGLASS_BENCH_CUBLASDX",
+                     f"-DGLASS_TARGET_SM={target_sm}",
                      "-I", str(mathdx / "include"),
                      "-I", str(mathdx / "external/cutlass/include")]
         if key in {"nvidia_f64", "nvidia_thread"}:
@@ -298,10 +300,10 @@ class LazyBins(Mapping):
                                (fatbin and fatbin.exists())))
             if not solver:
                 raise KeyError(key)
-            sms = CUDA_ARCH.replace("sm_", "") + "0"
             flags = ["--expt-relaxed-constexpr", "-DGLASS_BENCH_CUBLASDX",
                      "-DGLASS_BENCH_CUSOLVERDX",
-                     "-DCUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT", f"-DSMS={sms}",
+                     "-DCUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT",
+                     f"-DGLASS_TARGET_SM={target_sm}",
                      "-I", str(mathdx / "include"),
                      "-I", str(mathdx / "external/cutlass/include")]
             if platform.machine() == "x86_64" and archive and archive.exists():

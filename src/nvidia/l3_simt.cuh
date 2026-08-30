@@ -76,11 +76,11 @@ template <typename T, uint32_t M, uint32_t N, uint32_t K,
 __device__ void gemm_batched_1d(T alpha, T* const* A, T* const* B,
                                 T beta,  T* const* C)
 {
-    static_assert(BATCH > 0, "glass::nvidia::gemm_batched_1d: BATCH must be > 0");
-    static_assert(TC > 0,    "glass::nvidia::gemm_batched_1d: TC must be > 0");
+    static_assert(BATCH > 0, "glass::nvidia::block::gemm_batched_1d: BATCH must be > 0");
+    static_assert(TC > 0,    "glass::nvidia::block::gemm_batched_1d: TC must be > 0");
 #ifndef NDEBUG
     assert((blockDim.x * blockDim.y * blockDim.z) >= TC * BATCH &&
-           "glass::nvidia::gemm_batched_1d: launched threads < TC*BATCH");
+           "glass::nvidia::block::gemm_batched_1d: launched threads < TC*BATCH");
 #endif
     constexpr bool RM_A = (LA == layout::row_major);
     constexpr bool RM_B = (LB == layout::row_major);
@@ -189,11 +189,11 @@ template <typename T, uint32_t M, uint32_t N, uint32_t K,
 __device__ void gemm_strided_batched_1d(T alpha, const T* A_shared, T* B,
                                         T beta,  T* C)
 {
-    static_assert(BATCH > 0, "glass::nvidia::gemm_strided_batched_1d: BATCH must be > 0");
-    static_assert(TC > 0,    "glass::nvidia::gemm_strided_batched_1d: TC must be > 0");
+    static_assert(BATCH > 0, "glass::nvidia::block::gemm_strided_batched_1d: BATCH must be > 0");
+    static_assert(TC > 0,    "glass::nvidia::block::gemm_strided_batched_1d: TC must be > 0");
 #ifndef NDEBUG
     assert((blockDim.x * blockDim.y * blockDim.z) >= TC * BATCH &&
-           "glass::nvidia::gemm_strided_batched_1d: launched threads < TC*BATCH");
+           "glass::nvidia::block::gemm_strided_batched_1d: launched threads < TC*BATCH");
 #endif
     constexpr bool RM_A = (LA == layout::row_major);
     constexpr bool RM_B = (LB == layout::row_major);

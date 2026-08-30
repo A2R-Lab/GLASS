@@ -22,7 +22,7 @@ fi
 echo "==> compiling native + NVIDIA block/thread ladder (sm=$SMS) ..."
 nvcc -std=c++17 -arch="$ARCH" -O3 --expt-relaxed-constexpr -Xptxas -O1 -I.. -I../src \
      -I"$MATHDX_ROOT/include" -I"$MATHDX_ROOT/external/cutlass/include" \
-     -DGLASS_BENCH_CUBLASDX -DGLASS_BENCH_CUSOLVERDX -DSMS="$SMS" \
+     -DGLASS_BENCH_CUBLASDX -DGLASS_BENCH_CUSOLVERDX -DGLASS_TARGET_SM="$SMS" \
      -DCUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT -rdc=true -dlto \
      -L"$MATHDX_ROOT/lib" -lcusolverdx -lcublas -lcusolver -lcudart \
      bench_mega_sweep.cu -o "$BIN"

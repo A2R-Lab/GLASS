@@ -12,16 +12,19 @@
 
 static_assert(GLASS_HAVE_CUSOLVERDX_THREAD == 1,
               "test_nvidia_thread requires cuSOLVERDx thread execution");
-static_assert(glass::defaults::have_nv_thread,
-              "backend picker must see the included cuSOLVERDx thread surface");
-static_assert(glass::defaults::nv_thread_available(glass::op::chol) &&
-              !glass::defaults::nv_thread_available(glass::op::gemm),
-              "NVIDIA thread availability is limited to the LAPACK ladder ops");
-static_assert(glass::suggested_backend<glass::op::chol, 8, float, 1200>() ==
-              glass::backend::nvidia_thread,
+static_assert(glass::recommend<glass::op::potrf, float, 8>(
+                  glass::dependency_set::mathdx, 1200u).implementation ==
+                  glass::family::nvidia &&
+              glass::recommend<glass::op::potrf, float, 8>(
+                  glass::dependency_set::mathdx, 1200u).execution_scope ==
+                  glass::scope::thread,
               "sm_120 measured picker reaches NVIDIA thread");
-static_assert(glass::suggested_backend<glass::op::trsv, 16, float, 870>() ==
-              glass::backend::nvidia_thread,
+static_assert(glass::recommend<glass::op::trsv, float, 16>(
+                  glass::dependency_set::mathdx, 870u).implementation ==
+                  glass::family::nvidia &&
+              glass::recommend<glass::op::trsv, float, 16>(
+                  glass::dependency_set::mathdx, 870u).execution_scope ==
+                  glass::scope::thread,
               "sm_87 measured picker reaches NVIDIA thread");
 
 namespace gnt = glass::nvidia::thread;

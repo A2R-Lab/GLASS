@@ -3,10 +3,10 @@
 // cuBLASDx's natural block_dim choice.
 //
 // For each (M, N, K), three measurements:
-//   default    — glass::nvidia::gemm<...>             launched with cuBLASDx's
+//   default    — glass::nvidia::block::gemm<...>      launched with cuBLASDx's
 //                                                     natural block_dim
-//   pinned-128 — glass::nvidia::gemm<...,128>(...)    launched <<<1, 128>>>
-//   pinned-352 — glass::nvidia::gemm<...,352>(...)    launched <<<1, 352>>>
+//   pinned-128 — glass::nvidia::block::gemm<...,128>(...) launched <<<1, 128>>>
+//   pinned-352 — glass::nvidia::block::gemm<...,352>(...) launched <<<1, 352>>>
 //                (matches GRiD's iiwa14 MAX_PERF_LEVEL_THREADS, the value that
 //                 deadlocked before P0-1)
 //
