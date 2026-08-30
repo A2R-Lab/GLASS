@@ -60,7 +60,7 @@ spellings rather than one flat list of interchangeable interfaces:
      - inline in the base L1/L2/L3 headers
    * - ``glass::thread::`` (Thread)
      - thread
-     - Sequential, thread-per-problem — compile-time sizes, register-resident up to ``N≤7``, branch-free ops only
+     - Sequential, thread-per-problem — compile-time sizes, usually register-resident around ``N≤7`` but correct and measured beyond it; branch-free ops only
      - inline in the base L1/L2/L3 headers
    * - ``glass::nvidia::block::`` (Nvidia)
      - block

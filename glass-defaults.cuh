@@ -90,36 +90,38 @@ constexpr bool nv_thread_available(op o) {
 // inserts a new block + dispatch case for a first-time arch), leaving the rest alone. ───
 
 // === BEGIN tune.py ladder sm_120 ===
-// Source sweep: mega_sweep_20260815_205919.txt   tie margin: ±5% (nvidia must clear it; SIMT ties ±2% prefer thread>warp>block)
-// Returns the *ideal* tier assuming nvidia is linked; nv_available() filters after.
+// Source sweep: mega_sweep_20260830_042156.txt   tie margin: ±5% (NVIDIA block/thread must clear it; SIMT ties ±2% prefer thread>warp>block)
+// Returns the *ideal* tier assuming NVIDIA dependencies are linked;
+// availability predicates collapse either vendor tier after selection.
 constexpr backend ideal_sm120(op o, uint32_t N, bool f64) {
     switch (o) {
         case op::dot:
-            if (!f64) return N <= 12u ? backend::thread : backend::warp;
+            if (!f64) return N <= 12u ? backend::thread : N <= 16u ? backend::warp : N <= 24u ? backend::thread : backend::warp;
             else      return N <= 32u ? backend::thread : backend::warp;
         case op::gemv:
             if (!f64) return N <= 6u ? backend::thread : N <= 32u ? backend::warp : N <= 48u ? backend::block : backend::warp;
-            else      return N <= 6u ? backend::thread : N <= 64u ? backend::warp : backend::block;
+            else      return N <= 6u ? backend::thread : backend::warp;
         case op::gemm:
-            if (!f64) return N <= 8u ? backend::warp : N <= 12u ? backend::block : N <= 16u ? backend::warp : N <= 24u ? backend::block : N <= 32u ? backend::nvidia : backend::block;
+            if (!f64) return N <= 16u ? backend::warp : N <= 24u ? backend::block : N <= 32u ? backend::nvidia : backend::block;
             else      return N <= 8u ? backend::warp : backend::block;
         case op::chol:
-            if (!f64) return N <= 6u ? backend::thread : N <= 24u ? backend::warp : backend::nvidia;
-            else      return N <= 24u ? backend::thread : backend::block;
+            if (!f64) return N <= 4u ? backend::thread : N <= 8u ? backend::nvidia_thread : N <= 24u ? backend::warp : backend::nvidia;
+            else      return N <= 8u ? backend::nvidia_thread : N <= 24u ? backend::thread : backend::block;
         case op::trsv:
-            if (!f64) return N <= 16u ? backend::thread : N <= 32u ? backend::nvidia : backend::warp;
-            else      return N <= 16u ? backend::thread : N <= 48u ? backend::nvidia : N <= 64u ? backend::block : backend::warp;
+            if (!f64) return N <= 16u ? backend::thread : N <= 24u ? backend::nvidia_thread : N <= 32u ? backend::nvidia : backend::warp;
+            else      return N <= 32u ? backend::nvidia_thread : N <= 48u ? backend::nvidia : backend::warp;
         case op::posv:
-            if (!f64) return N <= 12u ? backend::thread : backend::nvidia;
-            else      return N <= 24u ? backend::thread : N <= 32u ? backend::nvidia : backend::block;
+            if (!f64) return N <= 6u ? backend::thread : N <= 8u ? backend::nvidia_thread : N <= 12u ? backend::thread : backend::nvidia;
+            else      return N <= 8u ? backend::nvidia_thread : N <= 24u ? backend::thread : N <= 32u ? backend::nvidia : backend::block;
     }
     return backend::block;
 }
 // === END tune.py ladder sm_120 ===
 
 // === BEGIN tune.py ladder sm_87 ===
-// Source sweep: mega_sweep_50W_merged.txt   tie margin: ±5% (nvidia must clear it; SIMT ties ±2% prefer thread>warp>block)
-// Returns the *ideal* tier assuming nvidia is linked; nv_available() filters after.
+// Source sweep: mega_sweep_orin_tegra_20260830_035819.txt   tie margin: ±5% (NVIDIA block/thread must clear it; SIMT ties ±2% prefer thread>warp>block)
+// Returns the *ideal* tier assuming NVIDIA dependencies are linked;
+// availability predicates collapse either vendor tier after selection.
 constexpr backend ideal_sm87(op o, uint32_t N, bool f64) {
     switch (o) {
         case op::dot:
@@ -132,14 +134,14 @@ constexpr backend ideal_sm87(op o, uint32_t N, bool f64) {
             if (!f64) return N <= 16u ? backend::warp : N <= 96u ? backend::nvidia : backend::block;
             else      return N <= 96u ? backend::warp : backend::block;
         case op::chol:
-            if (!f64) return N <= 12u ? backend::thread : backend::nvidia;
-            else      return N <= 48u ? backend::thread : N <= 64u ? backend::nvidia : backend::block;
+            if (!f64) return N <= 6u ? backend::thread : N <= 12u ? backend::nvidia_thread : backend::nvidia;
+            else      return N <= 12u ? backend::nvidia_thread : N <= 48u ? backend::thread : N <= 64u ? backend::block : N <= 96u ? backend::warp : backend::block;
         case op::trsv:
-            if (!f64) return N <= 16u ? backend::thread : N <= 32u ? backend::nvidia : backend::warp;
-            else      return N <= 16u ? backend::thread : N <= 32u ? backend::nvidia : N <= 64u ? backend::thread : N <= 96u ? backend::warp : backend::block;
+            if (!f64) return N <= 12u ? backend::thread : N <= 32u ? backend::nvidia_thread : backend::warp;
+            else      return N <= 32u ? backend::nvidia_thread : N <= 64u ? backend::thread : N <= 96u ? backend::warp : backend::block;
         case op::posv:
             if (!f64) return N <= 16u ? backend::thread : backend::nvidia;
-            else      return N <= 64u ? backend::thread : backend::block;
+            else      return N <= 8u ? backend::nvidia_thread : N <= 64u ? backend::thread : N <= 96u ? backend::warp : backend::block;
     }
     return backend::block;
 }

@@ -20,15 +20,19 @@ labor (2026-08-11 consolidation):
 
 ## ladder (mega sweep — native thread/warp/block plus NVIDIA block/thread)
 
-The shipped `ideal_sm120` table was re-gated 2026-08-15 from the pinned quiet
-capture `mega_sweep_20260815_205919.txt` (archived externally), taken with the
-drift-fixed v2 harness (untimed per-trial input reset in `timing_common.cuh`);
-it is the cleanest capture recorded (40/396 rows jitter-flagged, each verified
-cell-by-cell at re-gate). Earlier captures (3-way 2026-06-23, 4-way thread
-tier 2026-07-19) are superseded for table generation. sm_87 (Jetson Orin,
-three power modes, byte-identical tables) landed 2026-08-03. Ladder analysis,
-thread-tier verdict tables, and figures live on the docs site; the
-winner-per-(op,N) table renders from `docs/source/_static/sweep_winners.txt`.
+The shipped tables were regenerated 2026-08-30 after adding cuSOLVERDx's
+thread-per-problem LAPACK interface as a fifth contender. The sm_120 table uses
+the independent 500-repetition throughput capture
+`mega_sweep_20260830_042156.txt`; the three-regime figures use
+`mega_sweep_20260830_025517.txt`. Their policy winners agree in 131/132 cells
+and in all 17 NVIDIA-thread cells. The sm_87 table uses the pinned-50-W Tegra
+profile capture `mega_sweep_orin_tegra_20260830_035819.txt`; a separate
+oversampled low-batch capture supplies its NPROB=64 characterization. Raw
+captures and SHA-256 pins are archived with the paper materials. Earlier
+three- and four-way captures remain historical evidence but are superseded for
+ladder table generation. Current analysis and figures live on the docs site;
+the winner-per-(op,N) table renders from
+`docs/source/_static/sweep_winners.txt`.
 
 ## blas2 (warp vs block for syrk/syr2k/ldlt/ldltsv/inv/trmv/ger)
 
@@ -290,7 +294,7 @@ bdsv is faster in 1 of 12 cells **on this well-conditioned test system at PCG's 
 
 posv (Cholesky) is the intended SPD path; gesv prices the pivoted-LU robustness fallback, inv+gemv the invert-then-multiply anti-pattern.
 
-The `thr-posv` column is the **thread-tier** `glass::thread::posv` (one problem per thread, 32 packed per warp) — measured only below the N<=7 register-residency ceiling. Where `thr/posv` < 1 the thread tier beats the block Cholesky solve on that low-DOF shape.
+The `thr-posv` column is the **thread-tier** `glass::thread::posv` (one problem per thread, 32 packed per warp) — measured here only in the register-resident low-DOF band. Where `thr/posv` < 1 the thread tier beats the block Cholesky solve on that shape.
 
 | N | dtype | gesv ns | posv ns | inv+gemv ns | thr-posv ns | gesv/posv | inv/posv | thr/posv |
 |---|-------|---------|---------|-------------|-------------|-----------|----------|----------|

@@ -51,7 +51,8 @@ operation.
       :link-type: doc
 
       One problem per **thread**, 32 packed per warp. This is a compile-time,
-      branch-free subset intended for register-resident sizes up to ``N≤7``.
+      branch-free subset. It is usually register-resident around ``N≤7``;
+      larger measured sizes remain correct and can still win despite spills.
 
    .. grid-item-card:: Nvidia — ``glass::nvidia::block::``
       :link: user_guide/concepts/backend_dispatch
@@ -145,8 +146,8 @@ and :doc:`user_guide/tutorials/examples` for a worked program per concept.
 Measured performance
 --------------------
 
-The measured warp / block / nvidia ladder on an RTX 5090 (sm_120) — each op's
-fastest interface across problem size, in ns/problem (the data behind
+The measured native and NVIDIA thread / warp / block ladder on an RTX 5090
+(sm_120) — each op's fastest interface across problem size, in ns/problem (the data behind
 ``glass::suggested_backend<>``), shown here in the ``NPROB=8192`` throughput
 regime:
 

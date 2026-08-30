@@ -18,61 +18,55 @@ static_assert(static_cast<int>(backend::thread) == 3, "backend ordinal: thread")
 static_assert(static_cast<int>(backend::nvidia_thread) == 4,
               "backend ordinal: nvidia_thread appended");
 
-// ── measured sm_120 ladder (the ideal tier, independent of what's linked) ──
-//   (2026-07-18 retune — first sweep with the THREAD contender: it takes the
-//    low-DOF corner of every op except gemm.)
-//   gemm f32: warp <=8, block 12, warp 16, block <=24, nvidia 25..32, block >=48
-//   (2026-08-15 drift-fixed capture: the warp/block boundary is genuine fine
-//    structure — warp decisive at 8 and 16, block at 24; N=12 sits 2.03% over
-//    the ±2% SIMT tie band, a band-edge razor cell — see bench/tune_pick.py)
+// ── measured sm_120 ladder (2026-08-30, independent of what's linked) ──
+// The higher-repetition throughput replication agreed on 131/132 policy
+// winners. The lone disagreement was dot f32 N=16 inside the SIMT tie band;
+// these pins follow the 500-repetition capture used to generate the table.
 static_assert(gd::ideal_sm120(op::gemm, 8,  false) == backend::warp,   "gemm8 f32");
-static_assert(gd::ideal_sm120(op::gemm, 12, false) == backend::block,  "gemm12 f32 (band-edge: block by 2.03%, just outside the +/-2% tie band)");
+static_assert(gd::ideal_sm120(op::gemm, 12, false) == backend::warp,   "gemm12 f32");
 static_assert(gd::ideal_sm120(op::gemm, 24, false) == backend::block,  "gemm24 f32");
 static_assert(gd::ideal_sm120(op::gemm, 32, false) == backend::nvidia, "gemm32 f32");
 static_assert(gd::ideal_sm120(op::gemm, 96, false) == backend::block,  "gemm96 f32 (smem cap)");
-//   chol f32: thread<=6, warp<=24, nvidia>=32 (through 128); at N=24 raw nv
-//   wins by only 1.03x — under the ±5% MathDx-clearance margin → warp ships
-//   (pre-drift-fix captures had nvidia from 16 up: the vendor leg timed last,
-//   on drift-accelerated inputs)
+// NVIDIA thread wins 17 throughput cells in both independent captures.
 static_assert(gd::ideal_sm120(op::chol, 4,   false) == backend::thread, "chol4 f32");
-static_assert(gd::ideal_sm120(op::chol, 8,   false) == backend::warp,   "chol8 f32");
-static_assert(gd::ideal_sm120(op::chol, 24,  false) == backend::warp,   "chol24 f32 (nv 1.03x, under the 5% margin)");
+static_assert(gd::ideal_sm120(op::chol, 8,   false) == backend::nvidia_thread, "chol8 f32 -> NVIDIA thread");
+static_assert(gd::ideal_sm120(op::chol, 24,  false) == backend::warp,   "chol24 f32");
 static_assert(gd::ideal_sm120(op::chol, 128, false) == backend::nvidia, "chol128 f32");
-//   trsv f32: thread<=16, nvidia 17..32, warp above
 static_assert(gd::ideal_sm120(op::trsv, 12, false) == backend::thread, "trsv12 f32");
-static_assert(gd::ideal_sm120(op::trsv, 24, false) == backend::nvidia, "trsv24 f32");
+static_assert(gd::ideal_sm120(op::trsv, 24, false) == backend::nvidia_thread, "trsv24 f32 -> NVIDIA thread");
+static_assert(gd::ideal_sm120(op::trsv, 32, false) == backend::nvidia, "trsv32 f32 -> NVIDIA block");
 static_assert(gd::ideal_sm120(op::trsv, 64, false) == backend::warp,   "trsv64 f32");
-//   dot f32: thread<=12, warp above (warp decisive by 7.5% at 16 in the
-//   drift-fixed capture) ; gemv: thread<=6, warp<=32, block@48
 static_assert(gd::ideal_sm120(op::dot,  8,   false) == backend::thread, "dot8");
+static_assert(gd::ideal_sm120(op::dot,  16,  false) == backend::warp,   "dot16 higher-repetition tie verdict");
+static_assert(gd::ideal_sm120(op::dot,  24,  false) == backend::thread, "dot24");
 static_assert(gd::ideal_sm120(op::dot,  128, false) == backend::warp,  "dot128");
 static_assert(gd::ideal_sm120(op::gemv, 4,   false) == backend::thread, "gemv4");
 static_assert(gd::ideal_sm120(op::gemv, 32,  false) == backend::warp,  "gemv32");
 static_assert(gd::ideal_sm120(op::gemv, 48,  false) == backend::block, "gemv48");
-//   f64: thread reaches N<=16 on chol/trsv/posv (block/warp f64 small-N is slow
-//   enough that even the spilled thread path wins); the 2026-08-15 drift-fixed
-//   capture moved the big-N f64 factor cells nvidia→block (block wins outright
-//   once every contender times pristine inputs: chol48 by 16%, posv64 by 10%)
-static_assert(gd::ideal_sm120(op::chol, 8,  true) == backend::thread, "chol8 f64");
-static_assert(gd::ideal_sm120(op::chol, 48, true) == backend::block,  "chol48 f64 (block outright, 1.16x over nv)");
+static_assert(gd::ideal_sm120(op::chol, 8,  true) == backend::nvidia_thread, "chol8 f64 -> NVIDIA thread");
+static_assert(gd::ideal_sm120(op::chol, 48, true) == backend::block,  "chol48 f64");
 static_assert(gd::ideal_sm120(op::gemm, 64, true) == backend::block,  "gemm64 f64");
+static_assert(gd::ideal_sm120(op::posv, 8,  true) == backend::nvidia_thread, "posv8 f64 -> NVIDIA thread");
 static_assert(gd::ideal_sm120(op::posv, 12, true) == backend::thread, "posv12 f64");
-static_assert(gd::ideal_sm120(op::posv, 64, true) == backend::block,  "posv64 f64 (block 1.10x over nv; row spread 8.1%, margin clears)");
+static_assert(gd::ideal_sm120(op::posv, 64, true) == backend::block,  "posv64 f64");
 
-// ── sm_87 (Jetson AGX Orin, 50W standard mode; mega_sweep_50W_merged.txt) ──
-// The integrated-memory Orin keeps the thread tier winning further out than
-// sm_120 does, and the vendor tier (reachable on Tegra only via the cuSOLVERDx
-// LTO-IR fatbin device link) takes the small-N factor/solve band outright.
+// ── sm_87 (Jetson AGX Orin, pinned 50W mode; 2026-08-30) ──
+// The vendor thread path is linked through MathDx's architecture-neutral
+// LTO-IR fatbin. None of its 19 winning throughput rows was jitter-flagged.
 static_assert(gd::ideal_sm87(op::dot,   8,  false) == backend::thread, "dot8 f32");
 static_assert(gd::ideal_sm87(op::dot,   128, false) == backend::warp,  "dot128 f32");
-static_assert(gd::ideal_sm87(op::chol,  8,  false) == backend::thread, "chol8 f32");
+static_assert(gd::ideal_sm87(op::chol,  8,  false) == backend::nvidia_thread, "chol8 f32 -> NVIDIA thread");
+static_assert(gd::ideal_sm87(op::chol,  12, false) == backend::nvidia_thread, "chol12 f32 -> NVIDIA thread");
 static_assert(gd::ideal_sm87(op::chol,  48, false) == backend::nvidia, "chol48 f32 -> vendor");
+static_assert(gd::ideal_sm87(op::trsv,  16, false) == backend::nvidia_thread, "trsv16 f32 -> NVIDIA thread");
 static_assert(gd::ideal_sm87(op::posv,  32, false) == backend::nvidia, "posv32 f32 -> vendor");
 static_assert(gd::ideal_sm87(op::posv,  16, false) == backend::thread, "posv16 f32");
 static_assert(gd::ideal_sm87(op::gemm,  64, false) == backend::nvidia, "gemm64 f32 -> vendor");
 static_assert(gd::ideal_sm87(op::gemm,  64, true)  == backend::warp,   "gemm64 f64 (SIMT tie: warp within 1% of block to N=96)");
 static_assert(gd::ideal_sm87(op::gemm, 128, true)  == backend::block,  "gemm128 f64 (block's only real win, 24% faster)");
+static_assert(gd::ideal_sm87(op::chol,  8,  true)   == backend::nvidia_thread, "chol8 f64 -> NVIDIA thread");
 static_assert(gd::ideal_sm87(op::chol,  24, true)  == backend::thread, "chol24 f64 (thread reaches further than sm_120)");
+static_assert(gd::ideal_sm87(op::posv,  8,  true)   == backend::nvidia_thread, "posv8 f64 -> NVIDIA thread");
 
 // ── per-arch dispatch: a measured SM hits its table, an unmeasured SM falls to generic ──
 static_assert(gd::ideal(op::gemm, 32, false, 1200u) == gd::ideal_sm120(op::gemm, 32, false), "sm_120 dispatches to its table");
@@ -148,6 +142,8 @@ static_assert(&glass::thread::dot<float, 8> == &glass::block::thread::dot<float,
 // ── no-nvidia collapse (this TU links no vendor lib) ──
 static_assert(!gd::have_nv_thread && !gd::nv_thread_available(op::chol),
               "NVIDIA thread is unavailable without glass-nvidia.cuh/MathDx");
+static_assert(glass::suggested_backend<op::chol, 8, float>() == backend::warp,
+              "NVIDIA-thread chol collapses to dependency-free runner-up");
 static_assert(glass::suggested_backend<op::chol, 24, float>() == backend::warp,  "chol24 collapses to warp");
 static_assert(glass::suggested_backend<op::chol, 64, float>() == backend::block, "chol64 collapses to block");
 static_assert(glass::suggested_backend<op::gemm, 32, float>() == backend::block, "gemm32 collapses to block");

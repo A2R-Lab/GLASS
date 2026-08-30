@@ -19,12 +19,13 @@ wrappers in ``src/base/dispatch.cuh`` under a *fixed* launch. See
 
 .. note::
 
-   ``backend::thread`` is **measured and shipped for sm_120** (2026-07-18 quiet-GPU
-   sweep): the thread tier takes the low-DOF corner of every op except ``gemm`` —
-   up to 7.5× on ``posv`` f64 at N≤6 (the docs sweep-results page has the
-   full verdicts). A ``thread`` pick means a thread-per-problem launch:
-   ``<<<ceil(P/TPB), TPB>>>`` with ``suggested_threads_per_block<>()``. The
-   ``ideal_generic`` fallback for unswept arches remains warp/block/nvidia-only.
+   ``backend::thread`` and ``backend::nvidia_thread`` are measured launch-level
+   choices in the sm_120 and sm_87 tables. Either pick means one problem per
+   thread: ``<<<ceil(P/TPB), TPB>>>`` with
+   ``suggested_threads_per_block<>()``. The NVIDIA thread choice requires
+   cuSOLVERDx 0.4+ and is currently eligible only for ``chol``, ``trsv``, and
+   ``posv`` through ``N=32``. The ``ideal_generic`` fallback for unswept
+   architectures remains warp/block/nvidia-only.
 
 Include order
 -------------
@@ -43,7 +44,7 @@ Helpers
    enum class glass::op      { dot, gemv, gemm, chol, trsv, posv };
    enum class glass::backend { warp, block, nvidia, thread, nvidia_thread };  // append-only
 
-   // Which backend for (op, N, T) on this SM? (nvidia only when the vendor lib is linked)
+   // Which backend for (op, N, T) on this SM? (NVIDIA tiers only when MathDx is linked)
    template <op Op, uint32_t N, typename T, uint32_t SM = GLASS_DEFAULTS_SM>
    constexpr backend  glass::suggested_backend();
 
@@ -66,7 +67,7 @@ Example
 .. code-block:: cuda
 
    #include "glass.cuh"
-   #include "glass-defaults.cuh"   // (after glass-nvidia.cuh too, to allow the nvidia tier)
+   #include "glass-defaults.cuh"   // (after glass-nvidia.cuh too, to allow NVIDIA tiers)
 
    constexpr auto be = glass::suggested_backend<glass::op::chol, N, float>();
    if      constexpr (be == glass::backend::nvidia) { /* cuSOLVERDx launch */ }

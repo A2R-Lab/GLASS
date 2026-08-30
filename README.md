@@ -47,7 +47,7 @@ then a family based on availability and measurement:
 |-----------|-------|--------------------------------|--------|
 | `glass::block::` (**Block**) | block | Explicit hand-rolled SIMT implementation; no dependencies and never re-dispatched | `glass.cuh` |
 | `glass::warp::` (**Warp**) | **warp** | Single-warp SIMT via `__shfl_*_sync` (*selected* L1/L2/L3 ops, no `__syncthreads`). Pack many small independent problems into one block | inline in the base headers (via `glass.cuh`) |
-| `glass::thread::` (**Thread**) | **thread** | Sequential branch-free subset, one compile-time problem per thread; intended for register-resident sizes up to `N≤7` | inline in the base headers (via `glass.cuh`) |
+| `glass::thread::` (**Thread**) | **thread** | Sequential branch-free subset, one compile-time problem per thread; usually register-resident around `N≤7`, but correct and measured beyond that point | inline in the base headers (via `glass.cuh`) |
 | `glass::nvidia::block::` (**Nvidia block**) | block | CUB + cuBLASDx + cuSOLVERDx; compile-time-size block implementations and queries | `glass-nvidia.cuh` |
 | `glass::nvidia::warp::` (**Nvidia warp**) | warp | CUB `WarpReduce` L1 reductions, one full 32-lane warp per problem | `glass-nvidia.cuh` |
 | `glass::nvidia::thread::` (**Nvidia thread**) | thread | cuSOLVERDx 0.4+ LAPACK, one packed problem per CUDA thread; no shared scratch or block barrier | `glass-nvidia.cuh` |

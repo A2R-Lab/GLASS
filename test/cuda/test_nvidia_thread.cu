@@ -17,6 +17,12 @@ static_assert(glass::defaults::have_nv_thread,
 static_assert(glass::defaults::nv_thread_available(glass::op::chol) &&
               !glass::defaults::nv_thread_available(glass::op::gemm),
               "NVIDIA thread availability is limited to the LAPACK ladder ops");
+static_assert(glass::suggested_backend<glass::op::chol, 8, float, 1200>() ==
+              glass::backend::nvidia_thread,
+              "sm_120 measured picker reaches NVIDIA thread");
+static_assert(glass::suggested_backend<glass::op::trsv, 16, float, 870>() ==
+              glass::backend::nvidia_thread,
+              "sm_87 measured picker reaches NVIDIA thread");
 
 namespace gnt = glass::nvidia::thread;
 constexpr int BATCHES = 7;

@@ -4,8 +4,9 @@ Tuning for Your Hardware
 One command — ``bench/tune.py``
 -------------------------------
 
-GLASS ships three measured defaults tables: the thread/warp/block/nvidia **backend
-ladder** (``glass-defaults.cuh``, consumed by ``glass::suggested_backend<>``),
+GLASS ships three measured defaults tables: the native and NVIDIA
+thread/warp/block **backend ladder** (``glass-defaults.cuh``, consumed by
+``glass::suggested_backend<>``),
 the per-(M,N,K) **cuBLASDx-vs-SIMT table** (``src/nvidia/tuning_table.cuh``, the
 main subject below), and the serial-vs-reduced **``suggested_use_reduced<>``**
 predicate. ``bench/tune.py`` remeasures all of them on your GPU and regenerates
@@ -112,23 +113,21 @@ Rule of thumb: **warp-per-problem by default**; ``gemv`` → block past N≈48, 
 block once non-tiny. Factor/solve want block ``TB=32`` — extra threads idle on the
 serial pivot and TB>32 *hurts*.
 
-**If you link MathDx** (``glass::nvidia::``), the vendor path wins a middle band (f32):
-``gemm`` N≈16–64 (block above; cuBLASDx is smem-capped past 64 here), ``chol``/``posv``
-N≥16 through 128 (cuSOLVERDx, 1.5–2.7×), ``trsv`` only N≈16–32 (warp wins above). In
-**f64** the band is narrower (≈ N=16–64; the double descriptors hit the ~99 KB opt-in
-smem cap at 64). For a *single* large problem (batch≈1), the vendor path wins
-factor/solve/gemm from N≈32 (up to ~8×). See ``bench/RESULTS.md`` for the full
-per-op × per-precision tables.
+**If you link MathDx** (``glass::nvidia::``), both its block and thread
+interfaces enter the ladder where supported. Which one wins is not monotonic:
+the current sm_120 and sm_87 tables select NVIDIA thread for some small
+``chol``/``trsv``/``posv`` cells, NVIDIA block elsewhere, and native tiers in
+the remaining bands. See :doc:`../tutorials/sweep_results` and
+``bench/RESULTS.md`` for the dated per-op × per-precision results.
 
 These defaults are also exposed as ``constexpr`` helpers in ``glass-defaults.cuh`` —
 ``glass::suggested_backend<op, N, T>()``, ``suggested_block_threads<>()`` and
 ``suggested_warps_per_block<>()`` — so callers and codegen can pick a backend + launch
 config without hand-copying the table. Include it after ``glass.cuh`` (and after
-``glass-nvidia.cuh`` to make the ``nvidia`` tier eligible; otherwise it collapses to the
-warp/block runner-up). The pick is host-/codegen-side because the tiers need
-different ``<<<grid, block>>>`` launches. (The sm_120 tables include the ``thread``
-tier as of the 2026-07-18 sweep — see the note in
-:doc:`../../api_reference/defaults`.) Tables are per-arch (``ideal_sm120`` today)
+``glass-nvidia.cuh`` to make the NVIDIA tiers eligible; otherwise a vendor pick
+collapses to a dependency-free fallback). The pick is host-/codegen-side because
+the tiers need different ``<<<grid, block>>>`` launches. Tables are per-arch
+(``ideal_sm120`` and ``ideal_sm87`` today)
 behind an SM dispatch; ``bench/tune.py --sm auto`` adds or refreshes your GPU's table
 (and the tables below) in-tree, leaving other arches' tables untouched.
 
@@ -155,18 +154,21 @@ What a retune actually changes (sm_120 vs sm_87)
 ------------------------------------------------
 
 GLASS ships two measured architectures today: ``sm_120`` (RTX 5090, 170 SMs)
-and ``sm_87`` (Jetson AGX Orin, 16 SMs, integrated memory). Comparing them is
-the clearest answer to "do I need to retune?".
+and ``sm_87`` (Jetson AGX Orin, 16 SMs, integrated memory). Comparing the
+2026-08-30 five-backend captures is the clearest answer to "do I need to
+retune?".
 
 **Yes, per architecture.** Of the 396 (op, N, precision, batch) cells measured
-on both, **125 (32 %) crown a different tier** — and systematically toward more
-problem packing on the smaller part: 34 cells move warp → thread, 27 block →
-warp, 17 nvidia → thread. The thread tier's share nearly doubles (64 → 118
-cells). With far fewer SMs to fill, packing more problems per warp beats
-spreading one problem across more lanes. No library source differs between the
-two machines; a third of the dispatch decisions do.
+on both, **131 (33 %) crown a different tier**. The smaller Orin selects native
+thread more often (87 vs 66 cells), NVIDIA thread more often (52 vs 29), and
+block less often (48 vs 82). In the NPROB=8192 regime that actually generates
+the tables, 36 of 132 cells differ. With far fewer SMs to fill, packing more
+problems per warp often beats spreading one problem across more lanes, but the
+movement is not one-directional. No library source differs between the two
+machines; roughly a third of the decisions do.
 
-**No, per power mode.** The same Orin measured at all three standard
+**Historically, no material retune was needed per power mode.** Before the
+NVIDIA-thread contender was added, the same Orin measured at all three standard
 ``nvpmodel`` modes slows by a median 1.49× (30 W → 15 W), 1.31× (50 W →
 30 W), 1.95× end to end — but the picks barely move: 8 of 396 cells differ
 between 15 W and 30 W, 11 between 30 W and 50 W, 7 across the full span.
@@ -181,11 +183,12 @@ mode is covered.
 
 Two practical notes from the Orin bring-up:
 
-* NVIDIA ships no MathDx for Tegra, but the cuSOLVERDx **LTO-IR fatbins are
+* NVIDIA ships no native MathDx host package for Tegra, but the cuSOLVERDx
+  **LTO-IR fatbins are
   architecture-neutral**: ``tune.py`` detects a non-x86 host and stages a
   separate-compilation device link against the fatbin, so Jetson runs the full
-  native/NVIDIA ladder. It is worth having — the NVIDIA block tier wins 118 of 396 cells
-  on sm_87 (Cholesky up to 3.7× over the best SIMT tier at small N).
+  native/NVIDIA ladder. In the current capture, the NVIDIA block and thread
+  tiers take 87 and 52 of 396 cells respectively.
 * The ``nvpmodel`` labels are ceilings, not draws. Sampling the board rails at
   1 Hz with the GPU ≥98.6 % busy, the whole ladder pulls 9.2 W in the 15 W
   mode, 13.4 W in the 30 W mode and 16.0 W in the 50 W mode. Small
@@ -195,7 +198,7 @@ Two practical notes from the Orin bring-up:
   **Race to idle** — run the highest standard mode your thermals allow and let
   the board idle between control cycles.
 
-**How reproducible is a retune?** Two independent 50 W captures of the same
+**In that four-backend power-mode study, how reproducible was a retune?** Two independent 50 W captures of the same
 board (different sessions, hours apart) crown the same winner in 391 of 396
 cells (98.7 %), and originally generated tables differing in exactly one
 line: ``gemm`` f64 near N=48, where the block and warp tiers land within 1 %

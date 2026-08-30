@@ -17,8 +17,8 @@ clean compile-time message when it is missing.
 
    This cuBLASDx-vs-SIMT decision is one of **three** distinct dispatch layers.
    ``glass::suggested_backend<>`` (:doc:`tuning`) is a *host-side* ladder that
-   advises **launch-level packing** — which tier (thread / warp / block /
-   nvidia) to launch, i.e. the shape of ``<<<grid, block>>>``. Newest, and
+   advises **launch-level packing** — which native or NVIDIA thread / warp /
+   block tier to launch, i.e. the shape of ``<<<grid, block>>>``. Newest, and
    different from both: ``glass::dispatch_body()`` (``glass-dispatch.cuh``)
    picks the **in-block body** behind the bare ``glass::op`` /
    ``glass::nvidia::op`` face, under a *fixed* block-scope calling contract —

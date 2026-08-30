@@ -1366,7 +1366,8 @@ def main():
     # ── figures ──
     if "figures" in legs:
         print("── figures ───────────────────────────────────────────────")
-        sweep_for_fig = args.from_ladder
+        sweep_for_fig = (str(pathlib.Path(args.from_ladder).resolve())
+                         if args.from_ladder else None)
         if not sweep_for_fig:
             cands = sorted(glob.glob(str(BENCH_DIR / "mega_sweep_*.txt")))
             sweep_for_fig = cands[-1] if cands else None
@@ -1377,8 +1378,8 @@ def main():
         else:
             r = run([sys.executable, "export_sweep_figures.py", sweep_for_fig], cwd=BENCH_DIR)
             if r.returncode != 0:
-                print("  ⚠️ figures leg failed (needs matplotlib: `pip install matplotlib` "
-                      "into the env running tune.py). Tables above are unaffected.")
+                print("  ⚠️ figures leg failed; inspect the renderer error above "
+                      "(matplotlib is one possible missing dependency). Tables are unaffected.")
 
     if args.dry_run:
         moved = [k for k, v in changed.items() if v]
