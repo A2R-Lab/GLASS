@@ -11,6 +11,10 @@ see :doc:`../user_guide/concepts/backend_dispatch`. The L2/L3/LAPACK paths
 require NVIDIA MathDx (``MATHDX_ROOT``) — see
 :doc:`../user_guide/getting_started/installation`.
 
+cuSOLVERDx 0.4+ also supplies explicit smem-less LAPACK wrappers under
+``glass::nvidia::thread::``. Each calling CUDA thread owns one packed problem;
+bare ``glass::nvidia::op`` continues to re-export the block surface.
+
 Each call has a companion **host-side** query helper (``*_scratch_bytes``,
 ``*_threads``, ``*_block_threads_valid``) used to size the launch.
 
@@ -47,6 +51,12 @@ LAPACK (cuSOLVERDx)
 -------------------
 
 .. doxygenfile:: src/nvidia/lapack.cuh
+   :no-link:
+
+LAPACK thread execution (cuSOLVERDx 0.4+)
+------------------------------------------
+
+.. doxygenfile:: src/nvidia/lapack_thread.cuh
    :no-link:
 
 Dispatch & query helpers

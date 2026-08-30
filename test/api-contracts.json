@@ -8,7 +8,7 @@
       "id": "suggested_backend-8c00afaa3420",
       "name": "suggested_backend",
       "file": "glass-defaults.cuh",
-      "line": 294,
+      "line": 310,
       "surface": "glass::",
       "signature": "glass::suggested_backend()",
       "params": 0,
@@ -18,7 +18,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 87,
+          "line": 95,
           "name": "suggested_backend",
           "surface": "glass::",
           "args": 0,
@@ -30,7 +30,7 @@
       "id": "suggested_backend_rect_gemv-a580ca391916",
       "name": "suggested_backend_rect_gemv",
       "file": "glass-defaults.cuh",
-      "line": 305,
+      "line": 323,
       "surface": "glass::",
       "signature": "glass::suggested_backend_rect_gemv()",
       "params": 0,
@@ -40,7 +40,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 95,
+          "line": 103,
           "name": "suggested_backend_rect_gemv",
           "surface": "glass::",
           "args": 0,
@@ -52,7 +52,7 @@
       "id": "suggested_backend_rect_gemm-4925837b6492",
       "name": "suggested_backend_rect_gemm",
       "file": "glass-defaults.cuh",
-      "line": 311,
+      "line": 329,
       "surface": "glass::",
       "signature": "glass::suggested_backend_rect_gemm()",
       "params": 0,
@@ -62,7 +62,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 96,
+          "line": 104,
           "name": "suggested_backend_rect_gemm",
           "surface": "glass::",
           "args": 0,
@@ -74,7 +74,7 @@
       "id": "suggested_block_threads-9cdd283cce09",
       "name": "suggested_block_threads",
       "file": "glass-defaults.cuh",
-      "line": 318,
+      "line": 336,
       "surface": "glass::",
       "signature": "glass::suggested_block_threads()",
       "params": 0,
@@ -84,7 +84,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 149,
+          "line": 159,
           "name": "suggested_block_threads",
           "surface": "glass::",
           "args": 0,
@@ -96,7 +96,7 @@
       "id": "suggested_warps_per_block-8a7ccdd6543d",
       "name": "suggested_warps_per_block",
       "file": "glass-defaults.cuh",
-      "line": 330,
+      "line": 348,
       "surface": "glass::",
       "signature": "glass::suggested_warps_per_block()",
       "params": 0,
@@ -106,7 +106,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 153,
+          "line": 163,
           "name": "suggested_warps_per_block",
           "surface": "glass::",
           "args": 0,
@@ -118,7 +118,7 @@
       "id": "suggested_threads_per_block-f6bdd4b0d410",
       "name": "suggested_threads_per_block",
       "file": "glass-defaults.cuh",
-      "line": 343,
+      "line": 361,
       "surface": "glass::",
       "signature": "glass::suggested_threads_per_block()",
       "params": 0,
@@ -150,7 +150,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 106,
+          "line": 114,
           "name": "dispatch_body",
           "surface": "glass::",
           "args": 3,
@@ -194,7 +194,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 162,
+          "line": 172,
           "name": "argreduce_scratch_bytes",
           "surface": "glass::",
           "args": 1,
@@ -304,7 +304,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 162,
+          "line": 172,
           "name": "argreduce_fast_scratch_bytes",
           "surface": "glass::",
           "args": 1,
@@ -1338,7 +1338,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 159,
+          "line": 169,
           "name": "dot_fast_scratch_bytes",
           "surface": "glass::",
           "args": 1,
@@ -2108,7 +2108,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 161,
+          "line": 171,
           "name": "iamax_scratch_bytes",
           "surface": "glass::",
           "args": 1,
@@ -2130,7 +2130,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 161,
+          "line": 171,
           "name": "iamax_fast_scratch_bytes",
           "surface": "glass::",
           "args": 1,
@@ -3758,7 +3758,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 172,
+          "line": 182,
           "name": "softmax_scratch_bytes",
           "surface": "glass::",
           "args": 1,
@@ -4550,7 +4550,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 166,
+          "line": 176,
           "name": "trmv_scratch_bytes",
           "surface": "glass::",
           "args": 1,
@@ -4638,7 +4638,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 163,
+          "line": 173,
           "name": "congruence_scratch_bytes",
           "surface": "glass::",
           "args": 0,
@@ -4924,7 +4924,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 175,
+          "line": 185,
           "name": "eigh_sweeps",
           "surface": "glass::",
           "args": 0,
@@ -5276,7 +5276,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 177,
+          "line": 187,
           "name": "suggested_use_reduced",
           "surface": "glass::",
           "args": 0,
@@ -5628,7 +5628,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 164,
+          "line": 174,
           "name": "gn_step_scratch_bytes",
           "surface": "glass::",
           "args": 0,
@@ -5716,7 +5716,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 170,
+          "line": 180,
           "name": "inv_scratch_bytes",
           "surface": "glass::",
           "args": 1,
@@ -5738,7 +5738,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 171,
+          "line": 181,
           "name": "inv_pivoted_scratch_bytes",
           "surface": "glass::",
           "args": 1,
@@ -5804,7 +5804,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 174,
+          "line": 184,
           "name": "inv_fused_scratch_bytes",
           "surface": "glass::",
           "args": 2,
@@ -5892,7 +5892,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 165,
+          "line": 175,
           "name": "inv_dense_scratch_bytes",
           "surface": "glass::",
           "args": 1,
@@ -6002,7 +6002,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 169,
+          "line": 179,
           "name": "ldlt_scratch_bytes",
           "surface": "glass::",
           "args": 1,
@@ -6640,7 +6640,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 176,
+          "line": 186,
           "name": "syev_eps",
           "surface": "glass::",
           "args": 0,
@@ -13064,7 +13064,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_l3_nvidia.cu",
-          "line": 33,
+          "line": 39,
           "name": "reduce",
           "surface": "glass::nvidia::block::",
           "args": 2,
@@ -13108,7 +13108,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_l3_nvidia.cu",
-          "line": 34,
+          "line": 40,
           "name": "nrm2",
           "surface": "glass::nvidia::block::",
           "args": 3,
@@ -13130,7 +13130,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_l3_nvidia.cu",
-          "line": 25,
+          "line": 31,
           "name": "reduce_scratch_bytes",
           "surface": "glass::nvidia::block::",
           "args": 0,
@@ -13218,7 +13218,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_l3_nvidia.cu",
-          "line": 27,
+          "line": 33,
           "name": "warp_reduce_scratch_bytes",
           "surface": "glass::nvidia::warp::",
           "args": 0,
@@ -13526,7 +13526,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_l3_nvidia.cu",
-          "line": 40,
+          "line": 46,
           "name": "gemm_batched_1d",
           "surface": "glass::nvidia::block::",
           "args": 5,
@@ -13592,7 +13592,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_l3_nvidia.cu",
-          "line": 54,
+          "line": 60,
           "name": "gemm_strided_batched_1d",
           "surface": "glass::nvidia::block::",
           "args": 5,
@@ -14239,6 +14239,204 @@
       ]
     },
     {
+      "id": "potrf-ef14c211f825",
+      "name": "potrf",
+      "file": "src/nvidia/lapack_thread.cuh",
+      "line": 27,
+      "surface": "glass::nvidia::thread::",
+      "signature": "glass::nvidia::thread::potrf(T *A)",
+      "params": 1,
+      "required_params": 1,
+      "template_params": 3,
+      "minimum_explicit_template_args": 2,
+      "evidence": [
+        {
+          "file": "test/cuda/test_nvidia_thread.cu",
+          "line": 29,
+          "name": "potrf",
+          "surface": "glass::nvidia::thread::",
+          "args": 1,
+          "explicit_template_args": 2
+        }
+      ]
+    },
+    {
+      "id": "trsm-9d124f8912a1",
+      "name": "trsm",
+      "file": "src/nvidia/lapack_thread.cuh",
+      "line": 44,
+      "surface": "glass::nvidia::thread::",
+      "signature": "glass::nvidia::thread::trsm(T alpha, const T *L, T *B)",
+      "params": 3,
+      "required_params": 3,
+      "template_params": 4,
+      "minimum_explicit_template_args": 3,
+      "evidence": [
+        {
+          "file": "test/cuda/test_nvidia_thread.cu",
+          "line": 36,
+          "name": "trsm",
+          "surface": "glass::nvidia::thread::",
+          "args": 3,
+          "explicit_template_args": 3
+        }
+      ]
+    },
+    {
+      "id": "posv-8caf82a1d4b2",
+      "name": "posv",
+      "file": "src/nvidia/lapack_thread.cuh",
+      "line": 67,
+      "surface": "glass::nvidia::thread::",
+      "signature": "glass::nvidia::thread::posv(T *A, T *B)",
+      "params": 2,
+      "required_params": 2,
+      "template_params": 4,
+      "minimum_explicit_template_args": 3,
+      "evidence": [
+        {
+          "file": "test/cuda/test_nvidia_thread.cu",
+          "line": 44,
+          "name": "posv",
+          "surface": "glass::nvidia::thread::",
+          "args": 2,
+          "explicit_template_args": 3
+        }
+      ]
+    },
+    {
+      "id": "potrs-826eb6c75cb1",
+      "name": "potrs",
+      "file": "src/nvidia/lapack_thread.cuh",
+      "line": 85,
+      "surface": "glass::nvidia::thread::",
+      "signature": "glass::nvidia::thread::potrs(const T *L, T *B)",
+      "params": 2,
+      "required_params": 2,
+      "template_params": 4,
+      "minimum_explicit_template_args": 3,
+      "evidence": [
+        {
+          "file": "test/cuda/test_nvidia_thread.cu",
+          "line": 52,
+          "name": "potrs",
+          "surface": "glass::nvidia::thread::",
+          "args": 2,
+          "explicit_template_args": 3
+        }
+      ]
+    },
+    {
+      "id": "getrf_no_pivot-0e9536fd5e0b",
+      "name": "getrf_no_pivot",
+      "file": "src/nvidia/lapack_thread.cuh",
+      "line": 102,
+      "surface": "glass::nvidia::thread::",
+      "signature": "glass::nvidia::thread::getrf_no_pivot(T *A)",
+      "params": 1,
+      "required_params": 1,
+      "template_params": 3,
+      "minimum_explicit_template_args": 2,
+      "evidence": [
+        {
+          "file": "test/cuda/test_nvidia_thread.cu",
+          "line": 60,
+          "name": "getrf_no_pivot",
+          "surface": "glass::nvidia::thread::",
+          "args": 1,
+          "explicit_template_args": 2
+        }
+      ]
+    },
+    {
+      "id": "getrs_no_pivot-b445a0e26892",
+      "name": "getrs_no_pivot",
+      "file": "src/nvidia/lapack_thread.cuh",
+      "line": 118,
+      "surface": "glass::nvidia::thread::",
+      "signature": "glass::nvidia::thread::getrs_no_pivot(const T *LU, T *B)",
+      "params": 2,
+      "required_params": 2,
+      "template_params": 4,
+      "minimum_explicit_template_args": 3,
+      "evidence": [
+        {
+          "file": "test/cuda/test_nvidia_thread.cu",
+          "line": 70,
+          "name": "getrs_no_pivot",
+          "surface": "glass::nvidia::thread::",
+          "args": 2,
+          "explicit_template_args": 3
+        }
+      ]
+    },
+    {
+      "id": "gesv_no_pivot-4485251296f7",
+      "name": "gesv_no_pivot",
+      "file": "src/nvidia/lapack_thread.cuh",
+      "line": 134,
+      "surface": "glass::nvidia::thread::",
+      "signature": "glass::nvidia::thread::gesv_no_pivot(T *A, T *B)",
+      "params": 2,
+      "required_params": 2,
+      "template_params": 4,
+      "minimum_explicit_template_args": 3,
+      "evidence": [
+        {
+          "file": "test/cuda/test_nvidia_thread.cu",
+          "line": 78,
+          "name": "gesv_no_pivot",
+          "surface": "glass::nvidia::thread::",
+          "args": 2,
+          "explicit_template_args": 3
+        }
+      ]
+    },
+    {
+      "id": "geqrf-7d43a9aab93a",
+      "name": "geqrf",
+      "file": "src/nvidia/lapack_thread.cuh",
+      "line": 151,
+      "surface": "glass::nvidia::thread::",
+      "signature": "glass::nvidia::thread::geqrf(T *A, T *tau)",
+      "params": 2,
+      "required_params": 2,
+      "template_params": 4,
+      "minimum_explicit_template_args": 3,
+      "evidence": [
+        {
+          "file": "test/cuda/test_nvidia_thread.cu",
+          "line": 87,
+          "name": "geqrf",
+          "surface": "glass::nvidia::thread::",
+          "args": 2,
+          "explicit_template_args": 3
+        }
+      ]
+    },
+    {
+      "id": "gels-bda360d11cd0",
+      "name": "gels",
+      "file": "src/nvidia/lapack_thread.cuh",
+      "line": 167,
+      "surface": "glass::nvidia::thread::",
+      "signature": "glass::nvidia::thread::gels(T *A, T *tau, T *B)",
+      "params": 3,
+      "required_params": 3,
+      "template_params": 5,
+      "minimum_explicit_template_args": 4,
+      "evidence": [
+        {
+          "file": "test/cuda/test_nvidia_thread.cu",
+          "line": 95,
+          "name": "gels",
+          "surface": "glass::nvidia::thread::",
+          "args": 3,
+          "explicit_template_args": 4
+        }
+      ]
+    },
+    {
       "id": "gemm_min_block_threads-84949d4ce7f8",
       "name": "gemm_min_block_threads",
       "file": "src/nvidia/query.cuh",
@@ -14570,8 +14768,8 @@
     }
   ],
   "summary": {
-    "covered": 662,
-    "total": 662,
+    "covered": 671,
+    "total": 671,
     "percent": 100.0,
     "ambiguous_calls": 38
   }

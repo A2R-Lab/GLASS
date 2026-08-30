@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render the thread/warp/block/nvidia sweep ladder into static docs assets.
+"""Render the native/NVIDIA execution-scope sweep into static docs assets.
 
 Reads a ``bench/mega_sweep_*.txt`` run (the same data behind
 ``glass-defaults.cuh``'s ``suggested_backend<>()``) and writes, into
@@ -33,12 +33,15 @@ import matplotlib
 matplotlib.use("Agg")  # headless: no display needed
 import matplotlib.pyplot as plt
 
+import tune_pick as tp
+
 OPS = ["dot", "gemv", "gemm", "chol", "trsv", "posv"]
 _HDR = re.compile(r"NPROB=(\d+).*dtype=(f32|f64)")
 _ROW = re.compile(
     r"^(dot|gemv|gemm|chol|trsv|posv)\s+N=(\d+).*\|\|\s*"
     r"block\s+tb\d+=([\d.]+)\s+warp\s+w\d+=([\d.]+)"
     r"(?:\s+thread\s+t\d+=([\d.]+))?(?:\s+nv=([\d.]+))?"
+    r"(?:\s+nvt\s+t\d+=([\d.]+))?"
 )
 
 
@@ -69,6 +72,8 @@ def parse(text, regimes=REGIMES):
                 d["thread"] = float(m.group(5))
             if m.group(6):
                 d["nvidia"] = float(m.group(6))
+            if m.group(7):
+                d["nvidia_thread"] = float(m.group(7))
             data[(nprob, dt, op, N)] = d
     return data
 
@@ -92,7 +97,8 @@ def plot_ladder(data, nprob, dt, out_path):
     drew = False
     for ax, op in zip(axes, OPS):
         for key, c in [("warp", "tab:green"), ("block", "tab:blue"),
-                       ("thread", "tab:orange"), ("nvidia", "tab:red")]:
+                       ("thread", "tab:orange"), ("nvidia", "tab:red"),
+                       ("nvidia_thread", "tab:purple")]:
             xs, ys = _series(data, nprob, dt, op, key)
             if xs:
                 ax.plot(xs, ys, "o-", color=c, label=key, ms=4)
@@ -104,10 +110,10 @@ def plot_ladder(data, nprob, dt, out_path):
         ax.grid(alpha=0.3)
         ax.legend(fontsize=8)
     fig.text(0.5, 0.005,
-             "thread curves end where the per-thread local-memory footprint makes the launch infeasible "
-             "(FAIL cells in the capture) — not unmeasured; nvidia f64 caps at N=64 (smem).",
+             "FAIL cells are explicit launch failures, not omitted measurements; "
+             "NVIDIA block f64 caps at N=64 (shared-memory limit).",
              ha="center", fontsize=7, style="italic")
-    fig.suptitle(f"{dt} thread/warp/block/nvidia ladder — NPROB={nprob} "
+    fig.suptitle(f"{dt} native/NVIDIA execution-scope ladder — NPROB={nprob} "
                  f"({'throughput' if nprob >= 8192 else 'low-batch' if nprob <= 64 else 'mid-batch'})",
                  fontsize=11)
     fig.tight_layout()
@@ -124,12 +130,13 @@ def winners_text(data):
             if not Ns:
                 continue
             lines.append(f"NPROB={nprob}  {dt} winner by op x N:")
-            lines.append("op     " + "".join(f"{N:>7}" for N in Ns))
+            lines.append("op     " + "".join(f"{N:>14}" for N in Ns))
             for op in OPS:
                 cells = []
                 for N in Ns:
                     d = data.get((nprob, dt, op, N))
-                    cells.append(f"{min(d, key=d.get):>7}" if d else f"{'-':>7}")
+                    winner = tp.pick(d, 0.05, {"nvidia", "nvidia_thread"}) if d else None
+                    cells.append(f"{winner:>14}" if winner else f"{'-':>14}")
                 lines.append(f"{op:6} " + "".join(cells))
             lines.append("")
     return "\n".join(lines).rstrip() + "\n"

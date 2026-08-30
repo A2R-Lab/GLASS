@@ -38,16 +38,19 @@ surface inventory.
 
 ### Interfaces
 
-GLASS exposes four primary interfaces. Pick one based on how many independent
-problems should share a block and whether optional vendor dependencies are
-acceptable:
+GLASS separates two choices: **execution scope** (thread, warp, or block) and
+**implementation family** (dependency-free GLASS code or optional NVIDIA
+libraries). Pick a scope based on how many independent problems share a block,
+then a family based on availability and measurement:
 
 | Interface | Scope | What it is / when to choose it | Header |
 |-----------|-------|--------------------------------|--------|
 | `glass::block::` (**Block**) | block | Explicit hand-rolled SIMT implementation; no dependencies and never re-dispatched | `glass.cuh` |
 | `glass::warp::` (**Warp**) | **warp** | Single-warp SIMT via `__shfl_*_sync` (*selected* L1/L2/L3 ops, no `__syncthreads`). Pack many small independent problems into one block | inline in the base headers (via `glass.cuh`) |
 | `glass::thread::` (**Thread**) | **thread** | Sequential branch-free subset, one compile-time problem per thread; intended for register-resident sizes up to `N≤7` | inline in the base headers (via `glass.cuh`) |
-| `glass::nvidia::block::` (**Nvidia**) | block | CUB + cuBLASDx + cuSOLVERDx, auto-dispatched against SIMT by size **at compile time** (compile-time sizes). When a vendor tensor-core kernel wins at your size. Plus `glass::nvidia::warp::` — CUB `WarpReduce` L1 reductions, one full 32-lane warp per problem | `glass-nvidia.cuh` |
+| `glass::nvidia::block::` (**Nvidia block**) | block | CUB + cuBLASDx + cuSOLVERDx; compile-time-size block implementations and queries | `glass-nvidia.cuh` |
+| `glass::nvidia::warp::` (**Nvidia warp**) | warp | CUB `WarpReduce` L1 reductions, one full 32-lane warp per problem | `glass-nvidia.cuh` |
+| `glass::nvidia::thread::` (**Nvidia thread**) | thread | cuSOLVERDx 0.4+ LAPACK, one packed problem per CUDA thread; no shared scratch or block barrier | `glass-nvidia.cuh` |
 
 **Bare `glass::op`** (and bare `glass::nvidia::op`) is the **measured-default face**: the
 same block-scope calling contract, with the implementation body chosen per (op, size,
@@ -123,7 +126,9 @@ need NVIDIA MathDx (cuBLASDx / cuSOLVERDx) and extra flags:
 | `glass-nvidia.cuh` (L2/L3 GEMM/GEMV/batched) | C++17 + `--expt-relaxed-constexpr` + cuBLASDx |
 | `glass-nvidia.cuh` (LAPACK) | C++17 + `--expt-relaxed-constexpr` + `-rdc=true -dlto -lcusolverdx -lcublas -lcusolver -lcudart` + cuSOLVERDx |
 
-The nvidia wrappers auto-detect availability (`GLASS_HAVE_CUBLASDX` / `GLASS_HAVE_CUSOLVERDX`).
+The NVIDIA wrappers auto-detect availability (`GLASS_HAVE_CUBLASDX`,
+`GLASS_HAVE_CUSOLVERDX`, and `GLASS_HAVE_CUSOLVERDX_THREAD`; the last requires
+cuSOLVERDx 0.4+).
 Full setup, linking, and the MathDx download are in [`bench/INSTALL.md`](bench/INSTALL.md) and
 the [installation guide](docs/source/user_guide/getting_started/installation.rst).
 
@@ -176,9 +181,10 @@ The README is a landing page; the deep reference lives in the
 
 ## Notes / gotchas
 
-- **One block per problem.** Every function runs inside a single block; launch `<<<num_items, threads>>>`.
-  Exception: `glass::thread::` is one problem per THREAD (`<<<ceil(P/TPB), TPB>>>`) — for low-DOF
-  packing (N≲7, compile-time size only). See CLAUDE.md for its constraints.
+- **Scope determines placement.** Block forms use one block per problem; warp
+  forms pack one problem per full warp. `glass::thread::` and
+  `glass::nvidia::thread::` use one problem per CUDA thread
+  (`<<<ceil(P/TPB), TPB>>>`).
 - **Column-major by default** (Fortran order, matching cuBLAS). GEMM uses `TRANSPOSE_A` /
   `TRANSPOSE_B` + `ROW_MAJOR_C` (a row-major operand is just a transpose); GEMV keeps a
   per-matrix `ROW_MAJOR` flag (its transpose changes the math op); `glass::nvidia::` uses the
@@ -192,5 +198,6 @@ The README is a landing page; the deep reference lives in the
   `BLOCK_THREADS` template parameter (with `DEFINE_NVIDIA_<NAME>_BLOCKDIM`) to launch any count
   `≥ gemm_min_block_threads<T,M,N,K>()`. Compile without `-DNDEBUG` for a clean assertion instead
   of a silent deadlock if the launch is too small.
-- `glass::nvidia::trsm` has no native non-1.0 `alpha` (cuSOLVERDx limitation); the wrapper
-  pre-scales `B` in shared memory before `execute`.
+- cuSOLVERDx TRSM has no native non-1.0 `alpha`; both NVIDIA wrappers pre-scale
+  `B` before `execute` (in shared memory at block scope, in the owning thread at
+  thread scope).

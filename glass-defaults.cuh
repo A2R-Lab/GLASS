@@ -10,7 +10,8 @@
  * These helpers answer "given (op, N, T) on this SM, which backend and how many threads?"
  *
  *   constexpr auto be = glass::suggested_backend<glass::op::chol, N, float>();
- *   if      constexpr (be == glass::backend::nvidia) { ... cuSOLVERDx launch ... }
+ *   if      constexpr (be == glass::backend::nvidia) { ... cuSOLVERDx block launch ... }
+ *   else if constexpr (be == glass::backend::nvidia_thread) { ... cuSOLVERDx thread launch ... }
  *   else if constexpr (be == glass::backend::warp)   { ... <<<ceil(P/WPB), {32,WPB}>>> ... }
  *   else if constexpr (be == glass::backend::thread) { ... <<<ceil(P/TPB), TPB>>> ... }
  *   else                                             { ... <<<P, TB>>> ... }
@@ -24,9 +25,11 @@
  * suggested_threads_per_block<>().
  *
  * INCLUDE ORDER: include this AFTER glass.cuh, and after glass-nvidia.cuh if you want the
- * `nvidia` tier to be eligible (it reads GLASS_HAVE_CUBLASDX / GLASS_HAVE_CUSOLVERDX, which
- * glass-nvidia.cuh defines). With only glass.cuh, the nvidia tier collapses to its warp/block
- * runner-up, so a no-MathDx caller always gets a backend it can actually launch.
+ * NVIDIA tiers to be eligible (it reads GLASS_HAVE_CUBLASDX,
+ * GLASS_HAVE_CUSOLVERDX, and GLASS_HAVE_CUSOLVERDX_THREAD, which
+ * glass-nvidia.cuh defines). With only glass.cuh, either dependency-backed tier
+ * collapses to its warp/block runner-up, so a no-MathDx caller always gets a
+ * backend it can actually launch.
  *
  * Tables are **per-arch**: every swept SM gets its own constexpr ladder (`ideal_sm120`
  * today, measured on an RTX 5090), and `bench/tune.py --sm auto` adds or refreshes the
@@ -43,10 +46,11 @@
 namespace glass {
 
 // (`op` lives in glass-dispatch.cuh — shared with the bare face's body table.)
-// APPEND-ONLY: `thread` is last so the pre-existing warp/block/nvidia ordinals are
-// unchanged. Scope ladder (most→least problem packing): thread (1 problem/thread,
-// 32 per warp) → warp (1/warp) → block (1/block) → nvidia (1/block, vendor).
-enum class backend : int { warp, block, nvidia, thread };
+// APPEND-ONLY: new values stay at the end so every shipped ordinal remains
+// unchanged. Execution scopes are thread (one problem/thread), warp (one/warp),
+// and block (one/block); NVIDIA provides measured implementations at block and,
+// with cuSOLVERDx 0.4+, thread scope.
+enum class backend : int { warp, block, nvidia, thread, nvidia_thread };
 
 namespace defaults {
 
@@ -63,11 +67,22 @@ constexpr bool have_nv_lapack =
 #else
     false;
 #endif
+constexpr bool have_nv_thread =
+#if defined(GLASS_HAVE_CUSOLVERDX_THREAD) && GLASS_HAVE_CUSOLVERDX_THREAD
+    true;
+#else
+    false;
+#endif
 
 constexpr bool nv_available(op o) {
     return (o == op::gemm || o == op::gemv) ? have_nv_blas
          : (o == op::chol || o == op::trsv || o == op::posv) ? have_nv_lapack
          : false;  // dot: nvidia never wins
+}
+
+constexpr bool nv_thread_available(op o) {
+    return have_nv_thread &&
+           (o == op::chol || o == op::trsv || o == op::posv);
 }
 
 // ─── measured ladders: one constexpr table per swept arch. bench/tune.py's ladder
@@ -289,12 +304,15 @@ constexpr backend ideal(op o, uint32_t N, bool f64, uint32_t sm) {
 // face can consume them without this header's vendor-macro include-order
 // sensitivity. Determinism-sensitive consumers pin `glass::block::` explicitly.
 
-/// Suggested backend for (op, N, T) on `SM`. `nvidia` only when the vendor lib is linked.
+/// Suggested backend for (op, N, T) on `SM`. Dependency-backed picks are
+/// returned only when the required vendor implementation is available.
 template <op Op, uint32_t N, typename T, uint32_t SM = GLASS_DEFAULTS_SM>
 constexpr backend suggested_backend() {
     constexpr bool f64 = sizeof(T) == 8;
     backend id = defaults::ideal(Op, N, f64, SM);
     if (id == backend::nvidia && !defaults::nv_available(Op))
+        return defaults::without_nvidia(Op, N);
+    if (id == backend::nvidia_thread && !defaults::nv_thread_available(Op))
         return defaults::without_nvidia(Op, N);
     return id;
 }

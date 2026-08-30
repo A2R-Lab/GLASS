@@ -816,12 +816,15 @@ def emit_results_md(md_path: pathlib.Path,
 
 def emit_defaults_table(sweep_path, out_path, sms):
     """Parse a bench_mega_sweep run (mega_sweep_*.txt) and emit a per-host override
-    header for glass-defaults.cuh (the warp/block/nvidia ladder). Uses the NPROB=8192
+    header for glass-defaults.cuh (native plus NVIDIA block/thread ladder). Uses the NPROB=8192
     throughput regime for f32 + f64."""
     import re
     text = pathlib.Path(sweep_path).read_text()
-    bemap = {"BLOCK": "block", "WARP": "warp", "NVIDIA": "nvidia"}
-    line_re = re.compile(r"^(dot|gemv|gemm|chol|trsv|posv)\s+N=(\d+)\b.*->\s+(BLOCK|WARP|NVIDIA)\b")
+    bemap = {"BLOCK": "block", "WARP": "warp", "THREAD": "thread",
+             "NVIDIA": "nvidia", "NVIDIA_THREAD": "nvidia_thread"}
+    line_re = re.compile(
+        r"^(dot|gemv|gemm|chol|trsv|posv)\s+N=(\d+)\b.*->\s+"
+        r"(BLOCK|WARP|THREAD|NVIDIA|NVIDIA_THREAD)\b")
     hdr_re = re.compile(r"NPROB=(\d+).*dtype=(f32|f64)")
     winners = {}          # (dtype, op) -> {N: backend}
     dtype, nprob = None, None
@@ -929,7 +932,7 @@ def main():
                         "timed sweep always runs serially for clean measurement.")
     p.add_argument("--emit-defaults", metavar="SWEEP_TXT", default=None,
                    help="Parse a bench_mega_sweep run (mega_sweep_*.txt) and emit a per-host "
-                        "glass-defaults.cuh override header (warp/block/nvidia ladder), then exit.")
+                        "glass-defaults.cuh override header (native and NVIDIA ladder), then exit.")
     args = p.parse_args()
 
     sms = detect_sm() if args.sm == "AUTO" else int(args.sm)

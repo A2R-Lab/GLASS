@@ -184,7 +184,7 @@ Two practical notes from the Orin bring-up:
 * NVIDIA ships no MathDx for Tegra, but the cuSOLVERDx **LTO-IR fatbins are
   architecture-neutral**: ``tune.py`` detects a non-x86 host and stages a
   separate-compilation device link against the fatbin, so Jetson runs the full
-  four-tier ladder. It is worth having — the vendor tier wins 118 of 396 cells
+  native/NVIDIA ladder. It is worth having — the NVIDIA block tier wins 118 of 396 cells
   on sm_87 (Cholesky up to 3.7× over the best SIMT tier at small N).
 * The ``nvpmodel`` labels are ceilings, not draws. Sampling the board rails at
   1 Hz with the GPU ≥98.6 % busy, the whole ladder pulls 9.2 W in the 15 W

@@ -37,14 +37,10 @@ problems run in parallel — one per block.
 Interfaces
 ----------
 
-GLASS exposes four primary interfaces. Two are **block-scoped** (one block per
-problem) — ``glass::block::`` and the vendor-backed
-``glass::nvidia::block::``
-— one is **warp-scoped**, ``glass::warp::`` (one warp per problem), for kernels
-that pack many small independent problems into a block, and one is
-**thread-scoped**, ``glass::thread::`` (one problem per *thread*, 32 packed per
-warp), for the low-DOF corner where even a warp per problem leaves most lanes
-idle:
+GLASS exposes three execution scopes — block, warp, and thread — in a
+dependency-free implementation family and, where NVIDIA provides a suitable
+device routine, an optional vendor family. This is a small matrix of explicit
+spellings rather than one flat list of interchangeable interfaces:
 
 .. list-table::
    :header-rows: 1
@@ -69,6 +65,14 @@ idle:
    * - ``glass::nvidia::block::`` (Nvidia)
      - block
      - CUB (L1) + cuBLASDx (L2/L3, batched) + cuSOLVERDx (LAPACK) — compile-time sizes only; plus ``glass::nvidia::warp::`` CUB ``WarpReduce`` L1 reductions (one full 32-lane warp per problem)
+     - ``glass-nvidia.cuh``
+   * - ``glass::nvidia::warp::`` (Nvidia warp)
+     - warp
+     - CUB ``WarpReduce`` L1 reductions, one full warp per problem and explicit per-warp scratch
+     - ``glass-nvidia.cuh``
+   * - ``glass::nvidia::thread::`` (Nvidia thread)
+     - thread
+     - cuSOLVERDx 0.4+ LAPACK, one packed compile-time problem per CUDA thread; no dynamic shared scratch or block barrier
      - ``glass-nvidia.cuh``
 
 **Bare** ``glass::op`` (and bare ``glass::nvidia::op``) is the

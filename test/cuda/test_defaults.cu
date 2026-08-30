@@ -10,6 +10,14 @@
 using glass::op; using glass::backend;
 namespace gd = glass::defaults;
 
+// Public backend ordinals are serialized by downstream codegen: append only.
+static_assert(static_cast<int>(backend::warp) == 0, "backend ordinal: warp");
+static_assert(static_cast<int>(backend::block) == 1, "backend ordinal: block");
+static_assert(static_cast<int>(backend::nvidia) == 2, "backend ordinal: nvidia");
+static_assert(static_cast<int>(backend::thread) == 3, "backend ordinal: thread");
+static_assert(static_cast<int>(backend::nvidia_thread) == 4,
+              "backend ordinal: nvidia_thread appended");
+
 // ── measured sm_120 ladder (the ideal tier, independent of what's linked) ──
 //   (2026-07-18 retune — first sweep with the THREAD contender: it takes the
 //    low-DOF corner of every op except gemm.)
@@ -138,6 +146,8 @@ static_assert(&glass::warp::dot<float, 8>  == &glass::block::warp::dot<float, 8>
 static_assert(&glass::thread::dot<float, 8> == &glass::block::thread::dot<float, 8>, "thread alias");
 
 // ── no-nvidia collapse (this TU links no vendor lib) ──
+static_assert(!gd::have_nv_thread && !gd::nv_thread_available(op::chol),
+              "NVIDIA thread is unavailable without glass-nvidia.cuh/MathDx");
 static_assert(glass::suggested_backend<op::chol, 24, float>() == backend::warp,  "chol24 collapses to warp");
 static_assert(glass::suggested_backend<op::chol, 64, float>() == backend::block, "chol64 collapses to block");
 static_assert(glass::suggested_backend<op::gemm, 32, float>() == backend::block, "gemm32 collapses to block");

@@ -159,6 +159,14 @@
    ]
   },
   {
+   "id": "nvidia_thread_lapack",
+   "shard": "mathdx",
+   "description": "Every cuSOLVERDx thread-scope LAPACK wrapper matches an independent NumPy factorization or residual oracle in f32 and f64.",
+   "evidence": [
+    "test/test_nvidia_thread.py::test_nvidia_thread_operation*"
+   ]
+  },
+  {
    "id": "trailing_sync",
    "shard": "integration",
    "description": "TRAILING_SYNC true/false variants compile and agree numerically.",

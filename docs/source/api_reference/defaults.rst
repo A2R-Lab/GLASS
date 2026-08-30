@@ -1,7 +1,8 @@
 Backend Picker (``glass-defaults.cuh``)
 =======================================
 
-Queryable backend-selection defaults — the measured thread / warp / block / nvidia
+Queryable backend-selection defaults — the measured native and NVIDIA
+thread / warp / block
 ladder (``bench/RESULTS.md``) exposed as ``constexpr`` helpers, so callers
 and GRiD-style codegen pick a backend + launch config instead of hand-copying a table.
 
@@ -29,9 +30,10 @@ Include order
 -------------
 
 Include ``glass-defaults.cuh`` **after** ``glass.cuh``, and after ``glass-nvidia.cuh`` if you
-want the ``nvidia`` tier to be eligible (it reads ``GLASS_HAVE_CUBLASDX`` /
-``GLASS_HAVE_CUSOLVERDX``). With only ``glass.cuh`` linked, the ``nvidia`` tier collapses to its
-warp/block runner-up, so a no-MathDx caller always gets a backend it can launch.
+want NVIDIA tiers to be eligible (it reads ``GLASS_HAVE_CUBLASDX``,
+``GLASS_HAVE_CUSOLVERDX``, and ``GLASS_HAVE_CUSOLVERDX_THREAD``). With only
+``glass.cuh`` linked, dependency-backed picks collapse to a native runner-up,
+so a no-MathDx caller always gets a backend it can launch.
 
 Helpers
 -------
@@ -39,7 +41,7 @@ Helpers
 .. code-block:: cuda
 
    enum class glass::op      { dot, gemv, gemm, chol, trsv, posv };
-   enum class glass::backend { warp, block, nvidia, thread };  // thread appended: pre-existing ordinals unchanged
+   enum class glass::backend { warp, block, nvidia, thread, nvidia_thread };  // append-only
 
    // Which backend for (op, N, T) on this SM? (nvidia only when the vendor lib is linked)
    template <op Op, uint32_t N, typename T, uint32_t SM = GLASS_DEFAULTS_SM>
@@ -68,6 +70,10 @@ Example
 
    constexpr auto be = glass::suggested_backend<glass::op::chol, N, float>();
    if      constexpr (be == glass::backend::nvidia) { /* cuSOLVERDx launch */ }
+   else if constexpr (be == glass::backend::nvidia_thread) {
+       constexpr int TPB = glass::suggested_threads_per_block<glass::op::chol, N, float>();
+       /* glass::nvidia::thread::potrf<float,N> in <<<ceil(P/TPB),TPB>>> */
+   }
    else if constexpr (be == glass::backend::warp)   { /* <<<ceil(P/WPB), {32,WPB}>>> */ }
    else if constexpr (be == glass::backend::thread) {
        constexpr int TPB = glass::suggested_threads_per_block<glass::op::chol, N, float>();

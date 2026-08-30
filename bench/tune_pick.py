@@ -2,7 +2,8 @@
 """Shared tie-margin + sweep parsers for the unified autotuner (bench/tune.py).
 
 This is the *one* place the noise margin lives. Every defaults table GLASS ships
-— the warp/block/nvidia ladder (``glass-defaults.cuh``), the per-shape
+— the native thread/warp/block plus NVIDIA block/thread ladder
+(``glass-defaults.cuh``), the per-shape
 cuBLASDx-vs-SIMT table (``src/nvidia/tuning_table.cuh``), and the
 serial-vs-reduced picker (``suggested_use_reduced<>``) — routes its verdict
 through :func:`pick` so none of them bakes sub-noise jitter, and so a pure-noise
@@ -18,8 +19,9 @@ line, so two clean re-runs of the same hardware could disagree (seen on the
 sm_87 replication pair: gemm f64 N=48 flipped block↔warp on a <1% gap). That
 single rule subsumes all three legacy decisions:
 
-* ladder:  ``dependency={"nvidia"}`` — block/warp (pure SIMT, no MathDx) is the
-           incumbent; nvidia must clear the margin to be chosen.
+* ladder:  ``dependency={"nvidia", "nvidia_thread"}`` — native thread/warp/block
+           are the incumbents; either MathDx implementation must clear the
+           margin to be chosen.
 * shapes:  ``dependency={"cublasdx"}`` — SIMT is the incumbent (autotune.py's
            original pairwise ±margin rule, generalized).
 * reduced: ``dependency={"reduced"}`` — serial ``gemm`` is the incumbent.
@@ -123,7 +125,8 @@ LADDER_OPS = ("dot", "gemv", "gemm", "chol", "trsv", "posv")
 _HDR_RE = re.compile(r"NPROB=(\d+).*dtype=(f32|f64)")
 # Raw per-backend ns from a mega_sweep row:
 #   "<op>  N=<N> | BLOCK ... | WARP ... [| THREAD ...] || block tb<TB>=<ns>
-#    warp w<WPB>=<ns> [thread t<TPB>=<ns>] [nv=<ns>] -> ..."
+#    warp w<WPB>=<ns> [thread t<TPB>=<ns>] [nv=<ns>]
+#    [nvt t<TPB>=<ns>] -> ..."
 # The thread group is OPTIONAL on purpose: it is absent from archived sweep
 # .txt files (every run before the tier existed — `tune.py --from-ladder` replays
 # them) and from mid-2026-07 captures where the harness gated the tier to N<=16
@@ -132,11 +135,15 @@ _HDR_RE = re.compile(r"NPROB=(\d+).*dtype=(f32|f64)")
 _ROW_RE = re.compile(
     r"^(dot|gemv|gemm|chol|trsv|posv)\s+N=(\d+)\b.*\|\|\s*"
     r"block\s+tb\d+=([\d.]+)\s+warp\s+w\d+=([\d.]+)"
-    r"(?:\s+thread\s+t\d+=([\d.]+))?(?:\s+nv=([\d.]+))?")
+    r"(?:\s+thread\s+t\d+=([\d.]+))?(?:\s+nv=([\d.]+))?"
+    r"(?:\s+nvt\s+t\d+=([\d.]+))?")
 
 
 def parse_mega_sweep(text, nprob=8192):
-    """``(dtype, op, N) -> {block, warp[, thread][, nvidia]}`` raw ns/problem at ``nprob``.
+    """``(dtype, op, N) -> backend times at ``nprob``.
+
+    Optional keys are ``thread``, ``nvidia``, and ``nvidia_thread``; their
+    absence preserves replay compatibility with every older capture.
 
     Reads the raw per-backend numbers (NOT the harness's ``-> WINNER`` verdict,
     which is a bare argmin with no margin) so :func:`pick` can re-decide the
@@ -159,6 +166,8 @@ def parse_mega_sweep(text, nprob=8192):
                 d["thread"] = float(m.group(5))   # absent in pre-tier sweeps and at N>16
             if m.group(6):
                 d["nvidia"] = float(m.group(6))
+            if m.group(7):
+                d["nvidia_thread"] = float(m.group(7))
             data[(dtype, op, N)] = d
     return data
 
@@ -278,6 +287,12 @@ if __name__ == "__main__":
         "nvidia inside margin of the raw-best SIMT time → thread"
     assert pick({"block": 100, "warp": 90, "thread": 91, "nvidia": 80}, 0.05, {"nvidia"}) == "nvidia", \
         "SIMT tie resolves to thread but nvidia clears the margin over raw-best warp"
+    assert pick({"block": 100, "warp": 90, "thread": 91, "nvidia": 89,
+                 "nvidia_thread": 80}, 0.05, {"nvidia", "nvidia_thread"}) == "nvidia_thread", \
+        "best dependency tier clears the native margin"
+    assert pick({"block": 100, "warp": 90, "thread": 91, "nvidia": 88,
+                 "nvidia_thread": 87}, 0.05, {"nvidia", "nvidia_thread"}) == "thread", \
+        "neither dependency tier clears the native margin"
     assert pick({"serial": 100, "simt": 101}, 0.05, {"cublasdx"}) == "serial", \
         "impls outside SIMT_ORDER keep raw-min behavior"
     # SIMT tie must be measured against the raw-fastest tier, not pairwise
@@ -299,15 +314,19 @@ if __name__ == "__main__":
     _mg = "\n".join([
         "################ NPROB=8192  reps=250  dtype=f32 ################",
         "dot   N=4   | BLOCK  tb32=1.00 | WARP  w1=0.80 | THREAD  t256=0.30"
-        "  || block tb32=1.00  warp w1=0.80  thread t256=0.30  nv=2.00 -> THREAD",
+        "  || block tb32=1.00  warp w1=0.80  thread t256=0.30  nv=2.00"
+        "  nvt t64=0.20 -> NVIDIA_THREAD",
         "posv  N=64  | BLOCK  tb32=5.00 | WARP  w1=6.00"
         "  || block tb32=5.00  warp w1=6.00  nv=3.00 -> NV",
     ])
     _mc = parse_mega_sweep(_mg)
-    assert _mc[("f32", "dot", 4)] == {"block": 1.0, "warp": 0.8, "thread": 0.3, "nvidia": 2.0}, _mc
+    assert _mc[("f32", "dot", 4)] == {"block": 1.0, "warp": 0.8, "thread": 0.3,
+                                         "nvidia": 2.0, "nvidia_thread": 0.2}, _mc
     assert _mc[("f32", "posv", 64)] == {"block": 5.0, "warp": 6.0, "nvidia": 3.0}, \
         "thread absent at high N parses as block/warp/nvidia only"
-    assert pick(_mc[("f32", "dot", 4)], 0.05, {"nvidia"}) == "thread", "dot N=4 → thread wins"
+    assert pick(_mc[("f32", "dot", 4)], 0.05,
+                {"nvidia", "nvidia_thread"}) == "nvidia_thread", \
+        "new trailing dependency tier parses and clears the margin"
     # parse_blas2(): 2-way rows, warp leg optional, ldlt/ldltsv disambiguation.
     _b2 = "\n".join([
         "################ NPROB=8192  reps=250  dtype=f32 ################",

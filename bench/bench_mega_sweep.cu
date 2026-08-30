@@ -1,7 +1,8 @@
 // bench_mega_sweep.cu — ladder scaling sweep:
 //   WARP   — one warp per problem,   <<<ceil(NPROB/WPB), dim3(32,WPB)>>>, WPB ∈ {1..32}
 //   BLOCK  — one block per problem,   <<<NPROB, TB>>>, TB ∈ {32,64,128,256} (pure-SIMT glass::block::)
-//   NVIDIA — cuBLASDx/cuSOLVERDx,     <<<NPROB, nv_threads(N)>>>, descriptor-fixed (f32 to N128; f64 to N64)
+//   NVIDIA BLOCK  — cuBLASDx/cuSOLVERDx, <<<NPROB, nv_threads(N)>>>, descriptor-fixed
+//   NVIDIA THREAD — cuSOLVERDx 0.4+, one problem/thread, TPB swept (LAPACK ops)
 //   AUTO   — bare glass::op at the BLOCK launch shapes: the shipped measured-default
 //            face (constexpr device-level body dispatch via -DSMS). AUDIT-ONLY —
 //            the AUTO segment/token is ignored by tune.py's table parsers and never
@@ -12,23 +13,25 @@
 //            identical-code AUTO-vs-BLOCK deltas exposed the 2026-08-15 in-place
 //            input-drift bias that the per-trial reset hook now prevents.
 //
-// Answers "where do the breakevens fall on the warp → SIMT-block → MathDx ladder?" across
+// Answers "where do the breakevens fall on the thread → warp → block and
+// dependency-backed NVIDIA block/thread ladder?" across
 // problem size N and batch count NPROB (single-problem latency → GPU-saturating throughput).
 //
 // Ops (each has glass::<op>, glass::warp::<op>, and a glass::nvidia::<op> form):
 //   dot (L1)  gemv (L2)  gemm (L3)  chol (L3)  trsv (L3, nvidia=trsm)  posv (L3)
 //
-// dtype: f32 (3-way, nvidia to N128) or f64 (3-way, nvidia to N64 — f64 vendor descriptors fit a lower smem cap).
+// dtype: f32 or f64. Native thread/warp/block and NVIDIA block are measured
+// across their supported domains; NVIDIA thread is instantiated through N=32.
 // The nvidia leg is FORCED at every N: a DEFINE_NVIDIA_* macro is in scope for each N, so
 // glass::nvidia::<op><float,N,...> resolves to the cuBLASDx/cuSOLVERDx specialization
 // unconditionally (bypassing the shipped size-heuristic auto-dispatch) — we want the full
 // vendor curve so the crossover with block/warp is visible, not just the heuristic's verdict.
 //
-// Metric: ns per problem (wall / (reps*NPROB)), min of 3 trials. Lower = better. Timing-only:
-// inputs are factored/overwritten in place across reps (no per-rep reload) — uniform across
-// all contenders, so the comparison is apples-to-apples.
+// Metric: ns per problem (wall / (reps*NPROB)), min of 3 trials. Lower = better.
+// Each trial starts from an untimed pristine-input reset. Inputs may still be
+// overwritten across repetitions within that trial, uniformly for every contender.
 //
-// Compile (3-way, needs MathDx — set MATHDX_ROOT):
+// Compile (full ladder, needs MathDx — set MATHDX_ROOT):
 //   nvcc -std=c++17 -arch=sm_120 -O3 --expt-relaxed-constexpr -Xptxas -O1 -I.. -I../src
 //        -I$MATHDX_ROOT/include -I$MATHDX_ROOT/external/cutlass/include
 //        -DGLASS_BENCH_CUBLASDX -DGLASS_BENCH_CUSOLVERDX -DSMS=1200
@@ -59,9 +62,15 @@
 #endif
 
 #if defined(GLASS_BENCH_CUSOLVERDX)
-#define MEGA_NV_LAPACK 1           // chol, trsm, posv (cuSOLVERDx)
+#define MEGA_NV_LAPACK 1           // chol, trsm, posv (cuSOLVERDx block/thread)
 #else
 #define MEGA_NV_LAPACK 0
+#endif
+
+#if defined(GLASS_HAVE_CUSOLVERDX_THREAD) && GLASS_HAVE_CUSOLVERDX_THREAD
+#define MEGA_NV_THREAD 1
+#else
+#define MEGA_NV_THREAD 0
 #endif
 
 static int NPROB = 8192;
@@ -156,13 +165,14 @@ static void launch_warp(Op op, int WPB, T* A, T* B, T* C, T* x, T* y) {
 //       pyroffi IK case (A = JᵀJ built on-chip); no memory traffic to attribute,
 //       so it trivially wins and would be a meaningless table entry.
 //
-// Swept over the FULL size domain so every contender shares the same points and
-// the figures show the spill catastrophe explicitly instead of a truncated line
-// (a per-thread T[N*N] is local-memory-resident far past the N<=7 register
-// ceiling — N=128/f64 is a 128KB-per-thread array; the numbers document how bad,
-// they never win). tune_pick's parser still treats the column as optional so
-// pre-2026-07 captures (no thread column) keep parsing.
-template<typename T,int N> static constexpr bool thread_ok() { return true; }
+// Instantiated through N=64. That includes every measured winning native-thread
+// cell on sm_120/sm_87 and one losing boundary point, while avoiding the N=96/128
+// template/local-array explosion in this monolithic TU. If a future capture
+// makes N>64 scientifically important, extend with a split executable rather
+// than increasing the roughly 12GB peak of this already-heavy build. tune_pick
+// treats the column as optional so
+// older and deliberately out-of-domain rows remain replay-compatible.
+template<typename T,int N> static constexpr bool thread_ok() { return N <= 64; }
 
 template<typename T,int N> __global__ void kt_dot (T* x, T* y, int np) { int p=blockIdx.x*blockDim.x+threadIdx.x; if(p>=np)return; T r=glass::thread::dot<T,N>(x+(size_t)p*N, y+(size_t)p*N); y[(size_t)p*N]=r; }
 template<typename T,int N> __global__ void kt_gemv(T* A, T* x, T* y, int np) {
@@ -300,12 +310,34 @@ template<typename T,int N> __global__ void kn_posv(T* A, T* b) {
 }
 #endif
 
+// ─── NVIDIA THREAD model: cuSOLVERDx 0.4+, one problem per CUDA thread ──────
+// Unlike the native glass::thread contender, cuSOLVERDx accepts the packed
+// global-memory operands directly. The same per-problem-contiguous layout and
+// all global traffic remain inside the timed region; there is no hidden layout
+// transform or shared-memory allocation.
+#if MEGA_NV_THREAD
+template<typename T,int N> __global__ void knt_chol(T* A, int np) {
+    int p=blockIdx.x*blockDim.x+threadIdx.x; if(p>=np)return;
+    glass::nvidia::thread::potrf<T,N>(A+(size_t)p*N*N);
+}
+template<typename T,int N> __global__ void knt_trsv(T* A, T* x, int np) {
+    int p=blockIdx.x*blockDim.x+threadIdx.x; if(p>=np)return;
+    glass::nvidia::thread::trsm<T,N,1>((T)1, A+(size_t)p*N*N, x+(size_t)p*N);
+}
+template<typename T,int N> __global__ void knt_posv(T* A, T* b, int np) {
+    int p=blockIdx.x*blockDim.x+threadIdx.x; if(p>=np)return;
+    glass::nvidia::thread::posv<T,N,1>(A+(size_t)p*N*N, b+(size_t)p*N);
+}
+#endif
+
 // True at compile time iff op@N has a forced nvidia variant defined above.
 // Double is defined only up to 64 (f64 descriptors/smem cap lower than float).
 template<typename T,int N> static constexpr bool nv_blas_ok()
 { return MEGA_NV_BLAS   && (std::is_same_v<T,float> ? N <= 128 : N <= 64); }
 template<typename T,int N> static constexpr bool nv_lapack_ok()
 { return MEGA_NV_LAPACK && (std::is_same_v<T,float> ? N <= 128 : N <= 64); }
+template<typename T,int N> static constexpr bool nvt_lapack_ok()
+{ return MEGA_NV_THREAD && N <= 32; }
 
 // Measurement core lives in timing_common.cuh (min-of-3 + FAIL probe + trial
 // spread + the mutation invariant). g_row_spread accumulates the worst trial
@@ -406,6 +438,28 @@ static double nv_dispatch(Op op, T* A, T* B, T* C, T* x, T* y, int reps) {
     return nv_op_time<T,N>(op, A, B, C, x, y, reps);
 }
 
+// One cuSOLVERDx-thread launch shape. The caller sweeps TPB and retains every
+// FAIL explicitly, just like the native THREAD tier.
+template<typename T,int N>
+static double nvt_dispatch(Op op, int TPB, T* A, T* x, int reps) {
+    (void)op; (void)TPB; (void)A; (void)x; (void)reps;
+#if MEGA_NV_THREAD
+    if constexpr (nvt_lapack_ok<T,N>()) {
+        dim3 grid((NPROB + TPB - 1) / TPB), blk(TPB);
+        if (op == CHOL)
+            return nv_timed(knt_chol<T,N>, 0,
+                            [&]{ knt_chol<T,N><<<grid,blk>>>(A, NPROB); }, reps);
+        if (op == TRSV)
+            return nv_timed(knt_trsv<T,N>, 0,
+                            [&]{ knt_trsv<T,N><<<grid,blk>>>(A, x, NPROB); }, reps);
+        if (op == POSV)
+            return nv_timed(knt_posv<T,N>, 0,
+                            [&]{ knt_posv<T,N><<<grid,blk>>>(A, x, NPROB); }, reps);
+    }
+#endif
+    return -1.0;
+}
+
 template<typename T,int N>
 static void bench_size(Op op, int reps) {
     T *A, *B, *C, *x, *y;
@@ -441,8 +495,9 @@ static void bench_size(Op op, int reps) {
     // results, so output is byte-identical either way.
     constexpr int TBS[4]  = {32, 64, 128, 256};
     constexpr int WPBS[6] = {1, 2, 4, 8, 16, 32};
-    double r_block[4], r_warp[6], r_thread[4], r_auto[4], r_nv = -1.0;
+    double r_block[4], r_warp[6], r_thread[4], r_auto[4], r_nvt[4], r_nv = -1.0;
     for (double* a : {r_block, r_auto, r_thread}) for (int i=0;i<4;i++) a[i] = 1e30;
+    for (int i=0;i<4;i++) r_nvt[i] = -1.0;
     for (int i=0;i<6;i++) r_warp[i] = 1e30;
     std::vector<std::function<void()>> items;
     for (int i=0;i<4;i++) items.push_back([&,i]{
@@ -465,6 +520,12 @@ static void bench_size(Op op, int reps) {
     for (int i=0;i<4;i++) items.push_back([&,i]{
         int TB = TBS[i];
         r_auto[i] = time_ns_per_prob([&]{ launch_auto<T,N>(op, TB, A, B, C, x, y); }, reps); });
+    if constexpr (nvt_lapack_ok<T,N>()) {
+        if (op == CHOL || op == TRSV || op == POSV) {
+            for (int i=0;i<4;i++) items.push_back([&,i]{
+                r_nvt[i] = nvt_dispatch<T,N>(op, TBS[i], A, x, reps); });
+        }
+    }
     items.push_back([&]{ r_nv = nv_dispatch<T,N>(op, A, B, C, x, y, reps); });
     if (g_shuffle_seed) std::shuffle(items.begin(), items.end(), g_shuffle_rng);
     for (auto& it : items) it();
@@ -501,11 +562,21 @@ static void bench_size(Op op, int reps) {
         if (ns < best_auto) { best_auto = ns; best_atb = TBS[i]; }
     }
     double nv = r_nv;
+    double best_nvt = 1e30; int best_nvt_tpb = 0;
+    const bool has_nvt = nvt_lapack_ok<T,N>() &&
+                         (op == CHOL || op == TRSV || op == POSV);
+    if (has_nvt) {
+        printf("  | NVIDIA_THREAD");
+        for (int i=0;i<4;i++) {
+            double ns = r_nvt[i];
+            if (ns > 0) printf("  nvt%d=%.4f", TBS[i], ns); else printf("  nvt%d=FAIL", TBS[i]);
+            if (ns > 0 && ns < best_nvt) { best_nvt = ns; best_nvt_tpb = TBS[i]; }
+        }
+    }
 
-    // 4-way winner. thread/warp/block are all dependency-free pure SIMT, so they
-    // compete on raw time; only nvidia (MathDx) must clear tune_pick's margin —
-    // hence `base` is the best of the three SIMT tiers, as before, now including
-    // thread (full domain).
+    // thread/warp/block are dependency-free pure SIMT. NVIDIA block and NVIDIA
+    // thread both carry MathDx and are raw-timed here; tune_pick applies the
+    // shared dependency margin when generating tables.
     const bool has_thread = (best_thread < 1e29);
     double base = best_block; const char* base_winner = "BLOCK";
     if (best_warp < base)               { base = best_warp;   base_winner = "WARP"; }
@@ -516,13 +587,18 @@ static void bench_size(Op op, int reps) {
     if (best_warp   > base && best_warp   < simt_second) simt_second = best_warp;
     if (has_thread && best_thread > base && best_thread < simt_second) simt_second = best_thread;
 
-    const char* winner; double margin;
-    if (nv > 0 && nv < base) { winner = "NVIDIA"; margin = base / nv; }
-    else if (nv > 0)         { winner = base_winner; margin = nv / base; }   // margin = how much NV trails
-    else                     { winner = base_winner; margin = (simt_second < 1e29) ? simt_second / base : 1.0; }
+    const char* winner = base_winner; double winning_time = base;
+    if (nv > 0 && nv < winning_time) { winner = "NVIDIA"; winning_time = nv; }
+    if (best_nvt < winning_time) { winner = "NVIDIA_THREAD"; winning_time = best_nvt; }
+    double runner_up = 1e30;
+    for (double v : {base, nv, best_nvt})
+        if (v > winning_time && v < runner_up) runner_up = v;
+    if (runner_up == 1e30) runner_up = simt_second;
+    double margin = runner_up < 1e29 ? runner_up / winning_time : 1.0;
     printf("  || block tb%d=%.4f  warp w%d=%.4f", best_tb, best_block, best_wpb, best_warp);
     if (has_thread) printf("  thread t%d=%.4f", best_tpb, best_thread);
     if (nv > 0)     printf("  nv=%.4f", nv);
+    if (best_nvt < 1e29) printf("  nvt t%d=%.4f", best_nvt_tpb, best_nvt);
     // auto token LAST among times: _ROW_RE captures block/warp[/thread][/nv]
     // left-to-right, so a trailing token cannot perturb table regeneration.
     if (best_auto < 1e29) printf("  auto a%d=%.4f", best_atb, best_auto);
@@ -549,8 +625,9 @@ int main(int argc, char** argv) {
     bool f64 = (strcmp(dt, "f64") == 0 || strcmp(dt, "fp64") == 0 || strcmp(dt, "double") == 0);
     { int v = 48*1024; cudaDeviceGetAttribute(&v, cudaDevAttrMaxSharedMemoryPerBlockOptin, 0); g_optin_smem = (size_t)v; }
     printf("# mega sweep | NPROB=%d reps=%d dtype=%s | ns/problem (lower=better) | optin_smem=%zuKB\n", NPROB, reps, f64 ? "f64" : "f32", g_optin_smem/1024);
-    printf("# contenders: BLOCK(SIMT, TB swept) | WARP(WPB swept) | THREAD(SIMT, TPB swept) | AUTO(bare glass::, shipped dispatch, TB swept; figure-only) | NV(cuBLASDx/cuSOLVERDx, forced; f32<=128, f64<=64)\n");
-    printf("# THREAD stages operands global->registers->global in the per-problem-contiguous layout (uncoalesced; the layout tax is IN the timing).\n");
+    printf("# contenders: BLOCK(SIMT, TB swept) | WARP(WPB swept) | THREAD(SIMT, TPB swept) | AUTO(bare glass::, shipped dispatch, TB swept; figure-only) | NV_BLOCK(cuBLASDx/cuSOLVERDx, forced; f32<=128, f64<=64) | NV_THREAD(cuSOLVERDx 0.4+, TPB swept; LAPACK N<=32)\n");
+    printf("# NV_THREAD N>32 is intentionally not instantiated to avoid further growth in this already memory-heavy monolithic TU; extend with a split executable only if a winner reaches N=32.\n");
+    printf("# THREAD stages operands global->registers->global in the per-problem-contiguous layout (uncoalesced; the layout tax is IN the timing; instantiated N<=64).\n");
     if (const char* s = getenv("GLASS_SHUFFLE_ORDER"); s && strtoull(s, nullptr, 10) != 0) {
         g_shuffle_seed = strtoull(s, nullptr, 10);
         g_shuffle_rng.seed(g_shuffle_seed);

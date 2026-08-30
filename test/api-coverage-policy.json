@@ -10,6 +10,7 @@
   },
   "exclude_symbols": {
     "glass-defaults.cuh:nv_available": "Implementation helper behind suggested_backend.",
+    "glass-defaults.cuh:nv_thread_available": "Implementation helper behind suggested_backend.",
     "glass-defaults.cuh:ideal_sm120": "Generated architecture table implementation.",
     "glass-defaults.cuh:ideal_sm87": "Generated architecture table implementation.",
     "glass-defaults.cuh:blas2_sm120": "Generated architecture table implementation.",

@@ -14,7 +14,8 @@ The reference is organized by BLAS level and by backend:
 * **NVIDIA backend** — the ``glass::nvidia::block::`` CUB / cuBLASDx /
   cuSOLVERDx paths and their host-side query/size helpers, plus the
   ``glass::nvidia::warp::`` CUB ``WarpReduce`` reductions (one full 32-lane
-  warp per problem).
+  warp per problem) and ``glass::nvidia::thread::`` cuSOLVERDx 0.4+ LAPACK
+  wrappers (one packed problem per CUDA thread).
 * **Warp-scoped** — the ``glass::warp::`` single-warp SIMT variants for
   warp-per-problem kernels.
 * **Thread-scoped** — the ``glass::thread::`` sequential variants for

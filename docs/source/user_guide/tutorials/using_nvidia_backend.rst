@@ -181,6 +181,26 @@ Available cuSOLVERDx wrappers: ``potrf``, ``trsm``, ``posv``, ``potrs``,
 All follow the same ``DEFINE_NVIDIA_<NAME>`` macro pattern and are **not**
 pre-instantiated — call the macro per size you need.
 
+Thread-scope LAPACK (cuSOLVERDx 0.4+)
+--------------------------------------
+
+The same nine operations are available with smem-less signatures under
+``glass::nvidia::thread::``. No ``DEFINE_NVIDIA_*`` macro, block-dimension
+template argument, scratch query, or barrier is needed: each CUDA thread owns
+one packed problem.
+
+.. code-block:: cpp
+
+   template <int N>
+   __global__ void batched_chol(float* matrices, int count) {
+       int p = blockIdx.x * blockDim.x + threadIdx.x;
+       if (p < count)
+           glass::nvidia::thread::potrf<float, N>(matrices + p * N * N);
+   }
+
+Bare ``glass::nvidia::potrf`` still means the block-scope wrapper. Use the
+explicit ``thread`` namespace because this choice changes launch geometry.
+
 See :doc:`../concepts/backend_dispatch` for how the auto-dispatch decides
 between cuBLASDx and SIMT, and :doc:`../concepts/batched_1d` for the 1D-launch
 batched GEMM APIs.

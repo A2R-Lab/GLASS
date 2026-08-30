@@ -18,7 +18,7 @@ labor (2026-08-11 consolidation):
   is current only when its source digest, environment, timing date, and proximate
   signed correctness receipt are recorded together.
 
-## ladder (mega sweep — thread/warp/block/nvidia)
+## ladder (mega sweep — native thread/warp/block plus NVIDIA block/thread)
 
 The shipped `ideal_sm120` table was re-gated 2026-08-15 from the pinned quiet
 capture `mega_sweep_20260815_205919.txt` (archived externally), taken with the

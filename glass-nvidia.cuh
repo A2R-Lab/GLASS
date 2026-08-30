@@ -15,7 +15,10 @@
  *   - L2 (l2.cuh)         cuBLASDx-backed gemv + DEFINE_NVIDIA_GEMV* macros.
  *   - L3 (l3.cuh)         cuBLASDx-backed gemm / gemm_batched / row_strided_*.
  *   - query.cuh           Host-side constexpr BlockDim query API.
- *   - LAPACK (lapack.cuh) cuSOLVERDx chol/trsm/posv/getrf/gesv/geqrf/gels.
+ *   - LAPACK (lapack.cuh) cuSOLVERDx block-scope
+ *                         chol/trsm/posv/getrf/gesv/geqrf/gels.
+ *   - LAPACK thread       cuSOLVERDx 0.4+ thread-scope versions of the same
+ *                         operations under `glass::nvidia::thread::`.
  *
  * The L2/L3/LAPACK wrappers gate themselves on GLASS_HAVE_CUBLASDX /
  * GLASS_HAVE_CUSOLVERDX, auto-detected from include order. Set MATHDX_ROOT and
@@ -42,6 +45,7 @@
 #else
 #define GLASS_HAVE_CUBLASDX 0
 #endif
+
 #endif
 
 // cuSOLVERDx detection (for L3 LAPACK wrappers: potrf, trsm).
@@ -59,6 +63,12 @@
 #else
 #define GLASS_HAVE_CUSOLVERDX 0
 #endif
+#endif
+
+#if GLASS_HAVE_CUSOLVERDX && defined(CUSOLVERDX_VERSION) && CUSOLVERDX_VERSION >= 400
+#define GLASS_HAVE_CUSOLVERDX_THREAD 1
+#else
+#define GLASS_HAVE_CUSOLVERDX_THREAD 0
 #endif
 
 // types.cuh defines `glass::nvidia::layout` and the shared helper macros
@@ -265,6 +275,12 @@ namespace block {
     spelling is glass::nvidia::warp:: (a warp tier is not a block-scope
     body, so it does NOT nest under block::).  */
 using namespace block;
+
+#if GLASS_HAVE_CUSOLVERDX_THREAD
+// One independent packed problem per CUDA thread; no shared scratch or
+// block-wide synchronization. The bare nvidia:: surface remains block-scoped.
+#include "./src/nvidia/lapack_thread.cuh"
+#endif
 
 // warp-scope CUB reductions: glass::nvidia::warp::{reduce, dot, nrm2}
 #include "./src/nvidia/l1_warp.cuh"

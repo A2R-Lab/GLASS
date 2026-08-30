@@ -242,9 +242,9 @@ class LazyBins(Mapping):
         "ldlt", "getrf", "iamax", "fused", "warp", "thread", "posv", "reduced",
         "tensor", "factor_check", "congruence", "solve", "reduced_blas", "base_f64",
         "defaults", "dispatch", "l1_round2", "block_access", "symmetrize", "symm_rot",
-        "syev", "robotics", "api_vector", "api_dense", "api_factor", "api_robotics", "l3_nvidia", "nvidia_dispatch", "trailing_sync", "nvidia_f64",
+        "syev", "robotics", "api_vector", "api_dense", "api_factor", "api_robotics", "l3_nvidia", "nvidia_dispatch", "trailing_sync", "nvidia_f64", "nvidia_thread",
     }
-    optional = {"l3_nvidia", "nvidia_dispatch", "trailing_sync", "nvidia_f64"}
+    optional = {"l3_nvidia", "nvidia_dispatch", "trailing_sync", "nvidia_f64", "nvidia_thread"}
 
     def __init__(self):
         self.cache: dict[str, pathlib.Path] = {}
@@ -266,7 +266,7 @@ class LazyBins(Mapping):
             flags = ["--expt-relaxed-constexpr", "-DGLASS_BENCH_CUBLASDX",
                      "-I", str(mathdx / "include"),
                      "-I", str(mathdx / "external/cutlass/include")]
-        if key == "nvidia_f64":
+        if key in {"nvidia_f64", "nvidia_thread"}:
             solver = bool(cublasdx and (mathdx / "include/cusolverdx.hpp").exists()
                           and (mathdx / "include/cusolverdx_io.hpp").exists()
                           and (mathdx / "lib/libcusolverdx.a").exists())
@@ -350,6 +350,14 @@ def bin_nvidia_f64(bins):
     if "nvidia_f64" not in bins:
         pytest.skip("test_nvidia_f64 needs MATHDX_ROOT + cuSOLVERDx")
     return bins["nvidia_f64"]
+
+
+@pytest.fixture(scope="session")
+def bin_nvidia_thread(bins):
+    """Per-thread cuSOLVERDx 0.4+ path, or skip without a recent MathDx."""
+    if "nvidia_thread" not in bins:
+        pytest.skip("test_nvidia_thread needs MathDx cuSOLVERDx 0.4+")
+    return bins["nvidia_thread"]
 
 
 @pytest.fixture(scope="session")

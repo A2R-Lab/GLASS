@@ -90,8 +90,9 @@ Download
 1. Go to https://developer.nvidia.com/cublasdx-downloads (a free NVIDIA
    Developer account is required).
 2. Choose **MathDx for CUDA 12, Linux x86_64** (``.tar.gz``). Version 25.12.x
-   or later is recommended — that is the version the GLASS wrappers are tested
-   against.
+   or later supports the block wrappers. Use **MathDx 26.03 or later** for
+   ``glass::nvidia::thread::`` (cuSOLVERDx 0.4+); 26.03 is the version covered
+   by the thread-scope correctness suite.
 
 Install
 ~~~~~~~
@@ -105,7 +106,7 @@ Install
    ls /opt/nvidia/mathdx/
 
    # Set the environment variable (add to ~/.bashrc to persist)
-   export MATHDX_ROOT=/opt/nvidia/mathdx/25.12   # adjust version as needed
+   export MATHDX_ROOT=/opt/nvidia/mathdx/26.03   # adjust version as needed
 
 Verify
 ~~~~~~

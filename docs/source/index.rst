@@ -21,8 +21,9 @@ load-bearing layout choices.
 Interfaces
 ----------
 
-GLASS exposes four primary interfaces. Choose by execution scope and dependency
-budget. The interfaces intentionally overlap, but do not all expose every
+GLASS separates **execution scope** (thread, warp, or block) from
+**implementation family** (dependency-free GLASS code or optional NVIDIA
+libraries). The spellings intentionally overlap, but do not all expose every
 operation.
 
 .. grid:: 2
@@ -56,10 +57,22 @@ operation.
       :link: user_guide/concepts/backend_dispatch
       :link-type: doc
 
-      CUB / cuBLASDx / cuSOLVERDx, auto-dispatched against SIMT by size at
-      compile time — plus ``glass::nvidia::warp::`` CUB ``WarpReduce`` L1
-      reductions (one full 32-lane warp per problem). Choose this when a
-      vendor **tensor-core** kernel wins at your size (needs NVIDIA MathDx).
+      CUB / cuBLASDx / cuSOLVERDx at block scope. Choose this when the measured
+      vendor implementation wins at your size (needs NVIDIA MathDx).
+
+   .. grid-item-card:: Nvidia warp — ``glass::nvidia::warp::``
+      :link: api_reference/nvidia
+      :link-type: doc
+
+      CUB ``WarpReduce`` L1 reductions, one full 32-lane warp per problem and
+      explicit per-warp scratch.
+
+   .. grid-item-card:: Nvidia thread — ``glass::nvidia::thread::``
+      :link: api_reference/nvidia
+      :link-type: doc
+
+      cuSOLVERDx 0.4+ LAPACK, one independent packed problem per CUDA thread;
+      no dynamic shared scratch or block-wide synchronization.
 
 .. note::
 

@@ -11,8 +11,8 @@ tie band of the fastest takes the cell if it is simpler — thread ≻ warp ≻
 block), so no table bakes sub-noise jitter and a pure-noise re-run reproduces
 the same tables. The legs:
 
-  ladder   bench_mega_sweep.cu  → thread/warp/block/nvidia ladder in glass-defaults.cuh
-                                  (thread — one problem/thread, N<=7 — is a
+  ladder   bench_mega_sweep.cu  → native/NVIDIA thread/warp/block ladder in glass-defaults.cuh
+                                  (native thread — one problem/thread — is a
                                   dependency-free contender alongside warp/block:
                                   the shared pick takes the cheapest SIMT tier —
                                   with ties inside the ±2% SIMT band resolving to
@@ -180,7 +180,7 @@ _QUICK_SCHED = [("8192", "300")]
 
 
 def _fatbin_build_mega(sms, mdx):
-    """4-tier build for hosts where libcusolverdx.a is foreign (the MathDx
+    """MathDx ladder build for hosts where libcusolverdx.a is foreign (the
     tarball ships x86-64 objects only — e.g. Jetson/aarch64). cuSOLVERDx also
     ships an LTO-IR `libcusolverdx.fatbin`, which is host-arch-independent but
     only legal as a DEVICE-LINK input, so the build is staged:
@@ -231,7 +231,7 @@ def build_mega_sweep(sms, mdx, allow_no_mathdx=False):
                                     flags, sms)
     elif platform.machine() != "x86_64":
         # The tarball's libcusolverdx.a is x86-64-only; use the fatbin path.
-        print("  bench_mega_sweep: non-x86 host -> 4-tier via cusolverdx FATBIN")
+        print("  bench_mega_sweep: non-x86 host -> NVIDIA block/thread via cusolverdx FATBIN")
         binp, status = _fatbin_build_mega(sms, mdx)
     else:
         flags = ["nvcc", "-std=c++17", f"-arch=sm_{sms // 10}", "-O3",
@@ -337,11 +337,11 @@ def warn_jittery_rows(text, margin, label):
 
 
 def winners_from_sweep(text, margin):
-    """(dtype, op) -> {N: backend} under the shared margin (nvidia is the dep)."""
+    """(dtype, op) -> {N: backend} under the shared dependency margin."""
     cells = tp.parse_mega_sweep(text, nprob=8192)
     winners = {}
     for (dt, op, N), times in cells.items():
-        win = tp.pick(times, margin, {"nvidia"})
+        win = tp.pick(times, margin, {"nvidia", "nvidia_thread"})
         if win:
             winners.setdefault((dt, op), {})[N] = win
     return winners
@@ -380,9 +380,9 @@ def regen_ladder(sweep_text, margin, src_name, sms):
     region = "\n".join([
         begin,
         f"// Source sweep: {src_name}   tie margin: ±{margin*100:.0f}% "
-        "(nvidia must clear it; SIMT ties ±2% prefer thread>warp>block)",
-        "// Returns the *ideal* tier assuming nvidia is linked; "
-        "nv_available() filters after.",
+        "(NVIDIA block/thread must clear it; SIMT ties ±2% prefer thread>warp>block)",
+        "// Returns the *ideal* tier assuming NVIDIA dependencies are linked;",
+        "// availability predicates collapse either vendor tier after selection.",
         emit_ideal_body(winners, f"ideal_sm{arch}"),
         end])
     text = DEFAULTS.read_text()
@@ -1098,8 +1098,8 @@ def main():
     p.add_argument("--allow-no-mathdx", action="store_true",
                    help="let the ladder leg run without MATHDX_ROOT as a 3-tier "
                         "(thread/warp/block) SIMT sweep — the regenerated table "
-                        "simply lacks the nvidia contender. Required on Tegra/"
-                        "Jetson, where MathDx does not ship.")
+                        "simply lacks NVIDIA contenders. Use only when MathDx "
+                        "headers/fatbins are unavailable.")
     p.add_argument("--dry-run", action="store_true",
                    help="regenerate + diff against in-tree tables, write nothing")
     p.add_argument("--force", action="store_true",

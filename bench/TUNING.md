@@ -2,8 +2,9 @@
 
 ## One command — `bench/tune.py`
 
-GLASS ships three measured defaults tables: the thread/warp/block/nvidia **backend
-ladder** (`glass-defaults.cuh`, consumed by `glass::suggested_backend<>`; the
+GLASS ships three measured defaults tables: the native and NVIDIA
+thread/warp/block **backend ladder** (`glass-defaults.cuh`, consumed by
+`glass::suggested_backend<>`; the
 tables are **per-arch** — the ladder leg replaces the marker block + dispatch
 case for the arch it measured, so a first-time GPU like a Jetson Orin gains an
 `ideal_sm87` alongside the shipped `ideal_sm120` instead of overwriting it), the
@@ -103,7 +104,8 @@ The direct-vs-PCG table is an approximate-solve comparison at PCG's configured
 Prebuild-cached like the other legs; offline hook `--from-solvers <txt>`.
 
 The shared rule (`bench/tune_pick.py::pick`): a dependency-carrying impl
-(`nvidia`/`cublasdx`/`reduced`) wins **only if it beats the simplest impl by more
+(`nvidia`/`nvidia_thread`/`cublasdx`/`reduced`) wins **only if it beats the
+best dependency-free impl by more
 than the margin** — otherwise the no-dependency path (always launchable, no
 MathDx) stays. Between the SIMT tiers themselves, any tier within the **±2%
 SIMT tie band** of the fastest takes the cell if it is simpler (thread ≻ warp

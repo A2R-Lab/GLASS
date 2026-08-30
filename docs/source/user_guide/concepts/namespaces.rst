@@ -8,13 +8,11 @@ Axis A — scope / backend (the namespace)
 ----------------------------------------
 
 The namespace says **who cooperates and how**, never *what* the operation is.
-There are **four primary interfaces** — Block (``glass::block::``), Warp
-(``glass::warp::``), Thread (``glass::thread::``), and Nvidia
-(``glass::nvidia::block::`` / ``glass::nvidia::warp::``) — plus
+There are three execution scopes (block, warp, thread) and two implementation
+families (dependency-free GLASS and optional NVIDIA, where supported), plus
 ``glass::cgrps::``, a convenience alias of the Block interface, and the
-**bare** ``glass::`` face described below. The ladder runs most→least problem
-packing: thread (1 problem/thread, 32 per warp) → warp (1/warp) → block
-(1/block) → nvidia (1/block, vendor):
+**bare** ``glass::`` face described below. Scope determines placement; the
+family determines the implementation and dependency contract:
 
 ================================  ======  =================================================
 Namespace                         Scope   What it is
@@ -24,6 +22,7 @@ Namespace                         Scope   What it is
 ``glass::thread::``               thread  **Thread** — sequential, thread-per-problem, for low-DOF packing (compile-time sizes; register-resident up to ``N≤7``). No barriers, no shuffles, no ``threadIdx`` read. (Alias of ``block::thread``.)
 ``glass::nvidia::block::``        block   **Nvidia** — CUB / cuBLASDx / cuSOLVERDx, auto-dispatched by size at compile time.
 ``glass::nvidia::warp::``         warp    **Nvidia-warp** — CUB ``WarpReduce`` L1 reductions (``reduce`` / ``dot`` / ``nrm2``), one FULL 32-lane warp per problem; per-warp scratch sized by ``warp_reduce_scratch_bytes<T>()``; ``TRAILING_SYNC`` emits ``__syncwarp()``.
+``glass::nvidia::thread::``       thread  **Nvidia-thread** — cuSOLVERDx 0.4+ LAPACK, one packed problem per CUDA thread; smem-less signatures and no block-wide synchronization.
 ``glass::`` *(bare)*              block   **Measured default** — block-scope calling contract, body chosen by ``glass::dispatch_body()``; see below. (Likewise bare ``glass::nvidia::``.)
 ``glass::cgrps::``                block   *Convenience alias* of Block via a cooperative-groups handle (same numerics; not a separately-tuned backend).
 ================================  ======  =================================================
@@ -46,7 +45,8 @@ The bare and explicit spellings make a deliberate implementation choice:
 
 - **Explicit namespaces pin an implementation.** ``glass::block::gemm`` (and
   likewise ``glass::warp::`` / ``glass::thread::`` / ``glass::nvidia::block::``
-  / ``glass::nvidia::warp::``) is never re-dispatched. Use these from codegen
+  / ``glass::nvidia::warp::`` / ``glass::nvidia::thread::``) is never
+  re-dispatched. Use these from codegen
   and wherever implementation or reduction order is load-bearing.
 - **Bare** ``glass::gemm`` (and bare ``glass::nvidia::gemm``) **is the
   measured-default face**: the same block-scope *calling* contract — all block
