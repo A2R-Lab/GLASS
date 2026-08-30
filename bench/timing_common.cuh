@@ -12,10 +12,12 @@
 //     margin it is about to resolve;
 //   * MUTATION INVARIANT: reps run with NO restore between them, so in-place
 //     ops (potrf/ldlt/…) re-process their own output from rep 2 on. That is
-//     timing-benign ONLY for branch-free ops whose control flow is
-//     data-independent (all currently laddered ops; GPU NaN/denormal
-//     arithmetic is full-speed). Do NOT time a CHECK-gated or pivoted op
-//     through this loop — its data-dependent branches would time garbage.
+//     a steady-throughput characterization ONLY for branch-free ops whose
+//     control flow is data-independent. It is not sufficient evidence for an
+//     in-place solver default: NVIDIA-thread ladder winners also pass the
+//     independent-valid-batch veto in bench_nvt_valid.cu. Do NOT time a
+//     CHECK-gated or pivoted op through this loop — its data-dependent branches
+//     would time garbage.
 #pragma once
 #include <cstdio>
 #include <ctime>

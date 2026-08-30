@@ -35,7 +35,7 @@ keyed on the rendered source + a digest of the whole header library + the SM, so
 library edit transparently rebuilds only the affected binaries.
 
 The shared rule (``bench/tune_pick.py::pick``): a dependency-carrying impl
-(``nvidia`` / ``cublasdx`` / ``reduced``) wins **only if it beats the simplest
+(``nvidia`` / ``nvidia_thread`` / ``cublasdx`` / ``reduced``) wins **only if it beats the simplest
 impl by more than the margin** — otherwise the no-dependency path (always
 launchable, no MathDx) stays. Every op is measured and recorded; a dispatch
 picker is regenerated only where ≥2 impls genuinely compete. **Run on a quiet
@@ -77,9 +77,9 @@ independently for a given (shape, SM).
 Picking a backend: measured defaults
 ------------------------------------
 
-Before the nvidia dispatch table (below), the higher-level question is *warp vs
-block vs nvidia* for your op and size. The three-contender sweep
-(``bench/tune.py --legs ladder`` → ``bench/RESULTS.md``) measures all three on
+Before the nvidia dispatch table (below), the higher-level question is *thread
+vs warp vs block vs NVIDIA block vs NVIDIA thread* for your op and size. The
+five-contender sweep (``bench/tune.py --legs ladder``) measures them on
 one ns/problem axis. Numbers below are **RTX 5090 / sm_120**; breakevens shift on other
 GPUs, so re-run the sweep on yours.
 
@@ -122,6 +122,18 @@ the current sm_120 and sm_87 tables select NVIDIA thread for some small
 the remaining bands. See :doc:`../tutorials/sweep_results` and
 ``bench/RESULTS.md`` for the dated per-op × per-precision results.
 
+In-place solver timing has one additional gate. The main ladder measures
+back-to-back throughput and restores inputs once per trial; after its first
+launch, an in-place solver therefore consumes its own output. Whenever that
+ladder selects NVIDIA thread, ``bench_nvt_valid.cu`` remeasures native
+thread/warp/block and NVIDIA thread with a ring of independent valid systems,
+one per timed launch. NVIDIA thread must clear the same 5% margin there or the
+table falls back to the valid-input native winner. This companion leg is a
+veto only: it cannot promote a vendor path the main ladder did not select, and
+missing confirmation evidence makes regeneration fail closed. The gate also
+uses each contender's observed three-trial interval: if those intervals cannot
+resolve the 5% boundary, regeneration stops for a quieter recapture.
+
 The ``constexpr`` ``glass::recommend<op, T, dims...>()`` query returns one
 ``execution_plan`` containing family, scope, and launch packing.
 Pass ``dependency_set::mathdx`` explicitly to admit NVIDIA candidates;
@@ -160,11 +172,13 @@ and ``sm_87`` (Jetson AGX Orin, 16 SMs, integrated memory). Comparing the
 2026-08-30 five-backend captures is the clearest answer to "do I need to
 retune?".
 
-**Yes, per architecture.** Of the 396 (op, N, precision, batch) cells measured
-on both, **131 (33 %) crown a different tier**. The smaller Orin selects native
+**Yes, per architecture.** In the raw five-backend ladder, of the 396
+(op, N, precision, batch) cells measured on both, **131 (33 %) crown a
+different tier**. The smaller Orin selects native
 thread more often (87 vs 66 cells), NVIDIA thread more often (52 vs 29), and
-block less often (48 vs 82). In the NPROB=8192 regime that actually generates
-the tables, 36 of 132 cells differ. With far fewer SMs to fill, packing more
+block less often (48 vs 82). After the independent-valid-input veto, the
+NPROB=8192 regime that actually generates the tables differs in **39 of 132**
+cells. With far fewer SMs to fill, packing more
 problems per warp often beats spreading one problem across more lanes, but the
 movement is not one-directional. No library source differs between the two
 machines; roughly a third of the decisions do.
@@ -190,7 +204,9 @@ Two practical notes from the Orin bring-up:
   architecture-neutral**: ``tune.py`` detects a non-x86 host and stages a
   separate-compilation device link against the fatbin, so Jetson runs the full
   native/NVIDIA ladder. In the current capture, the NVIDIA block and thread
-  tiers take 87 and 52 of 396 cells respectively.
+  tiers take 87 and 52 of 396 raw ladder cells respectively; the shipped
+  throughput table retains NVIDIA thread in 15 of 132 cells after its
+  independent-valid-input veto.
 * The ``nvpmodel`` labels are ceilings, not draws. Sampling the board rails at
   1 Hz with the GPU ≥98.6 % busy, the whole ladder pulls 9.2 W in the 15 W
   mode, 13.4 W in the 30 W mode and 16.0 W in the 50 W mode. Small

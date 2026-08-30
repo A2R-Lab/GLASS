@@ -22,8 +22,10 @@ Launch with one block per data item:
 
    my_kernel<<<num_items, 256>>>(A, B, C, m, n, k);
 
-That's the whole contract: every GLASS function assumes it runs inside **one
-CUDA block**, and you launch one block per independent problem.
+That's the whole contract for the bare face: every participating thread in one
+CUDA block enters the call, and you launch one block per independent problem.
+Explicit ``glass::warp::`` and ``glass::thread::`` APIs instead own one problem
+per full warp or per CUDA thread; see :doc:`../concepts/namespaces`.
 
 Compiling
 ---------

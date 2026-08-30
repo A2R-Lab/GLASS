@@ -4,19 +4,21 @@ Hard-won institutional knowledge for working on **GLASS** (*GPU Linear Algebra S
 Subroutines*) — the comprehensive, header-only, single-block GPU linear-algebra library.
 The public execution tiers are explicit **Block** `glass::block::`, **Warp**
 `glass::warp::`, **Thread** `glass::thread::`, and **Nvidia**
-`glass::nvidia::block::`/`warp::`; bare `glass::` is the measured-default
+`glass::nvidia::{block,warp,thread}::`; bare `glass::` is the measured-default
 block-scope face, while `glass::cgrps::` is the cooperative-groups twin. Plus the
 block-tridiagonal `glass::bdmv` / `glass::pcg`. **Read this before you change any
-primitive or do a refactor.** Every GLASS function is a `__device__` helper that assumes it
-runs inside **one CUDA block**, cooperating across `threadIdx`/`blockDim` (or a cooperative
-group). That single-block, multi-thread, shared-data model is the source of essentially every
-recurring bug below — they are races, thread-count assumptions, and uninitialized-scratch
-reads, not algebra mistakes. Tone of this doc is a runbook: do X, check Y.
+primitive or do a refactor.** Every GLASS function is a `__device__` helper,
+but its participating scope is part of its namespace contract: block and bare
+forms cooperate within one CUDA block, warp forms within one full warp, and
+thread forms are independent per caller thread. Most recurring block-path bugs
+below are races, thread-count assumptions, and uninitialized-scratch reads, not
+algebra mistakes. Tone of this doc is a runbook: do X, check Y.
 
 Source map you will reference constantly:
 - Pure-SIMT surface: `glass.cuh` → `src/base/L1/*.cuh`, `src/base/L2/*.cuh`, `src/base/L3/*.cuh`.
 - Cooperative-groups surface: `glass-cgrps.cuh`.
-- Vendor backends: `glass-nvidia.cuh` → `src/nvidia/{l1,l2,l3,l3_simt,lapack,query_simt,tuning_table,types}.cuh`.
+- Vendor backends: `glass-nvidia.cuh` →
+  `src/nvidia/{l1,l1_warp,l2,l3,l3_simt,lapack,lapack_thread,query,query_simt,tuning_table,types}.cuh`.
 - Warp-scoped variants: inline in the base L1/L2/L3 headers (`src/base/L1/{reduce,dot,axpy,copy,scal,iamax}.cuh`, `src/base/L2/gemv.cuh`, `src/base/L3/{gemm,potrf,trsv,trsm,posv}.cuh`), under `namespace warp`.
 - Block-tridiagonal: `glass::bdmv` (`src/base/banded/bdmv.cuh`), `glass::pcg` + `glass::pcg_scratch_bytes` (`src/base/pcg/solve.cuh`).
 - Host smem helper: `glass_gemm_dispatch_smem` in `glass.cuh`.

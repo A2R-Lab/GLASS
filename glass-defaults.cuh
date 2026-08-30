@@ -68,6 +68,7 @@ enum class backend : int { warp, block, nvidia_block, thread, nvidia_thread };
 
 // === BEGIN tune.py ladder sm_120 ===
 // Source sweep: mega_sweep_20260830_042156.txt   tie margin: ±5% (NVIDIA block/thread must clear it; SIMT ties ±2% prefer thread>warp>block)
+// NVIDIA-thread valid-input veto: nvt_valid_20260830_160047.txt (3 ladder picks vetoed)
 // Paired tables preserve the measured native runner-up for callers that
 // do not opt into MathDx; both use the same capture and SIMT tie rule.
 constexpr backend ideal_sm120(op o, uint32_t N, bool f64) {
@@ -86,9 +87,9 @@ constexpr backend ideal_sm120(op o, uint32_t N, bool f64) {
             else      return N <= 8u ? backend::nvidia_thread : N <= 24u ? backend::thread : backend::block;
         case op::trsv:
             if (!f64) return N <= 16u ? backend::thread : N <= 24u ? backend::nvidia_thread : N <= 32u ? backend::nvidia_block : backend::warp;
-            else      return N <= 32u ? backend::nvidia_thread : N <= 48u ? backend::nvidia_block : backend::warp;
+            else      return N <= 6u ? backend::thread : N <= 32u ? backend::nvidia_thread : N <= 48u ? backend::nvidia_block : backend::warp;
         case op::posv:
-            if (!f64) return N <= 6u ? backend::thread : N <= 8u ? backend::nvidia_thread : N <= 12u ? backend::thread : backend::nvidia_block;
+            if (!f64) return N <= 12u ? backend::thread : backend::nvidia_block;
             else      return N <= 8u ? backend::nvidia_thread : N <= 24u ? backend::thread : N <= 32u ? backend::nvidia_block : backend::block;
     }
     return backend::block;
@@ -121,6 +122,7 @@ constexpr backend native_sm120(op o, uint32_t N, bool f64) {
 
 // === BEGIN tune.py ladder sm_87 ===
 // Source sweep: mega_sweep_orin_tegra_20260830_035819.txt   tie margin: ±5% (NVIDIA block/thread must clear it; SIMT ties ±2% prefer thread>warp>block)
+// NVIDIA-thread valid-input veto: nvt_valid_sm87_20260830_160506.txt (4 ladder picks vetoed)
 // Paired tables preserve the measured native runner-up for callers that
 // do not opt into MathDx; both use the same capture and SIMT tie rule.
 constexpr backend ideal_sm87(op o, uint32_t N, bool f64) {
@@ -136,13 +138,13 @@ constexpr backend ideal_sm87(op o, uint32_t N, bool f64) {
             else      return N <= 96u ? backend::warp : backend::block;
         case op::potrf:
             if (!f64) return N <= 6u ? backend::thread : N <= 12u ? backend::nvidia_thread : backend::nvidia_block;
-            else      return N <= 12u ? backend::nvidia_thread : N <= 48u ? backend::thread : N <= 64u ? backend::block : N <= 96u ? backend::warp : backend::block;
+            else      return N <= 8u ? backend::nvidia_thread : N <= 48u ? backend::thread : N <= 64u ? backend::block : N <= 96u ? backend::warp : backend::block;
         case op::trsv:
             if (!f64) return N <= 12u ? backend::thread : N <= 32u ? backend::nvidia_thread : backend::warp;
             else      return N <= 32u ? backend::nvidia_thread : N <= 64u ? backend::thread : N <= 96u ? backend::warp : backend::block;
         case op::posv:
             if (!f64) return N <= 16u ? backend::thread : backend::nvidia_block;
-            else      return N <= 8u ? backend::nvidia_thread : N <= 64u ? backend::thread : N <= 96u ? backend::warp : backend::block;
+            else      return N <= 64u ? backend::thread : N <= 96u ? backend::warp : backend::block;
     }
     return backend::block;
 }

@@ -61,6 +61,19 @@ def test_valid_input_confirmation_requires_every_selected_cell():
         raise AssertionError("missing confirmation must fail closed")
 
 
+def test_valid_input_confirmation_rejects_decision_scale_jitter():
+    full = tune.winners_from_sweep(SYNTHETIC_SWEEP, 0.05)
+    noisy = (SYNTHETIC_NVT_VALID
+             .replace("nvidia_thread=7.2000", "nvidia_thread=6.5000")
+             .replace("nvt_spread=0.70", "nvt_spread=5.10"))
+    try:
+        tune.apply_nvt_valid_veto(full, noisy, 0.05)
+    except SystemExit as error:
+        assert "cannot resolve" in str(error)
+    else:
+        raise AssertionError("decision-scale confirmation jitter must fail closed")
+
+
 def test_local_override_emits_both_dependency_policies(tmp_path):
     capture = tmp_path / "capture.txt"
     output = tmp_path / "defaults.cuh"

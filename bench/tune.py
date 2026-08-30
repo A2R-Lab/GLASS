@@ -440,6 +440,7 @@ def apply_nvt_valid_veto(winners, confirmation_text, margin):
     Returns ``(updated_winners, veto_count)``.
     """
     confirmed = tp.parse_nvt_valid(confirmation_text, nprob=8192)
+    spreads = tp.parse_nvt_valid_spreads(confirmation_text, nprob=8192)
     updated = {key: dict(value) for key, value in winners.items()}
     vetoes = 0
     for (dtype, op), cells in updated.items():
@@ -451,9 +452,23 @@ def apply_nvt_valid_veto(winners, confirmation_text, margin):
                 sys.exit("ERROR: NVIDIA-thread ladder winner lacks valid-input "
                          f"confirmation: {dtype} {op} N={N}.")
             times = confirmed[key]
-            valid_winner = tp.pick(times, margin, {"nvidia_thread"})
-            if valid_winner != "nvidia_thread":
-                cells[N] = valid_winner
+            native_names = ("thread", "warp", "block")
+            raw_native = min(native_names, key=lambda name: times[name])
+            native_lo = times[raw_native]
+            native_hi = native_lo * (1.0 + spreads[key][raw_native] / 100.0)
+            nvt_lo = times["nvidia_thread"]
+            nvt_hi = nvt_lo * (1.0 + spreads[key]["nvidia_thread"] / 100.0)
+            guaranteed_win = nvt_hi < native_lo * (1.0 - margin)
+            guaranteed_loss = nvt_lo >= native_hi * (1.0 - margin)
+            if not guaranteed_win and not guaranteed_loss:
+                sys.exit("ERROR: valid-input confirmation cannot resolve the "
+                         f"±{margin*100:.0f}% margin for {dtype} {op} N={N}: "
+                         f"native {raw_native} interval=[{native_lo:.4f},"
+                         f"{native_hi:.4f}], NVIDIA thread interval="
+                         f"[{nvt_lo:.4f},{nvt_hi:.4f}].")
+            if guaranteed_loss:
+                native_times = {name: times[name] for name in native_names}
+                cells[N] = tp.pick(native_times, margin)
                 vetoes += 1
     return updated, vetoes
 

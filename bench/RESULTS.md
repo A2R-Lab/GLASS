@@ -24,10 +24,15 @@ The shipped tables were regenerated 2026-08-30 after adding cuSOLVERDx's
 thread-per-problem LAPACK interface as a fifth contender. The sm_120 table uses
 the independent 500-repetition throughput capture
 `mega_sweep_20260830_042156.txt`; the three-regime figures use
-`mega_sweep_20260830_025517.txt`. Their policy winners agree in 131/132 cells
-and in all 17 NVIDIA-thread cells. The sm_87 table uses the pinned-50-W Tegra
+`mega_sweep_20260830_025517.txt`. Their raw ladder policy winners agree in
+131/132 cells and in all 17 pre-veto NVIDIA-thread cells. The shipped sm_120
+table then applies `nvt_valid_20260830_160047.txt`, retaining 14 of those
+cells after every timed launch receives an independent valid system. The
+sm_87 table uses the pinned-50-W Tegra
 profile capture `mega_sweep_orin_tegra_20260830_035819.txt`; a separate
-oversampled low-batch capture supplies its NPROB=64 characterization. Raw
+oversampled low-batch capture supplies its NPROB=64 characterization, and
+`nvt_valid_sm87_20260830_160506.txt` retains 15 of 19 NVIDIA-thread ladder
+winners. Raw
 captures and SHA-256 pins are archived with the paper materials. Earlier
 three- and four-way captures remain historical evidence but are superseded for
 ladder table generation. Current analysis and figures live on the docs site;

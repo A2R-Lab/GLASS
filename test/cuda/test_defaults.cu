@@ -27,7 +27,8 @@ static_assert(gd::ideal_sm120(op::gemm, 12, false) == backend::warp,   "gemm12 f
 static_assert(gd::ideal_sm120(op::gemm, 24, false) == backend::block,  "gemm24 f32");
 static_assert(gd::ideal_sm120(op::gemm, 32, false) == backend::nvidia_block, "gemm32 f32");
 static_assert(gd::ideal_sm120(op::gemm, 96, false) == backend::block,  "gemm96 f32 (smem cap)");
-// NVIDIA thread wins 17 throughput cells in both independent captures.
+// NVIDIA thread wins 14 throughput cells after the valid-input confirmation
+// vetoes three repeated-mutation ladder picks.
 static_assert(gd::ideal_sm120(op::potrf, 4,   false) == backend::thread, "potrf4 f32");
 static_assert(gd::ideal_sm120(op::potrf, 8,   false) == backend::nvidia_thread, "potrf8 f32 -> NVIDIA thread");
 static_assert(gd::ideal_sm120(op::potrf, 24,  false) == backend::warp,   "potrf24 f32");
@@ -36,6 +37,8 @@ static_assert(gd::ideal_sm120(op::trsv, 12, false) == backend::thread, "trsv12 f
 static_assert(gd::ideal_sm120(op::trsv, 24, false) == backend::nvidia_thread, "trsv24 f32 -> NVIDIA thread");
 static_assert(gd::ideal_sm120(op::trsv, 32, false) == backend::nvidia_block, "trsv32 f32 -> NVIDIA block");
 static_assert(gd::ideal_sm120(op::trsv, 64, false) == backend::warp,   "trsv64 f32");
+static_assert(gd::ideal_sm120(op::trsv, 6, true) == backend::thread,
+              "trsv6 f64 -> native after valid-input veto");
 static_assert(gd::ideal_sm120(op::dot,  8,   false) == backend::thread, "dot8");
 static_assert(gd::ideal_sm120(op::dot,  16,  false) == backend::warp,   "dot16 higher-repetition tie verdict");
 static_assert(gd::ideal_sm120(op::dot,  24,  false) == backend::thread, "dot24");
@@ -47,12 +50,15 @@ static_assert(gd::ideal_sm120(op::potrf, 8,  true) == backend::nvidia_thread, "p
 static_assert(gd::ideal_sm120(op::potrf, 48, true) == backend::block,  "potrf48 f64");
 static_assert(gd::ideal_sm120(op::gemm, 64, true) == backend::block,  "gemm64 f64");
 static_assert(gd::ideal_sm120(op::posv, 8,  true) == backend::nvidia_thread, "posv8 f64 -> NVIDIA thread");
+static_assert(gd::ideal_sm120(op::posv, 8,  false) == backend::thread,
+              "posv8 f32 -> native after valid-input veto");
 static_assert(gd::ideal_sm120(op::posv, 12, true) == backend::thread, "posv12 f64");
 static_assert(gd::ideal_sm120(op::posv, 64, true) == backend::block,  "posv64 f64");
 
 // ── sm_87 (Jetson AGX Orin, pinned 50W mode; 2026-08-30) ──
 // The vendor thread path is linked through MathDx's architecture-neutral
-// LTO-IR fatbin. None of its 19 winning throughput rows was jitter-flagged.
+// LTO-IR fatbin. The valid-input confirmation retains 15 of the original 19
+// repeated-mutation ladder winners.
 static_assert(gd::ideal_sm87(op::dot,   8,  false) == backend::thread, "dot8 f32");
 static_assert(gd::ideal_sm87(op::dot,   128, false) == backend::warp,  "dot128 f32");
 static_assert(gd::ideal_sm87(op::potrf,  8,  false) == backend::nvidia_thread, "potrf8 f32 -> NVIDIA thread");
@@ -65,8 +71,11 @@ static_assert(gd::ideal_sm87(op::gemm,  64, false) == backend::nvidia_block, "ge
 static_assert(gd::ideal_sm87(op::gemm,  64, true)  == backend::warp,   "gemm64 f64 (SIMT tie: warp within 1% of block to N=96)");
 static_assert(gd::ideal_sm87(op::gemm, 128, true)  == backend::block,  "gemm128 f64 (block's only real win, 24% faster)");
 static_assert(gd::ideal_sm87(op::potrf,  8,  true)   == backend::nvidia_thread, "potrf8 f64 -> NVIDIA thread");
+static_assert(gd::ideal_sm87(op::potrf,  12, true)  == backend::thread,
+              "potrf12 f64 -> native after valid-input veto");
 static_assert(gd::ideal_sm87(op::potrf,  24, true)  == backend::thread, "potrf24 f64 (thread reaches further than sm_120)");
-static_assert(gd::ideal_sm87(op::posv,  8,  true)   == backend::nvidia_thread, "posv8 f64 -> NVIDIA thread");
+static_assert(gd::ideal_sm87(op::posv,  8,  true)   == backend::thread,
+              "posv8 f64 -> native after valid-input veto");
 
 // ── per-arch dispatch: a measured SM hits its table, an unmeasured SM falls to generic ──
 static_assert(gd::ideal(op::gemm, 32, false, 1200u) == gd::ideal_sm120(op::gemm, 32, false), "sm_120 dispatches to its table");

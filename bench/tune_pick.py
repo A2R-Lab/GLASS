@@ -203,6 +203,22 @@ def parse_nvt_valid(text, nprob=8192):
     return data
 
 
+def parse_nvt_valid_spreads(text, nprob=8192):
+    """Return per-contender trial spreads for valid-input confirmation rows."""
+    data = {}
+    for line in text.splitlines():
+        m = _NVT_VALID_RE.match(line.strip())
+        if not m or int(m.group(4)) != nprob:
+            continue
+        data[(m.group(3), m.group(1), int(m.group(2)))] = {
+            "block": float(m.group(8)),
+            "warp": float(m.group(11)),
+            "thread": float(m.group(14)),
+            "nvidia_thread": float(m.group(17)),
+        }
+    return data
+
+
 BLAS2_OPS = ("syrk", "syr2k", "ldlt", "ldlt_solve", "inv", "trmv", "ger")
 
 # Raw per-backend ns from a bench_blas2 row (same grammar as the mega sweep, but

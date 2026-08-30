@@ -8,7 +8,7 @@
       "id": "recommend-07b02a9e09f5",
       "name": "recommend",
       "file": "glass-defaults.cuh",
-      "line": 389,
+      "line": 391,
       "surface": "glass::",
       "signature": "glass::recommend(dependency_set dependencies=dependency_set::native_only, uint32_t sm=GLASS_TARGET_SM)",
       "params": 2,
@@ -18,7 +18,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 89,
+          "line": 98,
           "name": "recommend",
           "surface": "glass::",
           "args": 2,
@@ -40,7 +40,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 112,
+          "line": 121,
           "name": "dispatch_body",
           "surface": "glass::",
           "args": 4,
@@ -84,7 +84,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 177,
+          "line": 186,
           "name": "argreduce_scratch_bytes",
           "surface": "glass::",
           "args": 1,
@@ -194,7 +194,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 177,
+          "line": 186,
           "name": "argreduce_fast_scratch_bytes",
           "surface": "glass::",
           "args": 1,
@@ -1228,7 +1228,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 174,
+          "line": 183,
           "name": "dot_fast_scratch_bytes",
           "surface": "glass::",
           "args": 1,
@@ -1998,7 +1998,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 176,
+          "line": 185,
           "name": "iamax_scratch_bytes",
           "surface": "glass::",
           "args": 1,
@@ -2020,7 +2020,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 176,
+          "line": 185,
           "name": "iamax_fast_scratch_bytes",
           "surface": "glass::",
           "args": 1,
@@ -3648,7 +3648,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 187,
+          "line": 196,
           "name": "softmax_scratch_bytes",
           "surface": "glass::",
           "args": 1,
@@ -4440,7 +4440,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 181,
+          "line": 190,
           "name": "trmv_scratch_bytes",
           "surface": "glass::",
           "args": 1,
@@ -4528,7 +4528,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 178,
+          "line": 187,
           "name": "congruence_scratch_bytes",
           "surface": "glass::",
           "args": 0,
@@ -4814,7 +4814,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 190,
+          "line": 199,
           "name": "eigh_sweeps",
           "surface": "glass::",
           "args": 0,
@@ -5496,7 +5496,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 179,
+          "line": 188,
           "name": "gn_step_scratch_bytes",
           "surface": "glass::",
           "args": 0,
@@ -5584,7 +5584,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 185,
+          "line": 194,
           "name": "inv_scratch_bytes",
           "surface": "glass::",
           "args": 1,
@@ -5606,7 +5606,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 186,
+          "line": 195,
           "name": "inv_pivoted_scratch_bytes",
           "surface": "glass::",
           "args": 1,
@@ -5672,7 +5672,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 189,
+          "line": 198,
           "name": "inv_fused_scratch_bytes",
           "surface": "glass::",
           "args": 2,
@@ -5760,7 +5760,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 180,
+          "line": 189,
           "name": "inv_dense_scratch_bytes",
           "surface": "glass::",
           "args": 1,
@@ -5870,7 +5870,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 184,
+          "line": 193,
           "name": "ldlt_scratch_bytes",
           "surface": "glass::",
           "args": 1,
@@ -6508,7 +6508,7 @@
       "evidence": [
         {
           "file": "test/cuda/test_defaults.cu",
-          "line": 191,
+          "line": 200,
           "name": "syev_eps",
           "surface": "glass::",
           "args": 0,
