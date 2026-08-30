@@ -11,14 +11,16 @@ tie band of the fastest takes the cell if it is simpler — thread ≻ warp ≻
 block), so no table bakes sub-noise jitter and a pure-noise re-run reproduces
 the same tables. The legs:
 
-  ladder   bench_mega_sweep.cu  → native/NVIDIA thread/warp/block ladder in glass-defaults.cuh
+  ladder   bench_mega_sweep.cu + bench_nvt_valid.cu
+                                → native/NVIDIA thread/warp/block ladder in glass-defaults.cuh
                                   (native thread — one problem/thread — is a
                                   dependency-free contender alongside warp/block:
                                   the shared pick takes the cheapest SIMT tier —
                                   with ties inside the ±2% SIMT band resolving to
                                   the simpler tier — so a fresh sweep emits
                                   `backend::thread` wherever the low-DOF packing
-                                  actually wins)
+                                  actually wins; every NVIDIA-thread pick must
+                                  also pass the independent-valid-batch veto)
                                   (paired per-arch MathDx/native-only tables + the SM
                                   dispatch switch; a first-time arch — e.g. sm_87
                                   on a Jetson Orin — gets a new table + case,
@@ -253,6 +255,72 @@ def build_mega_sweep(sms, mdx, allow_no_mathdx=False):
     return binp
 
 
+def _fatbin_build_nvt_valid(sms, mdx):
+    """Build the small valid-input confirmation harness on non-x86 hosts."""
+    common = ["-std=c++17", f"-arch=sm_{sms // 10}", "-O3",
+              "--expt-relaxed-constexpr", "-Xptxas", "-O1", "-I..", "-I../src",
+              f"-I{mdx/'include'}", f"-I{mdx/'external'/'cutlass'/'include'}",
+              "-DGLASS_BENCH_CUSOLVERDX",
+              f"-DGLASS_TARGET_SM={sms}",
+              "-DCUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT"]
+    src = (BENCH_DIR / "bench_nvt_valid.cu").read_bytes()
+    key = hashlib.sha256(src + lib_digest().encode()
+                         + " ".join(common + ["fatbin"]).encode()).hexdigest()[:12]
+    binp = cache_dir(sms) / f"nvt_valid_fatbin_{key}"
+    if binp.exists():
+        return binp, "cached"
+    obj, dlk = str(binp) + ".o", str(binp) + "_dlink.o"
+    steps = [
+        ["nvcc"] + common + ["-rdc=true", "-dlto", "-dc",
+                             "bench_nvt_valid.cu", "-o", obj],
+        ["nvcc", f"-arch=sm_{sms // 10}", "-dlto", "-dlink", obj,
+         str(mdx / "lib" / "libcusolverdx.fatbin"), "-o", dlk],
+        ["nvcc", f"-arch=sm_{sms // 10}", obj, dlk,
+         "-lcublas", "-lcusolver", "-lcudart", "-o", str(binp)],
+    ]
+    for cmd in steps:
+        if run(cmd, cwd=BENCH_DIR).returncode != 0:
+            return None, "fail"
+    return binp, "built"
+
+
+def build_nvt_valid(sms, mdx):
+    if mdx is None:
+        sys.exit("ERROR: NVIDIA-thread confirmation needs MATHDX_ROOT.")
+    if platform.machine() != "x86_64":
+        binp, status = _fatbin_build_nvt_valid(sms, mdx)
+    else:
+        flags = ["nvcc", "-std=c++17", f"-arch=sm_{sms // 10}", "-O3",
+                 "--expt-relaxed-constexpr", "-Xptxas", "-O1", "-I..", "-I../src",
+                 f"-I{mdx/'include'}", f"-I{mdx/'external'/'cutlass'/'include'}",
+                 "-DGLASS_BENCH_CUSOLVERDX",
+                 f"-DGLASS_TARGET_SM={sms}",
+                 "-DCUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT", "-rdc=true", "-dlto",
+                 f"-L{mdx/'lib'}", "-lcusolverdx", "-lcublas", "-lcusolver", "-lcudart",
+                 "bench_nvt_valid.cu"]
+        binp, status = cached_build("nvt_valid", "bench_nvt_valid.cu", flags, sms)
+    if status == "fail":
+        sys.exit("ERROR: bench_nvt_valid compile failed.")
+    print(f"  bench_nvt_valid: {status} ({binp.name})")
+    return binp
+
+
+def run_nvt_valid(binp, sms, margin, force=False):
+    """Capture both precisions at the ladder's NPROB=8192 policy point."""
+    path = BENCH_DIR / f"nvt_valid_{time.strftime('%Y%m%d_%H%M%S')}.txt"
+    lines = provenance("nvt_valid", sms, margin)
+    lines += [f"# nvt_valid  {time.strftime('%c')}  (bench/tune.py)", ""]
+    path.write_text("\n".join(lines) + "\n")
+    for dtype in ("f32", "f64"):
+        print(f"  -> nvt_valid NPROB=8192 requested_slots=64 {dtype}")
+        stdout = run_isolated([str(binp), "8192", "64", dtype], force)
+        with open(path, "a") as stream:
+            stream.write(stdout)
+            stream.write("\n")
+    print(f"==> wrote {path.relative_to(GLASS_DIR)}")
+    return path
+
+
 def run_mega_sweep(binp, quick, sms, margin, prefix="mega_sweep", sched=None,
                    force=False):
     """Run a ladder-style harness (mega/blas2/rect/solvers share the CLI +
@@ -362,6 +430,34 @@ def winners_from_sweep(text, margin, native_only=False):
     return winners
 
 
+def apply_nvt_valid_veto(winners, confirmation_text, margin):
+    """Veto NVIDIA-thread picks that do not reproduce on independent inputs.
+
+    The confirmation leg is deliberately asymmetric: it may replace a main-
+    ladder NVIDIA-thread winner with the valid-input native winner, but it does
+    not promote NVIDIA-thread into any cell. Every selected NVIDIA-thread cell
+    must have an exact confirmation row; incomplete evidence is a hard error.
+    Returns ``(updated_winners, veto_count)``.
+    """
+    confirmed = tp.parse_nvt_valid(confirmation_text, nprob=8192)
+    updated = {key: dict(value) for key, value in winners.items()}
+    vetoes = 0
+    for (dtype, op), cells in updated.items():
+        for N, winner in list(cells.items()):
+            if winner != "nvidia_thread":
+                continue
+            key = (dtype, op, N)
+            if key not in confirmed:
+                sys.exit("ERROR: NVIDIA-thread ladder winner lacks valid-input "
+                         f"confirmation: {dtype} {op} N={N}.")
+            times = confirmed[key]
+            valid_winner = tp.pick(times, margin, {"nvidia_thread"})
+            if valid_winner != "nvidia_thread":
+                cells[N] = valid_winner
+                vetoes += 1
+    return updated, vetoes
+
+
 def emit_ideal_body(winners, fname, ops=tp.LADDER_OPS):
     lines = [f"constexpr backend {fname}(op o, uint32_t N, bool f64) {{",
              "    switch (o) {"]
@@ -382,7 +478,8 @@ def emit_ideal_body(winners, fname, ops=tp.LADDER_OPS):
     return "\n".join(lines)
 
 
-def regen_ladder(sweep_text, margin, src_name, sms):
+def regen_ladder(sweep_text, margin, src_name, sms,
+                 nvt_valid_text=None, nvt_valid_name=None):
     """Regenerate this arch's table block in glass-defaults.cuh (replace if the
     arch was swept before, insert after the last table block if it's new) and
     rebuild the SM dispatch case-list from every table block present."""
@@ -392,11 +489,23 @@ def regen_ladder(sweep_text, margin, src_name, sms):
     native_winners = winners_from_sweep(sweep_text, margin, native_only=True)
     if not winners:
         sys.exit("ERROR: no NPROB=8192 verdicts parsed from the sweep.")
+    has_nvt = any(backend == "nvidia_thread"
+                  for cells in winners.values() for backend in cells.values())
+    if has_nvt and nvt_valid_text is None:
+        sys.exit("ERROR: this ladder selects NVIDIA-thread but no independent-"
+                 "valid-input capture was supplied; pass --from-nvt-valid or "
+                 "run the ladder online.")
+    vetoes = 0
+    if has_nvt:
+        winners, vetoes = apply_nvt_valid_veto(winners, nvt_valid_text, margin)
     begin, end = _LAD_BEGIN.format(a=arch), _LAD_END.format(a=arch)
     region = "\n".join([
         begin,
         f"// Source sweep: {src_name}   tie margin: ±{margin*100:.0f}% "
         "(NVIDIA block/thread must clear it; SIMT ties ±2% prefer thread>warp>block)",
+        *([f"// NVIDIA-thread valid-input veto: {nvt_valid_name} "
+           f"({vetoes} ladder pick{'s' if vetoes != 1 else ''} vetoed)"]
+          if nvt_valid_name else []),
         "// Paired tables preserve the measured native runner-up for callers that",
         "// do not opt into MathDx; both use the same capture and SIMT tie rule.",
         emit_ideal_body(winners, f"ideal_sm{arch}"),
@@ -425,7 +534,7 @@ def regen_ladder(sweep_text, margin, src_name, sms):
     pre, _, rest = text.partition(_DIS_BEGIN)
     _, _, post = rest.partition(_DIS_END)
     text = pre + _DIS_BEGIN + "\n" + cases + "        " + _DIS_END + post
-    return text, len(winners)
+    return text, len(winners), vetoes
 
 
 # ─── blas2 + rect header tables (glass-defaults.cuh; warp-vs-block only) ─────
@@ -1130,6 +1239,9 @@ def main():
                         "compute PIDs appearing during a leg still invalidate it")
     p.add_argument("--from-ladder", metavar="TXT",
                    help="skip ladder build/run; regenerate from this mega_sweep .txt")
+    p.add_argument("--from-nvt-valid", metavar="TXT",
+                   help="independent-valid-input companion capture required when "
+                        "--from-ladder selects NVIDIA-thread")
     p.add_argument("--from-body", metavar="TXT",
                    help="skip body build/run; regenerate dispatch_body() from "
                         "this body_dispatch_sweep .txt")
@@ -1155,7 +1267,7 @@ def main():
     bad = [l for l in legs if l not in ALL_LEGS]
     if bad:
         sys.exit(f"unknown leg(s) {bad}; choose from {ALL_LEGS}")
-    offline = bool(args.from_ladder or args.from_body or args.from_reduced
+    offline = bool(args.from_ladder or args.from_nvt_valid or args.from_body or args.from_reduced
                    or args.from_blas2 or args.from_rect or args.from_solvers)
     sms = None if (args.sm == "auto" and offline) else (
         detect_sm() if args.sm == "auto" else int(args.sm))
@@ -1176,6 +1288,8 @@ def main():
         if "ladder" in legs:
             print("── prebuild: ladder ──────────────────────────────────────")
             build_mega_sweep(sms, mdx, args.allow_no_mathdx)
+            if mdx is not None:
+                build_nvt_valid(sms, mdx)
         if "body" in legs:
             print("── prebuild: body ────────────────────────────────────────")
             build_body(sms)
@@ -1219,14 +1333,26 @@ def main():
                          "regenerated on the desktop).")
             sweep_path = pathlib.Path(args.from_ladder)
             sweep_text = sweep_path.read_text()
+            nvt_valid_path = (pathlib.Path(args.from_nvt_valid)
+                              if args.from_nvt_valid else None)
         else:
             binp = build_mega_sweep(sms, mdx, args.allow_no_mathdx)
             sweep_path = run_mega_sweep(
                 binp, args.quick, sms, args.margin, sched=user_sched,
                 force=args.force)
             sweep_text = sweep_path.read_text()
-        new_defaults, n = regen_ladder(sweep_text, args.margin, sweep_path.name, sms)
-        print(f"  regenerated ideal_sm{sms // 10} from {n} (dtype,op) groups")
+            nvt_valid_path = None
+            if mdx is not None:
+                nvt_bin = build_nvt_valid(sms, mdx)
+                nvt_valid_path = run_nvt_valid(nvt_bin, sms, args.margin,
+                                               force=args.force)
+        nvt_valid_text = (nvt_valid_path.read_text()
+                          if nvt_valid_path is not None else None)
+        new_defaults, n, vetoes = regen_ladder(
+            sweep_text, args.margin, sweep_path.name, sms, nvt_valid_text,
+            nvt_valid_path.name if nvt_valid_path is not None else None)
+        print(f"  regenerated ideal_sm{sms // 10} from {n} (dtype,op) groups; "
+              f"valid-input vetoes={vetoes}")
         if args.dry_run:
             changed["ladder"] = show_diff(DEFAULTS, new_defaults, "glass-defaults.cuh")
         else:

@@ -173,6 +173,36 @@ def parse_mega_sweep(text, nprob=8192):
     return data
 
 
+_NVT_VALID_RE = re.compile(
+    r"^NVT_VALID\s+op=(potrf|trsv|posv)\s+N=(\d+)\s+"
+    r"dtype=(f32|f64)\s+nprob=(\d+)\s+slots=(\d+)\s+"
+    r"block=([\d.]+)\s+block_shape=(\d+)\s+block_spread=([\d.]+)\s+"
+    r"warp=([\d.]+)\s+warp_shape=(\d+)\s+warp_spread=([\d.]+)\s+"
+    r"thread=([\d.]+)\s+thread_shape=(\d+)\s+thread_spread=([\d.]+)\s+"
+    r"nvidia_thread=([\d.]+)\s+nvt_shape=(\d+)\s+nvt_spread=([\d.]+)$")
+
+
+def parse_nvt_valid(text, nprob=8192):
+    """Parse the independent-valid-batch NVIDIA-thread confirmation leg.
+
+    Returns ``(dtype, op, N) -> {block, warp, thread, nvidia_thread}``.
+    Launch-shape and trial-spread metadata remain in the capture for audit;
+    table generation deliberately consumes only the measured times.
+    """
+    data = {}
+    for line in text.splitlines():
+        m = _NVT_VALID_RE.match(line.strip())
+        if not m or int(m.group(4)) != nprob:
+            continue
+        data[(m.group(3), m.group(1), int(m.group(2)))] = {
+            "block": float(m.group(6)),
+            "warp": float(m.group(9)),
+            "thread": float(m.group(12)),
+            "nvidia_thread": float(m.group(15)),
+        }
+    return data
+
+
 BLAS2_OPS = ("syrk", "syr2k", "ldlt", "ldlt_solve", "inv", "trmv", "ger")
 
 # Raw per-backend ns from a bench_blas2 row (same grammar as the mega sweep, but
