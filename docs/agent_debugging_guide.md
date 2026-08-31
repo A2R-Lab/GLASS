@@ -4,19 +4,21 @@ Hard-won institutional knowledge for working on **GLASS** (*GPU Linear Algebra S
 Subroutines*) — the comprehensive, header-only, single-block GPU linear-algebra library.
 The public execution tiers are explicit **Block** `glass::block::`, **Warp**
 `glass::warp::`, **Thread** `glass::thread::`, and **Nvidia**
-`glass::nvidia::block::`/`warp::`; bare `glass::` is the measured-default
+`glass::nvidia::{block,warp,thread}::`; bare `glass::` is the measured-default
 block-scope face, while `glass::cgrps::` is the cooperative-groups twin. Plus the
 block-tridiagonal `glass::bdmv` / `glass::pcg`. **Read this before you change any
-primitive or do a refactor.** Every GLASS function is a `__device__` helper that assumes it
-runs inside **one CUDA block**, cooperating across `threadIdx`/`blockDim` (or a cooperative
-group). That single-block, multi-thread, shared-data model is the source of essentially every
-recurring bug below — they are races, thread-count assumptions, and uninitialized-scratch
-reads, not algebra mistakes. Tone of this doc is a runbook: do X, check Y.
+primitive or do a refactor.** Every GLASS function is a `__device__` helper,
+but its participating scope is part of its namespace contract: block and bare
+forms cooperate within one CUDA block, warp forms within one full warp, and
+thread forms are independent per caller thread. Most recurring block-path bugs
+below are races, thread-count assumptions, and uninitialized-scratch reads, not
+algebra mistakes. Tone of this doc is a runbook: do X, check Y.
 
 Source map you will reference constantly:
 - Pure-SIMT surface: `glass.cuh` → `src/base/L1/*.cuh`, `src/base/L2/*.cuh`, `src/base/L3/*.cuh`.
 - Cooperative-groups surface: `glass-cgrps.cuh`.
-- Vendor backends: `glass-nvidia.cuh` → `src/nvidia/{l1,l2,l3,l3_simt,lapack,query_simt,tuning_table,types}.cuh`.
+- Vendor backends: `glass-nvidia.cuh` →
+  `src/nvidia/{l1,l1_warp,l2,l3,l3_simt,lapack,lapack_thread,query,query_simt,tuning_table,types}.cuh`.
 - Warp-scoped variants: inline in the base L1/L2/L3 headers (`src/base/L1/{reduce,dot,axpy,copy,scal,iamax}.cuh`, `src/base/L2/gemv.cuh`, `src/base/L3/{gemm,potrf,trsv,trsm,posv}.cuh`), under `namespace warp`.
 - Block-tridiagonal: `glass::bdmv` (`src/base/banded/bdmv.cuh`), `glass::pcg` + `glass::pcg_scratch_bytes` (`src/base/pcg/solve.cuh`).
 - Host smem helper: `glass_gemm_dispatch_smem` in `glass.cuh`.
@@ -196,7 +198,7 @@ Functions that take `extern __shared__` scratch (or an explicit scratch pointer)
 - **`reduce_fast` / `dot` / `nrm2`:** need `ceil(blockDim/32)*sizeof(T)` bytes of
   `s_scratch` (one slot per warp). Under-sizing this overflows when `blockDim > 32*available`.
 - **`glass::nvidia::` (CUB) L1:** scratch is `sizeof(cub::BlockReduce<T,THREADS>::TempStorage)`;
-  query it with `glass::nvidia::reduce_smem_size<T,THREADS>()`. For the cuBLASDx/cuSOLVERDx
+  query it with `glass::nvidia::block::reduce_smem_size<T,THREADS>()`. For the cuBLASDx/cuSOLVERDx
   paths, query with `gemm_smem_size<T,M,N,K[,TC]>()` / `posv_smem_size<...>()` etc. and pass the
   EXACT value to the launch — too small = OOB, and (for the default form) a wrong thread count
   deadlocks. Always query, never hard-code a guessed byte count.
@@ -375,7 +377,7 @@ NOT. Rules:
   literally `#include`s `src/base/L1/*.cuh` etc. *inside* `namespace glass { ... }`, and the other
   umbrellas do likewise into their namespaces. So editing `src/base/L3/gemm.cuh` changes
   `glass::gemm` AND `glass::cgrps::gemm` AND the inline `glass::warp::gemm` AND the SIMT fallback
-  that `glass::nvidia::gemm` auto-dispatches to (and `glass::pcg`, which composes `glass::bdmv` +
+  that `glass::nvidia::block::gemm` auto-dispatches to (and `glass::pcg`, which composes `glass::bdmv` +
   the base dot/axpy). After touching a base impl, run the FULL suite (`test_l1` + `test_l2` +
   `test_l3` + banded/pcg + the nvidia dispatch/trailing-sync tests), not just the namespace you were thinking
   about. Validate that all the surfaces sharing that base impl still produce identical numbers.
@@ -453,12 +455,13 @@ NOT. Rules:
 - **A `*_reduced` op is a measured LOSS on sm_120 — don't assume parallelizing the contraction helps.** The
   serial one-thread-per-output loop over shared memory is very hard to beat; the warp-shuffle path is 10–100×
   slower except in a tiny corner (`n_out <= blockDim/32` AND `K >= 32`). ALWAYS bench before claiming a speedup
-  (`bench/RESULTS.md`, reduced section); the picker `glass::suggested_use_reduced<>()` recommends serial almost always.
-- **Regenerating the dispatch defaults: one tool, one margin.** The three shipped tables — the warp/block/nvidia
+  (`bench/RESULTS.md`, reduced section); the public advisor stays two-axis and
+  reduced operations remain explicit opt-ins.
+- **Regenerating the dispatch defaults: one tool, one margin.** The shipped tables — the native thread/warp/block plus NVIDIA block/thread
   ladder (`glass-defaults.cuh`, per-arch `ideal_sm*` tables + SM dispatch — tune.py replaces only the measured arch's marker block), the per-(M,N,K) cuBLASDx-vs-SIMT table (`src/nvidia/tuning_table.cuh`),
-  and the `suggested_use_reduced<>` predicate — are all regenerated by `bench/tune.py` (legs `ladder`/`shapes`/
+  and the serial-vs-reduced characterization — are all driven by `bench/tune.py` (legs `ladder`/`shapes`/
   `reduced`/`figures`). Every verdict routes through the single tie rule in `bench/tune_pick.py::pick`: a
-  dependency impl (nvidia/cublasdx/reduced) wins ONLY if it beats the simplest no-dependency impl by more than the
+  dependency impl (nvidia/nvidia_thread/cublasdx/reduced) wins ONLY if it beats the simplest no-dependency impl by more than the
   margin (default 5%), else the launchable-everywhere path stays — this is what stops sub-noise jitter (e.g. a
   cuBLASDx pick 1% faster than warp) from churning the tables. Don't hand-edit these tables or re-derive the margin
   per-tool; run `tune.py` on a **quiet GPU** (perf timing must be isolated) and `--dry-run` to diff first.
@@ -485,7 +488,7 @@ NOT. Rules:
 | Two-step `congruence`/`bilinear`/`riccati` differs warp-vs-block by ~1 ULP | Benign FMA-context drift; compare cross-surface with `allclose` (§7) |
 | `posv<T,N>(A,b)` suddenly ambiguous after adding a flag | Flagged both posv overloads — flag only multi-RHS (§7) |
 | `std::size_t` undefined / `glass::std` error in a base header | `std` nested by an in-namespace include — return `uint32_t` (§7) |
-| `*_reduced` op far slower than serial | Expected on sm_120 — use `suggested_use_reduced<>()`, prefer serial (§7) |
+| `*_reduced` op far slower than serial | Expected on sm_120 — prefer the standard op unless a local sweep supports the explicit reduced form (§7) |
 
 ## Bare-face body dispatch (2026-07-30, Phase 2)
 

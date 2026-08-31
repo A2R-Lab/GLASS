@@ -21,7 +21,7 @@ all: $(BINS)
 	$(NVCC) $(NVCCFLAGS) $< -o $@
 
 05_nvidia_gemm: 05_nvidia_gemm.cu
-	$(NVCC) $(NVCCFLAGS) -I$(MATHDX_ROOT)/include -I$(MATHDX_ROOT)/external/cutlass/include -DGLASS_BENCH_CUBLASDX -DSMS=$(SMS) \
+	$(NVCC) $(NVCCFLAGS) -I$(MATHDX_ROOT)/include -I$(MATHDX_ROOT)/external/cutlass/include -DGLASS_BENCH_CUBLASDX -DGLASS_TARGET_SM=$(SMS) \
 	    -Xptxas -O1 $< -o $@
 
 run: all

@@ -1,14 +1,15 @@
 Backend Dispatch
 ================
 
-The ``glass::nvidia::gemm`` / ``gemv`` / ``row_strided_*`` / ``gemm_batched_1d``
+The ``glass::nvidia::block::gemm`` / ``gemv`` / ``row_strided_*`` /
+``gemm_batched_1d``
 primary templates **auto-dispatch** at compile time: for shapes where pure-SIMT
 wins they fall through to ``::glass::*``; for shapes where the vendor library
 wins they route to cuBLASDx via the ``DEFINE_NVIDIA_*`` macros.
 
-This means ``glass::nvidia::gemm<float, 6, 6, 6>(...)`` "just works" without any
+This means ``glass::nvidia::block::gemm<float, 6, 6, 6>(...)`` "just works" without any
 DEFINE macro — small shapes route to SIMT automatically. Larger shapes such as
-``glass::nvidia::gemm<float, 32, 32, 32>(...)`` still require a
+``glass::nvidia::block::gemm<float, 32, 32, 32>(...)`` still require a
 ``DEFINE_NVIDIA_GEMM(32, 32, 32)`` in scope (placed inside
 ``namespace glass { namespace nvidia { namespace block {``), but produce a
 clean compile-time message when it is missing.
@@ -16,12 +17,12 @@ clean compile-time message when it is missing.
 .. note::
 
    This cuBLASDx-vs-SIMT decision is one of **three** distinct dispatch layers.
-   ``glass::suggested_backend<>`` (:doc:`tuning`) is a *host-side* ladder that
-   advises **launch-level packing** — which tier (thread / warp / block /
-   nvidia) to launch, i.e. the shape of ``<<<grid, block>>>``. Newest, and
+   ``glass::recommend<>`` (:doc:`tuning`) is a *host-side* ladder that
+   advises **launch-level packing** — which native or NVIDIA thread / warp /
+   block tier to launch, i.e. the shape of ``<<<grid, block>>>``. Newest, and
    different from both: ``glass::dispatch_body()`` (``glass-dispatch.cuh``)
-   picks the **in-block body** behind the bare ``glass::op`` /
-   ``glass::nvidia::op`` face, under a *fixed* block-scope calling contract —
+   picks the **in-block body** behind the bare ``glass::op`` face, under a
+   *fixed* block-scope calling contract —
    the launch does not change. The measured in-block body sweep
    (``bench/tune.py --legs body``, Phase 2, 2026-07-30) moved the winning
    cells to a warp- or thread-body executed inside the block — an attested,
@@ -35,7 +36,7 @@ The dispatch flow
 
 .. code-block:: text
 
-                     caller writes:  glass::nvidia::gemm<float, M, N, K>(...)
+                     caller writes:  glass::nvidia::block::gemm<float, M, N, K>(...)
                                             │
                                             ▼
                           should_use_cublasdx<float, M, N, K, SMS>()
@@ -95,14 +96,14 @@ drop one into a kernel for runtime diagnostics) report the chosen path:
 
 .. code-block:: cpp
 
-   glass::nvidia::print_dispatch<float, 4, 4, 4>();
-   // → glass::nvidia::gemm<T,4,4,4,SM=860>: SIMT fallback
+   glass::nvidia::block::print_dispatch<float, 4, 4, 4>();
+   // → glass::nvidia::block::gemm<T,4,4,4,SM=860>: SIMT fallback
 
-   glass::nvidia::print_dispatch<float, 32, 32, 32>();
-   // → glass::nvidia::gemm<T,32,32,32,SM=860>: cuBLASDx (needs DEFINE_NVIDIA_GEMM*)
+   glass::nvidia::block::print_dispatch<float, 32, 32, 32>();
+   // → glass::nvidia::block::gemm<T,32,32,32,SM=860>: cuBLASDx (needs DEFINE_NVIDIA_GEMM*)
 
-   glass::nvidia::print_dispatch_gemv<float, 64, 64>();
-   // → glass::nvidia::gemv<T,64,64,SM=860>: cuBLASDx (needs DEFINE_NVIDIA_GEMV*)
+   glass::nvidia::block::print_dispatch_gemv<float, 64, 64>();
+   // → glass::nvidia::block::gemv<T,64,64,SM=860>: cuBLASDx (needs DEFINE_NVIDIA_GEMV*)
 
 Overriding the dispatch
 -----------------------
@@ -116,7 +117,7 @@ Overriding the dispatch
    * - Force cuBLASDx for a shape the heuristic puts in SIMT
      - Add ``DEFINE_NVIDIA_GEMM(M,N,K)`` in your ``.cu`` file — the explicit specialization always overrides the primary template.
    * - Force SIMT for a shape the heuristic puts in cuBLASDx
-     - Call ``::glass::gemm<T,M,N,K>(...)`` directly (skip the ``nvidia::`` path).
+     - Call ``::glass::block::gemm<T,M,N,K>(...)`` directly (skip the NVIDIA path).
    * - Per-host tuning without editing source
      - Run ``python bench/autotune.py`` to generate ``bench/tuning/<hostname>.cuh``, then compile with ``-DGLASS_TUNING_TABLE_LOCAL='"bench/tuning/<hostname>.cuh"'``.
    * - Different SM in-tree (for a PR)

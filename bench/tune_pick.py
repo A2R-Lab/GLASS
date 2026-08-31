@@ -2,9 +2,10 @@
 """Shared tie-margin + sweep parsers for the unified autotuner (bench/tune.py).
 
 This is the *one* place the noise margin lives. Every defaults table GLASS ships
-— the warp/block/nvidia ladder (``glass-defaults.cuh``), the per-shape
+— the native thread/warp/block plus NVIDIA block/thread ladder
+(``glass-defaults.cuh``), the per-shape
 cuBLASDx-vs-SIMT table (``src/nvidia/tuning_table.cuh``), and the
-serial-vs-reduced picker (``suggested_use_reduced<>``) — routes its verdict
+serial-vs-reduced characterization — routes its verdict
 through :func:`pick` so none of them bakes sub-noise jitter, and so a pure-noise
 re-run reproduces the same table.
 
@@ -18,8 +19,9 @@ line, so two clean re-runs of the same hardware could disagree (seen on the
 sm_87 replication pair: gemm f64 N=48 flipped block↔warp on a <1% gap). That
 single rule subsumes all three legacy decisions:
 
-* ladder:  ``dependency={"nvidia"}`` — block/warp (pure SIMT, no MathDx) is the
-           incumbent; nvidia must clear the margin to be chosen.
+* ladder:  ``dependency={"nvidia", "nvidia_thread"}`` — native thread/warp/block
+           are the incumbents; either MathDx implementation must clear the
+           margin to be chosen.
 * shapes:  ``dependency={"cublasdx"}`` — SIMT is the incumbent (autotune.py's
            original pairwise ±margin rule, generalized).
 * reduced: ``dependency={"reduced"}`` — serial ``gemm`` is the incumbent.
@@ -118,25 +120,30 @@ def verdict(timings, margin=0.05, dependency=(), noise_floor=0.0,
 
 # ─── parsers ────────────────────────────────────────────────────────────────
 
-LADDER_OPS = ("dot", "gemv", "gemm", "chol", "trsv", "posv")
+LADDER_OPS = ("dot", "gemv", "gemm", "potrf", "trsv", "posv")
 
 _HDR_RE = re.compile(r"NPROB=(\d+).*dtype=(f32|f64)")
 # Raw per-backend ns from a mega_sweep row:
 #   "<op>  N=<N> | BLOCK ... | WARP ... [| THREAD ...] || block tb<TB>=<ns>
-#    warp w<WPB>=<ns> [thread t<TPB>=<ns>] [nv=<ns>] -> ..."
+#    warp w<WPB>=<ns> [thread t<TPB>=<ns>] [nv=<ns>]
+#    [nvt t<TPB>=<ns>] -> ..."
 # The thread group is OPTIONAL on purpose: it is absent from archived sweep
 # .txt files (every run before the tier existed — `tune.py --from-ladder` replays
 # them) and from mid-2026-07 captures where the harness gated the tier to N<=16
 # (since lifted to the full domain so all contenders share the same points).
 # Keep it optional or old sweeps stop parsing and regen silently drops every op.
 _ROW_RE = re.compile(
-    r"^(dot|gemv|gemm|chol|trsv|posv)\s+N=(\d+)\b.*\|\|\s*"
+    r"^(dot|gemv|gemm|chol|potrf|trsv|posv)\s+N=(\d+)\b.*\|\|\s*"
     r"block\s+tb\d+=([\d.]+)\s+warp\s+w\d+=([\d.]+)"
-    r"(?:\s+thread\s+t\d+=([\d.]+))?(?:\s+nv=([\d.]+))?")
+    r"(?:\s+thread\s+t\d+=([\d.]+))?(?:\s+nv=([\d.]+))?"
+    r"(?:\s+nvt\s+t\d+=([\d.]+))?")
 
 
 def parse_mega_sweep(text, nprob=8192):
-    """``(dtype, op, N) -> {block, warp[, thread][, nvidia]}`` raw ns/problem at ``nprob``.
+    """``(dtype, op, N) -> backend times at ``nprob``.
+
+    Optional keys are ``thread``, ``nvidia``, and ``nvidia_thread``; their
+    absence preserves replay compatibility with every older capture.
 
     Reads the raw per-backend numbers (NOT the harness's ``-> WINNER`` verdict,
     which is a bare argmin with no margin) so :func:`pick` can re-decide the
@@ -154,22 +161,71 @@ def parse_mega_sweep(text, nprob=8192):
         m = _ROW_RE.match(line.strip())
         if m:
             op, N = m.group(1), int(m.group(2))
+            op = "potrf" if op == "chol" else op
             d = {"block": float(m.group(3)), "warp": float(m.group(4))}
             if m.group(5):
                 d["thread"] = float(m.group(5))   # absent in pre-tier sweeps and at N>16
             if m.group(6):
                 d["nvidia"] = float(m.group(6))
+            if m.group(7):
+                d["nvidia_thread"] = float(m.group(7))
             data[(dtype, op, N)] = d
     return data
 
 
-BLAS2_OPS = ("syrk", "syr2k", "ldlt", "ldltsv", "inv", "trmv", "ger")
+_NVT_VALID_RE = re.compile(
+    r"^NVT_VALID\s+op=(potrf|trsv|posv)\s+N=(\d+)\s+"
+    r"dtype=(f32|f64)\s+nprob=(\d+)\s+slots=(\d+)\s+"
+    r"block=([\d.]+)\s+block_shape=(\d+)\s+block_spread=([\d.]+)\s+"
+    r"warp=([\d.]+)\s+warp_shape=(\d+)\s+warp_spread=([\d.]+)\s+"
+    r"thread=([\d.]+)\s+thread_shape=(\d+)\s+thread_spread=([\d.]+)\s+"
+    r"nvidia_thread=([\d.]+)\s+nvt_shape=(\d+)\s+nvt_spread=([\d.]+)$")
+
+
+def parse_nvt_valid(text, nprob=8192):
+    """Parse the independent-valid-batch NVIDIA-thread confirmation leg.
+
+    Returns ``(dtype, op, N) -> {block, warp, thread, nvidia_thread}``.
+    Launch-shape and trial-spread metadata remain in the capture for audit;
+    table generation deliberately consumes only the measured times.
+    """
+    data = {}
+    for line in text.splitlines():
+        m = _NVT_VALID_RE.match(line.strip())
+        if not m or int(m.group(4)) != nprob:
+            continue
+        data[(m.group(3), m.group(1), int(m.group(2)))] = {
+            "block": float(m.group(6)),
+            "warp": float(m.group(9)),
+            "thread": float(m.group(12)),
+            "nvidia_thread": float(m.group(15)),
+        }
+    return data
+
+
+def parse_nvt_valid_spreads(text, nprob=8192):
+    """Return per-contender trial spreads for valid-input confirmation rows."""
+    data = {}
+    for line in text.splitlines():
+        m = _NVT_VALID_RE.match(line.strip())
+        if not m or int(m.group(4)) != nprob:
+            continue
+        data[(m.group(3), m.group(1), int(m.group(2)))] = {
+            "block": float(m.group(8)),
+            "warp": float(m.group(11)),
+            "thread": float(m.group(14)),
+            "nvidia_thread": float(m.group(17)),
+        }
+    return data
+
+
+BLAS2_OPS = ("syrk", "syr2k", "ldlt", "ldlt_solve", "inv", "trmv", "ger")
 
 # Raw per-backend ns from a bench_blas2 row (same grammar as the mega sweep, but
 # 2-way: the warp leg is absent for the block-only ops inv/trmv/ger):
 #   "<op>  N=<N> | BLOCK ... [| WARP ...] || block tb<TB>=<ns> [warp w<WPB>=<ns>] -> ..."
 _B2_ROW_RE = re.compile(
-    r"^(syr2k|syrk|ldltsv|ldlt|inv|trmv|ger)\s+N=(\d+)\b.*\|\|\s*"
+    r"^(syr2k|syrk|ldlt_solve|ldltsv|ldlt|inv|trmv|ger)\s+N=(\d+)\b.*\|\|\s*"
     r"block\s+tb\d+=([\d.]+)(?:\s+warp\s+w\d+=([\d.]+))?")
 
 
@@ -192,6 +248,7 @@ def parse_blas2(text, nprob=8192):
         m = _B2_ROW_RE.match(line.strip())
         if m:
             op, N = m.group(1), int(m.group(2))
+            op = "ldlt_solve" if op == "ldltsv" else op
             d = {"block": float(m.group(3))}
             if m.group(4):
                 d["warp"] = float(m.group(4))
@@ -278,6 +335,12 @@ if __name__ == "__main__":
         "nvidia inside margin of the raw-best SIMT time → thread"
     assert pick({"block": 100, "warp": 90, "thread": 91, "nvidia": 80}, 0.05, {"nvidia"}) == "nvidia", \
         "SIMT tie resolves to thread but nvidia clears the margin over raw-best warp"
+    assert pick({"block": 100, "warp": 90, "thread": 91, "nvidia": 89,
+                 "nvidia_thread": 80}, 0.05, {"nvidia", "nvidia_thread"}) == "nvidia_thread", \
+        "best dependency tier clears the native margin"
+    assert pick({"block": 100, "warp": 90, "thread": 91, "nvidia": 88,
+                 "nvidia_thread": 87}, 0.05, {"nvidia", "nvidia_thread"}) == "thread", \
+        "neither dependency tier clears the native margin"
     assert pick({"serial": 100, "simt": 101}, 0.05, {"cublasdx"}) == "serial", \
         "impls outside SIMT_ORDER keep raw-min behavior"
     # SIMT tie must be measured against the raw-fastest tier, not pairwise
@@ -299,16 +362,20 @@ if __name__ == "__main__":
     _mg = "\n".join([
         "################ NPROB=8192  reps=250  dtype=f32 ################",
         "dot   N=4   | BLOCK  tb32=1.00 | WARP  w1=0.80 | THREAD  t256=0.30"
-        "  || block tb32=1.00  warp w1=0.80  thread t256=0.30  nv=2.00 -> THREAD",
+        "  || block tb32=1.00  warp w1=0.80  thread t256=0.30  nv=2.00"
+        "  nvt t64=0.20 -> NVIDIA_THREAD",
         "posv  N=64  | BLOCK  tb32=5.00 | WARP  w1=6.00"
         "  || block tb32=5.00  warp w1=6.00  nv=3.00 -> NV",
     ])
     _mc = parse_mega_sweep(_mg)
-    assert _mc[("f32", "dot", 4)] == {"block": 1.0, "warp": 0.8, "thread": 0.3, "nvidia": 2.0}, _mc
+    assert _mc[("f32", "dot", 4)] == {"block": 1.0, "warp": 0.8, "thread": 0.3,
+                                         "nvidia": 2.0, "nvidia_thread": 0.2}, _mc
     assert _mc[("f32", "posv", 64)] == {"block": 5.0, "warp": 6.0, "nvidia": 3.0}, \
         "thread absent at high N parses as block/warp/nvidia only"
-    assert pick(_mc[("f32", "dot", 4)], 0.05, {"nvidia"}) == "thread", "dot N=4 → thread wins"
-    # parse_blas2(): 2-way rows, warp leg optional, ldlt/ldltsv disambiguation.
+    assert pick(_mc[("f32", "dot", 4)], 0.05,
+                {"nvidia", "nvidia_thread"}) == "nvidia_thread", \
+        "new trailing dependency tier parses and clears the margin"
+    # parse_blas2(): 2-way rows, warp leg optional, old label compatibility.
     _b2 = "\n".join([
         "################ NPROB=8192  reps=250  dtype=f32 ################",
         "syrk   N=8   | BLOCK  tb32=1.10  tb64=1.00  | WARP  w1=0.80  w2=0.90"
@@ -323,7 +390,7 @@ if __name__ == "__main__":
     ])
     _c = parse_blas2(_b2)
     assert _c[("f32", "syrk", 8)] == {"block": 1.00, "warp": 0.80}, _c
-    assert _c[("f32", "ldltsv", 16)] == {"block": 3.00, "warp": 2.00}, _c
+    assert _c[("f32", "ldlt_solve", 16)] == {"block": 3.00, "warp": 2.00}, _c
     assert _c[("f32", "ldlt", 16)] == {"block": 2.50, "warp": 2.40}, _c
     assert _c[("f32", "inv", 8)] == {"block": 4.00}, "block-only op parses without warp"
     assert ("f32", "ger", 8) not in _c, "NPROB=64 section must be filtered out"

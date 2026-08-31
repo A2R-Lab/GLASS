@@ -18,6 +18,7 @@ docs/HANDOFF.md
 
 # Raw per-GPU sweep dumps (regenerate via bench/run_*sweep.sh; distilled results are the tracked *.md)
 bench/mega_sweep_*.txt
+bench/nvt_valid_*.txt
 bench/warp_block_sweep_*.txt
 bench/paper_*.txt
 

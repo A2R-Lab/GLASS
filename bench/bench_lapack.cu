@@ -1,11 +1,11 @@
-// bench_lapack.cu — LAPACK timings: pure-SIMT glass vs. cuSOLVERDx-backed glass::nvidia.
+// bench_lapack.cu — pure-SIMT glass vs. cuSOLVERDx-backed glass::nvidia::block.
 //
 // Variants per size N (square SPD problem with NRHS=1):
 //   pure-SIMT potrf        — glass::potrf<T, N>
 //   pure-SIMT chol+trsm           — potrf then glass::trsm<T, N, 1>
-//   glass::nvidia potrf    — cuSOLVERDx potrf via glass::nvidia::potrf<T, N, TC>
-//   glass::nvidia chol+trsm       — potrf then glass::nvidia::trsm<T, N, 1, TC>
-//   glass::nvidia posv            — fused factor+solve via glass::nvidia::posv<T, N, 1, TC>
+//   NVIDIA block potrf      — glass::nvidia::block::potrf<T, N, TC>
+//   NVIDIA block potrf+trsm — then glass::nvidia::block::trsm<T, N, 1, TC>
+//   NVIDIA block posv       — fused glass::nvidia::block::posv<T, N, 1, TC>
 //
 // Anti-optimization safeguards:
 //   - Compile with -Xptxas -O1 (set in run_bench.py)
@@ -17,7 +17,7 @@
 //   nvcc -std=c++17 -arch=sm_XX -O3 --expt-relaxed-constexpr -Xptxas -O1
 //        -I.. -I../src
 //        -I$MATHDX_ROOT/include -I$MATHDX_ROOT/external/cutlass/include
-//        -DGLASS_BENCH_CUBLASDX -DGLASS_BENCH_CUSOLVERDX -DSMS=XX0
+//        -DGLASS_BENCH_CUBLASDX -DGLASS_BENCH_CUSOLVERDX -DGLASS_TARGET_SM=XX0
 //        -DCUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT
 //        -lcusolverdx -lcublas -lcusolver
 //        bench_lapack.cu -o bench_lapack
@@ -180,7 +180,7 @@ __global__ void k_nv_chol(const float* A_master, float* A, volatile float* sink,
     uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
     uint32_t size = blockDim.x * blockDim.y * blockDim.z;
     for (int rep = 0; rep < iters; rep++) {
-        // glass::nvidia::potrf works on a global pointer; reload from master.
+        // NVIDIA block potrf works on a global pointer; reload from master.
         if (rank < N*N) {
             for (uint32_t i = rank; i < N*N; i += size) A[i] = A_master[i];
         }
@@ -290,7 +290,7 @@ static void bench_size_ct(int iters) {
     k_nv_chol<N><<<1, THREADS, nv_chol_smem>>>(dA_master, dA, dSink, iters);
     cudaDeviceSynchronize();
     clock_gettime(CLOCK_MONOTONIC, &t1);
-    printf("glass::nvidia::potrf  n=%2d  %.3f us/op\n",
+    printf("glass::nvidia::block::potrf n=%2d  %.3f us/op\n",
            N, elapsed_us(t0, t1) / iters);
 
     // glass::nvidia chol+trsm
@@ -300,7 +300,7 @@ static void bench_size_ct(int iters) {
     k_nv_chol_trsm<N><<<1, THREADS, nv_chol_trsm_smem>>>(dA_master, db_master, dA, db, dSink, iters);
     cudaDeviceSynchronize();
     clock_gettime(CLOCK_MONOTONIC, &t1);
-    printf("glass::nvidia::chol+trsm     n=%2d  %.3f us/op\n",
+    printf("glass::nvidia::block::potrf+trsm n=%2d  %.3f us/op\n",
            N, elapsed_us(t0, t1) / iters);
 
     // glass::nvidia posv (fused)
@@ -309,7 +309,7 @@ static void bench_size_ct(int iters) {
     k_nv_posv<N><<<1, THREADS, nv_posv_smem>>>(dA_master, db_master, dA, db, dSink, iters);
     cudaDeviceSynchronize();
     clock_gettime(CLOCK_MONOTONIC, &t1);
-    printf("glass::nvidia::posv (fused)  n=%2d  %.3f us/op\n",
+    printf("glass::nvidia::block::posv (fused) n=%2d  %.3f us/op\n",
            N, elapsed_us(t0, t1) / iters);
 
     cudaFree(dA_master); cudaFree(db_master);

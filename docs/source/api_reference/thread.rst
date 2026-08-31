@@ -6,14 +6,15 @@ a single thread owns the whole operation — **no barriers, no shuffles, no**
 ``threadIdx`` **read** — so 32 independent problems pack into one warp. They
 target the *low-DOF corner* (robot DOF ≲ 7) where even a warp per problem
 leaves most lanes idle: a thread-per-problem launch
-(``<<<ceil(P/TPB), TPB>>>``, see ``glass::suggested_threads_per_block<>()``)
+(``<<<ceil(P/TPB), TPB>>>``, with packing from ``glass::recommend()``)
 keeps every lane busy on its own problem.
 
 Contract: **compile-time sizes only.** The tier's value is operands that nvcc
 keeps register-resident, which requires fully-unrolled, compile-time-resolvable
-indexing — the measured ceiling is ``N ≤ 7`` (both dtypes; larger ``N`` still
-computes correctly but demotes the operands to local memory, forfeiting the
-tier's premise). Operands may be thread-local register arrays; nothing is read
+indexing. Around ``N ≤ 7`` is a useful register-residency guideline, not an API
+or performance ceiling: larger ``N`` still computes correctly, may spill to
+local memory, and remains in the tuning ladder while it is feasible. Operands
+may be thread-local register arrays; nothing is read
 from ``threadIdx``, so the functions are launch-shape-agnostic.
 
 Every op delegates to the same ``*_impl`` body its block-scoped sibling uses,
@@ -46,8 +47,8 @@ tier exists to avoid.
   ``vec_tensor_vec``, ``congruence_sym`` / ``bilinear`` / ``congruence_accum``,
   ``riccati_gain``. See :doc:`l3`.
 
-The dispatch ladder (:doc:`defaults`) contends the tier alongside warp / block /
-nvidia, and the sm_120 tables ship thread verdicts (2026-07-18 sweep): thread
-takes the low-DOF corner of every op except ``gemm`` — up to 7.5× on ``posv``
-f64 at N≤6 (docs sweep-results page + ``bench/RESULTS.md``). Run ``bench/tune.py --sm auto``
-to contend it on your own GPU.
+The dispatch ladder (:doc:`defaults`) contends the tier alongside native warp /
+block and NVIDIA block / thread implementations. The dated measurements and
+generated verdicts are on the :doc:`sweep-results page
+<../user_guide/tutorials/sweep_results>` and in ``bench/RESULTS.md``. Run
+``bench/tune.py --sm auto`` to contend it on your own GPU.

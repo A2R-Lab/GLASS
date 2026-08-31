@@ -16,7 +16,7 @@ Default vs. opt-out
 
    // Default — function returns with all threads at a block-wide barrier.
    // Safe to read the result from any thread in the block immediately after.
-   glass::nvidia::gemm_strided_batched_1d<float, 4, 4, 4, BATCH, TC>(
+   glass::nvidia::block::gemm_strided_batched_1d<float, 4, 4, 4, BATCH, TC>(
        1.f, A, B, 0.f, C);
 
    // Opt-out — caller is responsible for syncing before reading any output
@@ -24,7 +24,7 @@ Default vs. opt-out
    // subsequent block-wide work that ALREADY does its own barrier (e.g. a
    // parallel_loop that begins with __syncthreads()), so two back-to-back
    // syncs collapse into one.
-   glass::nvidia::gemm_strided_batched_1d<
+   glass::nvidia::block::gemm_strided_batched_1d<
        float, 4, 4, 4, BATCH, TC,
        /*B_STRIDE=*/N*K, /*C_STRIDE=*/M*K,
        layout::col_major, layout::col_major, layout::col_major,

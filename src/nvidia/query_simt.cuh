@@ -8,10 +8,6 @@
 // include in builds without the cuBLASDx headers. Companion to query.cuh
 // (which provides cuBLASDx-dependent helpers like gemm_min_block_threads).
 
-#ifndef SMS
-#define SMS 860
-#endif
-
 // -- backend dispatch (P1-3) ------------------------------------------------
 
 // Returns true iff cuBLASDx is expected to outperform the SIMT path for the
@@ -19,7 +15,7 @@
 // tuning_table.cuh; falls back to a conservative shape heuristic for shapes
 // not measured for that SM.
 //
-// Used by glass::nvidia::gemm to decide whether to dispatch to cuBLASDx
+// Used by glass::nvidia::block::gemm to decide whether to dispatch to cuBLASDx
 // (requires a DEFINE_NVIDIA_GEMM* specialization) or fall through to the
 // SIMT base path (no DEFINE needed). Today only T==float is tuned; other
 // types always return false (SIMT).
@@ -55,11 +51,11 @@ constexpr bool should_use_cublasdx() {
 }
 
 // Diagnostic helper. Prints which backend
-// `glass::nvidia::gemm<T,M,N,K,...,SM_VAL>` will dispatch to. Callable from
+// `glass::nvidia::block::gemm<T,M,N,K,...,SM_VAL>` will dispatch to. Callable from
 // host or device (printf works in CUDA device code).
 //
-//   glass::nvidia::print_dispatch<float, 4, 4, 4>();
-//   // -> "glass::nvidia::gemm<T,4,4,4,SM=860>: SIMT fallback"
+//   glass::nvidia::block::print_dispatch<float, 4, 4, 4>();
+//   // -> "glass::nvidia::block::gemm<T,4,4,4,SM=860>: SIMT fallback"
 //
 // Useful when debugging "why is my GEMM slow" or "why does the linker complain
 // that gemm<float,32,32,32> is undefined" (answer: the heuristic identified it
@@ -80,7 +76,7 @@ constexpr bool should_use_cublasdx() {
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t SM_VAL = SMS>
 __host__ __device__ inline void print_dispatch() {
-    printf("glass::nvidia::gemm<T,%u,%u,%u,SM=%u>: %s\n",
+    printf("glass::nvidia::block::gemm<T,%u,%u,%u,SM=%u>: %s\n",
            M, N, K, SM_VAL,
            should_use_cublasdx<T, M, N, K, SM_VAL>()
                ? "cuBLASDx (needs DEFINE_NVIDIA_GEMM*)"
@@ -229,7 +225,7 @@ constexpr bool should_use_cublasdx_batched() {
  */
 template <typename T, uint32_t M, uint32_t N, uint32_t SM_VAL = SMS>
 __host__ __device__ inline void print_dispatch_gemv() {
-    printf("glass::nvidia::gemv<T,%u,%u,SM=%u>: %s\n",
+    printf("glass::nvidia::block::gemv<T,%u,%u,SM=%u>: %s\n",
            M, N, SM_VAL,
            should_use_cublasdx_gemv<T, M, N, SM_VAL>()
                ? "cuBLASDx (needs DEFINE_NVIDIA_GEMV*)"
@@ -252,7 +248,7 @@ __host__ __device__ inline void print_dispatch_gemv() {
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
           uint32_t A_RS = M, uint32_t B_RS = N, uint32_t SM_VAL = SMS>
 __host__ __device__ inline void print_dispatch_gemm_strided() {
-    printf("glass::nvidia::gemm_strided<T,%u,%u,%u,A_RS=%u,B_RS=%u,SM=%u>: %s\n",
+    printf("glass::nvidia::block::gemm_strided<T,%u,%u,%u,A_RS=%u,B_RS=%u,SM=%u>: %s\n",
            M, N, K, A_RS, B_RS, SM_VAL,
            should_use_cublasdx_gemm_strided<T, M, N, K, A_RS, B_RS, SM_VAL>()
                ? "cuBLASDx (needs DEFINE_NVIDIA_GEMM*)"
@@ -273,7 +269,7 @@ __host__ __device__ inline void print_dispatch_gemm_strided() {
 template <typename T, uint32_t M, uint32_t N, uint32_t ROW_STRIDE = M,
           uint32_t SM_VAL = SMS>
 __host__ __device__ inline void print_dispatch_gemv_strided() {
-    printf("glass::nvidia::gemv_strided<T,%u,%u,RS=%u,SM=%u>: %s\n",
+    printf("glass::nvidia::block::gemv_strided<T,%u,%u,RS=%u,SM=%u>: %s\n",
            M, N, ROW_STRIDE, SM_VAL,
            should_use_cublasdx_gemv_strided<T, M, N, ROW_STRIDE, SM_VAL>()
                ? "cuBLASDx (needs DEFINE_NVIDIA_GEMV*)"
@@ -296,7 +292,7 @@ __host__ __device__ inline void print_dispatch_gemv_strided() {
 template <typename T, uint32_t M, uint32_t N, uint32_t K, uint32_t BATCH,
           uint32_t SM_VAL = SMS>
 __host__ __device__ inline void print_dispatch_batched() {
-    printf("glass::nvidia::gemm_batched_1d<T,%u,%u,%u,BATCH=%u,SM=%u>: %s\n",
+    printf("glass::nvidia::block::gemm_batched_1d<T,%u,%u,%u,BATCH=%u,SM=%u>: %s\n",
            M, N, K, BATCH, SM_VAL,
            should_use_cublasdx_batched<T, M, N, K, BATCH, SM_VAL>()
                ? "cuBLASDx (no auto-dispatch; see 2D gemm_batched)"

@@ -1,101 +1,99 @@
-Backend Picker (``glass-defaults.cuh``)
-=======================================
+Execution Plans (``glass-defaults.cuh``)
+========================================
 
-Queryable backend-selection defaults — the measured thread / warp / block / nvidia
-ladder (``bench/RESULTS.md``) exposed as ``constexpr`` helpers, so callers
-and GRiD-style codegen pick a backend + launch config instead of hand-copying a table.
+``glass::recommend()`` turns the measured implementation ladder into one
+``constexpr`` value. It returns:
 
-The pick **cannot** be a device function: the tiers need different
-``<<<grid, block>>>`` launches, so the decision happens host-side / at codegen time. See
-:doc:`../user_guide/concepts/tuning` for the underlying numbers.
+* the measured implementation family and execution scope for this shape; and
+* a ready-to-use, legal launch packing.
 
-Distinct from this launch-level advisor, the tiny ``glass-dispatch.cuh``
-header (included by both ``glass.cuh`` and this one; shared ``glass::op``
-enum) carries ``glass::dispatch_body()`` — the measured **in-block body**
-table behind the bare ``glass::op`` face, applied automatically by the
-wrappers in ``src/base/dispatch.cuh`` under a *fixed* launch. See
-:doc:`../user_guide/concepts/namespaces`.
+The packing fields are defaults, not a claim that every caller's optimal block
+size was measured. Applications may retune them within the explicit operation's
+documented launch contract.
 
-.. note::
+The decision is host-side or code-generation-time. A thread, warp, block, and
+NVIDIA block implementation require different CUDA launches; ``recommend()``
+does not dispatch a device call for you.
 
-   ``backend::thread`` is **measured and shipped for sm_120** (2026-07-18 quiet-GPU
-   sweep): the thread tier takes the low-DOF corner of every op except ``gemm`` —
-   up to 7.5× on ``posv`` f64 at N≤6 (the docs sweep-results page has the
-   full verdicts). A ``thread`` pick means a thread-per-problem launch:
-   ``<<<ceil(P/TPB), TPB>>>`` with ``suggested_threads_per_block<>()``. The
-   ``ideal_generic`` fallback for unswept arches remains warp/block/nvidia-only.
-
-Include order
--------------
-
-Include ``glass-defaults.cuh`` **after** ``glass.cuh``, and after ``glass-nvidia.cuh`` if you
-want the ``nvidia`` tier to be eligible (it reads ``GLASS_HAVE_CUBLASDX`` /
-``GLASS_HAVE_CUSOLVERDX``). With only ``glass.cuh`` linked, the ``nvidia`` tier collapses to its
-warp/block runner-up, so a no-MathDx caller always gets a backend it can launch.
-
-Helpers
--------
+The contract
+------------
 
 .. code-block:: cuda
 
-   enum class glass::op      { dot, gemv, gemm, chol, trsv, posv };
-   enum class glass::backend { warp, block, nvidia, thread };  // thread appended: pre-existing ordinals unchanged
+   enum class glass::family { native, nvidia };
+   enum class glass::scope { thread, warp, block };
+   enum class glass::dependency_set { native_only, mathdx };
+   struct glass::execution_plan {
+       family implementation;
+       scope execution_scope;
+       uint32_t block_threads;
+       uint32_t problems_per_block;
+       uint32_t shared_bytes;
+   };
 
-   // Which backend for (op, N, T) on this SM? (nvidia only when the vendor lib is linked)
-   template <op Op, uint32_t N, typename T, uint32_t SM = GLASS_DEFAULTS_SM>
-   constexpr backend  glass::suggested_backend();
+   template <glass::op Op, typename T, uint32_t... Dims>
+   constexpr glass::execution_plan glass::recommend(
+       glass::dependency_set dependencies = glass::dependency_set::native_only,
+       uint32_t sm = GLASS_TARGET_SM);
 
-   // For the `block` backend: factor/solve want 32; gemm grows with N; dot/gemv 64–128.
-   template <op Op, uint32_t N, typename T = float, uint32_t SM = GLASS_DEFAULTS_SM>
-   constexpr uint32_t glass::suggested_block_threads();
+Shape arguments follow the operation's mathematical order:
 
-   // For the `warp` backend: dot packs 8; others 2 warps/block.
-   template <op Op, uint32_t N = 0, typename T = float, uint32_t SM = GLASS_DEFAULTS_SM>
-   constexpr uint32_t glass::suggested_warps_per_block();
+* Square ladder operations: ``recommend<op, T, N>()``
+* Rectangular GEMV: ``recommend<op::gemv, T, M, N>()``
+* Rectangular GEMM: ``recommend<op::gemm, T, M, N, K>()``
 
-   // For the `thread` backend: launch <<<ceil(P/TPB), TPB>>>, one problem per thread.
-   // Seed heuristic (shrinks as N*N registers/thread grow), NOT measured by the ladder leg.
-   template <op Op, uint32_t N = 0, typename T = float, uint32_t SM = GLASS_DEFAULTS_SM>
-   constexpr uint32_t glass::suggested_threads_per_block();
+``native_only`` is deliberately the default. Pass ``dependency_set::mathdx``
+to admit measured ``glass::nvidia::block`` and ``glass::nvidia::thread``
+candidates. Each measured architecture carries a paired native-only table from
+the same capture, rather than approximating vendor-winning cells with a size
+heuristic. The result is independent of header include order.
 
-Example
--------
+Using a plan
+------------
 
 .. code-block:: cuda
 
-   #include "glass.cuh"
-   #include "glass-defaults.cuh"   // (after glass-nvidia.cuh too, to allow the nvidia tier)
+   constexpr auto plan = glass::recommend<glass::op::potrf, float, N>(
+       glass::dependency_set::mathdx);
 
-   constexpr auto be = glass::suggested_backend<glass::op::chol, N, float>();
-   if      constexpr (be == glass::backend::nvidia) { /* cuSOLVERDx launch */ }
-   else if constexpr (be == glass::backend::warp)   { /* <<<ceil(P/WPB), {32,WPB}>>> */ }
-   else if constexpr (be == glass::backend::thread) {
-       constexpr int TPB = glass::suggested_threads_per_block<glass::op::chol, N, float>();
-       /* <<<ceil(P/TPB), TPB>>> */
-   } else /* block */ {
-       constexpr int TB = glass::suggested_block_threads<glass::op::chol, N, float>();
-       /* <<<P, TB>>> */
+   if constexpr (plan.implementation == glass::family::nvidia &&
+                 plan.execution_scope == glass::scope::thread) {
+       // one problem per thread
+       // glass::nvidia::thread::potrf<float, N>(...)
+   } else if constexpr (plan.implementation == glass::family::nvidia) {
+       // one problem per block; query the explicit wrapper's exact requirements
+       // glass::nvidia::block::potrf<float, N>(...)
+   } else if constexpr (plan.execution_scope == glass::scope::warp) {
+       // one problem per warp
+       // glass::warp::potrf<float, N>(...)
+   } else if constexpr (plan.execution_scope == glass::scope::thread) {
+       // one problem per thread
+       // glass::thread::potrf<float, N>(...)
+   } else {
+       // one problem per block
+       // glass::block::potrf<float, N>(...)
    }
 
-A runnable version is ``examples/08_backend_picker.cu``.
+For native plans, ``block_threads`` and ``problems_per_block`` are complete
+launch guidance. NVIDIA block descriptors own shape-specific thread and shared
+memory requirements; those fields use
+``execution_plan::dynamic_requirement`` when the explicit backend query must be
+consulted.
 
-Per-host override
------------------
+``GLASS_TARGET_SM``
+-------------------
 
-The shipped tables are per-arch: each swept SM has its own ``constexpr`` ladder
-(``ideal_sm120`` today, measured on an RTX 5090) behind an SM dispatch, and running
-``bench/tune.py --sm auto`` on a new GPU (e.g. a Jetson Orin, sm_87) adds that arch's
-table + dispatch case in-tree without touching the others; unmeasured SMs fall back to
-a coarse heuristic. Alternatively, for a host-local override that leaves the shipped
-tables alone, regenerate a table from a sweep run and point
-``GLASS_DEFAULTS_TABLE_LOCAL`` at it:
+``GLASS_TARGET_SM`` selects the measured architecture table and the MathDx
+descriptor architecture from one build setting. It defaults to the shipped
+sm_120 seed. Define it explicitly when targeting another GPU, for example
+``-DGLASS_TARGET_SM=870``. The historical ``SMS`` macro remains an input alias
+for existing build systems.
 
-.. code-block:: bash
+The shipped tables currently cover sm_120 and sm_87. Unmeasured architectures
+use conservative generic choices until ``bench/tune.py`` adds a measured table.
+``examples/08_backend_picker.cu`` is a complete native-only launcher.
 
-   cd bench && ./run_mega_sweep.sh sm_XX
-   python3 autotune.py --emit-defaults mega_sweep_<ts>.txt        # -> bench/tuning/<host>_defaults.cuh
-   nvcc ... -DGLASS_DEFAULTS_TABLE_LOCAL='"bench/tuning/<host>_defaults.cuh"' ...
-
-``bench/explore_sweep.ipynb`` visualizes a sweep (ladder plot + winner table);
-:doc:`../user_guide/tutorials/sweep_results` shows the rendered ladder + winner
-table the defaults are seeded from.
+This launch-level plan is separate from ``glass::dispatch_body()``. The latter
+selects a measured thread-0, warp-0, or full-block implementation *inside* the
+fixed block-scope contract of bare ``glass::op`` calls. See
+:doc:`../user_guide/concepts/namespaces`.

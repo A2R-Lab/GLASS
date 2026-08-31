@@ -1,15 +1,20 @@
-NVIDIA Backend (``glass::nvidia::``)
-====================================
+NVIDIA Backends (``glass::nvidia::*``)
+======================================
 
 Vendor-accelerated paths built on CUB (reductions), cuBLASDx (GEMM/GEMV), and
-cuSOLVERDx (LAPACK). The block-scope ops live in ``glass::nvidia::block::``
-(the contract tier; bare ``glass::nvidia::`` re-exports them as the
-measured-default face). The entry points auto-dispatch **at compile time**
+cuSOLVERDx (LAPACK). Block-scope ops live in ``glass::nvidia::block::``.
+Those entry points auto-dispatch **at compile time**
 between a pure-SIMT implementation and the vendor backend based on a size
 heuristic / tuning table (a ``constexpr`` decision — no runtime branching);
 see :doc:`../user_guide/concepts/backend_dispatch`. The L2/L3/LAPACK paths
 require NVIDIA MathDx (``MATHDX_ROOT``) — see
 :doc:`../user_guide/getting_started/installation`.
+
+cuSOLVERDx 0.4+ also supplies explicit smem-less LAPACK wrappers under
+``glass::nvidia::thread::``. Each calling CUDA thread owns one packed problem.
+Warp-scope CUB reductions live in ``glass::nvidia::warp::``. There is no bare
+operation re-export: the scope is always explicit because it determines launch
+geometry.
 
 Each call has a companion **host-side** query helper (``*_scratch_bytes``,
 ``*_threads``, ``*_block_threads_valid``) used to size the launch.
@@ -47,6 +52,12 @@ LAPACK (cuSOLVERDx)
 -------------------
 
 .. doxygenfile:: src/nvidia/lapack.cuh
+   :no-link:
+
+LAPACK thread execution (cuSOLVERDx 0.4+)
+------------------------------------------
+
+.. doxygenfile:: src/nvidia/lapack_thread.cuh
    :no-link:
 
 Dispatch & query helpers

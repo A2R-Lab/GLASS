@@ -2,7 +2,7 @@
 //   syrk    C = A·Aᵀ                (L3, warp:: variant exists)
 //   syr2k   C = A·Bᵀ + B·Aᵀ        (L3, warp:: variant exists)
 //   ldlt    A = L·D·Lᵀ in place     (L3, warp:: variant exists)
-//   ldltsv  ldlt + ldlt_solve       (L3 factor+solve, warp:: variant exists)
+//   ldlt_solve  ldlt + solve        (L3 factor+solve, warp:: variant exists)
 //   inv     Gauss-Jordan on [A|I]   (L3, BLOCK-ONLY — no warp:: variant)
 //   trmv    y = tril(A)·x           (L2, BLOCK-ONLY)
 //   ger     A += α·x·yᵀ             (L2, BLOCK-ONLY)
@@ -10,7 +10,7 @@
 // Same methodology + output grammar as bench_mega_sweep.cu (ns/problem =
 // wall/(reps*NPROB), min of 3 trials; one problem per block / per warp; NPROB
 // batching) so tune.py's parser conventions carry over. TWO contenders only:
-// none of these ops has a glass::nvidia:: counterpart, so there is no vendor leg
+// none of these ops has a glass::nvidia::{block,thread} counterpart, so there is no vendor leg
 // (2-way BLOCK TB∈{32,64,128,256} vs WARP WPB∈{1..32} where warp:: exists).
 //
 // Timing-only: inputs are factored/overwritten in place across reps (no per-rep
@@ -47,7 +47,7 @@ template<typename T,int N> __global__ void kb_trmv (T* A, T* x, T* y) { int p=bl
 template<typename T,int N> __global__ void kb_ger  (T* A, T* x, T* y) { int p=blockIdx.x; glass::block::ger<T,N,N>((T)1, x+p*N, y+p*N, A+(size_t)p*N*N); }
 
 // ─── WARP model: warp (blockIdx.x*WPB + threadIdx.y) owns its problem ─────────
-// Only syrk/syr2k/ldlt/ldltsv have glass::warp:: variants (inv/trmv/ger are block-only).
+// Only syrk/syr2k/ldlt/ldlt_solve have warp variants (inv/trmv/ger are block-only).
 template<typename T,int N> __global__ void kw_syrk (T* A, T* C, int np) { int p=blockIdx.x*blockDim.y+threadIdx.y; if(p>=np)return; glass::warp::syrk<T,N,N>((T)1, A+(size_t)p*N*N, (T)0, C+(size_t)p*N*N); }
 template<typename T,int N> __global__ void kw_syr2k(T* A, T* B, T* C, int np) { int p=blockIdx.x*blockDim.y+threadIdx.y; if(p>=np)return; glass::warp::syr2k<T,N,N>((T)1, A+(size_t)p*N*N, B+(size_t)p*N*N, (T)0, C+(size_t)p*N*N); }
 template<typename T,int N> __global__ void kw_ldlt (T* A, int np) { int p=blockIdx.x*blockDim.y+threadIdx.y; if(p>=np)return; glass::warp::ldlt<T,N>(A+(size_t)p*N*N); }
@@ -55,7 +55,7 @@ template<typename T,int N> __global__ void kw_ldltsv(T* A, T* x, int np) { int p
 
 enum Op { SYRK, SYR2K, LDLT, LDLTSV, INV, TRMV, GER, NOP };
 static const char* op_name(Op o) {
-    const char* n[] = {"syrk","syr2k","ldlt","ldltsv","inv","trmv","ger"};
+    const char* n[] = {"syrk","syr2k","ldlt","ldlt_solve","inv","trmv","ger"};
     return n[o];
 }
 static bool has_warp(Op o) { return o == SYRK || o == SYR2K || o == LDLT || o == LDLTSV; }
@@ -169,7 +169,7 @@ int main(int argc, char** argv) {
     const char* dt = (argc > 3) ? argv[3] : "f32";
     bool f64 = (strcmp(dt, "f64") == 0 || strcmp(dt, "fp64") == 0 || strcmp(dt, "double") == 0);
     printf("# blas2 sweep | NPROB=%d reps=%d dtype=%s | ns/problem (lower=better)\n", NPROB, reps, f64 ? "f64" : "f32");
-    printf("# contenders: BLOCK(SIMT, TB swept) | WARP(WPB swept; syrk/syr2k/ldlt/ldltsv only) — no glass::nvidia:: counterparts for these ops\n");
+    printf("# contenders: BLOCK(SIMT, TB swept) | WARP(WPB swept; syrk/syr2k/ldlt/ldlt_solve only) — no NVIDIA counterparts\n");
     tc_warm_gpu();                    // steady boost clocks before the first timed cell
     if (f64) run_all<double>(reps);
     else     run_all<float>(reps);

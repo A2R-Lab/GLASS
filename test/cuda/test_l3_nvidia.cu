@@ -16,6 +16,12 @@
 #include "helpers.cuh"
 #include "../../glass-nvidia.cuh"
 
+// This binary deliberately compiles without MathDx flags. The explicit
+// cuSOLVERDx thread surface must disappear cleanly while SIMT NVIDIA helpers
+// remain available.
+static_assert(GLASS_HAVE_CUSOLVERDX_THREAD == 0,
+              "MathDx thread API unexpectedly enabled in the optional-dependency build");
+
 static constexpr int TC = 32;
 
 // Scratch queries are host constexpr APIs. Instantiate them in host context;

@@ -8,6 +8,7 @@ Each binary is compiled with nvcc against the local glass.cuh.
 import hashlib
 import os
 import pathlib
+import platform
 import shlex
 import subprocess
 import sys
@@ -28,6 +29,11 @@ BUILD_DIR = TEST_DIR / "build"
 
 def detect_arch() -> str:
     """Return nvcc arch flag like 'sm_86' by querying nvidia-smi."""
+    override = os.environ.get("CUDA_ARCH")
+    if override:
+        if override.startswith("sm_") and override[3:].isdigit():
+            return override
+        raise ValueError("CUDA_ARCH must look like sm_87")
     try:
         out = subprocess.check_output(
             ["nvidia-smi", "--query-gpu=compute_cap", "--format=csv,noheader"],
@@ -189,7 +195,8 @@ def _hash_sources(cu_path: pathlib.Path) -> str:
 # ─── compilation ──────────────────────────────────────────────────────────────
 
 def compile_binary(name: str, build_dir: pathlib.Path, arch: str,
-                   extra_flags: list = None) -> pathlib.Path:
+                   extra_flags: list = None,
+                   solver_fatbin: pathlib.Path | None = None) -> pathlib.Path:
     """Compile a CUDA test binary, skipping if the source hash is unchanged."""
     cu_src    = CUDA_DIR / f"{name}.cu"
     out_bin   = build_dir / name
@@ -202,6 +209,8 @@ def compile_binary(name: str, build_dir: pathlib.Path, arch: str,
     identity.update(_hash_sources(cu_src).encode())
     identity.update(arch.encode())
     identity.update("\0".join(extra_flags or []).encode())
+    if solver_fatbin:
+        identity.update(solver_fatbin.read_bytes())
     try:
         identity.update(subprocess.check_output(["nvcc", "--version"]))
     except Exception:
@@ -212,22 +221,36 @@ def compile_binary(name: str, build_dir: pathlib.Path, arch: str,
             return out_bin
 
     build_dir.mkdir(parents=True, exist_ok=True)
-    cmd = [
+    common = [
         "nvcc",
         "-std=c++17",
         f"-arch={arch}",
         "-I", str(GLASS_DIR),
         "-I", str(GLASS_DIR / "src"),
         "-I", str(CUDA_DIR),
-        "-o", str(out_bin),
-        str(cu_src),
     ]
-    if extra_flags:
-        cmd += extra_flags
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"\nCompilation failed for {name}:\n{result.stderr}", file=sys.stderr)
-        raise RuntimeError(f"nvcc failed for {name}")
+    if solver_fatbin:
+        # MathDx's host archive is x86-64-only. Its LTO-IR device fatbin is
+        # architecture-neutral, so aarch64 uses the same three-stage link as
+        # bench/tune.py: device compile, fatbin device link, then host link.
+        obj = build_dir / f"{name}.o"
+        dlink = build_dir / f"{name}_dlink.o"
+        commands = [
+            common + ["-rdc=true", "-dlto", "-dc", "-o", str(obj),
+                      str(cu_src)] + (extra_flags or []),
+            ["nvcc", f"-arch={arch}", "-dlto", "-dlink", str(obj),
+             str(solver_fatbin), "-o", str(dlink)],
+            ["nvcc", f"-arch={arch}", str(obj), str(dlink),
+             "-lcublas", "-lcusolver", "-lcudart", "-o", str(out_bin)],
+        ]
+    else:
+        commands = [common + ["-o", str(out_bin), str(cu_src)]
+                    + (extra_flags or [])]
+    for cmd in commands:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"\nCompilation failed for {name}:\n{result.stderr}", file=sys.stderr)
+            raise RuntimeError(f"nvcc failed for {name}")
     hash_file.write_text(current_hash)
     return out_bin
 
@@ -242,9 +265,9 @@ class LazyBins(Mapping):
         "ldlt", "getrf", "iamax", "fused", "warp", "thread", "posv", "reduced",
         "tensor", "factor_check", "congruence", "solve", "reduced_blas", "base_f64",
         "defaults", "dispatch", "l1_round2", "block_access", "symmetrize", "symm_rot",
-        "syev", "robotics", "api_vector", "api_dense", "api_factor", "api_robotics", "l3_nvidia", "nvidia_dispatch", "trailing_sync", "nvidia_f64",
+        "syev", "robotics", "api_vector", "api_dense", "api_factor", "api_robotics", "l3_nvidia", "nvidia_dispatch", "trailing_sync", "nvidia_f64", "nvidia_thread",
     }
-    optional = {"l3_nvidia", "nvidia_dispatch", "trailing_sync", "nvidia_f64"}
+    optional = {"l3_nvidia", "nvidia_dispatch", "trailing_sync", "nvidia_f64", "nvidia_thread"}
 
     def __init__(self):
         self.cache: dict[str, pathlib.Path] = {}
@@ -259,27 +282,36 @@ class LazyBins(Mapping):
 
     def _compile(self, key: str) -> pathlib.Path:
         mathdx, cublasdx = self._mathdx()
+        target_sm = CUDA_ARCH.replace("sm_", "") + "0"
         flags: list[str] = []
         if key == "nvidia_dispatch" and not cublasdx:
             raise KeyError(key)
         if key in {"nvidia_dispatch", "trailing_sync"} and cublasdx:
             flags = ["--expt-relaxed-constexpr", "-DGLASS_BENCH_CUBLASDX",
+                     f"-DGLASS_TARGET_SM={target_sm}",
                      "-I", str(mathdx / "include"),
                      "-I", str(mathdx / "external/cutlass/include")]
-        if key == "nvidia_f64":
+        if key in {"nvidia_f64", "nvidia_thread"}:
+            archive = mathdx / "lib/libcusolverdx.a" if mathdx else None
+            fatbin = mathdx / "lib/libcusolverdx.fatbin" if mathdx else None
             solver = bool(cublasdx and (mathdx / "include/cusolverdx.hpp").exists()
                           and (mathdx / "include/cusolverdx_io.hpp").exists()
-                          and (mathdx / "lib/libcusolverdx.a").exists())
+                          and ((archive and archive.exists()) or
+                               (fatbin and fatbin.exists())))
             if not solver:
                 raise KeyError(key)
-            sms = CUDA_ARCH.replace("sm_", "") + "0"
             flags = ["--expt-relaxed-constexpr", "-DGLASS_BENCH_CUBLASDX",
                      "-DGLASS_BENCH_CUSOLVERDX",
-                     "-DCUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT", f"-DSMS={sms}",
+                     "-DCUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT",
+                     f"-DGLASS_TARGET_SM={target_sm}",
                      "-I", str(mathdx / "include"),
-                     "-I", str(mathdx / "external/cutlass/include"),
-                     "-rdc=true", "-dlto", "-L", str(mathdx / "lib"),
-                     "-lcusolverdx", "-lcublas", "-lcusolver", "-lcudart"]
+                     "-I", str(mathdx / "external/cutlass/include")]
+            if platform.machine() == "x86_64" and archive and archive.exists():
+                flags += ["-rdc=true", "-dlto", "-L", str(mathdx / "lib"),
+                          "-lcusolverdx", "-lcublas", "-lcusolver", "-lcudart"]
+            else:
+                return compile_binary(f"test_{key}", BUILD_DIR, CUDA_ARCH,
+                                      flags, solver_fatbin=fatbin)
         return compile_binary(f"test_{key}", BUILD_DIR, CUDA_ARCH, flags)
 
     def __getitem__(self, key: str) -> pathlib.Path:
@@ -350,6 +382,14 @@ def bin_nvidia_f64(bins):
     if "nvidia_f64" not in bins:
         pytest.skip("test_nvidia_f64 needs MATHDX_ROOT + cuSOLVERDx")
     return bins["nvidia_f64"]
+
+
+@pytest.fixture(scope="session")
+def bin_nvidia_thread(bins):
+    """Per-thread cuSOLVERDx 0.4+ path, or skip without a recent MathDx."""
+    if "nvidia_thread" not in bins:
+        pytest.skip("test_nvidia_thread needs MathDx cuSOLVERDx 0.4+")
+    return bins["nvidia_thread"]
 
 
 @pytest.fixture(scope="session")

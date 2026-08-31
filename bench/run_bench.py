@@ -152,7 +152,7 @@ def compile_binary(name: str, arch: str, sms: int, mathdx_root,
             f"-I{mathdx_root / 'include'}",
             f"-I{mathdx_root / 'external' / 'cutlass' / 'include'}",
             "-DGLASS_BENCH_CUBLASDX",
-            f"-DSMS={sms}",
+            f"-DGLASS_TARGET_SM={sms}",
             "--expt-relaxed-constexpr",  # silence cuBLASDx constexpr/host/device warnings
             "-Xptxas", "-O1",            # workaround for CUDA 12.9 bug + anti-DSE for benches
         ]

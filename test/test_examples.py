@@ -46,8 +46,10 @@ def test_nvidia_example(tmp_path):
     mathdx = os.environ.get("MATHDX_ROOT")
     if not (mathdx and (pathlib.Path(mathdx) / "include" / "cublasdx.hpp").exists()):
         pytest.skip("05_nvidia_gemm needs MATHDX_ROOT (cuBLASDx)")
+    target_sm = CUDA_ARCH.removeprefix("sm_") + "0"
     _compile_and_run(tmp_path, "05_nvidia_gemm.cu", extra_flags=[
-        "--expt-relaxed-constexpr", "-DGLASS_BENCH_CUBLASDX", "-DSMS=860",
+        "--expt-relaxed-constexpr", "-DGLASS_BENCH_CUBLASDX",
+        f"-DGLASS_TARGET_SM={target_sm}",
         "-I", str(pathlib.Path(mathdx) / "include"),
         "-I", str(pathlib.Path(mathdx) / "external" / "cutlass" / "include"),
     ])

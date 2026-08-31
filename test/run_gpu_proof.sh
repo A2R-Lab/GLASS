@@ -71,11 +71,12 @@ SHARD_DRIVERS[factor]="test/cuda/test_fused.cu test/cuda/test_factor_check.cu \
  test/cuda/test_base_f64.cu test/cuda/test_api_factor.cu"
 SHARD_PATHS[factor]="$ROOTS_BASE,$DENSE_BASE,$TEST_BASE"
 
-SHARD_FILES[tiers]="test/test_thread.py test/test_warp.py test/test_defaults.py test/test_dispatch.py"
+SHARD_FILES[tiers]="test/test_thread.py test/test_warp.py test/test_defaults.py test/test_dispatch.py \
+ test/test_api_hygiene.py test/test_tuning_tools.py test/test_bench_common.py"
 SHARD_DRIVERS[tiers]="test/cuda/test_thread.cu test/cuda/test_warp.cu \
  test/cuda/test_defaults.cu test/cuda/test_dispatch.cu"
 # svd3.cuh: the dispatch face routes eig3 into its est/ body.
-SHARD_PATHS[tiers]="$ROOTS_BASE,$DENSE_BASE,$TEST_BASE,src/base/est/svd3.cuh"
+SHARD_PATHS[tiers]="$ROOTS_BASE,$DENSE_BASE,$TEST_BASE,src/base/est/svd3.cuh,bench/bench_common.py,bench/tune.py,bench/tune_pick.py,bench/autotune.py"
 
 SHARD_FILES[solvers]="test/test_banded.py test/test_bdsv.py test/test_pcg.py test/test_qp.py"
 SHARD_DRIVERS[solvers]="test/cuda/test_banded.cu test/cuda/test_bdsv.cu \
@@ -86,8 +87,9 @@ SHARD_FILES[robotics]="test/test_robotics.py test/test_api_robotics.py"
 SHARD_DRIVERS[robotics]="test/cuda/test_robotics.cu test/cuda/test_api_robotics.cu"
 SHARD_PATHS[robotics]="$ROOTS_BASE,$DENSE_BASE,$TEST_BASE,src/base/spatial,src/base/lie,src/base/proj,src/base/geom,src/base/est"
 
-SHARD_FILES[mathdx]="test/test_nvidia_dispatch.py test/test_nvidia_f64.py"
-SHARD_DRIVERS[mathdx]="test/cuda/test_nvidia_dispatch.cu test/cuda/test_nvidia_f64.cu test/cuda/test_l3_nvidia.cu"
+SHARD_FILES[mathdx]="test/test_nvidia_dispatch.py test/test_nvidia_f64.py test/test_nvidia_thread.py"
+SHARD_DRIVERS[mathdx]="test/cuda/test_nvidia_dispatch.cu test/cuda/test_nvidia_f64.cu \
+ test/cuda/test_nvidia_thread.cu test/cuda/test_l3_nvidia.cu"
 SHARD_PATHS[mathdx]="$ROOTS_BASE,$DENSE_BASE,$TEST_BASE,src/nvidia,glass-nvidia.cuh"
 
 SHARD_FILES[integration]="test/test_examples.py test/test_trailing_sync.py"

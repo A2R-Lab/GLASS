@@ -1,7 +1,7 @@
 #pragma once
 /**
  * @file glass-nvidia.cuh
- * @brief Umbrella header for the `glass::nvidia::` backend (CUB / cuBLASDx / cuSOLVERDx).
+ * @brief Umbrella header for explicit `glass::nvidia::{block,warp,thread}` backends.
  *
  * Include this (instead of, or in addition to, glass.cuh) to access the
  * vendor-accelerated single-block linear-algebra paths. It pulls in:
@@ -15,13 +15,16 @@
  *   - L2 (l2.cuh)         cuBLASDx-backed gemv + DEFINE_NVIDIA_GEMV* macros.
  *   - L3 (l3.cuh)         cuBLASDx-backed gemm / gemm_batched / row_strided_*.
  *   - query.cuh           Host-side constexpr BlockDim query API.
- *   - LAPACK (lapack.cuh) cuSOLVERDx chol/trsm/posv/getrf/gesv/geqrf/gels.
+ *   - LAPACK (lapack.cuh) cuSOLVERDx block-scope
+ *                         chol/trsm/posv/getrf/gesv/geqrf/gels.
+ *   - LAPACK thread       cuSOLVERDx 0.4+ thread-scope versions of the same
+ *                         operations under `glass::nvidia::thread::`.
  *
  * The L2/L3/LAPACK wrappers gate themselves on GLASS_HAVE_CUBLASDX /
  * GLASS_HAVE_CUSOLVERDX, auto-detected from include order. Set MATHDX_ROOT and
  * define GLASS_BENCH_CUBLASDX / GLASS_BENCH_CUSOLVERDX to force-enable them. The
- * `glass::nvidia::*` primary templates auto-dispatch between pure-SIMT and the
- * vendor backend at compile time via the size heuristic / tuning table.
+ * `glass::nvidia::block::*` primary templates auto-dispatch between pure-SIMT
+ * and the vendor backend at compile time via the size heuristic / tuning table.
  */
 #include "glass.cuh"
 
@@ -42,6 +45,7 @@
 #else
 #define GLASS_HAVE_CUBLASDX 0
 #endif
+
 #endif
 
 // cuSOLVERDx detection (for L3 LAPACK wrappers: potrf, trsm).
@@ -59,6 +63,12 @@
 #else
 #define GLASS_HAVE_CUSOLVERDX 0
 #endif
+#endif
+
+#if GLASS_HAVE_CUSOLVERDX && defined(CUSOLVERDX_VERSION) && CUSOLVERDX_VERSION >= 400
+#define GLASS_HAVE_CUSOLVERDX_THREAD 1
+#else
+#define GLASS_HAVE_CUSOLVERDX_THREAD 0
 #endif
 
 // types.cuh defines `glass::nvidia::layout` and the shared helper macros
@@ -132,7 +142,7 @@ namespace block {
     // but these aliases make consumer code self-documenting:
     //
     //   constexpr std::size_t smem =
-    //       glass::nvidia::required_smem_for_dispatch_gemm<float, M, N, K>();
+    //       glass::nvidia::block::required_smem_for_dispatch_gemm<float, M, N, K>();
     //   __shared__ char buf[smem];  // 0 bytes if the call SIMT-routes
     //
     // Codegen that accumulates scratch across many call sites can take
@@ -257,14 +267,11 @@ namespace block {
 
 }  // namespace block
 
-/*  Bare glass::nvidia:: face — same contract as the bare glass:: face
-    (glass.cuh): the block-scope vendor surface re-exported, so existing
-    glass::nvidia::op spellings resolve to the SAME entities as
-    glass::nvidia::block::op. The warp-scope vendor forms (cub::WarpReduce)
-    live in their own sub-namespace below, included at nvidia:: scope so the
-    spelling is glass::nvidia::warp:: (a warp tier is not a block-scope
-    body, so it does NOT nest under block::).  */
-using namespace block;
+#if GLASS_HAVE_CUSOLVERDX_THREAD
+// One independent packed problem per CUDA thread; no shared scratch or
+// block-wide synchronization.
+#include "./src/nvidia/lapack_thread.cuh"
+#endif
 
 // warp-scope CUB reductions: glass::nvidia::warp::{reduce, dot, nrm2}
 #include "./src/nvidia/l1_warp.cuh"

@@ -2,7 +2,7 @@ Batched-1D GEMM APIs
 ====================
 
 GLASS provides batched GEMM primitives that run **inside a single 1D thread
-block**. They exist because the cuBLASDx-backed ``glass::nvidia::gemm_batched``
+block**. They exist because the cuBLASDx-backed ``glass::nvidia::block::gemm_batched``
 requires a **2D launch** (``dim3(TC, BATCH)``) — it gives each batch element a
 ``threadIdx.y`` slot. Kernels that were launched 1D (``dim3(TC*BATCH, 1, 1)``,
 because every other block-level helper uses ``threadIdx.x``) cannot use it
@@ -39,7 +39,7 @@ The two APIs
 
    __global__ void k(float* const* A, float* const* B, float* const* C) {
        // No DEFINE macro needed — fully templated on T.
-       glass::nvidia::gemm_batched_1d<float, 4, 4, 4, /*BATCH=*/8, /*TC=*/32>(
+       glass::nvidia::block::gemm_batched_1d<float, 4, 4, 4, /*BATCH=*/8, /*TC=*/32>(
            1.f, A, B, 0.f, C);
    }
    k<<<1, dim3(32 * 8, 1, 1)>>>(dA_ptrs, dB_ptrs, dC_ptrs);   // no smem
@@ -58,7 +58,7 @@ arrays to set up:
 
    __global__ void k_shared(float* A_shared, float* B_base, float* C_base) {
        // tightly packed: B_STRIDE = N*K, C_STRIDE = M*K (the defaults)
-       glass::nvidia::gemm_strided_batched_1d<float, 4, 4, 4, 8, 32>(
+       glass::nvidia::block::gemm_strided_batched_1d<float, 4, 4, 4, 8, 32>(
            1.f, A_shared, B_base, 0.f, C_base);
    }
 
@@ -97,7 +97,7 @@ the ``TRAILING_SYNC`` template parameter (see :doc:`trailing_sync`).
 .. note::
 
    For **large** batched shapes (M,N,K ≥ 16) where cuBLASDx would win, use the
-   2D-launch ``glass::nvidia::gemm_batched<...,BATCH,TC>`` instead and pay the
+   2D-launch ``glass::nvidia::block::gemm_batched<...,BATCH,TC>`` instead and pay the
    ``dim3(TC, BATCH)`` launch geometry. The batched-1D path deliberately does
    not attempt to wrap cuBLASDx.
 

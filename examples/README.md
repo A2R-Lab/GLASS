@@ -23,12 +23,12 @@ hardware.
 | [`05_nvidia_gemm.cu`](05_nvidia_gemm.cu) | the cuBLASDx-backed `glass::nvidia::block::gemm` path | **requires NVIDIA MathDx** |
 | [`06_warp_ops.cu`](06_warp_ops.cu) | single-warp `glass::warp::` ops (`reduce`, 4×4 `gemm`, SPD `potrf`+`trsm`+`trsm_transpose`), launched `<<<1,32>>>` | pure SIMT |
 | [`07_pcg_solve.cu`](07_pcg_solve.cu) | block-tridiagonal PCG solve `glass::block::pcg` (`[L\|D\|R]` strips, padded vectors, block-Jacobi preconditioner) | pure SIMT |
-| [`08_backend_picker.cu`](08_backend_picker.cu) | choose a backend + launch config with `glass-defaults.cuh` (`suggested_backend` / `suggested_block_threads` / `suggested_warps_per_block`), then dispatch a real SPD solve to the picked launch | pure SIMT |
+| [`08_backend_picker.cu`](08_backend_picker.cu) | query one `execution_plan` with `glass::recommend()`, then dispatch a real SPD solve to its scope and launch packing | pure SIMT |
 | [`09_gemm_strided.cu`](09_gemm_strided.cu) | `gemm_strided` — GEMM on column-major sub-blocks with explicit leading dims | pure SIMT |
 | [`10_ldlt_solve.cu`](10_ldlt_solve.cu) | symmetric-**indefinite** solve `ldlt` + `ldlt_solve`, plus the `CHECK=true` failure flag + **inertia** reporting (`ldlt_scratch_bytes`) | pure SIMT |
 | [`11_riccati_gain.cu`](11_riccati_gain.cu) | LQR feedback gain `K = (R + BᵀPB)⁻¹(BᵀPA)` via `riccati_gain`, smem sized by `riccati_scratch_bytes<T,NX,NU>()` | pure SIMT |
 | [`12_inv.cu`](12_inv.cu) | matrix inversion on the augmented `[A \| I]` layout: `inv` (+ `inv_scratch_bytes`), and the robust `inv_pivoted` recovering a zero leading pivot | pure SIMT |
-| [`13_thread_pack.cu`](13_thread_pack.cu) | the `glass::thread::` tier: 4096 N=6 SPD solves, one problem per THREAD (32 packed per warp), launch shape from `suggested_threads_per_block<>` | pure SIMT |
+| [`13_thread_pack.cu`](13_thread_pack.cu) | the `glass::thread::` tier: 4096 N=6 SPD solves, one problem per THREAD (32 packed per warp), launch shape from `recommend()` | pure SIMT |
 | [`14_spatial_dynamics.cu`](14_spatial_dynamics.cu) | Featherstone spatial cross products (the RNEA inner loop): fused `motion_cross_mul`/`force_cross_mul` vs materialize-6×6 + `gemv` | pure SIMT |
 | [`15_floating_base_retract.cu`](15_floating_base_retract.cu) | batched SE(3) manifold integration at thread scope (`se3_retract`): unit-norm drift-free, one-parameter-subgroup check | pure SIMT |
 | [`16_mppi_weights.cu`](16_mppi_weights.cu) | the MPPI weight update: `softmax` + `argmin` per controller block, bit-identical across block sizes | pure SIMT |
@@ -63,7 +63,7 @@ Install MathDx and set `MATHDX_ROOT` first — see
 
 ```bash
 nvcc -std=c++17 -arch=sm_86 -I.. \
-     -DGLASS_BENCH_CUBLASDX -DSMS=860 \
+     -DGLASS_BENCH_CUBLASDX -DGLASS_TARGET_SM=860 \
      --expt-relaxed-constexpr -Xptxas -O1 \
      -I$MATHDX_ROOT/include \
      -I$MATHDX_ROOT/external/cutlass/include \
@@ -73,7 +73,7 @@ nvcc -std=c++17 -arch=sm_86 -I.. \
 | Flag | Why |
 |------|-----|
 | `-DGLASS_BENCH_CUBLASDX` | force-includes `<cublasdx.hpp>` from `glass-nvidia.cuh` (otherwise gated on include order) |
-| `-DSMS=860` | selects the cuBLASDx-tuned config + pre-instantiated GEMM table; **must match `-arch`** (860↔sm_86, 1200↔sm_120, …) |
+| `-DGLASS_TARGET_SM=860` | selects native and MathDx tables; **must match `-arch`** (860↔sm_86, 1200↔sm_120, …) |
 | `--expt-relaxed-constexpr` | required by cuBLASDx's constexpr `__host__`/`__device__` helpers |
 | `-Xptxas -O1` | works around a cuBLASDx miscompilation on recent CUDA (see `INSTALL.md`) |
 | `-I$MATHDX_ROOT/include` | cuBLASDx headers |

@@ -14,7 +14,8 @@ The reference is organized by BLAS level and by backend:
 * **NVIDIA backend** — the ``glass::nvidia::block::`` CUB / cuBLASDx /
   cuSOLVERDx paths and their host-side query/size helpers, plus the
   ``glass::nvidia::warp::`` CUB ``WarpReduce`` reductions (one full 32-lane
-  warp per problem).
+  warp per problem) and ``glass::nvidia::thread::`` cuSOLVERDx 0.4+ LAPACK
+  wrappers (one packed problem per CUDA thread).
 * **Warp-scoped** — the ``glass::warp::`` single-warp SIMT variants for
   warp-per-problem kernels.
 * **Thread-scoped** — the ``glass::thread::`` sequential variants for
@@ -25,9 +26,9 @@ The reference is organized by BLAS level and by backend:
 * **Robotics operators** — the spatial 6-D, Lie/quaternion, projection/cone,
   geometry-distance, and sampling-reduction families (all three SIMT tiers;
   see :doc:`../user_guide/concepts/robotics_conventions`).
-* **Backend picker** — ``glass-defaults.cuh`` ``constexpr`` helpers
-  (``suggested_backend`` / ``suggested_block_threads`` / ``suggested_warps_per_block`` / ``suggested_threads_per_block``)
-  that pick a backend + launch config from the measured ladder.
+* **Execution plans** — ``glass-defaults.cuh`` and its ``constexpr``
+  ``glass::recommend()`` query, which returns family, scope, and launch
+  packing from the measured ladder.
 
 .. note::
 

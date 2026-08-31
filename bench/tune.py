@@ -4,31 +4,35 @@ every shipped defaults table + figure under a single noise margin.
 
     python bench/tune.py --sm auto [--margin 0.05] [--quick] [--legs ...]
 
-It drives the three measurement harnesses and routes every verdict through the
+It drives the measurement harnesses and routes every verdict through the
 one shared tie rule in ``bench/tune_pick.py`` (a dependency-carrying impl wins
 only if it clears the margin; between SIMT tiers, any tier within the ±2% SIMT
 tie band of the fastest takes the cell if it is simpler — thread ≻ warp ≻
 block), so no table bakes sub-noise jitter and a pure-noise re-run reproduces
 the same tables. The legs:
 
-  ladder   bench_mega_sweep.cu  → thread/warp/block/nvidia ladder in glass-defaults.cuh
-                                  (thread — one problem/thread, N<=7 — is a
+  ladder   bench_mega_sweep.cu + bench_nvt_valid.cu
+                                → native/NVIDIA thread/warp/block ladder in glass-defaults.cuh
+                                  (native thread — one problem/thread — is a
                                   dependency-free contender alongside warp/block:
                                   the shared pick takes the cheapest SIMT tier —
                                   with ties inside the ±2% SIMT band resolving to
                                   the simpler tier — so a fresh sweep emits
                                   `backend::thread` wherever the low-DOF packing
-                                  actually wins)
-                                  (per-arch constexpr ideal_sm* tables + the SM
+                                  actually wins; every NVIDIA-thread pick must
+                                  also pass the independent-valid-batch veto)
+                                  (paired per-arch MathDx/native-only tables + the SM
                                   dispatch switch; a first-time arch — e.g. sm_87
                                   on a Jetson Orin — gets a new table + case,
                                   other arches' tables are left untouched)
+  body     bench_body_dispatch.cu → compatible thread-0/warp-0/block bodies
+                                  behind the fixed block-scope bare interface
   shapes   bench/autotune.py    → per-(M,N,K) cuBLASDx-vs-SIMT table in
                                   src/nvidia/tuning_table.cuh  (needs MATHDX_ROOT)
-  reduced  bench_reduced.cu     → validates serial-vs-reduced crossover against
-                                  suggested_use_reduced<>; rewrites the reduced section of RESULTS.md
+  reduced  bench_reduced.cu     → characterizes serial-vs-reduced crossover and
+                                  validates the conservative standard policy; rewrites RESULTS.md
   blas2    bench_blas2.cu       → warp/block sweep of the ops the ladder misses
-                                  (syrk/syr2k/ldlt/ldltsv/inv/trmv/ger); reports picks
+                                  (syrk/syr2k/ldlt/ldlt_solve/inv/trmv/ger); reports picks
                                   into RESULTS.md (blas2 section) + regenerates the
                                   per-arch blas2_sm* table (2-impl ops only)
   rect     bench_rect.cu        → warp/block sweep of rectangular gemv/gemm shapes;
@@ -42,8 +46,9 @@ the same tables. The legs:
   figures  export_sweep_figures → docs _static/*.png ladders + sweep_winners.txt
 
 All ops are *measured and recorded*; a dispatch picker is regenerated only for
-ops with ≥2 genuinely-competing impls (the 6 ladder ops, the per-shape cuBLASDx
-table, and the reduced corner). Single-impl families are reported, not picked.
+ops with ≥2 genuinely competing implementations. Reduced GEMM remains an
+explicit opt-in because its isolated wins do not justify another public advisor
+axis. Single-implementation families are reported, not picked.
 
 EXECUTION DISCIPLINE: perf timing must be ISOLATED — run on a quiet GPU with no
 concurrent CPU/GPU load. Build/iterate the tool offline with the ``--from-*``
@@ -180,7 +185,7 @@ _QUICK_SCHED = [("8192", "300")]
 
 
 def _fatbin_build_mega(sms, mdx):
-    """4-tier build for hosts where libcusolverdx.a is foreign (the MathDx
+    """MathDx ladder build for hosts where libcusolverdx.a is foreign (the
     tarball ships x86-64 objects only — e.g. Jetson/aarch64). cuSOLVERDx also
     ships an LTO-IR `libcusolverdx.fatbin`, which is host-arch-independent but
     only legal as a DEVICE-LINK input, so the build is staged:
@@ -189,7 +194,8 @@ def _fatbin_build_mega(sms, mdx):
     common = ["-std=c++17", f"-arch=sm_{sms // 10}", "-O3",
               "--expt-relaxed-constexpr", "-Xptxas", "-O1", "-I..", "-I../src",
               f"-I{mdx/'include'}", f"-I{mdx/'external'/'cutlass'/'include'}",
-              "-DGLASS_BENCH_CUBLASDX", "-DGLASS_BENCH_CUSOLVERDX", f"-DSMS={sms}",
+              "-DGLASS_BENCH_CUBLASDX", "-DGLASS_BENCH_CUSOLVERDX",
+              f"-DGLASS_TARGET_SM={sms}",
               "-DCUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT"]
     src = (BENCH_DIR / "bench_mega_sweep.cu").read_bytes()
     key = hashlib.sha256(src + lib_digest().encode()
@@ -226,18 +232,19 @@ def build_mega_sweep(sms, mdx, allow_no_mathdx=False):
         print("  bench_mega_sweep: MathDx absent -> 3-tier (thread/warp/block)")
         flags = ["nvcc", "-std=c++17", f"-arch=sm_{sms // 10}", "-O3",
                  "--expt-relaxed-constexpr", "-Xptxas", "-O1", "-I..", "-I../src",
-                 f"-DSMS={sms}", "bench_mega_sweep.cu"]
+                 f"-DGLASS_TARGET_SM={sms}", "bench_mega_sweep.cu"]
         binp, status = cached_build("mega_sweep_simt", "bench_mega_sweep.cu",
                                     flags, sms)
     elif platform.machine() != "x86_64":
         # The tarball's libcusolverdx.a is x86-64-only; use the fatbin path.
-        print("  bench_mega_sweep: non-x86 host -> 4-tier via cusolverdx FATBIN")
+        print("  bench_mega_sweep: non-x86 host -> NVIDIA block/thread via cusolverdx FATBIN")
         binp, status = _fatbin_build_mega(sms, mdx)
     else:
         flags = ["nvcc", "-std=c++17", f"-arch=sm_{sms // 10}", "-O3",
                  "--expt-relaxed-constexpr", "-Xptxas", "-O1", "-I..", "-I../src",
                  f"-I{mdx/'include'}", f"-I{mdx/'external'/'cutlass'/'include'}",
-                 "-DGLASS_BENCH_CUBLASDX", "-DGLASS_BENCH_CUSOLVERDX", f"-DSMS={sms}",
+                 "-DGLASS_BENCH_CUBLASDX", "-DGLASS_BENCH_CUSOLVERDX",
+                 f"-DGLASS_TARGET_SM={sms}",
                  "-DCUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT", "-rdc=true", "-dlto",
                  f"-L{mdx/'lib'}", "-lcusolverdx", "-lcublas", "-lcusolver", "-lcudart",
                  "bench_mega_sweep.cu"]
@@ -246,6 +253,72 @@ def build_mega_sweep(sms, mdx, allow_no_mathdx=False):
         sys.exit("ERROR: bench_mega_sweep compile failed.")
     print(f"  bench_mega_sweep: {status} ({binp.name})")
     return binp
+
+
+def _fatbin_build_nvt_valid(sms, mdx):
+    """Build the small valid-input confirmation harness on non-x86 hosts."""
+    common = ["-std=c++17", f"-arch=sm_{sms // 10}", "-O3",
+              "--expt-relaxed-constexpr", "-Xptxas", "-O1", "-I..", "-I../src",
+              f"-I{mdx/'include'}", f"-I{mdx/'external'/'cutlass'/'include'}",
+              "-DGLASS_BENCH_CUSOLVERDX",
+              f"-DGLASS_TARGET_SM={sms}",
+              "-DCUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT"]
+    src = (BENCH_DIR / "bench_nvt_valid.cu").read_bytes()
+    key = hashlib.sha256(src + lib_digest().encode()
+                         + " ".join(common + ["fatbin"]).encode()).hexdigest()[:12]
+    binp = cache_dir(sms) / f"nvt_valid_fatbin_{key}"
+    if binp.exists():
+        return binp, "cached"
+    obj, dlk = str(binp) + ".o", str(binp) + "_dlink.o"
+    steps = [
+        ["nvcc"] + common + ["-rdc=true", "-dlto", "-dc",
+                             "bench_nvt_valid.cu", "-o", obj],
+        ["nvcc", f"-arch=sm_{sms // 10}", "-dlto", "-dlink", obj,
+         str(mdx / "lib" / "libcusolverdx.fatbin"), "-o", dlk],
+        ["nvcc", f"-arch=sm_{sms // 10}", obj, dlk,
+         "-lcublas", "-lcusolver", "-lcudart", "-o", str(binp)],
+    ]
+    for cmd in steps:
+        if run(cmd, cwd=BENCH_DIR).returncode != 0:
+            return None, "fail"
+    return binp, "built"
+
+
+def build_nvt_valid(sms, mdx):
+    if mdx is None:
+        sys.exit("ERROR: NVIDIA-thread confirmation needs MATHDX_ROOT.")
+    if platform.machine() != "x86_64":
+        binp, status = _fatbin_build_nvt_valid(sms, mdx)
+    else:
+        flags = ["nvcc", "-std=c++17", f"-arch=sm_{sms // 10}", "-O3",
+                 "--expt-relaxed-constexpr", "-Xptxas", "-O1", "-I..", "-I../src",
+                 f"-I{mdx/'include'}", f"-I{mdx/'external'/'cutlass'/'include'}",
+                 "-DGLASS_BENCH_CUSOLVERDX",
+                 f"-DGLASS_TARGET_SM={sms}",
+                 "-DCUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT", "-rdc=true", "-dlto",
+                 f"-L{mdx/'lib'}", "-lcusolverdx", "-lcublas", "-lcusolver", "-lcudart",
+                 "bench_nvt_valid.cu"]
+        binp, status = cached_build("nvt_valid", "bench_nvt_valid.cu", flags, sms)
+    if status == "fail":
+        sys.exit("ERROR: bench_nvt_valid compile failed.")
+    print(f"  bench_nvt_valid: {status} ({binp.name})")
+    return binp
+
+
+def run_nvt_valid(binp, sms, margin, force=False):
+    """Capture both precisions at the ladder's NPROB=8192 policy point."""
+    path = BENCH_DIR / f"nvt_valid_{time.strftime('%Y%m%d_%H%M%S')}.txt"
+    lines = provenance("nvt_valid", sms, margin)
+    lines += [f"# nvt_valid  {time.strftime('%c')}  (bench/tune.py)", ""]
+    path.write_text("\n".join(lines) + "\n")
+    for dtype in ("f32", "f64"):
+        print(f"  -> nvt_valid NPROB=8192 requested_slots=64 {dtype}")
+        stdout = run_isolated([str(binp), "8192", "64", dtype], force)
+        with open(path, "a") as stream:
+            stream.write(stdout)
+            stream.write("\n")
+    print(f"==> wrote {path.relative_to(GLASS_DIR)}")
+    return path
 
 
 def run_mega_sweep(binp, quick, sms, margin, prefix="mega_sweep", sched=None,
@@ -305,10 +378,12 @@ def _ladder_expr(winners, dtype, op):
             runs[-1] = (N, be)
         else:
             runs.append((N, be))
+    def cpp_backend(name):
+        return "nvidia_block" if name == "nvidia" else name
     if len(runs) == 1:
-        return f"backend::{runs[0][1]}"
-    parts = [f"N <= {hi}u ? backend::{be}" for hi, be in runs[:-1]]
-    return " : ".join(parts) + f" : backend::{runs[-1][1]}"
+        return f"backend::{cpp_backend(runs[0][1])}"
+    parts = [f"N <= {hi}u ? backend::{cpp_backend(be)}" for hi, be in runs[:-1]]
+    return " : ".join(parts) + f" : backend::{cpp_backend(runs[-1][1])}"
 
 
 # Ladder-style rows print `spread<=X%` (row-max over cells); the reduced and
@@ -336,15 +411,66 @@ def warn_jittery_rows(text, margin, label):
     return len(jittery)
 
 
-def winners_from_sweep(text, margin):
-    """(dtype, op) -> {N: backend} under the shared margin (nvidia is the dep)."""
+def winners_from_sweep(text, margin, native_only=False):
+    """(dtype, op) -> {N: backend} under the shared dependency margin.
+
+    ``native_only`` removes both vendor measurements before applying the same
+    native SIMT tie rule. This emits an actual measured runner-up table instead
+    of approximating vendor cells with a size heuristic.
+    """
     cells = tp.parse_mega_sweep(text, nprob=8192)
     winners = {}
     for (dt, op, N), times in cells.items():
-        win = tp.pick(times, margin, {"nvidia"})
+        if native_only:
+            times = {name: value for name, value in times.items()
+                     if name not in {"nvidia", "nvidia_thread"}}
+        win = tp.pick(times, margin, {"nvidia", "nvidia_thread"})
         if win:
             winners.setdefault((dt, op), {})[N] = win
     return winners
+
+
+def apply_nvt_valid_veto(winners, confirmation_text, margin):
+    """Veto NVIDIA-thread picks that do not reproduce on independent inputs.
+
+    The confirmation leg is deliberately asymmetric: it may replace a main-
+    ladder NVIDIA-thread winner with the valid-input native winner, but it does
+    not promote NVIDIA-thread into any cell. Every selected NVIDIA-thread cell
+    must have an exact confirmation row; incomplete evidence is a hard error.
+    Returns ``(updated_winners, veto_count)``.
+    """
+    confirmed = tp.parse_nvt_valid(confirmation_text, nprob=8192)
+    spreads = tp.parse_nvt_valid_spreads(confirmation_text, nprob=8192)
+    updated = {key: dict(value) for key, value in winners.items()}
+    vetoes = 0
+    for (dtype, op), cells in updated.items():
+        for N, winner in list(cells.items()):
+            if winner != "nvidia_thread":
+                continue
+            key = (dtype, op, N)
+            if key not in confirmed:
+                sys.exit("ERROR: NVIDIA-thread ladder winner lacks valid-input "
+                         f"confirmation: {dtype} {op} N={N}.")
+            times = confirmed[key]
+            native_names = ("thread", "warp", "block")
+            raw_native = min(native_names, key=lambda name: times[name])
+            native_lo = times[raw_native]
+            native_hi = native_lo * (1.0 + spreads[key][raw_native] / 100.0)
+            nvt_lo = times["nvidia_thread"]
+            nvt_hi = nvt_lo * (1.0 + spreads[key]["nvidia_thread"] / 100.0)
+            guaranteed_win = nvt_hi < native_lo * (1.0 - margin)
+            guaranteed_loss = nvt_lo >= native_hi * (1.0 - margin)
+            if not guaranteed_win and not guaranteed_loss:
+                sys.exit("ERROR: valid-input confirmation cannot resolve the "
+                         f"±{margin*100:.0f}% margin for {dtype} {op} N={N}: "
+                         f"native {raw_native} interval=[{native_lo:.4f},"
+                         f"{native_hi:.4f}], NVIDIA thread interval="
+                         f"[{nvt_lo:.4f},{nvt_hi:.4f}].")
+            if guaranteed_loss:
+                native_times = {name: times[name] for name in native_names}
+                cells[N] = tp.pick(native_times, margin)
+                vetoes += 1
+    return updated, vetoes
 
 
 def emit_ideal_body(winners, fname, ops=tp.LADDER_OPS):
@@ -367,23 +493,39 @@ def emit_ideal_body(winners, fname, ops=tp.LADDER_OPS):
     return "\n".join(lines)
 
 
-def regen_ladder(sweep_text, margin, src_name, sms):
+def regen_ladder(sweep_text, margin, src_name, sms,
+                 nvt_valid_text=None, nvt_valid_name=None):
     """Regenerate this arch's table block in glass-defaults.cuh (replace if the
     arch was swept before, insert after the last table block if it's new) and
     rebuild the SM dispatch case-list from every table block present."""
     arch = sms // 10
     warn_jittery_rows(sweep_text, margin, "ladder")
     winners = winners_from_sweep(sweep_text, margin)
+    native_winners = winners_from_sweep(sweep_text, margin, native_only=True)
     if not winners:
         sys.exit("ERROR: no NPROB=8192 verdicts parsed from the sweep.")
+    has_nvt = any(backend == "nvidia_thread"
+                  for cells in winners.values() for backend in cells.values())
+    if has_nvt and nvt_valid_text is None:
+        sys.exit("ERROR: this ladder selects NVIDIA-thread but no independent-"
+                 "valid-input capture was supplied; pass --from-nvt-valid or "
+                 "run the ladder online.")
+    vetoes = 0
+    if has_nvt:
+        winners, vetoes = apply_nvt_valid_veto(winners, nvt_valid_text, margin)
     begin, end = _LAD_BEGIN.format(a=arch), _LAD_END.format(a=arch)
     region = "\n".join([
         begin,
         f"// Source sweep: {src_name}   tie margin: ±{margin*100:.0f}% "
-        "(nvidia must clear it; SIMT ties ±2% prefer thread>warp>block)",
-        "// Returns the *ideal* tier assuming nvidia is linked; "
-        "nv_available() filters after.",
+        "(NVIDIA block/thread must clear it; SIMT ties ±2% prefer thread>warp>block)",
+        *([f"// NVIDIA-thread valid-input veto: {nvt_valid_name} "
+           f"({vetoes} ladder pick{'s' if vetoes != 1 else ''} vetoed)"]
+          if nvt_valid_name else []),
+        "// Paired tables preserve the measured native runner-up for callers that",
+        "// do not opt into MathDx; both use the same capture and SIMT tie rule.",
         emit_ideal_body(winners, f"ideal_sm{arch}"),
+        "",
+        emit_ideal_body(native_winners, f"native_sm{arch}"),
         end])
     text = DEFAULTS.read_text()
     if begin in text:
@@ -401,12 +543,13 @@ def regen_ladder(sweep_text, margin, src_name, sms):
     arches = sorted(int(a) for a in _LAD_RE.findall(text))
     if _DIS_BEGIN not in text or _DIS_END not in text:
         sys.exit(f"ERROR: dispatch markers missing from {DEFAULTS.name}.")
-    cases = "".join(f"        case {a * 10}u: return ideal_sm{a}(o, N, f64);\n"
+    cases = "".join(f"        case {a * 10}u: return allow_nvidia "
+                    f"? ideal_sm{a}(o, N, f64) : native_sm{a}(o, N, f64);\n"
                     for a in arches)
     pre, _, rest = text.partition(_DIS_BEGIN)
     _, _, post = rest.partition(_DIS_END)
     text = pre + _DIS_BEGIN + "\n" + cases + "        " + _DIS_END + post
-    return text, len(winners)
+    return text, len(winners), vetoes
 
 
 # ─── blas2 + rect header tables (glass-defaults.cuh; warp-vs-block only) ─────
@@ -417,7 +560,7 @@ def regen_ladder(sweep_text, margin, src_name, sms):
 # 2-impl blas2 ops are tabled — inv/trmv/ger are block-only and stay
 # report-only by the "single-impl families are reported, not picked" rule.
 
-B2_TABLE_OPS = ("syrk", "syr2k", "ldlt", "ldltsv")
+B2_TABLE_OPS = ("syrk", "syr2k", "ldlt", "ldlt_solve")
 
 _B2_BEGIN = "// === BEGIN tune.py blas2 sm_{a} ==="
 _B2_END   = "// === END tune.py blas2 sm_{a} ==="
@@ -499,8 +642,13 @@ def _emit_rect_fn(cells, op_name, fname, dims_names, margin):
             continue
         lines.append(f"    if ({'f64' if f64 else '!f64'}) {{")
         for dims, be in rows:
+            # The benchmark grammar retains its historical (M,K,N) tuple;
+            # the public C++ API is uniformly (M,N,K).
+            if op_name == "gemm":
+                dims = (dims[0], dims[2], dims[1])
             cond = " && ".join(f"{n} == {v}u" for n, v in zip(dims_names, dims))
-            lines.append(f"        if ({cond}) return backend::{be};")
+            cpp_backend = "nvidia_block" if be == "nvidia" else be
+            lines.append(f"        if ({cond}) return backend::{cpp_backend};")
         lines.append("    }")
     lines += ["    return backend::block;", "}"]
     return "\n".join(lines)
@@ -519,14 +667,14 @@ def regen_rect_table(sweep_text, margin, src_name, sms):
         f"// Source sweep: {src_name}   tie margin: ±{margin*100:.0f}% "
         "(SIMT ties ±2% prefer the simpler tier); exact shapes only",
         _emit_rect_fn(cells, "gemv", f"rect_gemv_sm{arch}", ("M", "N"), margin),
-        _emit_rect_fn(cells, "gemm", f"rect_gemm_sm{arch}", ("M", "K", "N"), margin),
+        _emit_rect_fn(cells, "gemm", f"rect_gemm_sm{arch}", ("M", "N", "K"), margin),
         end])
     text = _splice_arch_block(DEFAULTS.read_text(), begin, end, _RECT_END_RE, region)
     arches = sorted(int(a) for a in _RECT_RE.findall(text))
     for dis_begin, dis_end, fn_prefix in _RECT_DIS:
         if dis_begin not in text or dis_end not in text:
             sys.exit(f"ERROR: rect dispatch markers missing from {DEFAULTS.name}.")
-        argstr = "M, N, f64" if "gemv" in fn_prefix else "M, K, N, f64"
+        argstr = "M, N, f64" if "gemv" in fn_prefix else "M, N, K, f64"
         text = _rebuild_dispatch(text, dis_begin, dis_end, arches, fn_prefix, argstr)
     return text, len(cells)
 
@@ -551,7 +699,7 @@ _BODY_SM_END   = "// === END tune.py body sm_{a} ==="
 _BODY_SM_RE    = re.compile(r"// === BEGIN tune\.py body sm_(\d+) ===")
 _BODY_DIS_BEGIN = "// === BEGIN tune.py body dispatch ==="
 _BODY_DIS_END   = "// === END tune.py body dispatch ==="
-BODY_OPS = ("dot", "gemv", "gemm", "chol", "trsv", "posv", "eig3", "softmax")
+BODY_OPS = ("dot", "gemv", "gemm", "potrf", "trsv", "posv", "eig3", "softmax")
 _BODY_HDR_RE = re.compile(r"NPROB=(\d+)\s+reps=\d+\s+dtype=(f32|f64)")
 _BODY_SEG_RE = re.compile(r"(BLOCKBODY|WARPBODY|THREADBODY)((?:\s+tb\d+=[0-9.]+)+)")
 _BODY_NAME = {"BLOCKBODY": "block", "WARPBODY": "warp_in_block",
@@ -560,7 +708,7 @@ _BODY_NAME = {"BLOCKBODY": "block", "WARPBODY": "warp_in_block",
 
 def build_body(sms):
     flags = ["nvcc", "-std=c++17", f"-arch=sm_{sms//10}", "-O3", "-I..", "-I../src",
-             f"-DSMS={sms}", "bench_body_dispatch.cu"]
+             f"-DGLASS_TARGET_SM={sms}", "bench_body_dispatch.cu"]
     binp, status = cached_build("body_dispatch", "bench_body_dispatch.cu", flags, sms)
     if status == "fail":
         sys.exit("ERROR: bench_body_dispatch compile failed.")
@@ -579,9 +727,12 @@ def parse_body_sweep(text):
         if "||" not in line or nprob is None or "FAIL" in line:
             continue
         m = re.match(r"\s*(\w+?)_n(\d+)\s*\|", line)
-        if not m or m.group(1) not in BODY_OPS:
+        if not m:
             continue
-        key = (dt, m.group(1), int(m.group(2)))
+        opn = "potrf" if m.group(1) == "chol" else m.group(1)
+        if opn not in BODY_OPS:
+            continue
+        key = (dt, opn, int(m.group(2)))
         for bname, tbs in _BODY_SEG_RE.findall(line.split("||")[0]):
             pts = cells.setdefault(key, {}).setdefault(_BODY_NAME[bname], {})
             for tb, ns in re.findall(r"tb(\d+)=([0-9.]+)", tbs):
@@ -699,7 +850,7 @@ def regen_body(sweep_text, margin, src_name, sms):
         _BODY_DIS_BEGIN,
         "// Bodies for the bare block-scope face; unmeasured arches stay block.",
         "GLASS_DISPATCH_HD constexpr body dispatch_body(op o, uint32_t N, bool f64,",
-        "                                               uint32_t sm = GLASS_DEFAULTS_SM) {",
+        "                                               uint32_t sm = GLASS_TARGET_SM) {",
         "    switch (sm) {",
         cases.rstrip("\n"),
         "        default: break;",
@@ -713,7 +864,7 @@ def regen_body(sweep_text, margin, src_name, sms):
     return text, moved
 
 
-# ─── reduced leg: bench_reduced → validate suggested_use_reduced<> ────────────
+# ─── reduced leg: bench_reduced → characterize the explicit reduced path ───
 
 def build_reduced(sms):
     flags = ["nvcc", "-std=c++17", f"-arch=sm_{sms//10}", "-O3", "-I..", "-I../src",
@@ -725,13 +876,11 @@ def build_reduced(sms):
     return binp
 
 
-def predicate_use_reduced(n_out, K, blockDim):
-    """Mirror of glass::suggested_use_reduced<n_out,K_contract,blockDim>().
+def plan_uses_reduced(n_out, K, blockDim):
+    """Conservative policy for the measured standard/reduced leg.
 
-    Kept constant False after the 2026-08-14 sm_120 sweep: f32 had 0/48 wins;
-    f64 had 2/48 at one shape, which this dtype-independent signature cannot
-    encode safely. A future type-aware predicate may promote a repeatable
-    region; keep this mirror synchronized with the .cuh predicate."""
+    Kept false after the 2026-08-14 sm_120 sweep: f32 had 0/48 wins and f64
+    had 2/48 at one shape. A future plan may promote a repeatable region."""
     return False
 
 
@@ -743,8 +892,8 @@ def analyze_reduced(text, margin):
                       margin, {"reduced"})
         measured_reduced = (win == "reduced")
         # bench_reduced computes C(M,K)=A(M,N)·B(N,K): the contracted dim is N
-        # (n_out = M*K), so the predicate's K_contract is the N column.
-        predicted = predicate_use_reduced(r["n_out"], r["N"], r["blockDim"])
+        # (n_out = M*K); keep these arguments if the plan gains a typed region.
+        predicted = plan_uses_reduced(r["n_out"], r["N"], r["blockDim"])
         r["winner"] = win
         if measured_reduced:
             wins.append(r)
@@ -776,18 +925,16 @@ def gen_reduced_block(rows, wins, mism, margin, src):
                      f"{r['blockDim']} | {r['serial']:.4f} | {r['reduced']:.4f} | "
                      f"**{r['serial']/r['reduced']:.2f}** |")
         L.append("")
-    L.append("Predicate `suggested_use_reduced<n_out,K_contract,blockDim>()` = "
-             "`false` on every cell (K_contract is the N column here).")
+    L.append("The public advisor stays two-axis; reduced GEMM remains an explicit opt-in.")
     if mism:
-        L += ["", f"⚠️ **{len(mism)} config(s) disagree** with the predicate — "
-              "review before trusting the formula on this GPU:", ""]
+        L += ["", f"⚠️ **{len(mism)} config(s) favor the explicit reduced "
+              "variant while the conservative plan stays standard:**", ""]
         for r in mism:
-            pred = "reduced" if predicate_use_reduced(r['n_out'], r['N'], r['blockDim']) else "serial"
+            pred = "reduced" if plan_uses_reduced(r['n_out'], r['N'], r['blockDim']) else "serial"
             L.append(f"- {r['dtype']} {r['M']}×{r['N']}×{r['K']} bd={r['blockDim']} "
-                     f"(n_out={r['n_out']}): measured **{r['winner']}**, predicate **{pred}**")
+                     f"(n_out={r['n_out']}): measured **{r['winner']}**, plan **{pred}**")
     else:
-        L += ["", "✅ Measurement matches the predicate for every swept config — "
-              "the formula needs no change."]
+        L += ["", "✅ Measurement matches the plan for every swept config."]
     L += ["", _md_end("reduced")]
     return "\n".join(L)
 
@@ -903,14 +1050,14 @@ def report_pick_leg(name, txt, txt_name, md_path, margin, parse, dry_run,
 
 _BLAS2_NOTE = ("inv/trmv/ger are BLOCK-ONLY (no `glass::warp::` variant, so "
                "nothing competes — reported, never picked); none of these ops "
-               "has a `glass::nvidia::` counterpart. The 2-impl ops "
-               "(syrk/syr2k/ldlt/ldltsv) regenerate the shipped per-arch "
+               "has an NVIDIA counterpart. The 2-impl ops "
+               "(syrk/syr2k/ldlt/ldlt_solve) regenerate the shipped per-arch "
                "`blas2_sm*` table in glass-defaults.cuh (since 2026-08-06).")
 _RECT_NOTE = ("nvidia leg skipped for rectangular shapes (needs new per-shape "
               "DEFINE_NVIDIA_* machinery; cuBLASDx-vs-SIMT per (M,N,K) lives in "
               "the `shapes` leg). Measured shapes regenerate the shipped "
               "exact-shape `rect_*_sm*` pickers in glass-defaults.cuh "
-              "(`suggested_backend_rect_gemv/gemm<>`, since 2026-08-06); "
+              "(`recommend<op::gemv/gemm,T,dims...>`, since 2026-08-06); "
               "unmeasured shapes stay block.")
 
 
@@ -1098,8 +1245,8 @@ def main():
     p.add_argument("--allow-no-mathdx", action="store_true",
                    help="let the ladder leg run without MATHDX_ROOT as a 3-tier "
                         "(thread/warp/block) SIMT sweep — the regenerated table "
-                        "simply lacks the nvidia contender. Required on Tegra/"
-                        "Jetson, where MathDx does not ship.")
+                        "simply lacks NVIDIA contenders. Use only when MathDx "
+                        "headers/fatbins are unavailable.")
     p.add_argument("--dry-run", action="store_true",
                    help="regenerate + diff against in-tree tables, write nothing")
     p.add_argument("--force", action="store_true",
@@ -1107,6 +1254,9 @@ def main():
                         "compute PIDs appearing during a leg still invalidate it")
     p.add_argument("--from-ladder", metavar="TXT",
                    help="skip ladder build/run; regenerate from this mega_sweep .txt")
+    p.add_argument("--from-nvt-valid", metavar="TXT",
+                   help="independent-valid-input companion capture required when "
+                        "--from-ladder selects NVIDIA-thread")
     p.add_argument("--from-body", metavar="TXT",
                    help="skip body build/run; regenerate dispatch_body() from "
                         "this body_dispatch_sweep .txt")
@@ -1132,7 +1282,7 @@ def main():
     bad = [l for l in legs if l not in ALL_LEGS]
     if bad:
         sys.exit(f"unknown leg(s) {bad}; choose from {ALL_LEGS}")
-    offline = bool(args.from_ladder or args.from_body or args.from_reduced
+    offline = bool(args.from_ladder or args.from_nvt_valid or args.from_body or args.from_reduced
                    or args.from_blas2 or args.from_rect or args.from_solvers)
     sms = None if (args.sm == "auto" and offline) else (
         detect_sm() if args.sm == "auto" else int(args.sm))
@@ -1153,6 +1303,8 @@ def main():
         if "ladder" in legs:
             print("── prebuild: ladder ──────────────────────────────────────")
             build_mega_sweep(sms, mdx, args.allow_no_mathdx)
+            if mdx is not None:
+                build_nvt_valid(sms, mdx)
         if "body" in legs:
             print("── prebuild: body ────────────────────────────────────────")
             build_body(sms)
@@ -1196,14 +1348,26 @@ def main():
                          "regenerated on the desktop).")
             sweep_path = pathlib.Path(args.from_ladder)
             sweep_text = sweep_path.read_text()
+            nvt_valid_path = (pathlib.Path(args.from_nvt_valid)
+                              if args.from_nvt_valid else None)
         else:
             binp = build_mega_sweep(sms, mdx, args.allow_no_mathdx)
             sweep_path = run_mega_sweep(
                 binp, args.quick, sms, args.margin, sched=user_sched,
                 force=args.force)
             sweep_text = sweep_path.read_text()
-        new_defaults, n = regen_ladder(sweep_text, args.margin, sweep_path.name, sms)
-        print(f"  regenerated ideal_sm{sms // 10} from {n} (dtype,op) groups")
+            nvt_valid_path = None
+            if mdx is not None:
+                nvt_bin = build_nvt_valid(sms, mdx)
+                nvt_valid_path = run_nvt_valid(nvt_bin, sms, args.margin,
+                                               force=args.force)
+        nvt_valid_text = (nvt_valid_path.read_text()
+                          if nvt_valid_path is not None else None)
+        new_defaults, n, vetoes = regen_ladder(
+            sweep_text, args.margin, sweep_path.name, sms, nvt_valid_text,
+            nvt_valid_path.name if nvt_valid_path is not None else None)
+        print(f"  regenerated ideal_sm{sms // 10} from {n} (dtype,op) groups; "
+              f"valid-input vetoes={vetoes}")
         if args.dry_run:
             changed["ladder"] = show_diff(DEFAULTS, new_defaults, "glass-defaults.cuh")
         else:
@@ -1280,9 +1444,9 @@ def main():
             warn_jittery_rows(rtxt, args.margin, "reduced")
             rows, wins, mism = analyze_reduced(rtxt, args.margin)
             print(f"  {len(rows)} configs, reduced wins {len(wins)}, "
-                  f"predicate mismatches {len(mism)}")
+                  f"conservative-plan exceptions {len(mism)}")
             if mism:
-                print("  ⚠️ predicate disagrees with measurement — see bench/RESULTS.md")
+                print("  ⚠️ explicit reduced wins remain outside the conservative plan")
             block = gen_reduced_block(rows, wins, mism, args.margin, rtxt_path.name)
             md = splice_results_md(RESULTS_MD.read_text(), block, "reduced")
             if args.dry_run:
@@ -1366,7 +1530,8 @@ def main():
     # ── figures ──
     if "figures" in legs:
         print("── figures ───────────────────────────────────────────────")
-        sweep_for_fig = args.from_ladder
+        sweep_for_fig = (str(pathlib.Path(args.from_ladder).resolve())
+                         if args.from_ladder else None)
         if not sweep_for_fig:
             cands = sorted(glob.glob(str(BENCH_DIR / "mega_sweep_*.txt")))
             sweep_for_fig = cands[-1] if cands else None
@@ -1377,8 +1542,8 @@ def main():
         else:
             r = run([sys.executable, "export_sweep_figures.py", sweep_for_fig], cwd=BENCH_DIR)
             if r.returncode != 0:
-                print("  ⚠️ figures leg failed (needs matplotlib: `pip install matplotlib` "
-                      "into the env running tune.py). Tables above are unaffected.")
+                print("  ⚠️ figures leg failed; inspect the renderer error above "
+                      "(matplotlib is one possible missing dependency). Tables are unaffected.")
 
     if args.dry_run:
         moved = [k for k, v in changed.items() if v]

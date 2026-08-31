@@ -220,7 +220,7 @@ static void drive_chol(const char* cell) {
     CUDA_CHECK(cudaMalloc(&da, N * N * sizeof(T)));
     CUDA_CHECK(cudaMalloc(&dout, N * N * sizeof(T)));
     CUDA_CHECK(cudaMemcpy(da, ha.data(), N * N * sizeof(T), cudaMemcpyHostToDevice));
-    glass::body b = glass::dispatch_body(glass::op::chol, N, sizeof(T) == 8);
+    glass::body b = glass::dispatch_body(glass::op::potrf, N, sizeof(T) == 8);
     for (int tb : TBS) {
         std::vector<T> r_bare(N * N), r_blk(N * N);
         k_chol<T, N, true><<<1, tb>>>(da, dout);

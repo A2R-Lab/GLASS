@@ -2,7 +2,7 @@
 //
 // Companion to test_l3_nvidia.cu (which exercises the SIMT-only batched APIs).
 // This file targets the round-2 additions:
-//   * Gap A — glass::nvidia::gemv<>     auto-dispatches SIMT vs cuBLASDx
+//   * Gap A — glass::nvidia::block::gemv<> auto-dispatches SIMT vs cuBLASDx
 //   * Gap B — gemv_strided<>        auto-dispatches; uses stride directly on SIMT
 //   * Gap C — gemm_strided<>        auto-dispatches; skips compact-pack on SIMT
 //   * Gap D — gemm<T,...,col,row,col>   maps onto SIMT TRANSPOSE_B=true
@@ -263,7 +263,6 @@ namespace glass { namespace nvidia { namespace block {
 
 // ── coverage pin block: the full query/size surface, constexpr so the asserts
 // ARE the test; plus the explicit-intent print_dispatch_* diagnostics below. ──
-namespace gn = glass::nvidia;
 namespace gnb = glass::nvidia::block;
 static_assert(!gnb::should_use_cublasdx<double, 16, 16, 16>(), "f64 never routes to cuBLASDx");
 static_assert(!gnb::should_use_cublasdx_gemv<double, 16, 16>(), "gemv f64 -> SIMT");
@@ -274,12 +273,12 @@ static_assert(gnb::gemm_min_block_threads<float, 16, 16, 16>() > 0, "gemm min th
 static_assert(gnb::gemm_block_threads_valid<float, 16, 16, 16, 1024>(), "1024 threads valid for gemm16");
 static_assert(gnb::gemv_min_block_threads<float, 16, 16>() > 0, "gemv min threads");
 static_assert(gnb::gemv_block_threads_valid<float, 16, 16, 1024>(), "1024 threads valid for gemv16");
-static_assert(gn::required_smem_for_dispatch_gemm<float, 16, 16, 16>() ==
+static_assert(gnb::required_smem_for_dispatch_gemm<float, 16, 16, 16>() ==
               gnb::gemm_scratch_bytes<float, 16, 16, 16>(), "explicit-intent alias == scratch");
-static_assert(gn::required_smem_for_dispatch_gemv<float, 16, 16>() > 0 ||
-              gn::required_smem_for_dispatch_gemv<float, 16, 16>() == 0, "gemv dispatch smem evaluable");
-static_assert(gn::required_smem_for_dispatch_gemm_strided<float, 8, 8, 8>() >= 0u, "gemm_strided dispatch smem evaluable");
-static_assert(gn::required_smem_for_dispatch_gemv_strided<float, 8, 8>() >= 0u, "gemv_strided dispatch smem evaluable");
+static_assert(gnb::required_smem_for_dispatch_gemv<float, 16, 16>() > 0 ||
+              gnb::required_smem_for_dispatch_gemv<float, 16, 16>() == 0, "gemv dispatch smem evaluable");
+static_assert(gnb::required_smem_for_dispatch_gemm_strided<float, 8, 8, 8>() >= 0u, "gemm_strided dispatch smem evaluable");
+static_assert(gnb::required_smem_for_dispatch_gemv_strided<float, 8, 8>() >= 0u, "gemv_strided dispatch smem evaluable");
 static_assert(gnb::gemm_batched_scratch_bytes<float, 8, 8, 8, 4, 64>() >= 0u, "batched scratch evaluable (stub 0 without DEFINE)");
 static_assert(gnb::gemm_batched_threads<float, 8, 8, 8, 4, 64>() > 0, "batched threads");
 static_assert(gnb::gemm_batched_1d_scratch_bytes<float, 8, 8, 8, 4, 32>() >= 0u, "batched_1d scratch evaluable");
@@ -291,7 +290,7 @@ static_assert(gnb::gemm_strided_scratch_bytes<float, 8, 8, 8>() >= 0u, "gemm_str
 static_assert(gnb::gemv_strided_scratch_bytes<float, 8, 8>() >= 0u, "gemv_strided scratch evaluable");
 static_assert(gnb::gemv_strided_scratch_bytes<float, 5, 5, 8>() >= 0u,
               "gemv_strided explicit-row-stride scratch evaluable");
-static_assert(gn::reduce_scratch_bytes<float, 256>() > 0, "CUB reduce scratch");
+static_assert(gnb::reduce_scratch_bytes<float, 256>() > 0, "CUB reduce scratch");
 
 __global__ void k_gemm_batched(float* const* A, float* const* B, float* const* C) {
     extern __shared__ char s[];

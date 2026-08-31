@@ -37,14 +37,10 @@ problems run in parallel — one per block.
 Interfaces
 ----------
 
-GLASS exposes four primary interfaces. Two are **block-scoped** (one block per
-problem) — ``glass::block::`` and the vendor-backed
-``glass::nvidia::block::``
-— one is **warp-scoped**, ``glass::warp::`` (one warp per problem), for kernels
-that pack many small independent problems into a block, and one is
-**thread-scoped**, ``glass::thread::`` (one problem per *thread*, 32 packed per
-warp), for the low-DOF corner where even a warp per problem leaves most lanes
-idle:
+GLASS exposes three execution scopes — block, warp, and thread — in a
+dependency-free implementation family and, where NVIDIA provides a suitable
+device routine, an optional vendor family. This is a small matrix of explicit
+spellings rather than one flat list of interchangeable interfaces:
 
 .. list-table::
    :header-rows: 1
@@ -64,14 +60,22 @@ idle:
      - inline in the base L1/L2/L3 headers
    * - ``glass::thread::`` (Thread)
      - thread
-     - Sequential, thread-per-problem — compile-time sizes, register-resident up to ``N≤7``, branch-free ops only
+     - Sequential, thread-per-problem — compile-time sizes, usually register-resident around ``N≤7`` but correct and measured beyond it; branch-free ops only
      - inline in the base L1/L2/L3 headers
    * - ``glass::nvidia::block::`` (Nvidia)
      - block
      - CUB (L1) + cuBLASDx (L2/L3, batched) + cuSOLVERDx (LAPACK) — compile-time sizes only; plus ``glass::nvidia::warp::`` CUB ``WarpReduce`` L1 reductions (one full 32-lane warp per problem)
      - ``glass-nvidia.cuh``
+   * - ``glass::nvidia::warp::`` (Nvidia warp)
+     - warp
+     - CUB ``WarpReduce`` L1 reductions, one full warp per problem and explicit per-warp scratch
+     - ``glass-nvidia.cuh``
+   * - ``glass::nvidia::thread::`` (Nvidia thread)
+     - thread
+     - cuSOLVERDx 0.4+ LAPACK, one packed compile-time problem per CUDA thread; no dynamic shared scratch or block barrier
+     - ``glass-nvidia.cuh``
 
-**Bare** ``glass::op`` (and bare ``glass::nvidia::op``) is the
+**Bare** ``glass::op`` is the
 **measured-default face**: the same block-scope calling contract, body chosen
 per (op, size, dtype) by ``glass::dispatch_body()`` (``glass-dispatch.cuh``).
 Measured cells may use a warp-0 or thread-0 implementation behind a wrapper;
@@ -142,25 +146,25 @@ implementation, three questions narrow the choice:
      - ``glass::gemm<float, M, N, K>(...)``
      - Compiler unrolls inner loops; ~1 µs/op overhead is hard to beat for tiny sizes
    * - Compile-time sizes, larger matrices, tensor-core hardware
-     - ``glass::nvidia::gemm<float, M, N, K>(...)``
+     - ``glass::nvidia::block::gemm<float, M, N, K>(...)``
      - cuBLASDx generates SM-specific tensor-core code
    * - Compile-time sizes inside a kernel using a different thread count
-     - ``glass::nvidia::gemm<float, M, N, K, TC>(...)`` with ``DEFINE_NVIDIA_GEMM_BLOCKDIM(M,N,K,TC)``
+     - ``glass::nvidia::block::gemm<float, M, N, K, TC>(...)`` with ``DEFINE_NVIDIA_GEMM_BLOCKDIM(M,N,K,TC)``
      - Pins cuBLASDx's ``BlockDim<TC,1,1>``; lets you launch with any thread count ≥ TC
    * - Need a transposed B / row-major storage in the NVIDIA path
-     - ``glass::nvidia::gemm<...,LA,LB,LC>`` with ``DEFINE_NVIDIA_GEMM_BLOCKDIM_LAYOUT(...)``
+     - ``glass::nvidia::block::gemm<...,LA,LB,LC>`` with ``DEFINE_NVIDIA_GEMM_BLOCKDIM_LAYOUT(...)``
      - cuBLASDx Arrangement; no SIMT fallback needed
    * - Linear solve ``Mx = b`` for SPD ``M``
-     - ``glass::nvidia::posv<float, N, NRHS>(...)``
+     - ``glass::nvidia::block::posv<float, N, NRHS>(...)``
      - cuSOLVERDx fused factor + solve; faster than chol+trsm at N ≥ 8
    * - General linear solve (non-SPD)
-     - ``glass::nvidia::gesv_no_pivot<float, N, NRHS>(...)``
+     - ``glass::nvidia::block::gesv_no_pivot<float, N, NRHS>(...)``
      - cuSOLVERDx LU + solve
    * - Least-squares / over- or under-determined
-     - ``glass::nvidia::gels<float, M, N, NRHS>(...)``
+     - ``glass::nvidia::block::gels<float, M, N, NRHS>(...)``
      - cuSOLVERDx QR (or LQ) + solve
    * - ``BATCH`` independent GEMMs of the same shape, amortize launch
-     - ``glass::nvidia::gemm_batched<...,BATCH,TC>``
+     - ``glass::nvidia::block::gemm_batched<...,BATCH,TC>``
      - Single block, all batches active via ``threadIdx.y``
 
 When **not** to use ``glass::nvidia::``:
@@ -172,7 +176,7 @@ When **not** to use ``glass::nvidia::``:
 * You're on an SM cuBLASDx doesn't tune for — it falls back to a generic config,
   and the pure-SIMT compile-time path is often competitive there.
 
-The ``glass::nvidia::gemm<>`` / ``gemv<>`` / ``row_strided_*`` /
+The ``glass::nvidia::block::gemm<>`` / ``gemv<>`` / ``row_strided_*`` /
 ``gemm_batched_1d<>`` primary templates **auto-dispatch at compile time**:
 small shapes route to SIMT automatically without any DEFINE macro (a
 ``constexpr`` selection — nothing is decided at runtime). See

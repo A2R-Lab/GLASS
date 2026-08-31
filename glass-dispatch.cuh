@@ -6,7 +6,8 @@
  *        for each (op, N, dtype) cell of the bare `glass::op` face.
  *
  * NAMESPACE CONTRACT (2026-07-30 restructure): explicit namespaces
- * (`glass::block::`, `glass::warp::`, `glass::thread::`, `glass::nvidia::*`)
+ * (`glass::block::`, `glass::warp::`, `glass::thread::`,
+ *  `glass::nvidia::{block,warp,thread}::`)
  * are the CONTRACT tier — bit-exact, never re-dispatched. The BARE `glass::op`
  * face keeps a block-scope CALLING contract (launch one block per problem,
  * any thread count) but its body is chosen from this measured table: a
@@ -32,14 +33,23 @@
   #define GLASS_DISPATCH_HD
 #endif
 
-// SM the tables are keyed on: the build's SMS (GRiD-style builds) else the
-// measured sm_120. (Historically lived in glass-defaults.cuh; shared now.)
-#ifndef GLASS_DEFAULTS_SM
+// One architecture selector for dispatch, advisors, and MathDx descriptors.
+// Build systems should define GLASS_TARGET_SM (e.g. 1200 for sm_120). Legacy
+// SMS remains an input alias during the source migration. An unspecified
+// target uses the measured sm_120 seed table, matching prior GLASS releases.
+#ifndef GLASS_TARGET_SM
   #ifdef SMS
-    #define GLASS_DEFAULTS_SM (SMS)
+    #define GLASS_TARGET_SM SMS
   #else
-    #define GLASS_DEFAULTS_SM (1200u)
+    #define GLASS_TARGET_SM 1200u
   #endif
+#endif
+
+// MathDx descriptor templates historically consume SMS. Define it once from
+// the same selector so advisors, native dispatch, and vendor descriptors can
+// no longer silently target different architectures.
+#ifndef SMS
+  #define SMS GLASS_TARGET_SM
 #endif
 
 namespace glass {
@@ -47,8 +57,8 @@ namespace glass {
 // APPEND-ONLY (ordinals are load-bearing for the per-arch ladder tables in
 // glass-defaults.cuh): the six ladder ops first, then the body-sweep additions,
 // then the blas2 family (warp-vs-block only; measured by tune.py's blas2 leg).
-enum class op : int      { dot, gemv, gemm, chol, trsv, posv, eig3, softmax,
-                           syrk, syr2k, ldlt, ldltsv };
+enum class op : int      { dot, gemv, gemm, potrf, trsv, posv, eig3, softmax,
+                           syrk, syr2k, ldlt, ldlt_solve };
 
 // The bare face's implementation bodies under the fixed block-scope contract.
 // `warp_in_block` / `thread_in_block` = the op's warp/thread twin executed by
@@ -69,7 +79,7 @@ GLASS_DISPATCH_HD constexpr body body_sm120(op o, uint32_t N, bool f64) {
             if (!f64) return N <= 16u ? body::block : N <= 32u ? body::warp_in_block : body::block;
             else      return N <= 4u ? body::block : N <= 8u ? body::warp_in_block : N <= 16u ? body::block : N <= 32u ? body::warp_in_block : body::block;
         case op::gemm: return body::block;
-        case op::chol:
+        case op::potrf:
             if (!f64) return N <= 4u ? body::thread_in_block : body::block;
             else      return body::block;
         case op::trsv:
@@ -104,7 +114,7 @@ GLASS_DISPATCH_HD constexpr body body_sm87(op o, uint32_t N, bool f64) {
         case op::gemm:
             if (!f64) return N <= 4u ? body::warp_in_block : body::block;
             else      return body::block;
-        case op::chol: return body::block;
+        case op::potrf: return body::block;
         case op::trsv:
             if (!f64) return N <= 4u ? body::thread_in_block : N <= 16u ? body::warp_in_block : body::block;
             else      return N <= 8u ? body::block : N <= 16u ? body::warp_in_block : body::block;
@@ -126,7 +136,7 @@ GLASS_DISPATCH_HD constexpr body body_sm87(op o, uint32_t N, bool f64) {
 // === BEGIN tune.py body dispatch ===
 // Bodies for the bare block-scope face; unmeasured arches stay block.
 GLASS_DISPATCH_HD constexpr body dispatch_body(op o, uint32_t N, bool f64,
-                                               uint32_t sm = GLASS_DEFAULTS_SM) {
+                                               uint32_t sm = GLASS_TARGET_SM) {
     switch (sm) {
         case 870u: return body_sm87(o, N, f64);
         case 1200u: return body_sm120(o, N, f64);

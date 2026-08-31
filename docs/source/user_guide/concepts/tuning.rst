@@ -4,11 +4,13 @@ Tuning for Your Hardware
 One command — ``bench/tune.py``
 -------------------------------
 
-GLASS ships three measured defaults tables: the thread/warp/block/nvidia **backend
-ladder** (``glass-defaults.cuh``, consumed by ``glass::suggested_backend<>``),
+GLASS ships measured native/NVIDIA execution plans, a vendor implementation
+table, and explicit-algorithm characterization. The native and NVIDIA
+thread/warp/block **backend ladder** (``glass-defaults.cuh``, consumed by
+``glass::recommend<>``),
 the per-(M,N,K) **cuBLASDx-vs-SIMT table** (``src/nvidia/tuning_table.cuh``, the
-main subject below), and the serial-vs-reduced **``suggested_use_reduced<>``**
-predicate. ``bench/tune.py`` remeasures all of them on your GPU and regenerates
+main subject below), and the serial-vs-reduced characterization are all driven
+by ``bench/tune.py``. It remeasures them on your GPU and regenerates
 them under **one shared noise margin**, so nothing bakes sub-noise jitter and a
 pure-noise re-run reproduces the same tables:
 
@@ -33,7 +35,7 @@ keyed on the rendered source + a digest of the whole header library + the SM, so
 library edit transparently rebuilds only the affected binaries.
 
 The shared rule (``bench/tune_pick.py::pick``): a dependency-carrying impl
-(``nvidia`` / ``cublasdx`` / ``reduced``) wins **only if it beats the simplest
+(``nvidia`` / ``nvidia_thread`` / ``cublasdx`` / ``reduced``) wins **only if it beats the simplest
 impl by more than the margin** — otherwise the no-dependency path (always
 launchable, no MathDx) stays. Every op is measured and recorded; a dispatch
 picker is regenerated only where ≥2 impls genuinely compete. **Run on a quiet
@@ -57,7 +59,7 @@ before continuing.
 The cuBLASDx-vs-SIMT table
 --------------------------
 
-GLASS's ``glass::nvidia::*`` wrappers — ``gemm``, ``gemv``, ``row_strided_*``,
+GLASS's ``glass::nvidia::block::*`` wrappers — ``gemm``, ``gemv``, ``row_strided_*``,
 ``gemm_batched_1d`` — auto-dispatch between a pure-SIMT path and cuBLASDx at
 compile time (see :doc:`backend_dispatch`). The decision lives in
 ``src/nvidia/query_simt.cuh::should_use_cublasdx*<>()`` and consults, in order:
@@ -75,9 +77,9 @@ independently for a given (shape, SM).
 Picking a backend: measured defaults
 ------------------------------------
 
-Before the nvidia dispatch table (below), the higher-level question is *warp vs
-block vs nvidia* for your op and size. The three-contender sweep
-(``bench/tune.py --legs ladder`` → ``bench/RESULTS.md``) measures all three on
+Before the nvidia dispatch table (below), the higher-level question is *thread
+vs warp vs block vs NVIDIA block vs NVIDIA thread* for your op and size. The
+five-contender sweep (``bench/tune.py --legs ladder``) measures them on
 one ns/problem axis. Numbers below are **RTX 5090 / sm_120**; breakevens shift on other
 GPUs, so re-run the sweep on yours.
 
@@ -103,7 +105,7 @@ GPUs, so re-run the sweep on yours.
      - **warp** ≤ N≈8, else **block**
      - scale 64→256 with N
      - 2–4
-   * - ``chol`` / ``trsv`` / ``posv``
+   * - ``potrf`` / ``trsv`` / ``posv``
      - **warp**; block fallback **TB=32**
      - 32
      - 2–4
@@ -112,27 +114,38 @@ Rule of thumb: **warp-per-problem by default**; ``gemv`` → block past N≈48, 
 block once non-tiny. Factor/solve want block ``TB=32`` — extra threads idle on the
 serial pivot and TB>32 *hurts*.
 
-**If you link MathDx** (``glass::nvidia::``), the vendor path wins a middle band (f32):
-``gemm`` N≈16–64 (block above; cuBLASDx is smem-capped past 64 here), ``chol``/``posv``
-N≥16 through 128 (cuSOLVERDx, 1.5–2.7×), ``trsv`` only N≈16–32 (warp wins above). In
-**f64** the band is narrower (≈ N=16–64; the double descriptors hit the ~99 KB opt-in
-smem cap at 64). For a *single* large problem (batch≈1), the vendor path wins
-factor/solve/gemm from N≈32 (up to ~8×). See ``bench/RESULTS.md`` for the full
-per-op × per-precision tables.
+**If you link MathDx**, both ``glass::nvidia::block`` and
+``glass::nvidia::thread``
+interfaces enter the ladder where supported. Which one wins is not monotonic:
+the current sm_120 and sm_87 tables select NVIDIA thread for some small
+``potrf``/``trsv``/``posv`` cells, NVIDIA block elsewhere, and native tiers in
+the remaining bands. See :doc:`../tutorials/sweep_results` and
+``bench/RESULTS.md`` for the dated per-op × per-precision results.
 
-These defaults are also exposed as ``constexpr`` helpers in ``glass-defaults.cuh`` —
-``glass::suggested_backend<op, N, T>()``, ``suggested_block_threads<>()`` and
-``suggested_warps_per_block<>()`` — so callers and codegen can pick a backend + launch
-config without hand-copying the table. Include it after ``glass.cuh`` (and after
-``glass-nvidia.cuh`` to make the ``nvidia`` tier eligible; otherwise it collapses to the
-warp/block runner-up). The pick is host-/codegen-side because the tiers need
-different ``<<<grid, block>>>`` launches. (The sm_120 tables include the ``thread``
-tier as of the 2026-07-18 sweep — see the note in
-:doc:`../../api_reference/defaults`.) Tables are per-arch (``ideal_sm120`` today)
+In-place solver timing has one additional gate. The main ladder measures
+back-to-back throughput and restores inputs once per trial; after its first
+launch, an in-place solver therefore consumes its own output. Whenever that
+ladder selects NVIDIA thread, ``bench_nvt_valid.cu`` remeasures native
+thread/warp/block and NVIDIA thread with a ring of independent valid systems,
+one per timed launch. NVIDIA thread must clear the same 5% margin there or the
+table falls back to the valid-input native winner. This companion leg is a
+veto only: it cannot promote a vendor path the main ladder did not select, and
+missing confirmation evidence makes regeneration fail closed. The gate also
+uses each contender's observed three-trial interval: if those intervals cannot
+resolve the 5% boundary, regeneration stops for a quieter recapture.
+
+The ``constexpr`` ``glass::recommend<op, T, dims...>()`` query returns one
+``execution_plan`` containing family, scope, and launch packing.
+Pass ``dependency_set::mathdx`` explicitly to admit NVIDIA candidates;
+``native_only`` is the default. Each measured architecture stores both the
+full winner and the measured native-only winner for every cell. The pick is
+host-/codegen-side because
+the tiers need different ``<<<grid, block>>>`` launches. Tables are per-arch
+(``ideal_sm120`` and ``ideal_sm87`` today)
 behind an SM dispatch; ``bench/tune.py --sm auto`` adds or refreshes your GPU's table
 (and the tables below) in-tree, leaving other arches' tables untouched.
 
-Note that ``suggested_backend<>`` advises **launch-level** packing — the caller
+Note that ``recommend<>`` advises **launch-level** packing — the caller
 changes the ``<<<grid, block>>>``. Distinct from it, ``glass::dispatch_body()``
 (``glass-dispatch.cuh``) picks the **in-block body** behind the bare
 ``glass::op`` face under a *fixed* block-scope calling contract — the launch
@@ -155,18 +168,23 @@ What a retune actually changes (sm_120 vs sm_87)
 ------------------------------------------------
 
 GLASS ships two measured architectures today: ``sm_120`` (RTX 5090, 170 SMs)
-and ``sm_87`` (Jetson AGX Orin, 16 SMs, integrated memory). Comparing them is
-the clearest answer to "do I need to retune?".
+and ``sm_87`` (Jetson AGX Orin, 16 SMs, integrated memory). Comparing the
+2026-08-30 five-backend captures is the clearest answer to "do I need to
+retune?".
 
-**Yes, per architecture.** Of the 396 (op, N, precision, batch) cells measured
-on both, **125 (32 %) crown a different tier** — and systematically toward more
-problem packing on the smaller part: 34 cells move warp → thread, 27 block →
-warp, 17 nvidia → thread. The thread tier's share nearly doubles (64 → 118
-cells). With far fewer SMs to fill, packing more problems per warp beats
-spreading one problem across more lanes. No library source differs between the
-two machines; a third of the dispatch decisions do.
+**Yes, per architecture.** In the raw five-backend ladder, of the 396
+(op, N, precision, batch) cells measured on both, **131 (33 %) crown a
+different tier**. The smaller Orin selects native
+thread more often (87 vs 66 cells), NVIDIA thread more often (52 vs 29), and
+block less often (48 vs 82). After the independent-valid-input veto, the
+NPROB=8192 regime that actually generates the tables differs in **39 of 132**
+cells. With far fewer SMs to fill, packing more
+problems per warp often beats spreading one problem across more lanes, but the
+movement is not one-directional. No library source differs between the two
+machines; roughly a third of the decisions do.
 
-**No, per power mode.** The same Orin measured at all three standard
+**Historically, no material retune was needed per power mode.** Before the
+NVIDIA-thread contender was added, the same Orin measured at all three standard
 ``nvpmodel`` modes slows by a median 1.49× (30 W → 15 W), 1.31× (50 W →
 30 W), 1.95× end to end — but the picks barely move: 8 of 396 cells differ
 between 15 W and 30 W, 11 between 30 W and 50 W, 7 across the full span.
@@ -181,11 +199,14 @@ mode is covered.
 
 Two practical notes from the Orin bring-up:
 
-* NVIDIA ships no MathDx for Tegra, but the cuSOLVERDx **LTO-IR fatbins are
+* NVIDIA ships no native MathDx host package for Tegra, but the cuSOLVERDx
+  **LTO-IR fatbins are
   architecture-neutral**: ``tune.py`` detects a non-x86 host and stages a
   separate-compilation device link against the fatbin, so Jetson runs the full
-  four-tier ladder. It is worth having — the vendor tier wins 118 of 396 cells
-  on sm_87 (Cholesky up to 3.7× over the best SIMT tier at small N).
+  native/NVIDIA ladder. In the current capture, the NVIDIA block and thread
+  tiers take 87 and 52 of 396 raw ladder cells respectively; the shipped
+  throughput table retains NVIDIA thread in 15 of 132 cells after its
+  independent-valid-input veto.
 * The ``nvpmodel`` labels are ceilings, not draws. Sampling the board rails at
   1 Hz with the GPU ≥98.6 % busy, the whole ladder pulls 9.2 W in the 15 W
   mode, 13.4 W in the 30 W mode and 16.0 W in the 50 W mode. Small
@@ -195,7 +216,7 @@ Two practical notes from the Orin bring-up:
   **Race to idle** — run the highest standard mode your thermals allow and let
   the board idle between control cycles.
 
-**How reproducible is a retune?** Two independent 50 W captures of the same
+**In that four-backend power-mode study, how reproducible was a retune?** Two independent 50 W captures of the same
 board (different sessions, hours apart) crown the same winner in 391 of 396
 cells (98.7 %), and originally generated tables differing in exactly one
 line: ``gemm`` f64 near N=48, where the block and warp tiers land within 1 %
@@ -294,10 +315,10 @@ Debugging dispatch decisions
    #include "glass-nvidia.cuh"
 
    int main() {
-       glass::nvidia::print_dispatch<float, 6, 6, 6>();
-       // → "glass::nvidia::gemm<T,6,6,6,SM=860>: SIMT fallback"
-       glass::nvidia::print_dispatch_gemv<float, 64, 64>();
-       // → "glass::nvidia::gemv<T,64,64,SM=860>: cuBLASDx (needs DEFINE_NVIDIA_GEMV*)"
+       glass::nvidia::block::print_dispatch<float, 6, 6, 6>();
+       // → "glass::nvidia::block::gemm<T,6,6,6,SM=860>: SIMT fallback"
+       glass::nvidia::block::print_dispatch_gemv<float, 64, 64>();
+       // → "glass::nvidia::block::gemv<T,64,64,SM=860>: cuBLASDx"
    }
 
 These are ``__host__ __device__`` so you can call them from ``main`` for

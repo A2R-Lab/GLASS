@@ -124,12 +124,12 @@ python3 tune.py --sm "$SMS" --allow-no-mathdx --legs ladder --prebuild || exit 1
 python3 paper_sweeps.py --arch "$ARCH" --build-only || exit 1
 ROBOT_BIN="build/bench_robotics_${ARCH}"
 if [[ ! -x "$ROBOT_BIN" || bench_robotics.cu -nt "$ROBOT_BIN" ]]; then
-  nvcc -std=c++17 -arch="$ARCH" -O3 -I.. -I../src -DSMS="$SMS" \
+  nvcc -std=c++17 -arch="$ARCH" -O3 -I.. -I../src -DGLASS_TARGET_SM="$SMS" \
        bench_robotics.cu -o "$ROBOT_BIN" || exit 1
 fi
 BODY_BIN="build/bench_body_dispatch_${ARCH}"
 if [[ ! -x "$BODY_BIN" || bench_body_dispatch.cu -nt "$BODY_BIN" ]]; then
-  nvcc -std=c++17 -arch="$ARCH" -O3 -I.. -I../src -DSMS="$SMS" \
+  nvcc -std=c++17 -arch="$ARCH" -O3 -I.. -I../src -DGLASS_TARGET_SM="$SMS" \
        bench_body_dispatch.cu -o "$BODY_BIN" || exit 1
 fi
 if [[ "$BUILD_ONLY" == 1 ]]; then
@@ -198,7 +198,7 @@ run_timed_legs() {
   # freshest of each into DEST (mv, so the next mode can't pick up stale files;
   # the sentinel guards against packaging captures committed in the repo).
   local pat latest
-  for pat in mega_sweep_ paper_hostblas_ paper_fusion_; do
+  for pat in mega_sweep_ nvt_valid_ paper_hostblas_ paper_fusion_; do
     latest=$(ls -t ${pat}*.txt 2>/dev/null | head -1)
     if [[ -n "$latest" && "$latest" -nt "$DEST/.legs_start" ]]; then
       mv "$latest" "$DEST/"

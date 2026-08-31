@@ -3,7 +3,7 @@
 Companion to test_l3_nvidia.py (which tests the SIMT batched APIs from
 l3_simt.cuh). This module targets the round-2 additions:
 
-  * Gap A — glass::nvidia::gemv<>     auto-dispatches SIMT vs cuBLASDx
+  * Gap A — glass::nvidia::block::gemv<> auto-dispatches SIMT vs cuBLASDx
   * Gap B — gemv_strided<>        auto-dispatches; SIMT uses stride directly
   * Gap C — gemm_strided<>        auto-dispatches; SIMT skips compact-pack
   * Gap D — gemm<...,LB=row_major,...> maps onto SIMT TRANSPOSE_B=true
@@ -43,8 +43,8 @@ def test_dispatch_query(bin_nvidia_dispatch):
     rc, stdout, _ = _run(bin_nvidia_dispatch, "dispatch_q")
     assert rc == 0
     # 6x6x6 → SIMT, 16x16x16 → cuBLASDx (matches the shipped tuning + heuristic).
-    assert "glass::nvidia::gemm<T,6,6,6" in stdout and "SIMT" in stdout
-    assert "glass::nvidia::gemm<T,16,16,16" in stdout and "cuBLASDx" in stdout
+    assert "glass::nvidia::block::gemm<T,6,6,6" in stdout and "SIMT" in stdout
+    assert "glass::nvidia::block::gemm<T,16,16,16" in stdout and "cuBLASDx" in stdout
 
 # ─── moved from test_l3.py 2026-08-06 (shard partition: these ride the nvidia TU) ───
 import numpy as np

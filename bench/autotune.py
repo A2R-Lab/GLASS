@@ -150,7 +150,7 @@ _GEMM_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
     __global__ void k_cublasdx(float* A, float* B, float* C, volatile float* sink, int iters) {{
         extern __shared__ __align__(16) char smem[];
         for (int rep = 0; rep < iters; rep++) {{
-            glass::nvidia::gemm<float, M, N, K, TC>(1.f, A, B, 0.f, C, smem);
+            glass::nvidia::block::gemm<float, M, N, K, TC>(1.f, A, B, 0.f, C, smem);
             __syncthreads();
             if (threadIdx.x == 0) sink[rep & 0xFF] = C[0];
             __syncthreads();
@@ -164,7 +164,7 @@ _GEMM_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
         cudaMalloc(&dB, N*K * sizeof(float));
         cudaMalloc(&dC, M*K * sizeof(float));
         cudaMalloc(&dSink, 256 * sizeof(float));
-        constexpr size_t smem = glass::nvidia::gemm_scratch_bytes<float, M, N, K, TC>();
+        constexpr size_t smem = glass::nvidia::block::gemm_scratch_bytes<float, M, N, K, TC>();
 
         k_simt<<<1, TC>>>(dA, dB, dC, dSink, 100);
         bool simt_ok = !leg_failed("simt");
@@ -207,7 +207,7 @@ _GEMV_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
     __global__ void k_cublasdx(float* A, float* x, float* y, volatile float* sink, int iters) {{
         extern __shared__ __align__(16) char smem[];
         for (int rep = 0; rep < iters; rep++) {{
-            glass::nvidia::gemv<float, M, N, TC>(1.f, A, x, 0.f, y, smem);
+            glass::nvidia::block::gemv<float, M, N, TC>(1.f, A, x, 0.f, y, smem);
             __syncthreads();
             if (threadIdx.x == 0) sink[rep & 0xFF] = y[0];
             __syncthreads();
@@ -221,7 +221,7 @@ _GEMV_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
         cudaMalloc(&dx, N   * sizeof(float));
         cudaMalloc(&dy, M   * sizeof(float));
         cudaMalloc(&dSink, 256 * sizeof(float));
-        constexpr size_t smem = glass::nvidia::gemv_scratch_bytes<float, M, N, TC>();
+        constexpr size_t smem = glass::nvidia::block::gemv_scratch_bytes<float, M, N, TC>();
 
         k_simt<<<1, TC>>>(dA, dx, dy, dSink, 100);
         bool simt_ok = !leg_failed("simt");
@@ -266,7 +266,7 @@ _ROW_STRIDED_GEMV_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
     __global__ void k_cublasdx(float* A, float* x, float* y, volatile float* sink, int iters) {{
         extern __shared__ __align__(16) char smem[];
         for (int rep = 0; rep < iters; rep++) {{
-            glass::nvidia::gemv_strided<float, M, N, ROW_STRIDE, TC>(1.f, A, x, 0.f, y, smem);
+            glass::nvidia::block::gemv_strided<float, M, N, ROW_STRIDE, TC>(1.f, A, x, 0.f, y, smem);
             __syncthreads();
             if (threadIdx.x == 0) sink[rep & 0xFF] = y[0];
             __syncthreads();
@@ -281,7 +281,7 @@ _ROW_STRIDED_GEMV_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
         cudaMalloc(&dy, M   * sizeof(float));
         cudaMalloc(&dSink, 256 * sizeof(float));
         constexpr size_t smem =
-            glass::nvidia::gemv_strided_scratch_bytes<float, M, N, ROW_STRIDE, TC>();
+            glass::nvidia::block::gemv_strided_scratch_bytes<float, M, N, ROW_STRIDE, TC>();
 
         k_simt<<<1, TC>>>(dA, dx, dy, dSink, 100);
         bool simt_ok = !leg_failed("simt");
@@ -328,7 +328,7 @@ _ROW_STRIDED_GEMM_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
     __global__ void k_cublasdx(float* A, float* B, float* C, volatile float* sink, int iters) {{
         extern __shared__ __align__(16) char smem[];
         for (int rep = 0; rep < iters; rep++) {{
-            glass::nvidia::gemm_strided<float, M, N, K, A_RS, B_RS, TC>(1.f, A, B, 0.f, C, smem);
+            glass::nvidia::block::gemm_strided<float, M, N, K, A_RS, B_RS, TC>(1.f, A, B, 0.f, C, smem);
             __syncthreads();
             if (threadIdx.x == 0) sink[rep & 0xFF] = C[0];
             __syncthreads();
@@ -343,7 +343,7 @@ _ROW_STRIDED_GEMM_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
         cudaMalloc(&dC, M    * K * sizeof(float));
         cudaMalloc(&dSink, 256 * sizeof(float));
         constexpr size_t smem =
-            glass::nvidia::gemm_strided_scratch_bytes<float, M, N, K, A_RS, B_RS, TC>();
+            glass::nvidia::block::gemm_strided_scratch_bytes<float, M, N, K, A_RS, B_RS, TC>();
 
         k_simt<<<1, TC>>>(dA, dB, dC, dSink, 100);
         bool simt_ok = !leg_failed("simt");
@@ -366,8 +366,8 @@ _ROW_STRIDED_GEMM_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
 
 
 # ───── gemm_batched_1d ──────────────────────────────────────────────────────
-# Compares the 1D SIMT batched (glass::nvidia::gemm_batched_1d) against the
-# 2D cuBLASDx batched (glass::nvidia::gemm_batched). The launches differ
+# Compares the 1D SIMT batched (glass::nvidia::block::gemm_batched_1d) against
+# the 2D cuBLASDx batched (glass::nvidia::block::gemm_batched). The launches differ
 # (1D = TC*BATCH threads; 2D = dim3(TC, BATCH)). The autotune still picks the
 # faster wall-time per op — that's what cublasdx_wins_batched<> answers.
 _GEMM_BATCHED_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
@@ -387,7 +387,7 @@ _GEMM_BATCHED_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
 
     __global__ void k_simt(float** As, float** Bs, float** Cs, volatile float* sink, int iters) {{
         for (int rep = 0; rep < iters; rep++) {{
-            glass::nvidia::gemm_batched_1d<float, M, N, K, BATCH, BTC>(
+            glass::nvidia::block::gemm_batched_1d<float, M, N, K, BATCH, BTC>(
                 1.f, As, Bs, 0.f, Cs);
             __syncthreads();
             if (threadIdx.x == 0) sink[rep & 0xFF] = Cs[0][0];
@@ -399,7 +399,7 @@ _GEMM_BATCHED_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
                                 volatile float* sink, int iters) {{
         extern __shared__ __align__(16) char smem[];
         for (int rep = 0; rep < iters; rep++) {{
-            glass::nvidia::gemm_batched<float, M, N, K, BATCH, BTC>(
+            glass::nvidia::block::gemm_batched<float, M, N, K, BATCH, BTC>(
                 1.f, As, Bs, 0.f, Cs, smem);
             __syncthreads();
             if (threadIdx.x == 0 && threadIdx.y == 0) sink[rep & 0xFF] = Cs[0][0];
@@ -432,7 +432,7 @@ _GEMM_BATCHED_MICROBENCH = _BENCH_PREAMBLE + textwrap.dedent("""
         cudaMemcpy(dBs, hBs, BATCH * sizeof(float*), cudaMemcpyHostToDevice);
         cudaMemcpy(dCs, hCs, BATCH * sizeof(float*), cudaMemcpyHostToDevice);
         constexpr size_t smem =
-            glass::nvidia::gemm_batched_scratch_bytes<float, M, N, K, BATCH, BTC>();
+            glass::nvidia::block::gemm_batched_scratch_bytes<float, M, N, K, BATCH, BTC>();
 
         // SIMT batched_1d launches 1D with BTC*BATCH threads, ptr-array args.
         k_simt<<<1, BTC * BATCH>>>(dAs, dBs, dCs, dSink, 100);
@@ -613,7 +613,7 @@ def build_shape(api, shape, sms, mathdx_root, build_dir):
         f"-I{GLASS_DIR}", f"-I{GLASS_DIR / 'src'}",
         f"-I{mathdx_root / 'include'}",
         f"-I{mathdx_root / 'external' / 'cutlass' / 'include'}",
-        "-DGLASS_BENCH_CUBLASDX", f"-DSMS={sms}",
+        "-DGLASS_BENCH_CUBLASDX", f"-DGLASS_TARGET_SM={sms}",
         "--expt-relaxed-constexpr", "-Xptxas", "-O1",
         "-o", str(bin_path), str(src_path),
     ]
@@ -814,34 +814,26 @@ def emit_results_md(md_path: pathlib.Path,
 
 # ─── main ───────────────────────────────────────────────────────────────────
 
-def emit_defaults_table(sweep_path, out_path, sms):
+def emit_defaults_table(sweep_path, out_path, sms, margin=0.05):
     """Parse a bench_mega_sweep run (mega_sweep_*.txt) and emit a per-host override
-    header for glass-defaults.cuh (the warp/block/nvidia ladder). Uses the NPROB=8192
+    header for glass-defaults.cuh (native plus NVIDIA block/thread ladder). Uses the NPROB=8192
     throughput regime for f32 + f64."""
-    import re
     text = pathlib.Path(sweep_path).read_text()
-    bemap = {"BLOCK": "block", "WARP": "warp", "NVIDIA": "nvidia"}
-    line_re = re.compile(r"^(dot|gemv|gemm|chol|trsv|posv)\s+N=(\d+)\b.*->\s+(BLOCK|WARP|NVIDIA)\b")
-    hdr_re = re.compile(r"NPROB=(\d+).*dtype=(f32|f64)")
-    winners = {}          # (dtype, op) -> {N: backend}
-    dtype, nprob = None, None
-    for line in text.splitlines():
-        if line.startswith("####"):
-            m = hdr_re.search(line)
-            if m:
-                nprob, dtype = int(m.group(1)), m.group(2)
-            continue
-        if nprob != 8192:
-            continue
-        lm = line_re.match(line.strip())
-        if lm:
-            op, N, be = lm.group(1), int(lm.group(2)), bemap[lm.group(3)]
-            winners.setdefault((dtype, op), {})[N] = be
+    cells = tp.parse_mega_sweep(text, nprob=8192)
+    winners = {}          # (native_only, dtype, op) -> {N: backend}
+    for (dtype, op, N), measured in cells.items():
+        for native_only in (False, True):
+            timings = {name: value for name, value in measured.items()
+                       if not native_only or name not in {"nvidia", "nvidia_thread"}}
+            winner = tp.pick(timings, margin, {"nvidia", "nvidia_thread"})
+            if winner:
+                be = "nvidia_block" if winner == "nvidia" else winner
+                winners.setdefault((native_only, dtype, op), {})[N] = be
     if not winners:
         sys.exit(f"No NPROB=8192 verdicts parsed from {sweep_path}")
 
-    def emit_op(op, dtype):
-        picks = winners.get((dtype, op))
+    def emit_op(op, dtype, native_only):
+        picks = winners.get((native_only, dtype, op))
         if not picks:
             return None
         ns = sorted(picks)
@@ -862,14 +854,20 @@ def emit_defaults_table(sweep_path, out_path, sms):
         f"// (sm {sms}, NPROB=8192 throughput regime). Do not edit by hand.",
         "// Included by glass-defaults.cuh inside namespace glass::defaults — no namespace wrapper.",
         "#define GLASS_DEFAULTS_HAVE_LOCAL",
-        "constexpr backend local_ideal(op o, uint32_t N, bool f64, uint32_t /*sm*/) {",
+        "constexpr backend local_ideal(op o, uint32_t N, bool f64, uint32_t /*sm*/,",
+        "                              bool allow_nvidia) {",
     ]
-    for dtype, guard in (("f32", "if (!f64) {"), ("f64", "if (f64) {")):
-        lines.append(f"    {guard}")
-        for op in ("dot", "gemv", "gemm", "chol", "trsv", "posv"):
-            body = emit_op(op, dtype)
-            if body:
-                lines.append(f"        if (o == op::{op}) {{ {body} }}")
+    for native_only, dep_guard in ((False, "if (allow_nvidia) {"),
+                                   (True, "if (!allow_nvidia) {")):
+        lines.append(f"    {dep_guard}")
+        for dtype, type_guard in (("f32", "if (!f64) {"),
+                                  ("f64", "if (f64) {")):
+            lines.append(f"        {type_guard}")
+            for op in tp.LADDER_OPS:
+                body = emit_op(op, dtype, native_only)
+                if body:
+                    lines.append(f"            if (o == op::{op}) {{ {body} }}")
+            lines.append("        }")
         lines.append("    }")
     lines += ["    return backend::block;", "}", ""]
     out = pathlib.Path(out_path)
@@ -929,7 +927,7 @@ def main():
                         "timed sweep always runs serially for clean measurement.")
     p.add_argument("--emit-defaults", metavar="SWEEP_TXT", default=None,
                    help="Parse a bench_mega_sweep run (mega_sweep_*.txt) and emit a per-host "
-                        "glass-defaults.cuh override header (warp/block/nvidia ladder), then exit.")
+                        "glass-defaults.cuh override header (native and NVIDIA ladder), then exit.")
     args = p.parse_args()
 
     sms = detect_sm() if args.sm == "AUTO" else int(args.sm)
@@ -938,7 +936,7 @@ def main():
     if args.emit_defaults:
         out = args.out or str(TUNING_DIR / f"{hostname}_defaults.cuh")
         TUNING_DIR.mkdir(parents=True, exist_ok=True)
-        emit_defaults_table(args.emit_defaults, out, sms)
+        emit_defaults_table(args.emit_defaults, out, sms, args.margin)
         return
 
     requested_apis = [a.strip() for a in args.apis.split(",") if a.strip()]

@@ -11,7 +11,7 @@
 //   nvcc -std=c++17 -arch=sm_XX -O3
 //        -I.. -I../src
 //        -I$MATHDX_ROOT/include -I$MATHDX_ROOT/external/cutlass/include
-//        -DGLASS_BENCH_CUBLASDX -DSMS=XX0
+//        -DGLASS_BENCH_CUBLASDX -DGLASS_TARGET_SM=XX0
 //        -Xptxas -O1
 //        bench_gemv.cu -o bench_gemv
 // Usage: ./bench_gemv <m> <n> [iters]
@@ -159,10 +159,6 @@ DEFINE_THREAD_GEMV_CT(6)
 
 // ─── cuBLASDx kernels (compile-time M/N) ─────────────────────────────────────
 #ifdef GLASS_BENCH_CUBLASDX
-
-#ifndef SMS
-#define SMS 860
-#endif
 
 #define DEFINE_CUBLASDX_GEMV(M, N)                                                          \
     namespace cublasdx_gemv_##M##x##N {                                                     \

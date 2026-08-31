@@ -4,7 +4,8 @@ One capture per box (Orin AGX / Orin NX / Orin Nano — all `sm_87`). Each run
 produces a single `bench/jetson_<host>_<ts>.tar.gz` containing the timings
 plus a full device/JetPack provenance bundle; send those back for ingestion
 (figure columns + the `ideal_sm87` ladder table, spliced off-box via
-`tune.py --from-ladder --sm 870`).
+`tune.py --from-ladder --from-nvt-valid --sm 870` when MathDx is available;
+native-only captures need no confirmation companion).
 
 ## 0. Pre-flight: get on the latest JetPack the box supports
 
@@ -124,7 +125,8 @@ methodology). The script:
 
 | Capture | Feeds |
 |---|---|
-| `mega_sweep_*.txt` | `ideal_sm87` ladder table (spliced on the desktop via `python bench/tune.py --from-ladder <txt> --sm 870 --allow-no-mathdx`), paper §portability "which crossovers moved" |
+| `mega_sweep_*.txt` | `ideal_sm87` ladder table. Full MathDx replay: `python bench/tune.py --sm 870 --legs ladder --from-ladder <mega> --from-nvt-valid <nvt>`; a native-only capture needs only `--from-ladder <mega> --allow-no-mathdx`. |
+| `nvt_valid_*.txt` | Required valid-input veto companion when the ladder selects NVIDIA thread; pass it with `--from-nvt-valid` during off-box regeneration. |
 | `paper_hostblas_*.txt` | Jetson columns for the hostblas + latency figures |
 | `paper_fusion_*.txt` | Jetson fusion curves |
 | `robotics_sweep_*.txt` | Jetson robotics tier panels |

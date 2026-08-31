@@ -13,13 +13,9 @@
 // see query_simt.cuh (included unconditionally by glass-nvidia.cuh).
 //
 // Example:
-//   static_assert(glass::nvidia::min_block_threads<float, 6, 6, 6>() > 0);
-//   constexpr uint32_t TC = glass::nvidia::min_block_threads<float, 6, 6, 6>();
+//   static_assert(glass::nvidia::block::min_block_threads<float, 6, 6, 6>() > 0);
+//   constexpr uint32_t TC = glass::nvidia::block::min_block_threads<float, 6, 6, 6>();
 //   // -> emit DEFINE_NVIDIA_GEMM_BLOCKDIM(6, 6, 6, TC) and launch with TC.
-
-#ifndef SMS
-#define SMS 860
-#endif
 
 // -- gemm queries -----------------------------------------------------------
 
@@ -128,4 +124,3 @@ constexpr bool gemv_block_threads_valid()
 {
     return BLOCK_THREADS >= gemv_min_block_threads<T, M, N, SM_VAL>();
 }
-

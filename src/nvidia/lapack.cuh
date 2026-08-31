@@ -1,7 +1,7 @@
 #pragma once
 /**
  * @file lapack.cuh
- * @brief cuSOLVERDx-backed single-block LAPACK wrappers for `glass::nvidia::`.
+ * @brief cuSOLVERDx-backed single-block LAPACK wrappers for `glass::nvidia::block::`.
  *
  * Block-level, compile-time-size factorizations and solves: Cholesky
  * (potrf), triangular solve (trsm), SPD solve (posv / potrs), unpivoted
@@ -39,14 +39,10 @@
 //
 // Example:
 //   DEFINE_NVIDIA_CHOL_BLOCKDIM(7, 352)
-//   constexpr auto smem    = glass::nvidia::potrf_scratch_bytes<float, 7, 352>();
-//   constexpr auto threads = glass::nvidia::potrf_threads<float, 7, 352>();
+//   constexpr auto smem    = glass::nvidia::block::potrf_scratch_bytes<float, 7, 352>();
+//   constexpr auto threads = glass::nvidia::block::potrf_threads<float, 7, 352>();
 //   kernel<<<1, threads, smem>>>(d_A);
-//   glass::nvidia::potrf<float, 7, 352>(A, smem_ptr);
-
-#ifndef SMS
-#define SMS 860
-#endif
+//   glass::nvidia::block::potrf<float, 7, 352>(A, smem_ptr);
 
 // ---------------------------------------------------------------------------
 // Primary templates
@@ -73,7 +69,7 @@ template <typename T, uint32_t N, uint32_t BLOCK_THREADS = 0, uint32_t SM_VAL = 
 __device__ void potrf(T* A, char* smem)
 {
     static_assert(sizeof(T) == 0,
-        "glass::nvidia::potrf<T,N,BLOCK_THREADS,SM_VAL> not available — "
+        "glass::nvidia::block::potrf<T,N,BLOCK_THREADS,SM_VAL> not available — "
         "add DEFINE_NVIDIA_CHOL* in your .cu file.");
 }
 
@@ -117,7 +113,7 @@ template <typename T, uint32_t M, uint32_t N,
 __device__ void trsm(T alpha, T* L, T* B, char* smem)
 {
     static_assert(sizeof(T) == 0,
-        "glass::nvidia::trsm<T,M,N,BLOCK_THREADS,SM_VAL> not available — "
+        "glass::nvidia::block::trsm<T,M,N,BLOCK_THREADS,SM_VAL> not available — "
         "add DEFINE_NVIDIA_TRSM* in your .cu file.");
 }
 
@@ -462,7 +458,7 @@ template <typename T, uint32_t N, uint32_t NRHS,
 __device__ void posv(T* A, T* B, char* smem)
 {
     static_assert(sizeof(T) == 0,
-        "glass::nvidia::posv<T,N,NRHS,BLOCK_THREADS,SM_VAL> not available — "
+        "glass::nvidia::block::posv<T,N,NRHS,BLOCK_THREADS,SM_VAL> not available — "
         "add DEFINE_NVIDIA_POSV* in your .cu file.");
 }
 
@@ -616,7 +612,7 @@ template <typename T, uint32_t N, uint32_t NRHS,
 __device__ void potrs(const T* L, T* B, char* smem)
 {
     static_assert(sizeof(T) == 0,
-        "glass::nvidia::potrs<T,N,NRHS,BLOCK_THREADS,SM_VAL> not available — "
+        "glass::nvidia::block::potrs<T,N,NRHS,BLOCK_THREADS,SM_VAL> not available — "
         "add DEFINE_NVIDIA_POTRS* in your .cu file.");
 }
 
@@ -747,7 +743,7 @@ template <typename T, uint32_t N,
 __device__ void getrf_no_pivot(T* A, char* smem)
 {
     static_assert(sizeof(T) == 0,
-        "glass::nvidia::getrf_no_pivot<T,N,BLOCK_THREADS,SM_VAL> not available — "
+        "glass::nvidia::block::getrf_no_pivot<T,N,BLOCK_THREADS,SM_VAL> not available — "
         "add DEFINE_NVIDIA_GETRF* in your .cu file.");
 }
 
@@ -874,7 +870,7 @@ template <typename T, uint32_t N, uint32_t NRHS,
 __device__ void getrs_no_pivot(const T* LU, T* B, char* smem)
 {
     static_assert(sizeof(T) == 0,
-        "glass::nvidia::getrs_no_pivot<T,N,NRHS,BLOCK_THREADS,SM_VAL> not available — "
+        "glass::nvidia::block::getrs_no_pivot<T,N,NRHS,BLOCK_THREADS,SM_VAL> not available — "
         "add DEFINE_NVIDIA_GETRS* in your .cu file.");
 }
 
@@ -1007,7 +1003,7 @@ template <typename T, uint32_t N, uint32_t NRHS,
 __device__ void gesv_no_pivot(T* A, T* B, char* smem)
 {
     static_assert(sizeof(T) == 0,
-        "glass::nvidia::gesv_no_pivot<T,N,NRHS,BLOCK_THREADS,SM_VAL> not available — "
+        "glass::nvidia::block::gesv_no_pivot<T,N,NRHS,BLOCK_THREADS,SM_VAL> not available — "
         "add DEFINE_NVIDIA_GESV* in your .cu file.");
 }
 
@@ -1157,7 +1153,7 @@ template <typename T, uint32_t M, uint32_t N,
 __device__ void geqrf(T* A, T* tau, char* smem)
 {
     static_assert(sizeof(T) == 0,
-        "glass::nvidia::geqrf<T,M,N,BLOCK_THREADS,SM_VAL> not available — "
+        "glass::nvidia::block::geqrf<T,M,N,BLOCK_THREADS,SM_VAL> not available — "
         "add DEFINE_NVIDIA_GEQRF* in your .cu file.");
 }
 
@@ -1291,7 +1287,7 @@ template <typename T, uint32_t M, uint32_t N, uint32_t NRHS,
 __device__ void gels(T* A, T* tau, T* B, char* smem)
 {
     static_assert(sizeof(T) == 0,
-        "glass::nvidia::gels<T,M,N,NRHS,BLOCK_THREADS,SM_VAL> not available — "
+        "glass::nvidia::block::gels<T,M,N,NRHS,BLOCK_THREADS,SM_VAL> not available — "
         "add DEFINE_NVIDIA_GELS* in your .cu file.");
 }
 

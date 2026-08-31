@@ -21,9 +21,10 @@ documentation, start with `README.md`.
   block, warp-0, or thread-0 body for measured compile-time cells.
 - `glass::warp::` owns one problem per full 32-lane warp.
 - `glass::thread::` owns one problem per thread. It is compile-time-only,
-  branch-free, and intended for register-resident sizes up to `N <= 7`.
-- `glass::nvidia::block::` and `glass::nvidia::warp::` expose vendor-backed
-  implementations. MathDx is optional; CUB ships with CUDA.
+  branch-free, and is usually strongest while its operands remain register-resident.
+- `glass::nvidia::block::`, `glass::nvidia::warp::`, and
+  `glass::nvidia::thread::` expose vendor-backed implementations. The thread
+  surface requires cuSOLVERDx 0.4+; MathDx is optional and CUB ships with CUDA.
 - `glass::cgrps::` is a cooperative-groups spelling of the block algorithm, not
   an independently tuned backend.
 
@@ -173,7 +174,7 @@ cd docs && PATH="$(cd .. && pwd)/.venv/bin:$PATH" make all SPHINXOPTS="-W --keep
 
 `release.sh` requires a clean `main`, a changelog entry, a complete
 public-overload manifest (every documented overload compile-covered — an
-overload metric, not line coverage), all 20 declared behavioral obligations
+overload metric, not line coverage), all 21 declared behavioral obligations
 passing, a fresh full GPU receipt, and local receipt verification before it
 tags and pushes.
 

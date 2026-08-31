@@ -9,7 +9,7 @@
 //
 // All sizes are compile-time. Call one of the DEFINE_NVIDIA_GEMV* macros once
 // per (M, N, BLOCK_THREADS, layouts, SM) combination you need, then call
-// glass::nvidia::gemv<...>(alpha, A, x, beta, y, smem) inside your kernel.
+// glass::nvidia::block::gemv<...>(alpha, A, x, beta, y, smem) inside your kernel.
 //
 // Backward-compatible defaults:
 //   BLOCK_THREADS = 0           -> let cuBLASDx pick block_dim from its database
@@ -18,24 +18,20 @@
 //
 // Example (basic):
 //   DEFINE_NVIDIA_GEMV(6, 6)
-//   constexpr auto smem    = glass::nvidia::gemv_scratch_bytes<float, 6, 6>();
-//   constexpr auto threads = glass::nvidia::gemv_threads<float, 6, 6>();
+//   constexpr auto smem    = glass::nvidia::block::gemv_scratch_bytes<float, 6, 6>();
+//   constexpr auto threads = glass::nvidia::block::gemv_threads<float, 6, 6>();
 //   kernel<<<1, threads, smem>>>(...);
-//   glass::nvidia::gemv<float, 6, 6>(1.f, A, x, 0.f, y, smem_ptr);
+//   glass::nvidia::block::gemv<float, 6, 6>(1.f, A, x, 0.f, y, smem_ptr);
 //
 // Example (caller-controlled BlockDim):
 //   DEFINE_NVIDIA_GEMV_BLOCKDIM(6, 6, 352)
 //   kernel<<<1, 352, smem>>>(...);
-//   glass::nvidia::gemv<float, 6, 6, 352>(1.f, A, x, 0.f, y, smem_ptr);
-
-#ifndef SMS
-#define SMS 860
-#endif
+//   glass::nvidia::block::gemv<float, 6, 6, 352>(1.f, A, x, 0.f, y, smem_ptr);
 
 // ---------------------------------------------------------------------------
 // Primary templates — instantiated by the DEFINE_NVIDIA_GEMV* macros below.
 //
-// AUTO-DISPATCH: like glass::nvidia::gemm<>, the gemv<> primary template now
+// AUTO-DISPATCH: like glass::nvidia::block::gemm<>, the gemv<> primary template now
 // consults should_use_cublasdx_gemv<T, M, N, SM_VAL>():
 //   - returns false → routes to ::glass::gemv<T, M, N, false, ROW_MAJOR>
 //                     (SIMT, no scratch). Layout LA maps to SIMT's ROW_MAJOR
@@ -85,7 +81,7 @@ __device__ void gemv(T alpha, T* A, T* x, T beta, T* y, char* smem)
             alpha, A, x, beta, y);
     } else {
         static_assert(sizeof(T) == 0,
-            "glass::nvidia::gemv<T,M,N,BLOCK_THREADS,LA,LB,LC,SM_VAL>: "
+            "glass::nvidia::block::gemv<T,M,N,BLOCK_THREADS,LA,LB,LC,SM_VAL>: "
             "should_use_cublasdx_gemv<> returned true for this shape but no "
             "DEFINE_NVIDIA_GEMV* macro is in scope. Add one in your .cu, or "
             "override the dispatch via tuning_table.cuh / GLASS_TUNING_TABLE_LOCAL.");
@@ -358,7 +354,7 @@ constexpr uint32_t gemv_threads() { return 256; }
 
 // ---------------------------------------------------------------------------
 // gemv_strided: packs strided A into compact shared scratch, then delegates
-// to the standard nvidia::gemv<...>. Forwards all template parameters
+// to the standard nvidia::block::gemv<...>. Forwards all template parameters
 // (BLOCK_THREADS, layouts, SM) to the inner call.
 //
 // smem layout: [A_compact: M*N*sizeof(T)] [cuBLASDx smem for gemv<...>]

@@ -5,7 +5,7 @@ GLASS ships overlapping thread-, warp-, block-, and vendor-backed execution
 tiers. For operations present in more than one tier, the fastest choice depends
 on operation, size, dtype, launch shape, and batch regime. The **mega sweep**
 (``bench/tune.py``'s ladder leg) compares supported contenders — this is
-exactly the measurement behind ``glass-defaults.cuh``'s ``suggested_backend<>()``
+exactly the measurement behind ``glass-defaults.cuh``'s ``recommend<>()``
 (see :doc:`../../api_reference/defaults`).
 
 .. warning::
@@ -15,13 +15,14 @@ exactly the measurement behind ``glass-defaults.cuh``'s ``suggested_backend<>()`
    source-digest, and signed-receipt protocol and are marked accordingly. Use
    the source capture named beside a claim, and rerun on the target machine.
 
-The figures and table below are from an RTX 5090 / sm_120 run, shown across three
-batch regimes — **NPROB=64** (low batch, latency-leaning), **NPROB=1024** (mid),
-and **NPROB=8192** (the throughput regime that feeds the dispatch tables). The
-winner can shift with batch size: at low batch the vendor (``nvidia``) path often
-wins the factor/solve ops on launch-amortized latency, while at high batch the
-hand-rolled SIMT paths scale back in. They are committed static assets —
-regenerate them for your own hardware with::
+The figures and table below come from the 2026-08-30 RTX 5090 / sm_120
+five-backend sweep, shown across three batch regimes — **NPROB=64** (low batch,
+latency-leaning), **NPROB=1024** (mid), and **NPROB=8192** (throughput). The
+committed dispatch table uses a separate 500-repetition throughput replication;
+the figures use the full three-regime capture. The winner can shift with batch
+size, so low-batch plots describe that workload rather than overriding the
+throughput table. These are committed static assets — regenerate them for your
+own hardware with::
 
    python bench/tune.py --sm auto      # remeasures + regenerates tables AND figures
    # or just the figures from an existing sweep .txt:
@@ -32,18 +33,22 @@ regenerate them for your own hardware with::
 The ladder — ns/problem vs N, per backend
 ------------------------------------------
 
-Lower is faster. Each subplot is one op; the curves are ``warp`` (green),
-``block`` (blue), ``thread`` (orange, N≤16 — one problem per thread, 32 packed
-per warp), and ``nvidia`` / MathDx (red). The crossover points are where
-``suggested_backend`` switches tiers — the 2026-07-18 sweep hands thread the
-low-DOF corner of every op except ``gemm`` (up to 7.5× on ``posv`` f64 at N≤6;
-verdict tables in the thread-tier section below). Where a ``thread`` curve
-stops short of N=128 the remaining launches are *infeasible*, not unmeasured —
-the per-thread local-memory footprint exceeds the launch limit (those cells are
-``FAIL``-marked in the capture); the ``nvidia`` f64 curves cap at N=64 for the
-same reason on the shared-memory side. ``suggested_backend<>()`` is keyed on the
-**NPROB=8192** throughput regime; the 64/1024 figures show how the crossovers
-move at smaller batch.
+Lower is faster. Each subplot is one op; the curves are native ``warp``
+(green), ``block`` (blue), and ``thread`` (orange), plus NVIDIA ``block``
+(red) and ``thread`` (purple). Both thread curves pack one problem per CUDA
+thread. The native thread implementation is instantiated through ``N=64`` in
+this harness; NVIDIA thread LAPACK is instantiated through ``N=32``. A stopped
+curve therefore marks an explicit instantiation or resource boundary, not a
+claim that larger sizes are unsupported by CUDA or cuSOLVERDx. NVIDIA block
+f64 curves may stop at their shared-memory feasibility limit.
+
+``recommend<>()`` is keyed on the **NPROB=8192** throughput regime.
+Its policy first applies a ±2% tie band among dependency-free SIMT contenders,
+then requires an NVIDIA contender to clear the best native choice by more than
+5%. NVIDIA-thread solver winners must additionally reproduce that margin when
+every timed launch consumes an independent valid system. This confirmation is
+a veto only; it cannot promote NVIDIA thread into a cell. These rules keep
+small, noisy, or mutation-dependent gaps out of the generated table.
 
 float32
 ~~~~~~~
@@ -57,7 +62,7 @@ float32
    :width: 100%
 
 .. image:: /_static/mega_sweep_ladder_f32_n8192.png
-   :alt: f32 ladder, NPROB=8192 (throughput — feeds suggested_backend)
+   :alt: f32 ladder, NPROB=8192 (throughput — feeds recommend)
    :width: 100%
 
 float64
@@ -72,19 +77,21 @@ float64
    :width: 100%
 
 .. image:: /_static/mega_sweep_ladder_f64_n8192.png
-   :alt: f64 ladder, NPROB=8192 (throughput — feeds suggested_backend)
+   :alt: f64 ladder, NPROB=8192 (throughput — feeds recommend)
    :width: 100%
 
-Winner per (op, N), per regime
-------------------------------
+Raw ladder winner per (op, N), per regime
+------------------------------------------
 
-The backend with the lowest ns/problem at each ``(op, N)``, listed for all three
-NPROB regimes — the ``NPROB=8192`` block is what ``suggested_backend<>()``
-encodes. The broad shape at high batch: tiny ``N`` favors ``warp``; mid sizes
-favor ``nvidia`` for the factor/solve ops (chol/posv/trsv) once MathDx amortizes;
-``gemv`` crosses to ``block`` early; ``dot`` stays ``warp`` throughout. At
-``NPROB=64`` the ``nvidia`` band widens (launch latency dominates, so the vendor
-kernels win sooner).
+The main-ladder policy winner at each ``(op, N)`` is listed for all three
+NPROB regimes. The separate valid-input veto affects only final
+NVIDIA-thread throughput defaults and is summarized below; it does not rewrite
+these raw-capture figures.
+The broad high-batch shape is mixed by design: native thread dominates many
+small packed problems, native warp/block remain important as work grows, and
+the NVIDIA block and thread implementations take measured factor/solve bands.
+The ``NPROB=8192`` block shown here is from the full capture; the generated
+sm_120 table uses its higher-repetition replication.
 
 .. literalinclude:: /_static/sweep_winners.txt
    :language: text
@@ -202,10 +209,52 @@ generalizing, or measure with your actual matrices.
 Jacobi family. It did not include the parallel fixed-sweep ``eigh`` /
 ``psd_project`` family, so it cannot support a recommendation between them.
 
-The thread tier — where one-problem-per-thread wins
----------------------------------------------------
+NVIDIA thread LAPACK — measured integration
+---------------------------------------------
 
-The 2026-07-19 full-domain sweep (quiet RTX 5090) added the ``thread``
+The 2026-08-30 wave added cuSOLVERDx's thread interface as a fifth contender
+for ``chol``, ``trsv``, and ``posv``. It is a selective win, not a replacement
+for either GLASS's native thread code or cuSOLVERDx's block interface:
+
+.. list-table:: Throughput cells selected by the generated policy
+   :header-rows: 1
+   :widths: 16 14 30 40
+
+   * - GPU
+     - cells
+     - float32
+     - float64
+   * - RTX 5090 / sm_120
+     - 14 / 132
+     - ``chol`` N=6,8; ``trsv`` N=24
+     - ``chol`` N=4,6,8; ``posv`` N=4,6,8; ``trsv`` N=8–32
+   * - Jetson AGX Orin / sm_87
+     - 15 / 132
+     - ``chol`` N=8,12; ``trsv`` N=16,24,32
+     - ``chol`` N=4,6,8; ``trsv`` N=4–32
+
+Those ranges enumerate the measured sizes ``4, 6, 8, 12, 16, 24, 32``; they
+do not imply testing every intervening integer. Against the fastest native
+tier on independent valid inputs, selected NVIDIA-thread cells range from
+about 1.09× to 2.34× on the RTX 5090 and 1.08× to 3.53× on Orin. The largest
+gains are concentrated in ``trsv``; other operations and sizes still select
+another tier.
+
+The 5090 throughput leg was run twice independently at 250 and 500
+repetitions. The raw ladder policy agreed in 131 of 132 cells, agreed on all
+17 pre-veto NVIDIA-thread selections, and disagreed only on ``dot`` f32 N=16 inside the
+native-SIMT tie band. Across the NVIDIA-thread measurements, the second/first
+median time ratio was 0.999 (10th–90th percentile 0.984–1.026). The Orin
+throughput capture used the Tegra profile (50 repetitions, pinned 50 W mode).
+The subsequent valid-input captures on both machines had sub-margin spread at
+every retained or vetoed NVIDIA-thread decision and reduced the shipped bands
+to the 14 and 15 cells above. These checks support the selected bands, not a
+portable speedup claim—rerun both ladder components on a new architecture.
+
+The native thread tier — historical characterization
+------------------------------------------------------
+
+The 2026-07-19 full-domain sweep (quiet RTX 5090) first added the native ``thread``
 contender at every ``(op, N)`` point. Throughput regime (NPROB=8192), thread
 vs the best other tier (ratio > 1 = thread faster; **bold** cells shipped):
 

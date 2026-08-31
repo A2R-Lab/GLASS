@@ -28,7 +28,7 @@
  * Include glass-cgrps.cuh for the cooperative-groups variants, or
  * glass-nvidia.cuh for the CUB / cuBLASDx / cuSOLVERDx-accelerated paths
  * (`glass::nvidia::block::` / `glass::nvidia::warp::`, with the same
- * bare-name re-export inside `glass::nvidia::`). Also defines the host
+ * explicit-scope NVIDIA namespaces). Also defines the host
  * helper ::glass_gemm_dispatch_smem below.
  */
 // Pre-include system headers at global scope so they are not pulled into the

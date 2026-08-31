@@ -11,7 +11,7 @@ benches. All three are auto-detected by `bench/run_bench.py`.
 
 | Library | Required for | Header-only? |
 |---------|-------------|--------------|
-| CUB    | `bench_reduce` (CUB baseline + `glass::nvidia::reduce` variant) | Yes (bundled with CUDA) |
+| CUB    | `bench_reduce` (CUB baseline + `glass::nvidia::block::reduce`) | Yes (bundled with CUDA) |
 | cuBLASDx | `bench_gemv`, `bench_gemm`, `bench_blockdim`, `bench_gemm_batched`, `bench_lapack` | Yes |
 | cuSOLVERDx | `bench_lapack` (Cholesky / TRSM / posv / etc.) | **No** — links a precompiled device fatbin |
 
@@ -41,8 +41,9 @@ portal.
    (Free NVIDIA Developer account required.)
 
 2. Choose: **MathDx for CUDA 12, Linux x86_64** (`.tar.gz` format).
-   Version 25.12.x or later is recommended (this is the version the GLASS
-   wrappers are tested against).
+   Version 25.12.x or later supports the block wrappers. Use **26.03 or later**
+   for `glass::nvidia::thread::` (cuSOLVERDx 0.4+); the thread correctness suite
+   is validated against 26.03.
 
 ### Install
 
@@ -54,7 +55,7 @@ tar -xzf MathDx_*.tar.gz -C /opt
 ls /opt/nvidia/mathdx/
 
 # Set the environment variable (add to ~/.bashrc to persist)
-export MATHDX_ROOT=/opt/nvidia/mathdx/25.12   # adjust version as needed
+export MATHDX_ROOT=/opt/nvidia/mathdx/26.03   # adjust version as needed
 ```
 
 ### Verify

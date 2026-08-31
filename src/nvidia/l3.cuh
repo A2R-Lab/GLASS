@@ -9,7 +9,7 @@
 //
 // All sizes are compile-time. Call one of the DEFINE_NVIDIA_GEMM* macros once per
 // (M, N, K, BLOCK_THREADS, layouts, SM) combination you need, then call
-// glass::nvidia::gemm<...>(alpha, A, B, beta, C, smem) inside your kernel.
+// glass::nvidia::block::gemm<...>(alpha, A, B, beta, C, smem) inside your kernel.
 //
 // Backward-compatible defaults:
 //   BLOCK_THREADS = 0           -> let cuBLASDx pick block_dim from its database
@@ -18,20 +18,20 @@
 //
 // Example (basic):
 //   DEFINE_NVIDIA_GEMM(6, 6, 6)
-//   constexpr auto smem    = glass::nvidia::gemm_scratch_bytes<float, 6, 6, 6>();
-//   constexpr auto threads = glass::nvidia::gemm_threads<float, 6, 6, 6>();
+//   constexpr auto smem    = glass::nvidia::block::gemm_scratch_bytes<float, 6, 6, 6>();
+//   constexpr auto threads = glass::nvidia::block::gemm_threads<float, 6, 6, 6>();
 //   kernel<<<1, threads, smem>>>(...);
-//   glass::nvidia::gemm<float, 6, 6, 6>(1.f, A, B, 0.f, C, smem_ptr);
+//   glass::nvidia::block::gemm<float, 6, 6, 6>(1.f, A, B, 0.f, C, smem_ptr);
 //
 // Example (caller-controlled BlockDim — fixes the deadlock when launching with
 // a thread count not chosen by cuBLASDx's database):
 //   DEFINE_NVIDIA_GEMM_BLOCKDIM(6, 6, 6, 352)
 //   kernel<<<1, 352, smem>>>(...);
-//   glass::nvidia::gemm<float, 6, 6, 6, 352>(1.f, A, B, 0.f, C, smem_ptr);
+//   glass::nvidia::block::gemm<float, 6, 6, 6, 352>(1.f, A, B, 0.f, C, smem_ptr);
 //
 // Example (transpose B — A * B^T):
 //   DEFINE_NVIDIA_GEMM_BLOCKDIM_TRANSB(6, 6, 6, 352)
-//   glass::nvidia::gemm<float, 6, 6, 6, 352,
+//   glass::nvidia::block::gemm<float, 6, 6, 6, 352,
 //                       glass::nvidia::layout::col_major,
 //                       glass::nvidia::layout::row_major,
 //                       glass::nvidia::layout::col_major>(...);
@@ -39,7 +39,7 @@
 // Example (multi-arch dispatch with explicit SM):
 //   DEFINE_NVIDIA_GEMM_BLOCKDIM_SM(6, 6, 6, 352, 890)
 //   DEFINE_NVIDIA_GEMM_BLOCKDIM_SM(6, 6, 6, 352, 1200)
-//   glass::nvidia::gemm<float, 6, 6, 6, 352,
+//   glass::nvidia::block::gemm<float, 6, 6, 6, 352,
 //       glass::nvidia::layout::col_major,
 //       glass::nvidia::layout::col_major,
 //       glass::nvidia::layout::col_major,
@@ -49,10 +49,6 @@
 //           890
 //       #endif
 //   >(...);
-
-#ifndef SMS
-#define SMS 860
-#endif
 
 // ---------------------------------------------------------------------------
 // Primary templates — instantiated by the DEFINE_NVIDIA_GEMM* macros below.
@@ -67,7 +63,7 @@
 //       directing the user to call DEFINE_NVIDIA_GEMM*. The cuBLASDx
 //       specialization the macro emits will override this primary body.
 //
-//   Net effect: callers can always write `glass::nvidia::gemm<T,M,N,K>(...)`.
+//   Net effect: callers can always write `glass::nvidia::block::gemm<T,M,N,K>(...)`.
 //   Small shapes "just work" via SIMT; large shapes guide you to the macro.
 //
 //   To force a particular backend regardless of the heuristic:
@@ -130,7 +126,7 @@ __device__ void gemm(T alpha, T* A, T* B, T beta, T* C, char* smem)
             alpha, A, B, beta, C);
     } else {
         static_assert(sizeof(T) == 0,
-            "glass::nvidia::gemm<T,M,N,K,BLOCK_THREADS,LA,LB,LC,SM_VAL> is not "
+            "glass::nvidia::block::gemm<T,M,N,K,BLOCK_THREADS,LA,LB,LC,SM_VAL> is not "
             "available — should_use_cublasdx<> says cuBLASDx wins for this "
             "shape, so add a DEFINE_NVIDIA_GEMM* macro in your .cu file. "
             "(See the Batched-1D concept guide in docs and bench/autotune.py.)");
@@ -443,7 +439,7 @@ constexpr uint32_t gemm_threads() { return 256; }
 
 // ---------------------------------------------------------------------------
 // gemm_strided: packs strided A and B into compact shared scratch, then
-// delegates to the standard nvidia::gemm<...>. Forwards all template parameters
+// delegates to the standard nvidia::block::gemm<...>. Forwards all template parameters
 // (BLOCK_THREADS, layouts, SM) to the inner call so any DEFINE_NVIDIA_GEMM*
 // variant works underneath.
 //
@@ -567,7 +563,7 @@ constexpr std::size_t gemm_strided_scratch_bytes()
 //   { base + 0*M*N, base + 1*M*N, ..., base + (BATCH-1)*M*N }.
 //
 // Required launch:  kernel<<<grid, dim3(TC, BATCH), gemm_batched_scratch_bytes>>>
-// Required smem:    glass::nvidia::gemm_batched_scratch_bytes<T, M, N, K, BATCH, TC>()
+// Required smem:    glass::nvidia::block::gemm_batched_scratch_bytes<T, M, N, K, BATCH, TC>()
 // ---------------------------------------------------------------------------
 
 /**
@@ -609,7 +605,7 @@ __device__ void gemm_batched(T alpha, T* const* A, T* const* B,
                              T beta,  T* const* C, char* smem)
 {
     static_assert(sizeof(T) == 0,
-        "glass::nvidia::gemm_batched<T,M,N,K,BATCH,...> not available — "
+        "glass::nvidia::block::gemm_batched<T,M,N,K,BATCH,...> not available — "
         "add DEFINE_NVIDIA_GEMM_BATCHED_BLOCKDIM(M,N,K,BATCH,TC) in your .cu file.");
 }
 
@@ -692,7 +688,7 @@ constexpr uint32_t gemm_batched_threads() { return 256; }
                                    float beta,  float* const* C, char* smem)                   \
         {                                                                                       \
             assert(blockDim.x >= per_batch_threads && blockDim.y >= BATCH &&                    \
-                   "glass::nvidia::gemm_batched: launch dim3(>=TC, >=BATCH) required");         \
+                   "glass::nvidia::block::gemm_batched: launch dim3(>=TC, >=BATCH) required"); \
             const uint32_t b = threadIdx.y;                                                     \
             char* my_smem = smem + b * per_batch_smem;                                          \
             float* a = A[b];                                                                    \
