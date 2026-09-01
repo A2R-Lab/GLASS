@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Render the native/NVIDIA execution-scope sweep into static docs assets.
 
-Reads a ``bench/mega_sweep_*.txt`` run (the same data behind
+Reads a ``bench/mega_sweep_*.txt`` run plus its symmetric fresh-input
+``bench/solver_ladder_*.txt`` companion (the same combined data behind
 ``glass-defaults.cuh``'s ``recommend<>()``) and writes, into
 ``docs/source/_static/``:
 
@@ -16,7 +17,8 @@ tutorials/sweep_results.rst``), so the site needs no GPU and no sweep ``.txt`` a
 build time. Regenerate after a fresh sweep (``bench/tune.py`` runs this as its
 figures leg, or run it standalone)::
 
-    python bench/export_sweep_figures.py bench/mega_sweep_*.txt
+    python bench/export_sweep_figures.py bench/mega_sweep_*.txt \
+        --solver bench/solver_ladder_*.txt
 
 This is the script form of ``bench/explore_sweep.ipynb`` (kept as the interactive
 explorer). Needs numpy + matplotlib.
@@ -76,6 +78,24 @@ def parse(text, regimes=REGIMES):
             if m.group(7):
                 d["nvidia_thread"] = float(m.group(7))
             data[(nprob, dt, op, N)] = d
+    return data
+
+
+def overlay_solver(data, text):
+    """Replace destructive main-ladder rows with fresh-input measurements."""
+    for nprob in regimes_present(data):
+        rows = tp.parse_solver_ladder(text, nprob)
+        expected = {(dt, op, N) for (np, dt, op, N) in data
+                    if np == nprob and op in {"potrf", "trsv", "posv"}}
+        missing = expected - set(rows)
+        if missing:
+            preview = ", ".join(f"{dt}/{op}/N={N}"
+                                for dt, op, N in sorted(missing)[:6])
+            raise ValueError(f"solver capture missing NPROB={nprob}: {preview}")
+        for dt, op, N in expected:
+            data[(nprob, dt, op, N)] = {
+                impl: metadata["ns"] for impl, metadata in rows[(dt, op, N)].items()
+            }
     return data
 
 
@@ -150,6 +170,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("sweep", nargs="?", help="path to a mega_sweep_*.txt (default: latest in bench/)")
+    ap.add_argument("--solver", help="matching solver_ladder_*.txt (default: latest in bench/)")
     ap.add_argument("--out", default=default_static, help="output dir (default: docs/source/_static)")
     args = ap.parse_args()
 
@@ -161,7 +182,16 @@ def main():
         sweep = cands[-1]
     print("sweep file:", os.path.relpath(sweep, repo))
 
-    data = parse(open(sweep).read())
+    solver = args.solver
+    if not solver:
+        cands = sorted(glob.glob(os.path.join(here, "solver_ladder_*.txt")))
+        if not cands:
+            sys.exit("no solver_ladder_*.txt found — destructive solver rows "
+                     "cannot be plotted from the main ladder")
+        solver = cands[-1]
+    print("solver file:", os.path.relpath(solver, repo))
+
+    data = overlay_solver(parse(open(sweep).read()), open(solver).read())
     present = regimes_present(data)
     print("parsed", len(data), "cells across NPROB", present)
     os.makedirs(args.out, exist_ok=True)

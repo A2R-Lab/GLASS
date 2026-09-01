@@ -21,7 +21,7 @@
 //
 // PROTOCOL: as bench_solvers.cu — each rep = one fused launch / one full chain
 // spanning all B problems, cudaEvent-bracketed; ns/problem = ms*1e6/(reps*B),
-// min of 3 trials with spread reported. CORRECTNESS: fused AND chain vs host double reference on
+// median of 5 trials with raw samples and spread reported. CORRECTNESS: fused AND chain vs host double reference on
 // problem 0 before any timing (mismatch aborts).
 //
 // Compile: nvcc -std=c++17 -arch=sm_XX -O3 --expt-relaxed-constexpr
@@ -63,6 +63,11 @@ static const int BGRID[]  = {1, 16, 64, 256, 1024, 4096};
 static const int NBGRID   = 6;
 static const size_t MEM_CAP = 4ull << 30;
 static int REPS = 50;
+
+static double sample_median(std::vector<double> values) {
+    std::sort(values.begin(), values.end());
+    return values[values.size() / 2];
+}
 
 // ─── deterministic host RNG ──────────────────────────────────────────────────
 static uint64_t rng_state = 1;
@@ -311,7 +316,7 @@ static void run_shape(Handles H, const char* dt) {
             if (!(me < tol)) { fprintf(stderr, "FATAL chain mismatch\n"); exit(4); }
         }
 
-        // timing: min over 3 trials of REPS event-bracketed reps
+        // timing: median over 5 trials of REPS event-bracketed reps
         cudaEvent_t ev_s, ev_e;
         CK(cudaEventCreate(&ev_s)); CK(cudaEventCreate(&ev_e));
         struct Row { const char* impl; std::function<void()> work; };
@@ -327,8 +332,8 @@ static void run_shape(Handles H, const char* dt) {
         std::shuffle(rows.begin(), rows.end(), order_rng);
         for (auto& r : rows) {
             r.work(); CK(cudaDeviceSynchronize());   // warm-up
-            double best_ms = 1e300, worst_ms = 0.0;
-            for (int trial = 0; trial < 3; trial++) {
+            std::vector<double> samples;
+            for (int trial = 0; trial < 5; trial++) {
                 double ms_sum = 0;
                 for (int rep = 0; rep < REPS; rep++) {
                     CK(cudaEventRecord(ev_s));
@@ -338,12 +343,15 @@ static void run_shape(Handles H, const char* dt) {
                     float ms; CK(cudaEventElapsedTime(&ms, ev_s, ev_e));
                     ms_sum += ms;
                 }
-                if (ms_sum < best_ms) best_ms = ms_sum;
-                if (ms_sum > worst_ms) worst_ms = ms_sum;
+                samples.push_back(ms_sum * 1e6 / ((double)REPS * B));
             }
-            printf("RESULT op=riccati dtype=%s NX=%u NU=%u B=%d impl=%s ns=%.2f spread=%.2f%%\n",
-                   dt, NX, NU, B, r.impl, best_ms * 1e6 / ((double)REPS * B),
-                   (worst_ms / best_ms - 1.0) * 100.0);
+            const auto bounds = std::minmax_element(samples.begin(), samples.end());
+            printf("RESULT op=riccati dtype=%s NX=%u NU=%u B=%d impl=%s ns=%.2f spread=%.2f%% samples=",
+                   dt, NX, NU, B, r.impl, sample_median(samples),
+                   (*bounds.second / *bounds.first - 1.0) * 100.0);
+            for (size_t i = 0; i < samples.size(); ++i)
+                printf("%s%.2f", i ? "," : "", samples[i]);
+            printf("\n");
             fflush(stdout);
         }
         CK(cudaEventDestroy(ev_s)); CK(cudaEventDestroy(ev_e));

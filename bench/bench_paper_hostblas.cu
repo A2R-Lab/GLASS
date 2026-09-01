@@ -20,7 +20,7 @@
 // global memory; each rep = ONE launch / ONE host API chain spanning all B,
 // bracketed by cudaEvents; mutated buffers RESTORED from pristine device
 // copies OUTSIDE the event window. ns/problem = ms_sum*1e6/(reps*B), min of
-// 3 trials, with trial spread reported. GPU-event timing excludes host API overhead — conservative
+// 5 trials, reported as the median with every raw sample and trial spread. GPU-event timing excludes host API overhead — conservative
 // TOWARD the vendor (their per-call CPU cost is amortized 1/B anyway).
 //
 // LATENCY PROTOCOL (batch=1, the MPC regime): R=200 pre-initialized problem
@@ -76,6 +76,13 @@ static const size_t MEM_CAP   = 4ull << 30;   // skip cells whose buffers exceed
 static const int    LAT_CALLS = 200;
 static int REPS = 50;
 static double last_spread_pct = 0.0;
+static std::vector<double> last_samples;
+
+static double sample_median(std::vector<double> values) {
+    std::sort(values.begin(), values.end());
+    const size_t mid = values.size() / 2;
+    return values.size() % 2 ? values[mid] : (values[mid - 1] + values[mid]) * 0.5;
+}
 
 // ─── deterministic host RNG (xorshift64* + Box-Muller), as bench_solvers.cu ──
 static uint64_t rng_state = 1;
@@ -289,15 +296,15 @@ static double elapsed_us(struct timespec a, struct timespec b) {
     return (double)(b.tv_sec - a.tv_sec) * 1e6 + (double)(b.tv_nsec - a.tv_nsec) * 1e-3;
 }
 
-// One throughput measurement: min over 3 trials of (sum over REPS of one
+// One throughput measurement: median over 5 trials of (sum over REPS of one
 // event-bracketed `work`, with `restore` run before it OUTSIDE the events).
 static double time_thru_ns_per_prob(int B, const std::function<void()>& restore,
                                     const std::function<void()>& work) {
     cudaEvent_t s, e;
     CK(cudaEventCreate(&s)); CK(cudaEventCreate(&e));
     restore(); work(); CK(cudaDeviceSynchronize());   // warm-up (JIT, clocks)
-    double best_ms = 1e300, worst_ms = 0.0;
-    for (int trial = 0; trial < 3; trial++) {
+    std::vector<double> samples;
+    for (int trial = 0; trial < 5; trial++) {
         double ms_sum = 0;
         for (int rep = 0; rep < REPS; rep++) {
             restore();
@@ -308,12 +315,13 @@ static double time_thru_ns_per_prob(int B, const std::function<void()>& restore,
             float ms; CK(cudaEventElapsedTime(&ms, s, e));
             ms_sum += ms;
         }
-        if (ms_sum < best_ms) best_ms = ms_sum;
-        if (ms_sum > worst_ms) worst_ms = ms_sum;
+        samples.push_back(ms_sum * 1e6 / ((double)REPS * B));
     }
-    last_spread_pct = (worst_ms / best_ms - 1.0) * 100.0;
+    const auto bounds = std::minmax_element(samples.begin(), samples.end());
+    last_spread_pct = (*bounds.second / *bounds.first - 1.0) * 100.0;
+    last_samples = samples;
     CK(cudaEventDestroy(s)); CK(cudaEventDestroy(e));
-    return best_ms * 1e6 / ((double)REPS * B);
+    return sample_median(samples);
 }
 
 // ─── per-(dtype, N) driver ───────────────────────────────────────────────────
@@ -560,8 +568,11 @@ static void run_for_N(Handles H, const char* dt, bool do_thru, bool do_lat) {
         std::shuffle(rows.begin(), rows.end(), order_rng);
         for (auto& r : rows) {
             double ns = time_thru_ns_per_prob(B, r.restore, r.work);
-            printf("RESULT section=thru op=%s dtype=%s N=%u B=%d impl=%s ns=%.2f spread=%.2f%%\n",
+            printf("RESULT section=thru op=%s dtype=%s N=%u B=%d impl=%s ns=%.2f spread=%.2f%% samples=",
                    r.op, dt, N, B, r.impl, ns, last_spread_pct);
+            for (size_t i = 0; i < last_samples.size(); ++i)
+                printf("%s%.2f", i ? "," : "", last_samples[i]);
+            printf("\n");
             fflush(stdout);
         }
 #if defined(GLASS_BENCH_MAGMA)
@@ -636,8 +647,8 @@ static void run_for_N(Handles H, const char* dt, bool do_thru, bool do_lat) {
         std::mt19937 latency_order_rng(0x4c41544eu ^ (N << 8) ^ (uint32_t)sizeof(T));
         std::shuffle(lats.begin(), lats.end(), latency_order_rng);
         for (auto& L : lats) {
-            double best_us = 1e300, worst_us = 0.0;
-            for (int trial = 0; trial < 3; trial++) {
+            std::vector<double> samples;
+            for (int trial = 0; trial < 5; trial++) {
                 // Pristine pool per trial; restoration is outside the timed window.
                 CK(cudaMemcpy(dS, dS0, MM*(size_t)R*sizeof(T), cudaMemcpyDeviceToDevice));
                 CK(cudaMemcpy(db, db0, (size_t)N*R*sizeof(T), cudaMemcpyDeviceToDevice));
@@ -648,11 +659,15 @@ static void run_for_N(Handles H, const char* dt, bool do_thru, bool do_lat) {
                 for (int r = 10; r < R; r++) { L.call(r); CK(cudaDeviceSynchronize()); }
                 clock_gettime(CLOCK_MONOTONIC, &t1);
                 double us = elapsed_us(t0, t1) / (R - 10);
-                if (us < best_us) best_us = us;
-                if (us > worst_us) worst_us = us;
+                samples.push_back(us);
             }
-            printf("RESULT section=lat op=%s dtype=%s N=%u impl=%s us=%.3f spread=%.2f%%\n",
-                   L.op, dt, N, L.impl, best_us, (worst_us / best_us - 1.0) * 100.0);
+            const auto bounds = std::minmax_element(samples.begin(), samples.end());
+            printf("RESULT section=lat op=%s dtype=%s N=%u impl=%s us=%.3f spread=%.2f%% samples=",
+                   L.op, dt, N, L.impl, sample_median(samples),
+                   (*bounds.second / *bounds.first - 1.0) * 100.0);
+            for (size_t i = 0; i < samples.size(); ++i)
+                printf("%s%.3f", i ? "," : "", samples[i]);
+            printf("\n");
             fflush(stdout);
         }
         CK(cudaFree(dA)); CK(cudaFree(dB)); CK(cudaFree(dC)); CK(cudaFree(dS));

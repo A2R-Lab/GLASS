@@ -18,7 +18,12 @@ labor (2026-08-11 consolidation):
   is current only when its source digest, environment, timing date, and proximate
   signed correctness receipt are recorded together.
 
-## ladder (mega sweep — native thread/warp/block plus NVIDIA block/thread)
+## ladder (archived 2026-08-30 method; superseded for the next retune)
+
+The counts below describe the currently shipped historical tables. New tuning
+runs replace the asymmetric NVIDIA-thread confirmation with the unified
+fresh-input solver ladder documented in `TUNING.md`; update this section only
+after the paired captures are accepted.
 
 The shipped tables were regenerated 2026-08-30 after adding cuSOLVERDx's
 thread-per-problem LAPACK interface as a fifth contender. The sm_120 table uses

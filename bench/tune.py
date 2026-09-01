@@ -11,7 +11,7 @@ tie band of the fastest takes the cell if it is simpler — thread ≻ warp ≻
 block), so no table bakes sub-noise jitter and a pure-noise re-run reproduces
 the same tables. The legs:
 
-  ladder   bench_mega_sweep.cu + bench_nvt_valid.cu
+  ladder   bench_mega_sweep.cu + bench_solver_ladder.cu
                                 → native/NVIDIA thread/warp/block ladder in glass-defaults.cuh
                                   (native thread — one problem/thread — is a
                                   dependency-free contender alongside warp/block:
@@ -19,8 +19,9 @@ the same tables. The legs:
                                   with ties inside the ±2% SIMT band resolving to
                                   the simpler tier — so a fresh sweep emits
                                   `backend::thread` wherever the low-DOF packing
-                                  actually wins; every NVIDIA-thread pick must
-                                  also pass the independent-valid-batch veto)
+                                  actually wins; POTRF/TRSV/POSV are replaced by
+                                  a symmetric fresh-valid-input sweep of every
+                                  native and NVIDIA contender)
                                   (paired per-arch MathDx/native-only tables + the SM
                                   dispatch switch; a first-time arch — e.g. sm_87
                                   on a Jetson Orin — gets a new table + case,
@@ -255,24 +256,24 @@ def build_mega_sweep(sms, mdx, allow_no_mathdx=False):
     return binp
 
 
-def _fatbin_build_nvt_valid(sms, mdx):
-    """Build the small valid-input confirmation harness on non-x86 hosts."""
+def _fatbin_build_solver_ladder(sms, mdx):
+    """Build the fresh-input solver ladder on non-x86 MathDx hosts."""
     common = ["-std=c++17", f"-arch=sm_{sms // 10}", "-O3",
               "--expt-relaxed-constexpr", "-Xptxas", "-O1", "-I..", "-I../src",
               f"-I{mdx/'include'}", f"-I{mdx/'external'/'cutlass'/'include'}",
               "-DGLASS_BENCH_CUSOLVERDX",
               f"-DGLASS_TARGET_SM={sms}",
               "-DCUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT"]
-    src = (BENCH_DIR / "bench_nvt_valid.cu").read_bytes()
+    src = (BENCH_DIR / "bench_solver_ladder.cu").read_bytes()
     key = hashlib.sha256(src + lib_digest().encode()
                          + " ".join(common + ["fatbin"]).encode()).hexdigest()[:12]
-    binp = cache_dir(sms) / f"nvt_valid_fatbin_{key}"
+    binp = cache_dir(sms) / f"solver_ladder_fatbin_{key}"
     if binp.exists():
         return binp, "cached"
     obj, dlk = str(binp) + ".o", str(binp) + "_dlink.o"
     steps = [
         ["nvcc"] + common + ["-rdc=true", "-dlto", "-dc",
-                             "bench_nvt_valid.cu", "-o", obj],
+                             "bench_solver_ladder.cu", "-o", obj],
         ["nvcc", f"-arch=sm_{sms // 10}", "-dlto", "-dlink", obj,
          str(mdx / "lib" / "libcusolverdx.fatbin"), "-o", dlk],
         ["nvcc", f"-arch=sm_{sms // 10}", obj, dlk,
@@ -284,11 +285,16 @@ def _fatbin_build_nvt_valid(sms, mdx):
     return binp, "built"
 
 
-def build_nvt_valid(sms, mdx):
+def build_solver_ladder(sms, mdx):
     if mdx is None:
-        sys.exit("ERROR: NVIDIA-thread confirmation needs MATHDX_ROOT.")
-    if platform.machine() != "x86_64":
-        binp, status = _fatbin_build_nvt_valid(sms, mdx)
+        print("  bench_solver_ladder: MathDx absent -> native contenders only")
+        flags = ["nvcc", "-std=c++17", f"-arch=sm_{sms // 10}", "-O3",
+                 "--expt-relaxed-constexpr", "-Xptxas", "-O1", "-I..", "-I../src",
+                 f"-DGLASS_TARGET_SM={sms}", "bench_solver_ladder.cu"]
+        binp, status = cached_build("solver_ladder_simt",
+                                    "bench_solver_ladder.cu", flags, sms)
+    elif platform.machine() != "x86_64":
+        binp, status = _fatbin_build_solver_ladder(sms, mdx)
     else:
         flags = ["nvcc", "-std=c++17", f"-arch=sm_{sms // 10}", "-O3",
                  "--expt-relaxed-constexpr", "-Xptxas", "-O1", "-I..", "-I../src",
@@ -297,26 +303,43 @@ def build_nvt_valid(sms, mdx):
                  f"-DGLASS_TARGET_SM={sms}",
                  "-DCUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT", "-rdc=true", "-dlto",
                  f"-L{mdx/'lib'}", "-lcusolverdx", "-lcublas", "-lcusolver", "-lcudart",
-                 "bench_nvt_valid.cu"]
-        binp, status = cached_build("nvt_valid", "bench_nvt_valid.cu", flags, sms)
+                 "bench_solver_ladder.cu"]
+        binp, status = cached_build("solver_ladder", "bench_solver_ladder.cu",
+                                    flags, sms)
     if status == "fail":
-        sys.exit("ERROR: bench_nvt_valid compile failed.")
-    print(f"  bench_nvt_valid: {status} ({binp.name})")
+        sys.exit("ERROR: bench_solver_ladder compile failed.")
+    print(f"  bench_solver_ladder: {status} ({binp.name})")
     return binp
 
 
-def run_nvt_valid(binp, sms, margin, force=False):
-    """Capture both precisions at the ladder's NPROB=8192 policy point."""
-    path = BENCH_DIR / f"nvt_valid_{time.strftime('%Y%m%d_%H%M%S')}.txt"
-    lines = provenance("nvt_valid", sms, margin)
-    lines += [f"# nvt_valid  {time.strftime('%c')}  (bench/tune.py)", ""]
+def run_solver_ladder(binp, quick, sms, margin, sched=None, force=False,
+                      rounds=9, seed=1):
+    """Capture every solver contender on fresh valid inputs.
+
+    Input generation/restoration is outside the timed region.  Implementations
+    and launch shapes are randomized within each paired round; all raw samples
+    are retained so table generation and paper analysis need not reuse a
+    min-of-three summary.
+    """
+    path = BENCH_DIR / f"solver_ladder_{time.strftime('%Y%m%d_%H%M%S')}.txt"
+    lines = provenance("solver_ladder", sms, margin)
+    lines += [f"# solver_ladder  {time.strftime('%c')}  (bench/tune.py)",
+              f"# paired_rounds={rounds} seed={seed} inputs=fresh_valid", ""]
     path.write_text("\n".join(lines) + "\n")
-    for dtype in ("f32", "f64"):
-        print(f"  -> nvt_valid NPROB=8192 requested_slots=64 {dtype}")
-        stdout = run_isolated([str(binp), "8192", "64", dtype], force)
-        with open(path, "a") as stream:
-            stream.write(stdout)
-            stream.write("\n")
+    if sched is None:
+        sched = _QUICK_SCHED if quick else _FULL_SCHED
+    slots = {64: 2048, 1024: 256, 8192: 64}
+    for nprob_text, _ in sched:
+        nprob = int(nprob_text)
+        requested_slots = slots.get(nprob, max(8, min(2048, 131072 // nprob)))
+        for dtype in ("f32", "f64"):
+            print(f"  -> solver_ladder NPROB={nprob} slots={requested_slots} "
+                  f"rounds={rounds} {dtype}")
+            stdout = run_isolated(
+                [str(binp), nprob, requested_slots, dtype, rounds, seed], force)
+            with open(path, "a") as stream:
+                stream.write(stdout)
+                stream.write("\n")
     print(f"==> wrote {path.relative_to(GLASS_DIR)}")
     return path
 
@@ -411,7 +434,7 @@ def warn_jittery_rows(text, margin, label):
     return len(jittery)
 
 
-def winners_from_sweep(text, margin, native_only=False):
+def winners_from_sweep(text, margin, native_only=False, solver_text=None):
     """(dtype, op) -> {N: backend} under the shared dependency margin.
 
     ``native_only`` removes both vendor measurements before applying the same
@@ -419,6 +442,17 @@ def winners_from_sweep(text, margin, native_only=False):
     of approximating vendor cells with a size heuristic.
     """
     cells = tp.parse_mega_sweep(text, nprob=8192)
+    if solver_text is not None:
+        solver_cells = tp.parse_solver_ladder(solver_text, nprob=8192)
+        expected = {key for key in cells if key[1] in {"potrf", "trsv", "posv"}}
+        missing = sorted(expected - set(solver_cells))
+        if missing:
+            summary = ", ".join(f"{dt}/{op}/N={N}" for dt, op, N in missing[:6])
+            sys.exit("ERROR: fresh-input solver capture is incomplete at "
+                     f"NPROB=8192 ({summary}{' ...' if len(missing) > 6 else ''}).")
+        for key in expected:
+            cells[key] = {impl: row["ns"]
+                          for impl, row in solver_cells[key].items()}
     winners = {}
     for (dt, op, N), times in cells.items():
         if native_only:
@@ -430,47 +464,26 @@ def winners_from_sweep(text, margin, native_only=False):
     return winners
 
 
-def apply_nvt_valid_veto(winners, confirmation_text, margin):
-    """Veto NVIDIA-thread picks that do not reproduce on independent inputs.
-
-    The confirmation leg is deliberately asymmetric: it may replace a main-
-    ladder NVIDIA-thread winner with the valid-input native winner, but it does
-    not promote NVIDIA-thread into any cell. Every selected NVIDIA-thread cell
-    must have an exact confirmation row; incomplete evidence is a hard error.
-    Returns ``(updated_winners, veto_count)``.
-    """
-    confirmed = tp.parse_nvt_valid(confirmation_text, nprob=8192)
-    spreads = tp.parse_nvt_valid_spreads(confirmation_text, nprob=8192)
-    updated = {key: dict(value) for key, value in winners.items()}
-    vetoes = 0
-    for (dtype, op), cells in updated.items():
-        for N, winner in list(cells.items()):
-            if winner != "nvidia_thread":
+def require_stable_solver_picks(solver_text, winners, native_winners, margin):
+    """Fail closed when an emitted solver plan is noisy at decision scale."""
+    cells = tp.parse_solver_ladder(solver_text, nprob=8192)
+    unstable = []
+    for policy_name, policy in (("full", winners), ("native", native_winners)):
+        for (dtype, op), sizes in policy.items():
+            if op not in {"potrf", "trsv", "posv"}:
                 continue
-            key = (dtype, op, N)
-            if key not in confirmed:
-                sys.exit("ERROR: NVIDIA-thread ladder winner lacks valid-input "
-                         f"confirmation: {dtype} {op} N={N}.")
-            times = confirmed[key]
-            native_names = ("thread", "warp", "block")
-            raw_native = min(native_names, key=lambda name: times[name])
-            native_lo = times[raw_native]
-            native_hi = native_lo * (1.0 + spreads[key][raw_native] / 100.0)
-            nvt_lo = times["nvidia_thread"]
-            nvt_hi = nvt_lo * (1.0 + spreads[key]["nvidia_thread"] / 100.0)
-            guaranteed_win = nvt_hi < native_lo * (1.0 - margin)
-            guaranteed_loss = nvt_lo >= native_hi * (1.0 - margin)
-            if not guaranteed_win and not guaranteed_loss:
-                sys.exit("ERROR: valid-input confirmation cannot resolve the "
-                         f"±{margin*100:.0f}% margin for {dtype} {op} N={N}: "
-                         f"native {raw_native} interval=[{native_lo:.4f},"
-                         f"{native_hi:.4f}], NVIDIA thread interval="
-                         f"[{nvt_lo:.4f},{nvt_hi:.4f}].")
-            if guaranteed_loss:
-                native_times = {name: times[name] for name in native_names}
-                cells[N] = tp.pick(native_times, margin)
-                vetoes += 1
-    return updated, vetoes
+            for N, impl in sizes.items():
+                row = cells[(dtype, op, N)][impl]
+                if row["spread"] > margin * 100.0:
+                    unstable.append((policy_name, dtype, op, N, impl,
+                                     row["cfg"], row["spread"]))
+    if unstable:
+        detail = "; ".join(
+            f"{policy} {dtype}/{op}/N={N} {impl}/{cfg} spread={spread:.2f}%"
+            for policy, dtype, op, N, impl, cfg, spread in unstable[:8])
+        sys.exit("ERROR: selected fresh-input solver plan has round spread "
+                 f"above the ±{margin*100:.0f}% decision margin: {detail}. "
+                 "Recapture on a quieter GPU.")
 
 
 def emit_ideal_body(winners, fname, ops=tp.LADDER_OPS):
@@ -494,33 +507,29 @@ def emit_ideal_body(winners, fname, ops=tp.LADDER_OPS):
 
 
 def regen_ladder(sweep_text, margin, src_name, sms,
-                 nvt_valid_text=None, nvt_valid_name=None):
+                 solver_text=None, solver_name=None):
     """Regenerate this arch's table block in glass-defaults.cuh (replace if the
     arch was swept before, insert after the last table block if it's new) and
     rebuild the SM dispatch case-list from every table block present."""
     arch = sms // 10
     warn_jittery_rows(sweep_text, margin, "ladder")
-    winners = winners_from_sweep(sweep_text, margin)
-    native_winners = winners_from_sweep(sweep_text, margin, native_only=True)
+    if solver_text is None:
+        sys.exit("ERROR: ladder regeneration requires a symmetric fresh-input "
+                 "solver capture; pass --from-solver-ladder or run online.")
+    winners = winners_from_sweep(sweep_text, margin, solver_text=solver_text)
+    native_winners = winners_from_sweep(
+        sweep_text, margin, native_only=True, solver_text=solver_text)
     if not winners:
         sys.exit("ERROR: no NPROB=8192 verdicts parsed from the sweep.")
-    has_nvt = any(backend == "nvidia_thread"
-                  for cells in winners.values() for backend in cells.values())
-    if has_nvt and nvt_valid_text is None:
-        sys.exit("ERROR: this ladder selects NVIDIA-thread but no independent-"
-                 "valid-input capture was supplied; pass --from-nvt-valid or "
-                 "run the ladder online.")
-    vetoes = 0
-    if has_nvt:
-        winners, vetoes = apply_nvt_valid_veto(winners, nvt_valid_text, margin)
+    require_stable_solver_picks(solver_text, winners, native_winners, margin)
+    solver_rows = tp.parse_solver_configs(solver_text, nprob=8192)
     begin, end = _LAD_BEGIN.format(a=arch), _LAD_END.format(a=arch)
     region = "\n".join([
         begin,
         f"// Source sweep: {src_name}   tie margin: ±{margin*100:.0f}% "
         "(NVIDIA block/thread must clear it; SIMT ties ±2% prefer thread>warp>block)",
-        *([f"// NVIDIA-thread valid-input veto: {nvt_valid_name} "
-           f"({vetoes} ladder pick{'s' if vetoes != 1 else ''} vetoed)"]
-          if nvt_valid_name else []),
+        f"// Fresh-input solver sweep: {solver_name} "
+        f"({len(solver_rows)} measured execution plans; symmetric selection)",
         "// Paired tables preserve the measured native runner-up for callers that",
         "// do not opt into MathDx; both use the same capture and SIMT tie rule.",
         emit_ideal_body(winners, f"ideal_sm{arch}"),
@@ -549,7 +558,7 @@ def regen_ladder(sweep_text, margin, src_name, sms,
     pre, _, rest = text.partition(_DIS_BEGIN)
     _, _, post = rest.partition(_DIS_END)
     text = pre + _DIS_BEGIN + "\n" + cases + "        " + _DIS_END + post
-    return text, len(winners), vetoes
+    return text, len(winners), len(solver_rows)
 
 
 # ─── blas2 + rect header tables (glass-defaults.cuh; warp-vs-block only) ─────
@@ -1232,6 +1241,11 @@ def main():
                         "an 8192 section, the regenerated tables read it")
     p.add_argument("--quick", action="store_true",
                    help="ladder: throughput point only (NPROB=8192), fewer reps")
+    p.add_argument("--solver-rounds", type=int, default=9,
+                   help="paired rounds per fresh-input solver plan (default 9)")
+    p.add_argument("--solver-seed", type=int, default=1,
+                   help="candidate-order seed for the solver ladder; use a "
+                        "different seed for held-out Capture B")
     p.add_argument("--prebuild", action="store_true",
                    help="compile every binary the selected legs need into the "
                         "build cache and exit — no timing. Run this ANYTIME (even "
@@ -1254,9 +1268,9 @@ def main():
                         "compute PIDs appearing during a leg still invalidate it")
     p.add_argument("--from-ladder", metavar="TXT",
                    help="skip ladder build/run; regenerate from this mega_sweep .txt")
-    p.add_argument("--from-nvt-valid", metavar="TXT",
-                   help="independent-valid-input companion capture required when "
-                        "--from-ladder selects NVIDIA-thread")
+    p.add_argument("--from-solver-ladder", metavar="TXT",
+                   help="symmetric fresh-valid-input POTRF/TRSV/POSV companion "
+                        "capture required with --from-ladder")
     p.add_argument("--from-body", metavar="TXT",
                    help="skip body build/run; regenerate dispatch_body() from "
                         "this body_dispatch_sweep .txt")
@@ -1269,6 +1283,10 @@ def main():
     p.add_argument("--from-solvers", metavar="TXT",
                    help="skip solvers build/run; report from this bench_solvers sweep .txt")
     args = p.parse_args()
+    if args.solver_rounds < 3:
+        p.error("--solver-rounds must be at least 3")
+    if args.from_solver_ladder and not args.from_ladder:
+        p.error("--from-solver-ladder is a companion to --from-ladder")
     user_sched = None
     if args.sched:
         try:
@@ -1282,7 +1300,7 @@ def main():
     bad = [l for l in legs if l not in ALL_LEGS]
     if bad:
         sys.exit(f"unknown leg(s) {bad}; choose from {ALL_LEGS}")
-    offline = bool(args.from_ladder or args.from_nvt_valid or args.from_body or args.from_reduced
+    offline = bool(args.from_ladder or args.from_solver_ladder or args.from_body or args.from_reduced
                    or args.from_blas2 or args.from_rect or args.from_solvers)
     sms = None if (args.sm == "auto" and offline) else (
         detect_sm() if args.sm == "auto" else int(args.sm))
@@ -1303,8 +1321,7 @@ def main():
         if "ladder" in legs:
             print("── prebuild: ladder ──────────────────────────────────────")
             build_mega_sweep(sms, mdx, args.allow_no_mathdx)
-            if mdx is not None:
-                build_nvt_valid(sms, mdx)
+            build_solver_ladder(sms, mdx)
         if "body" in legs:
             print("── prebuild: body ────────────────────────────────────────")
             build_body(sms)
@@ -1348,26 +1365,26 @@ def main():
                          "regenerated on the desktop).")
             sweep_path = pathlib.Path(args.from_ladder)
             sweep_text = sweep_path.read_text()
-            nvt_valid_path = (pathlib.Path(args.from_nvt_valid)
-                              if args.from_nvt_valid else None)
+            solver_path = (pathlib.Path(args.from_solver_ladder)
+                           if args.from_solver_ladder else None)
         else:
             binp = build_mega_sweep(sms, mdx, args.allow_no_mathdx)
             sweep_path = run_mega_sweep(
                 binp, args.quick, sms, args.margin, sched=user_sched,
                 force=args.force)
             sweep_text = sweep_path.read_text()
-            nvt_valid_path = None
-            if mdx is not None:
-                nvt_bin = build_nvt_valid(sms, mdx)
-                nvt_valid_path = run_nvt_valid(nvt_bin, sms, args.margin,
-                                               force=args.force)
-        nvt_valid_text = (nvt_valid_path.read_text()
-                          if nvt_valid_path is not None else None)
-        new_defaults, n, vetoes = regen_ladder(
-            sweep_text, args.margin, sweep_path.name, sms, nvt_valid_text,
-            nvt_valid_path.name if nvt_valid_path is not None else None)
+            solver_bin = build_solver_ladder(sms, mdx)
+            solver_path = run_solver_ladder(
+                solver_bin, args.quick, sms, args.margin, sched=user_sched,
+                force=args.force, rounds=args.solver_rounds,
+                seed=args.solver_seed)
+        solver_text = (solver_path.read_text()
+                       if solver_path is not None else None)
+        new_defaults, n, solver_plans = regen_ladder(
+            sweep_text, args.margin, sweep_path.name, sms, solver_text,
+            solver_path.name if solver_path is not None else None)
         print(f"  regenerated ideal_sm{sms // 10} from {n} (dtype,op) groups; "
-              f"valid-input vetoes={vetoes}")
+              f"fresh-input solver plans={solver_plans}")
         if args.dry_run:
             changed["ladder"] = show_diff(DEFAULTS, new_defaults, "glass-defaults.cuh")
         else:
@@ -1535,12 +1552,22 @@ def main():
         if not sweep_for_fig:
             cands = sorted(glob.glob(str(BENCH_DIR / "mega_sweep_*.txt")))
             sweep_for_fig = cands[-1] if cands else None
+        solver_for_fig = (str(pathlib.Path(args.from_solver_ladder).resolve())
+                          if args.from_solver_ladder else None)
+        if sweep_for_fig and not solver_for_fig:
+            cands = sorted(glob.glob(str(BENCH_DIR / "solver_ladder_*.txt")))
+            solver_for_fig = cands[-1] if cands else None
         if not sweep_for_fig:
             print("  [skip] no mega_sweep_*.txt to plot.")
+        elif not solver_for_fig:
+            print("  [skip] no solver_ladder_*.txt companion to plot destructive rows.")
         elif args.dry_run:
-            print(f"  [dry-run] would render figures from {pathlib.Path(sweep_for_fig).name}")
+            print(f"  [dry-run] would render figures from "
+                  f"{pathlib.Path(sweep_for_fig).name} + "
+                  f"{pathlib.Path(solver_for_fig).name}")
         else:
-            r = run([sys.executable, "export_sweep_figures.py", sweep_for_fig], cwd=BENCH_DIR)
+            r = run([sys.executable, "export_sweep_figures.py", sweep_for_fig,
+                     "--solver", solver_for_fig], cwd=BENCH_DIR)
             if r.returncode != 0:
                 print("  ⚠️ figures leg failed; inspect the renderer error above "
                       "(matplotlib is one possible missing dependency). Tables are unaffected.")

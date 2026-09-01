@@ -168,20 +168,18 @@ The ladder-grammar harnesses share one measurement core
   busy GPU and invalidates a leg if a foreign compute PID appears after start.
   Correctness stays a separate gate; a timing capture does not promote peer
   agreement into a numerical oracle.
-- **Mutation invariant**: the main ladder's reps run with no restore in the timed region, so
-  in-place ops re-factor their own output from rep 2 on. This is
-  suitable for branch-free steady-throughput characterization, but it is not
-  sufficient evidence for a solver default. Every main-ladder
-  `nvidia_thread` winner is therefore remeasured by `bench_nvt_valid.cu`
-  against native thread/warp/block using a bounded ring of independent valid
-  systems (one per timed launch; initialization untimed). It must clear the
-  same 5% margin or `tune.py` vetoes it to the valid-input native winner.
-  Missing confirmation fails regeneration, and the confirmation leg never
-  promotes a vendor path. The capture records each contender's three-trial
-  spread; if the observed min-to-max intervals overlap the 5% decision
-  boundary, regeneration fails closed instead of treating the nominal minima
-  as a verdict. Never use the main loop alone for a `CHECK`-gated,
-  pivoted, or other data-dependent op.
+- **Fresh-input solver invariant**: the main ladder's back-to-back launches are
+  authoritative only for non-destructive operations. POTRF, TRSV, and POSV
+  overwrite inputs, so `bench_solver_ladder.cu` replaces those rows with a
+  symmetric measurement of every supported native block/warp/thread and
+  NVIDIA block/thread launch plan. Each timed launch consumes a separate valid
+  system from a bounded ring; initialization is untimed. Plans are randomized
+  within nine paired rounds, and the capture retains every raw sample plus the
+  exact launch shape. Any contender may win under the ordinary 5% dependency
+  and ±2% SIMT tie rules—there is no special NVIDIA-thread veto. Missing solver
+  cells fail regeneration. Correctness remains a separate signed-receipt gate.
+  Never use the destructive main-ladder loop alone for a `CHECK`-gated,
+  pivoted, or other data-dependent operation.
 - **Decisions absorb residual noise**: the 5% dependency margin, the ±2% SIMT
   tie band, and the `noise_floor` override (sub-granularity cells refuse to
   resolve a margin) all live in `tune_pick.py` — measured 4× on Jetson Orin
