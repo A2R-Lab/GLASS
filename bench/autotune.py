@@ -27,6 +27,8 @@ Consume the per-host output via the round-2 override mechanism:
 Requires MATHDX_ROOT set (cuBLASDx headers needed for the cuBLASDx leg).
 """
 
+from __future__ import annotations
+
 import argparse
 import concurrent.futures
 import datetime
