@@ -9,6 +9,7 @@ __pycache__/
 # Raw timing captures written by bench/tune.py / the harnesses (large, per-run).
 # The curated *_RESULTS.md summaries and regenerated tables ARE tracked.
 mega_sweep_*.txt
+solver_ladder_*.txt
 reduced_sweep_*.txt
 blas2_sweep_*.txt
 rect_sweep_*.txt
