@@ -72,7 +72,7 @@ one_new_capture() {
 }
 
 ladder="$(one_new_capture 'mega_sweep_*.txt')"
-nvt_valid="$(one_new_capture 'nvt_valid_*.txt')"
+solver_ladder="$(one_new_capture 'solver_ladder_*.txt')"
 body="$(one_new_capture 'body_dispatch_sweep_*.txt')"
 reduced="$(one_new_capture 'reduced_sweep_*.txt')"
 blas2="$(one_new_capture 'blas2_sweep_*.txt')"
@@ -86,7 +86,7 @@ echo "── offline regeneration from immutable captures ───────�
 python3 bench/tune.py --sm "$SMS" \
     --legs ladder,body,reduced,blas2,rect,solvers,figures \
     --from-ladder "$ladder" \
-    --from-nvt-valid "$nvt_valid" \
+    --from-solver-ladder "$solver_ladder" \
     --from-body "$body" \
     --from-reduced "$reduced" \
     --from-blas2 "$blas2" \

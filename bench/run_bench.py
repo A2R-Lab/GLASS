@@ -13,6 +13,8 @@ Usage:
     python3 bench/run_bench.py [--iters N] [--no-cublasdx]
 """
 
+from __future__ import annotations
+
 import argparse
 import hashlib
 import json

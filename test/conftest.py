@@ -5,6 +5,8 @@ Compiles test_l1/l2/l3 CUDA binaries once per session, caching by source hash.
 Each binary is compiled with nvcc against the local glass.cuh.
 """
 
+from __future__ import annotations
+
 import hashlib
 import os
 import pathlib

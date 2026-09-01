@@ -14,8 +14,8 @@
 //     ops (potrf/ldlt/…) re-process their own output from rep 2 on. That is
 //     a steady-throughput characterization ONLY for branch-free ops whose
 //     control flow is data-independent. It is not sufficient evidence for an
-//     in-place solver default: NVIDIA-thread ladder winners also pass the
-//     independent-valid-batch veto in bench_nvt_valid.cu. Do NOT time a
+//     in-place solver default: POTRF/TRSV/POSV defaults come instead from the
+//     symmetric fresh-input sweep in bench_solver_ladder.cu. Do NOT time a
 //     CHECK-gated or pivoted op through this loop — its data-dependent branches
 //     would time garbage.
 #pragma once

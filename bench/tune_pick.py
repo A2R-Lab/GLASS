@@ -173,49 +173,60 @@ def parse_mega_sweep(text, nprob=8192):
     return data
 
 
-_NVT_VALID_RE = re.compile(
-    r"^NVT_VALID\s+op=(potrf|trsv|posv)\s+N=(\d+)\s+"
+_SOLVER_RESULT_RE = re.compile(
+    r"^SOLVER_RESULT\s+op=(potrf|trsv|posv)\s+N=(\d+)\s+"
     r"dtype=(f32|f64)\s+nprob=(\d+)\s+slots=(\d+)\s+"
-    r"block=([\d.]+)\s+block_shape=(\d+)\s+block_spread=([\d.]+)\s+"
-    r"warp=([\d.]+)\s+warp_shape=(\d+)\s+warp_spread=([\d.]+)\s+"
-    r"thread=([\d.]+)\s+thread_shape=(\d+)\s+thread_spread=([\d.]+)\s+"
-    r"nvidia_thread=([\d.]+)\s+nvt_shape=(\d+)\s+nvt_spread=([\d.]+)$")
+    r"impl=(block|warp|thread|nvidia|nvidia_thread)\s+"
+    r"cfg=([a-z]+\d+)\s+ns=([\d.]+)\s+spread=([\d.]+)\s+"
+    r"samples=([\d.,]+)$")
 
 
-def parse_nvt_valid(text, nprob=8192):
-    """Parse the independent-valid-batch NVIDIA-thread confirmation leg.
+def parse_solver_configs(text, nprob=8192):
+    """Parse the unified fresh-input solver capture at ``nprob``.
 
-    Returns ``(dtype, op, N) -> {block, warp, thread, nvidia_thread}``.
-    Launch-shape and trial-spread metadata remain in the capture for audit;
-    table generation deliberately consumes only the measured times.
+    Returns ``(dtype, op, N, impl, cfg) -> metadata`` where metadata contains
+    the median ``ns``/problem, percent ``spread``, raw paired-round ``samples``,
+    and realized ring-buffer ``slots``.  Keeping every launch configuration
+    (rather than just a tier summary) is what lets downstream analyses transfer
+    an exact execution plan across architectures without silently retuning its
+    shape on the target.
     """
     data = {}
     for line in text.splitlines():
-        m = _NVT_VALID_RE.match(line.strip())
+        m = _SOLVER_RESULT_RE.match(line.strip())
         if not m or int(m.group(4)) != nprob:
             continue
-        data[(m.group(3), m.group(1), int(m.group(2)))] = {
-            "block": float(m.group(6)),
-            "warp": float(m.group(9)),
-            "thread": float(m.group(12)),
-            "nvidia_thread": float(m.group(15)),
+        samples = tuple(float(value) for value in m.group(10).split(","))
+        if len(samples) < 3:
+            raise ValueError("SOLVER_RESULT needs at least three raw rounds: "
+                             + line.strip())
+        key = (m.group(3), m.group(1), int(m.group(2)),
+               m.group(6), m.group(7))
+        if key in data:
+            raise ValueError(f"duplicate SOLVER_RESULT plan: {key}")
+        data[key] = {
+            "ns": float(m.group(8)),
+            "spread": float(m.group(9)),
+            "samples": samples,
+            "slots": int(m.group(5)),
         }
     return data
 
 
-def parse_nvt_valid_spreads(text, nprob=8192):
-    """Return per-contender trial spreads for valid-input confirmation rows."""
+def parse_solver_ladder(text, nprob=8192):
+    """Return the best measured launch shape for each solver implementation.
+
+    Result keys are ``(dtype, op, N)``.  Each value maps an implementation to
+    ``{"ns", "cfg", "spread", "samples", "slots"}``.  The implementation
+    winner is selected later by :func:`pick`, under the same dependency and
+    SIMT tie margins as the non-destructive ladder.
+    """
+    rows = parse_solver_configs(text, nprob)
     data = {}
-    for line in text.splitlines():
-        m = _NVT_VALID_RE.match(line.strip())
-        if not m or int(m.group(4)) != nprob:
-            continue
-        data[(m.group(3), m.group(1), int(m.group(2)))] = {
-            "block": float(m.group(8)),
-            "warp": float(m.group(11)),
-            "thread": float(m.group(14)),
-            "nvidia_thread": float(m.group(17)),
-        }
+    for (dtype, op, N, impl, cfg), metadata in rows.items():
+        cell = data.setdefault((dtype, op, N), {})
+        if impl not in cell or metadata["ns"] < cell[impl]["ns"]:
+            cell[impl] = {**metadata, "cfg": cfg}
     return data
 
 

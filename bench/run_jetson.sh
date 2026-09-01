@@ -198,7 +198,7 @@ run_timed_legs() {
   # freshest of each into DEST (mv, so the next mode can't pick up stale files;
   # the sentinel guards against packaging captures committed in the repo).
   local pat latest
-  for pat in mega_sweep_ nvt_valid_ paper_hostblas_ paper_fusion_; do
+  for pat in mega_sweep_ solver_ladder_ paper_hostblas_ paper_fusion_; do
     latest=$(ls -t ${pat}*.txt 2>/dev/null | head -1)
     if [[ -n "$latest" && "$latest" -nt "$DEST/.legs_start" ]]; then
       mv "$latest" "$DEST/"

@@ -122,17 +122,18 @@ the current sm_120 and sm_87 tables select NVIDIA thread for some small
 the remaining bands. See :doc:`../tutorials/sweep_results` and
 ``bench/RESULTS.md`` for the dated per-op × per-precision results.
 
-In-place solver timing has one additional gate. The main ladder measures
-back-to-back throughput and restores inputs once per trial; after its first
-launch, an in-place solver therefore consumes its own output. Whenever that
-ladder selects NVIDIA thread, ``bench_nvt_valid.cu`` remeasures native
-thread/warp/block and NVIDIA thread with a ring of independent valid systems,
-one per timed launch. NVIDIA thread must clear the same 5% margin there or the
-table falls back to the valid-input native winner. This companion leg is a
-veto only: it cannot promote a vendor path the main ladder did not select, and
-missing confirmation evidence makes regeneration fail closed. The gate also
-uses each contender's observed three-trial interval: if those intervals cannot
-resolve the 5% boundary, regeneration stops for a quieter recapture.
+In-place solver timing uses a separate authoritative ladder. The general
+ladder's back-to-back launches are suitable for non-destructive operations,
+but an in-place solver would consume its own output after the first launch.
+``bench_solver_ladder.cu`` therefore remeasures POTRF, TRSV, and POSV for every
+supported native block/warp/thread and NVIDIA block/thread launch plan. Each
+timed launch consumes a fresh valid system from a bounded ring, while input
+initialization remains outside the timed region. Plans are randomized within
+nine paired rounds and every raw sample is recorded. Any contender can win
+under the same 5% dependency and ±2% SIMT tie rules; there is no special veto
+or asymmetric treatment of NVIDIA thread. Missing solver cells make
+regeneration fail closed. Numerical correctness remains a separate signed-
+receipt requirement, not something inferred from timing agreement.
 
 The ``constexpr`` ``glass::recommend<op, T, dims...>()`` query returns one
 ``execution_plan`` containing family, scope, and launch packing.
@@ -176,8 +177,8 @@ retune?".
 (op, N, precision, batch) cells measured on both, **131 (33 %) crown a
 different tier**. The smaller Orin selects native
 thread more often (87 vs 66 cells), NVIDIA thread more often (52 vs 29), and
-block less often (48 vs 82). After the independent-valid-input veto, the
-NPROB=8192 regime that actually generates the tables differs in **39 of 132**
+block less often (48 vs 82). Under the legacy 2026-08-30 confirmation method,
+the NPROB=8192 regime that generated those archived tables differs in **39 of 132**
 cells. With far fewer SMs to fill, packing more
 problems per warp often beats spreading one problem across more lanes, but the
 movement is not one-directional. No library source differs between the two
@@ -205,8 +206,10 @@ Two practical notes from the Orin bring-up:
   separate-compilation device link against the fatbin, so Jetson runs the full
   native/NVIDIA ladder. In the current capture, the NVIDIA block and thread
   tiers take 87 and 52 of 396 raw ladder cells respectively; the shipped
-  throughput table retains NVIDIA thread in 15 of 132 cells after its
-  independent-valid-input veto.
+  legacy throughput table retained NVIDIA thread in 15 of 132 cells. New
+  captures replace that asymmetric confirmation with the unified fresh-input
+  solver ladder described above; these historical counts are retained only to
+  document the earlier release.
 * The ``nvpmodel`` labels are ceilings, not draws. Sampling the board rails at
   1 Hz with the GPU ≥98.6 % busy, the whole ladder pulls 9.2 W in the 15 W
   mode, 13.4 W in the 30 W mode and 16.0 W in the 50 W mode. Small

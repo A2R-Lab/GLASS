@@ -45,10 +45,11 @@ f64 curves may stop at their shared-memory feasibility limit.
 ``recommend<>()`` is keyed on the **NPROB=8192** throughput regime.
 Its policy first applies a ±2% tie band among dependency-free SIMT contenders,
 then requires an NVIDIA contender to clear the best native choice by more than
-5%. NVIDIA-thread solver winners must additionally reproduce that margin when
-every timed launch consumes an independent valid system. This confirmation is
-a veto only; it cannot promote NVIDIA thread into a cell. These rules keep
-small, noisy, or mutation-dependent gaps out of the generated table.
+5%. For destructive POTRF/TRSV/POSV, every displayed and selected candidate is
+remeasured by the unified solver ladder on fresh valid inputs. The plans are
+randomized within paired rounds and every raw sample is retained; all native
+and NVIDIA candidates use the same selection rule. These rules keep small,
+noisy, or mutation-dependent gaps out of the generated table.
 
 float32
 ~~~~~~~
@@ -83,10 +84,10 @@ float64
 Raw ladder winner per (op, N), per regime
 ------------------------------------------
 
-The main-ladder policy winner at each ``(op, N)`` is listed for all three
-NPROB regimes. The separate valid-input veto affects only final
-NVIDIA-thread throughput defaults and is summarized below; it does not rewrite
-these raw-capture figures.
+The policy winner at each ``(op, N)`` is listed for all three NPROB regimes.
+Non-destructive rows come from the general ladder; POTRF/TRSV/POSV rows come
+from its fresh-input solver companion. Thus the plots, winner list, and shipped
+solver defaults all consume the same authoritative measurements.
 The broad high-batch shape is mixed by design: native thread dominates many
 small packed problems, native warp/block remain important as work grows, and
 the NVIDIA block and thread implementations take measured factor/solve bands.
@@ -232,6 +233,11 @@ for either GLASS's native thread code or cuSOLVERDx's block interface:
      - 15 / 132
      - ``chol`` N=8,12; ``trsv`` N=16,24,32
      - ``chol`` N=4,6,8; ``trsv`` N=4–32
+
+The table and replication paragraph below document the archived 2026-08-30
+release method. The next retune replaces its asymmetric confirmation with the
+unified fresh-input solver ladder described above; regenerate these counts and
+ranges from that accepted capture before treating them as current.
 
 Those ranges enumerate the measured sizes ``4, 6, 8, 12, 16, 24, 32``; they
 do not imply testing every intervening integer. Against the fastest native

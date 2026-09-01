@@ -4,8 +4,9 @@ One capture per box (Orin AGX / Orin NX / Orin Nano — all `sm_87`). Each run
 produces a single `bench/jetson_<host>_<ts>.tar.gz` containing the timings
 plus a full device/JetPack provenance bundle; send those back for ingestion
 (figure columns + the `ideal_sm87` ladder table, spliced off-box via
-`tune.py --from-ladder --from-nvt-valid --sm 870` when MathDx is available;
-native-only captures need no confirmation companion).
+`tune.py --from-ladder --from-solver-ladder --sm 870`). The fresh-input
+solver companion is required with or without MathDx so destructive native and
+vendor implementations are measured under the same input policy.
 
 ## 0. Pre-flight: get on the latest JetPack the box supports
 
@@ -114,9 +115,9 @@ methodology). The script:
    CPUs, `nvpmodel -q`, `jetson_clocks --show`, a `cudaGetDeviceProperties`
    probe (SM count is what separates AGX/NX/Nano), and idle `tegrastats`;
 2. builds everything for `sm_87`;
-3. runs the timed legs serially — the 3-tier SIMT ladder
-   (`tune.py --allow-no-mathdx`; MathDx does not ship for Tegra, which is
-   itself a paper datum), the hostblas + single-call-latency + fusion
+3. runs the timed legs serially — the native ladder plus its fresh-input
+   solver companion (`tune.py --allow-no-mathdx` falls back cleanly when a
+   copied MathDx tree is unavailable), the hostblas + single-call-latency + fusion
    harnesses (host cuBLAS/cuSOLVER are on JetPack), and the robotics
    micro-op sweep — with `tegrastats` logging alongside for energy/solve;
 4. tars captures + provenance into `bench/jetson_<host>_<ts>.tar.gz`.
@@ -125,8 +126,8 @@ methodology). The script:
 
 | Capture | Feeds |
 |---|---|
-| `mega_sweep_*.txt` | `ideal_sm87` ladder table. Full MathDx replay: `python bench/tune.py --sm 870 --legs ladder --from-ladder <mega> --from-nvt-valid <nvt>`; a native-only capture needs only `--from-ladder <mega> --allow-no-mathdx`. |
-| `nvt_valid_*.txt` | Required valid-input veto companion when the ladder selects NVIDIA thread; pass it with `--from-nvt-valid` during off-box regeneration. |
+| `mega_sweep_*.txt` | Non-destructive rows for the `ideal_sm87` ladder table. Replay with `python bench/tune.py --sm 870 --legs ladder --from-ladder <mega> --from-solver-ladder <solver>`. If a solver capture was interrupted, omit `--from-solver-ladder` to preserve this file and recapture only its fresh-input companion. |
+| `solver_ladder_*.txt` | Required symmetric fresh-input POTRF/TRSV/POSV companion. It records every native/vendor execution plan and raw paired-round sample; pass it with `--from-solver-ladder` during off-box regeneration. |
 | `paper_hostblas_*.txt` | Jetson columns for the hostblas + latency figures |
 | `paper_fusion_*.txt` | Jetson fusion curves |
 | `robotics_sweep_*.txt` | Jetson robotics tier panels |
