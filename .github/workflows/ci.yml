@@ -30,7 +30,7 @@ jobs:
           python3 .github/scripts/coverage_obligations.py \
             --receipt test/gpu-proof.json
           python3 .github/scripts/shard_scope_closure.py
-          python3 -m pytest test/test_bench_common.py -q
+          python3 -m pytest test/test_bench_common.py test/test_tune_isolation.py -q
 
   compile-smoke:
     runs-on: ubuntu-latest

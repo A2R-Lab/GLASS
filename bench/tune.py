@@ -69,6 +69,7 @@ import platform
 import re
 import subprocess
 import sys
+import tempfile
 import time
 
 import tune_pick as tp
@@ -155,10 +156,17 @@ def run_isolated(argv, force=False):
     # them so the mid-run check catches only NEW processes (previously the
     # very PIDs --force accepted re-tripped it, making the flag self-defeating).
     baseline = compute_pids() if force else frozenset()
-    proc = subprocess.Popen([str(x) for x in argv], cwd=BENCH_DIR, text=True,
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    _, foreign = watch_process(proc, baseline)
-    stdout, _ = proc.communicate()
+    # watch_process() polls the child before communicate() is called.  A PIPE
+    # therefore deadlocks once a verbose harness (notably the raw-sample solver
+    # ladder) fills the kernel pipe buffer.  A seekable temporary file retains
+    # the same all-or-nothing capture semantics without requiring a second
+    # reader thread or buffering output in the child.
+    with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as capture:
+        proc = subprocess.Popen([str(x) for x in argv], cwd=BENCH_DIR, text=True,
+                                stdout=capture, stderr=subprocess.STDOUT)
+        _, foreign = watch_process(proc, baseline)
+        capture.seek(0)
+        stdout = capture.read()
     if foreign:
         sys.exit(f"ERROR: timing invalidated; foreign compute PIDs appeared: "
                  f"{sorted(foreign)}")
@@ -1267,7 +1275,9 @@ def main():
                    help="allow timed runs despite a busy-GPU preflight; foreign "
                         "compute PIDs appearing during a leg still invalidate it")
     p.add_argument("--from-ladder", metavar="TXT",
-                   help="skip ladder build/run; regenerate from this mega_sweep .txt")
+                   help="reuse this mega_sweep .txt; with --from-solver-ladder, "
+                        "regenerate fully offline, otherwise capture only the "
+                        "missing fresh-input solver companion")
     p.add_argument("--from-solver-ladder", metavar="TXT",
                    help="symmetric fresh-valid-input POTRF/TRSV/POSV companion "
                         "capture required with --from-ladder")
@@ -1365,8 +1375,14 @@ def main():
                          "regenerated on the desktop).")
             sweep_path = pathlib.Path(args.from_ladder)
             sweep_text = sweep_path.read_text()
-            solver_path = (pathlib.Path(args.from_solver_ladder)
-                           if args.from_solver_ladder else None)
+            if args.from_solver_ladder:
+                solver_path = pathlib.Path(args.from_solver_ladder)
+            else:
+                solver_bin = build_solver_ladder(sms, mdx)
+                solver_path = run_solver_ladder(
+                    solver_bin, args.quick, sms, args.margin, sched=user_sched,
+                    force=args.force, rounds=args.solver_rounds,
+                    seed=args.solver_seed)
         else:
             binp = build_mega_sweep(sms, mdx, args.allow_no_mathdx)
             sweep_path = run_mega_sweep(

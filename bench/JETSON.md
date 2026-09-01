@@ -126,7 +126,7 @@ methodology). The script:
 
 | Capture | Feeds |
 |---|---|
-| `mega_sweep_*.txt` | Non-destructive rows for the `ideal_sm87` ladder table. Replay with `python bench/tune.py --sm 870 --legs ladder --from-ladder <mega> --from-solver-ladder <solver>`. |
+| `mega_sweep_*.txt` | Non-destructive rows for the `ideal_sm87` ladder table. Replay with `python bench/tune.py --sm 870 --legs ladder --from-ladder <mega> --from-solver-ladder <solver>`. If a solver capture was interrupted, omit `--from-solver-ladder` to preserve this file and recapture only its fresh-input companion. |
 | `solver_ladder_*.txt` | Required symmetric fresh-input POTRF/TRSV/POSV companion. It records every native/vendor execution plan and raw paired-round sample; pass it with `--from-solver-ladder` during off-box regeneration. |
 | `paper_hostblas_*.txt` | Jetson columns for the hostblas + latency figures |
 | `paper_fusion_*.txt` | Jetson fusion curves |

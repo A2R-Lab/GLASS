@@ -72,7 +72,8 @@ SHARD_DRIVERS[factor]="test/cuda/test_fused.cu test/cuda/test_factor_check.cu \
 SHARD_PATHS[factor]="$ROOTS_BASE,$DENSE_BASE,$TEST_BASE"
 
 SHARD_FILES[tiers]="test/test_thread.py test/test_warp.py test/test_defaults.py test/test_dispatch.py \
- test/test_api_hygiene.py test/test_tuning_tools.py test/test_bench_common.py"
+ test/test_api_hygiene.py test/test_tuning_tools.py test/test_bench_common.py \
+ test/test_tune_isolation.py"
 SHARD_DRIVERS[tiers]="test/cuda/test_thread.cu test/cuda/test_warp.cu \
  test/cuda/test_defaults.cu test/cuda/test_dispatch.cu"
 # svd3.cuh: the dispatch face routes eig3 into its est/ body.
