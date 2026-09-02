@@ -130,9 +130,12 @@ supported native block/warp/thread and NVIDIA block/thread launch plan. Each
 timed launch consumes a fresh valid system from a bounded ring, while input
 initialization remains outside the timed region. Plans are randomized within
 nine paired rounds and every raw sample is recorded. Any contender can win
-under the same 5% dependency and ±2% SIMT tie rules; there is no special veto
-or asymmetric treatment of NVIDIA thread. Missing solver cells make
-regeneration fail closed. Numerical correctness remains a separate signed-
+under the same 5% dependency and ±2% SIMT tie rules. A selected NVIDIA plan is
+additionally interval-confirmed: it is kept only when its slowest raw round
+still clears every native plan's fastest round by the margin, and an ambiguous
+vendor pick keeps the capture's native winner instead — the same documented
+preference for dependency-free code that the margin itself encodes. Missing
+solver cells make regeneration fail closed. Numerical correctness remains a separate signed-
 receipt requirement, not something inferred from timing agreement.
 
 The ``constexpr`` ``glass::recommend<op, T, dims...>()`` query returns one

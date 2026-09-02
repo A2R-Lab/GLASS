@@ -176,8 +176,12 @@ The ladder-grammar harnesses share one measurement core
   system from a bounded ring; initialization is untimed. Plans are randomized
   within nine paired rounds, and the capture retains every raw sample plus the
   exact launch shape. Any contender may win under the ordinary 5% dependency
-  and ±2% SIMT tie rules—there is no special NVIDIA-thread veto. Missing solver
-  cells fail regeneration. Correctness remains a separate signed-receipt gate.
+  and ±2% SIMT tie rules. A selected NVIDIA plan is additionally
+  interval-confirmed: its slowest raw round must still clear every native
+  plan's fastest round by the margin, and an ambiguous vendor pick is demoted
+  to the capture's native winner instead of failing the run. Native picks
+  absorb residual noise through the margin and tie band and are only
+  reported. Missing solver cells fail regeneration. Correctness remains a separate signed-receipt gate.
   Never use the destructive main-ladder loop alone for a `CHECK`-gated,
   pivoted, or other data-dependent operation.
 - **Decisions absorb residual noise**: the 5% dependency margin, the ±2% SIMT
