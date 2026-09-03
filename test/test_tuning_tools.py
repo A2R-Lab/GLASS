@@ -95,17 +95,50 @@ def test_ladder_regeneration_names_symmetric_solver_evidence():
                                    generated.index("// === END tune.py ladder sm_120 ===")]
 
 
-def test_ladder_regeneration_rejects_noisy_selected_solver_plan():
-    noisy = SYNTHETIC_SOLVER.replace(
-        "impl=nvidia cfg=tb256 ns=6.0000 spread=0.70",
-        "impl=nvidia cfg=tb256 ns=6.0000 spread=5.10")
-    try:
-        tune.regen_ladder(SYNTHETIC_SWEEP, 0.05, "mega.txt", 1200,
-                          noisy, "solver.txt")
-    except SystemExit as error:
-        assert "round spread" in str(error)
-    else:
-        raise AssertionError("decision-scale solver jitter must fail closed")
+def test_ambiguous_vendor_pick_is_demoted_to_native_winner():
+    # Median rule selects nvidia (6.0 clears thread 7.0 by >5%), but its
+    # slowest round (6.90) cannot beat thread's fastest round (7.00) by the
+    # margin, so the cell keeps the capture's native winner.
+    ambiguous = SYNTHETIC_SOLVER.replace(
+        "impl=nvidia cfg=tb256 ns=6.0000 spread=0.70 samples=6.00,6.02,6.04",
+        "impl=nvidia cfg=tb256 ns=6.0000 spread=15.00 samples=6.00,6.02,6.90")
+    generated, groups, plans = tune.regen_ladder(
+        SYNTHETIC_SWEEP, 0.05, "mega.txt", 1200, ambiguous, "solver.txt")
+
+    assert groups == 1 and plans == 5
+    assert "demoted to the capture's native winner" in generated
+    region = generated[generated.index("// === BEGIN tune.py ladder sm_120 ==="):
+                       generated.index("// === END tune.py ladder sm_120 ===")]
+    assert "backend::nvidia_block" not in region.split("native_sm120")[0]
+
+
+def test_guaranteed_vendor_win_survives_a_wide_spread():
+    # 10% round spread, but even the slowest round (6.60) clears thread's
+    # fastest round (7.00) by more than 5% — the decision is stable.
+    wide = SYNTHETIC_SOLVER.replace(
+        "impl=nvidia cfg=tb256 ns=6.0000 spread=0.70 samples=6.00,6.02,6.04",
+        "impl=nvidia cfg=tb256 ns=6.0000 spread=10.00 samples=6.00,6.30,6.60")
+    generated, _, _ = tune.regen_ladder(
+        SYNTHETIC_SWEEP, 0.05, "mega.txt", 1200, wide, "solver.txt")
+    assert "demoted" not in generated
+    assert "backend::nvidia_block" in generated
+
+
+def test_noisy_native_pick_never_fails_the_capture():
+    # A native winner above the margin is reported, not fatal: the
+    # dependency margin and SIMT tie band absorb noise in that direction.
+    noisy_native = (SYNTHETIC_SOLVER
+                    .replace("impl=nvidia cfg=tb256 ns=6.0000 spread=0.70 "
+                             "samples=6.00,6.02,6.04",
+                             "impl=nvidia cfg=tb256 ns=7.6000 spread=0.70 "
+                             "samples=7.60,7.62,7.64")
+                    .replace("impl=thread cfg=t32 ns=7.0000 spread=0.40 "
+                             "samples=7.00,7.01,7.02",
+                             "impl=thread cfg=t32 ns=7.0000 spread=6.30 "
+                             "samples=7.00,7.05,7.44"))
+    generated, _, _ = tune.regen_ladder(
+        SYNTHETIC_SWEEP, 0.05, "mega.txt", 1200, noisy_native, "solver.txt")
+    assert "backend::thread" in generated
 
 
 def test_local_override_emits_both_dependency_policies(tmp_path):
