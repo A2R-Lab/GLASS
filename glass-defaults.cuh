@@ -67,30 +67,31 @@ enum class backend : int { warp, block, nvidia_block, thread, nvidia_thread };
 // inserts a new block + dispatch case for a first-time arch), leaving the rest alone. ───
 
 // === BEGIN tune.py ladder sm_120 ===
-// Source sweep: mega_sweep_20260830_042156.txt   tie margin: ±5% (NVIDIA block/thread must clear it; SIMT ties ±2% prefer thread>warp>block)
-// NVIDIA-thread valid-input veto: nvt_valid_20260830_160047.txt (3 ladder picks vetoed)
+// Source sweep: mega_sweep_20260902_090755.txt   tie margin: ±5% (NVIDIA block/thread must clear it; SIMT ties ±2% prefer thread>warp>block)
+// Fresh-input solver sweep: solver_ladder_20260902_103003.txt (1104 measured execution plans; symmetric selection)
+// Interval confirmation: 1 ambiguous NVIDIA pick(s) demoted to the capture's native winner
 // Paired tables preserve the measured native runner-up for callers that
 // do not opt into MathDx; both use the same capture and SIMT tie rule.
 constexpr backend ideal_sm120(op o, uint32_t N, bool f64) {
     switch (o) {
         case op::dot:
-            if (!f64) return N <= 12u ? backend::thread : N <= 16u ? backend::warp : N <= 24u ? backend::thread : backend::warp;
+            if (!f64) return N <= 12u ? backend::thread : backend::warp;
             else      return N <= 32u ? backend::thread : backend::warp;
         case op::gemv:
             if (!f64) return N <= 6u ? backend::thread : N <= 32u ? backend::warp : N <= 48u ? backend::block : backend::warp;
-            else      return N <= 6u ? backend::thread : backend::warp;
+            else      return N <= 6u ? backend::thread : N <= 96u ? backend::warp : backend::block;
         case op::gemm:
             if (!f64) return N <= 16u ? backend::warp : N <= 24u ? backend::block : N <= 32u ? backend::nvidia_block : backend::block;
-            else      return N <= 8u ? backend::warp : backend::block;
+            else      return N <= 12u ? backend::warp : backend::block;
         case op::potrf:
-            if (!f64) return N <= 4u ? backend::thread : N <= 8u ? backend::nvidia_thread : N <= 24u ? backend::warp : backend::nvidia_block;
+            if (!f64) return N <= 4u ? backend::thread : N <= 8u ? backend::nvidia_thread : N <= 12u ? backend::warp : backend::nvidia_block;
             else      return N <= 8u ? backend::nvidia_thread : N <= 24u ? backend::thread : backend::block;
         case op::trsv:
-            if (!f64) return N <= 16u ? backend::thread : N <= 24u ? backend::nvidia_thread : N <= 32u ? backend::nvidia_block : backend::warp;
-            else      return N <= 6u ? backend::thread : N <= 32u ? backend::nvidia_thread : N <= 48u ? backend::nvidia_block : backend::warp;
+            if (!f64) return N <= 16u ? backend::thread : N <= 48u ? backend::nvidia_block : backend::warp;
+            else      return N <= 6u ? backend::thread : N <= 24u ? backend::nvidia_thread : N <= 32u ? backend::nvidia_block : backend::warp;
         case op::posv:
             if (!f64) return N <= 12u ? backend::thread : backend::nvidia_block;
-            else      return N <= 8u ? backend::nvidia_thread : N <= 24u ? backend::thread : N <= 32u ? backend::nvidia_block : backend::block;
+            else      return N <= 8u ? backend::nvidia_thread : N <= 24u ? backend::thread : N <= 48u ? backend::warp : backend::block;
     }
     return backend::block;
 }
@@ -98,31 +99,29 @@ constexpr backend ideal_sm120(op o, uint32_t N, bool f64) {
 constexpr backend native_sm120(op o, uint32_t N, bool f64) {
     switch (o) {
         case op::dot:
-            if (!f64) return N <= 12u ? backend::thread : N <= 16u ? backend::warp : N <= 24u ? backend::thread : backend::warp;
+            if (!f64) return N <= 12u ? backend::thread : backend::warp;
             else      return N <= 32u ? backend::thread : backend::warp;
         case op::gemv:
             if (!f64) return N <= 6u ? backend::thread : N <= 32u ? backend::warp : N <= 48u ? backend::block : backend::warp;
-            else      return N <= 6u ? backend::thread : backend::warp;
+            else      return N <= 6u ? backend::thread : N <= 96u ? backend::warp : backend::block;
         case op::gemm:
             if (!f64) return N <= 16u ? backend::warp : backend::block;
-            else      return N <= 8u ? backend::warp : backend::block;
+            else      return N <= 12u ? backend::warp : backend::block;
         case op::potrf:
             if (!f64) return N <= 6u ? backend::thread : N <= 48u ? backend::warp : backend::block;
             else      return N <= 24u ? backend::thread : backend::block;
-        case op::trsv:
-            if (!f64) return N <= 16u ? backend::thread : backend::warp;
-            else      return N <= 24u ? backend::thread : N <= 32u ? backend::block : backend::warp;
+        case op::trsv: return N <= 16u ? backend::thread : backend::warp;
         case op::posv:
-            if (!f64) return N <= 12u ? backend::thread : N <= 64u ? backend::warp : backend::block;
-            else      return N <= 24u ? backend::thread : backend::block;
+            if (!f64) return N <= 16u ? backend::thread : N <= 64u ? backend::warp : backend::block;
+            else      return N <= 24u ? backend::thread : N <= 48u ? backend::warp : backend::block;
     }
     return backend::block;
 }
 // === END tune.py ladder sm_120 ===
 
 // === BEGIN tune.py ladder sm_87 ===
-// Source sweep: mega_sweep_orin_tegra_20260830_035819.txt   tie margin: ±5% (NVIDIA block/thread must clear it; SIMT ties ±2% prefer thread>warp>block)
-// NVIDIA-thread valid-input veto: nvt_valid_sm87_20260830_160506.txt (4 ladder picks vetoed)
+// Source sweep: mega_sweep_20260901_163654.txt   tie margin: ±5% (NVIDIA block/thread must clear it; SIMT ties ±2% prefer thread>warp>block)
+// Fresh-input solver sweep: solver_ladder_20260901_194600.txt (1104 measured execution plans; symmetric selection)
 // Paired tables preserve the measured native runner-up for callers that
 // do not opt into MathDx; both use the same capture and SIMT tie rule.
 constexpr backend ideal_sm87(op o, uint32_t N, bool f64) {
@@ -137,14 +136,14 @@ constexpr backend ideal_sm87(op o, uint32_t N, bool f64) {
             if (!f64) return N <= 16u ? backend::warp : N <= 96u ? backend::nvidia_block : backend::block;
             else      return N <= 96u ? backend::warp : backend::block;
         case op::potrf:
-            if (!f64) return N <= 6u ? backend::thread : N <= 12u ? backend::nvidia_thread : backend::nvidia_block;
-            else      return N <= 8u ? backend::nvidia_thread : N <= 48u ? backend::thread : N <= 64u ? backend::block : N <= 96u ? backend::warp : backend::block;
+            if (!f64) return N <= 4u ? backend::nvidia_thread : N <= 6u ? backend::thread : N <= 12u ? backend::nvidia_thread : backend::nvidia_block;
+            else      return N <= 8u ? backend::nvidia_thread : N <= 48u ? backend::thread : N <= 96u ? backend::block : backend::warp;
         case op::trsv:
-            if (!f64) return N <= 12u ? backend::thread : N <= 32u ? backend::nvidia_thread : backend::warp;
-            else      return N <= 32u ? backend::nvidia_thread : N <= 64u ? backend::thread : N <= 96u ? backend::warp : backend::block;
+            if (!f64) return N <= 6u ? backend::thread : N <= 32u ? backend::nvidia_thread : backend::warp;
+            else      return N <= 32u ? backend::nvidia_thread : N <= 48u ? backend::thread : N <= 96u ? backend::warp : backend::block;
         case op::posv:
             if (!f64) return N <= 16u ? backend::thread : backend::nvidia_block;
-            else      return N <= 64u ? backend::thread : N <= 96u ? backend::warp : backend::block;
+            else      return N <= 64u ? backend::thread : backend::block;
     }
     return backend::block;
 }
@@ -161,18 +160,72 @@ constexpr backend native_sm87(op o, uint32_t N, bool f64) {
             if (!f64) return N <= 32u ? backend::warp : backend::block;
             else      return N <= 96u ? backend::warp : backend::block;
         case op::potrf:
-            if (!f64) return N <= 8u ? backend::thread : N <= 64u ? backend::warp : backend::block;
-            else      return N <= 48u ? backend::thread : N <= 64u ? backend::block : N <= 96u ? backend::warp : backend::block;
+            if (!f64) return N <= 8u ? backend::thread : N <= 96u ? backend::warp : backend::block;
+            else      return N <= 48u ? backend::thread : N <= 96u ? backend::block : backend::warp;
         case op::trsv:
             if (!f64) return N <= 16u ? backend::thread : backend::warp;
-            else      return N <= 64u ? backend::thread : N <= 96u ? backend::warp : backend::block;
+            else      return N <= 48u ? backend::thread : N <= 96u ? backend::warp : backend::block;
         case op::posv:
-            if (!f64) return N <= 24u ? backend::thread : N <= 96u ? backend::warp : backend::block;
-            else      return N <= 64u ? backend::thread : N <= 96u ? backend::warp : backend::block;
+            if (!f64) return N <= 16u ? backend::thread : N <= 96u ? backend::warp : backend::block;
+            else      return N <= 64u ? backend::thread : backend::block;
     }
     return backend::block;
 }
 // === END tune.py ladder sm_87 ===
+
+// === BEGIN tune.py ladder sm_72 ===
+// Source sweep: mega_sweep_20260901_163656.txt   tie margin: ±5% (NVIDIA block/thread must clear it; SIMT ties ±2% prefer thread>warp>block)
+// Fresh-input solver sweep: solver_ladder_20260901_230339.txt (876 measured execution plans; symmetric selection)
+// Paired tables preserve the measured native runner-up for callers that
+// do not opt into MathDx; both use the same capture and SIMT tie rule.
+constexpr backend ideal_sm72(op o, uint32_t N, bool f64) {
+    switch (o) {
+        case op::dot:
+            if (!f64) return N <= 16u ? backend::thread : backend::warp;
+            else      return N <= 32u ? backend::thread : backend::warp;
+        case op::gemv:
+            if (!f64) return N <= 6u ? backend::thread : N <= 96u ? backend::warp : backend::block;
+            else      return N <= 6u ? backend::thread : N <= 32u ? backend::warp : N <= 48u ? backend::block : N <= 64u ? backend::warp : backend::block;
+        case op::gemm:
+            if (!f64) return N <= 16u ? backend::warp : backend::block;
+            else      return N <= 64u ? backend::warp : backend::block;
+        case op::potrf:
+            if (!f64) return N <= 6u ? backend::thread : N <= 48u ? backend::warp : N <= 96u ? backend::block : backend::warp;
+            else      return N <= 32u ? backend::thread : backend::block;
+        case op::trsv:
+            if (!f64) return N <= 12u ? backend::thread : backend::warp;
+            else      return N <= 32u ? backend::thread : N <= 96u ? backend::warp : backend::block;
+        case op::posv:
+            if (!f64) return N <= 16u ? backend::thread : N <= 48u ? backend::warp : N <= 64u ? backend::block : N <= 96u ? backend::warp : backend::block;
+            else      return N <= 32u ? backend::thread : backend::block;
+    }
+    return backend::block;
+}
+
+constexpr backend native_sm72(op o, uint32_t N, bool f64) {
+    switch (o) {
+        case op::dot:
+            if (!f64) return N <= 16u ? backend::thread : backend::warp;
+            else      return N <= 32u ? backend::thread : backend::warp;
+        case op::gemv:
+            if (!f64) return N <= 6u ? backend::thread : N <= 96u ? backend::warp : backend::block;
+            else      return N <= 6u ? backend::thread : N <= 32u ? backend::warp : N <= 48u ? backend::block : N <= 64u ? backend::warp : backend::block;
+        case op::gemm:
+            if (!f64) return N <= 16u ? backend::warp : backend::block;
+            else      return N <= 64u ? backend::warp : backend::block;
+        case op::potrf:
+            if (!f64) return N <= 6u ? backend::thread : N <= 48u ? backend::warp : N <= 96u ? backend::block : backend::warp;
+            else      return N <= 32u ? backend::thread : backend::block;
+        case op::trsv:
+            if (!f64) return N <= 12u ? backend::thread : backend::warp;
+            else      return N <= 32u ? backend::thread : N <= 96u ? backend::warp : backend::block;
+        case op::posv:
+            if (!f64) return N <= 16u ? backend::thread : N <= 48u ? backend::warp : N <= 64u ? backend::block : N <= 96u ? backend::warp : backend::block;
+            else      return N <= 32u ? backend::thread : backend::block;
+    }
+    return backend::block;
+}
+// === END tune.py ladder sm_72 ===
 
 // ─── blas2 family (syrk / syr2k / ldlt / ldlt_solve): warp-vs-block only;
 // no vendor tier exists for these ops.
@@ -319,6 +372,7 @@ constexpr backend ideal(op o, uint32_t N, bool f64, uint32_t sm,
 #else
     switch (sm) {
         // === BEGIN tune.py ladder dispatch ===
+        case 720u: return allow_nvidia ? ideal_sm72(o, N, f64) : native_sm72(o, N, f64);
         case 870u: return allow_nvidia ? ideal_sm87(o, N, f64) : native_sm87(o, N, f64);
         case 1200u: return allow_nvidia ? ideal_sm120(o, N, f64) : native_sm120(o, N, f64);
         // === END tune.py ladder dispatch ===
