@@ -77,11 +77,30 @@ static_assert(gd::ideal_sm87(op::potrf,  24, true)  == backend::thread, "potrf24
 static_assert(gd::ideal_sm87(op::posv,  8,  true)   == backend::thread,
               "posv8 f64 -> native thread on fresh inputs");
 
+// ── sm_72 (Jetson AGX Xavier, MODE_30W_ALL pinned; 2026-09-01) ──
+// Native-only board (MathDx does not ship for sm_72), so the full and native
+// tables are generated from the same fresh-input captures and agree.
+static_assert(gd::ideal_sm72(op::dot,    8, false) == backend::thread, "sm72 dot8 f32");
+static_assert(gd::ideal_sm72(op::dot,  128, false) == backend::warp,   "sm72 dot128 f32");
+static_assert(gd::ideal_sm72(op::gemm,  16, false) == backend::warp,   "sm72 gemm16 f32");
+static_assert(gd::ideal_sm72(op::gemm,  64, false) == backend::block,  "sm72 gemm64 f32");
+static_assert(gd::ideal_sm72(op::gemm,  64, true)  == backend::warp,   "sm72 gemm64 f64 (warp reaches further than sm_87)");
+static_assert(gd::ideal_sm72(op::potrf,  6, false) == backend::thread, "sm72 potrf6 f32");
+static_assert(gd::ideal_sm72(op::potrf, 48, false) == backend::warp,   "sm72 potrf48 f32");
+static_assert(gd::ideal_sm72(op::potrf, 32, true)  == backend::thread, "sm72 potrf32 f64 (thread band widest of the three arches)");
+static_assert(gd::ideal_sm72(op::trsv,  12, false) == backend::thread, "sm72 trsv12 f32");
+static_assert(gd::ideal_sm72(op::posv,  16, false) == backend::thread, "sm72 posv16 f32");
+static_assert(gd::ideal_sm72(op::posv,  32, true)  == backend::thread, "sm72 posv32 f64");
+static_assert(gd::native_sm72(op::potrf, 48, false) == gd::ideal_sm72(op::potrf, 48, false),
+              "sm72 native table agrees with the full table (no vendor tier)");
+
 // ── per-arch dispatch: a measured SM hits its table, an unmeasured SM falls to generic ──
 static_assert(gd::ideal(op::gemm, 32, false, 1200u) == gd::ideal_sm120(op::gemm, 32, false), "sm_120 dispatches to its table");
 static_assert(gd::ideal(op::posv, 64, true,  1200u) == gd::ideal_sm120(op::posv, 64, true),  "sm_120 dispatches to its table (f64)");
 static_assert(gd::ideal(op::potrf, 48, false, 870u)  == gd::ideal_sm87(op::potrf, 48, false),  "sm_87 dispatches to its table");
 static_assert(gd::ideal(op::posv, 64, true,  870u)  == gd::ideal_sm87(op::posv, 64, true),   "sm_87 dispatches to its table (f64)");
+static_assert(gd::ideal(op::potrf, 48, false, 720u) == gd::ideal_sm72(op::potrf, 48, false), "sm_72 dispatches to its table");
+static_assert(gd::ideal(op::posv, 32, true,  720u) == gd::ideal_sm72(op::posv, 32, true),  "sm_72 dispatches to its table (f64)");
 // (sentinel SMs no sweep will ever produce — a real new arch, e.g. sm_87 on Jetson,
 //  gets its own table + dispatch case from tune.py and must NOT be asserted generic here)
 static_assert(gd::ideal(op::gemm, 32, false, 0u) == gd::ideal_generic(op::gemm, 32, false), "unmeasured SM falls to generic");

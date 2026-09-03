@@ -49,6 +49,8 @@
     "src/base/L3/syrk.cuh:syrk_impl_ct": "Compile-time implementation body behind public syrk overloads.",
     "src/base/L3/syrk.cuh:syr2k_impl_ct": "Compile-time implementation body behind public syr2k overloads.",
     "src/cgrps/l1.cuh:rank": "GroupBarrier implementation member.",
-    "src/cgrps/l1.cuh:sync": "GroupBarrier implementation member."
+    "src/cgrps/l1.cuh:sync": "GroupBarrier implementation member.",
+    "glass-defaults.cuh:ideal_sm72": "Generated architecture table implementation.",
+    "glass-defaults.cuh:native_sm72": "Generated native-only architecture table implementation."
   }
 }
