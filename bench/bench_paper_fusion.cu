@@ -205,6 +205,43 @@ __global__ void k_fused_riccati(const T* gP, const T* gA, const T* gB, const T* 
     for (uint32_t i = rank; i < NU*NX; i += size)   gK[p*NU*NX + i] = sK[i];
 }
 
+// ─── UNFUSED device-side GLASS chain ─────────────────────────────────────────
+// The same math as the fused kernel, but each primitive launched as its own
+// kernel with every intermediate (PB, S, G) round-tripping through GLOBAL
+// memory — what a caller writes with general GLASS primitives and NO fused
+// riccati_gain. Isolates the fusion/smem benefit from the device-vs-host
+// benefit: host chain → device unfused = dispatch+locality of device
+// execution; device unfused → fused = composition keeping intermediates
+// on-chip. One block per problem, glass::block ops on global pointers.
+template <typename T, uint32_t NX, uint32_t NU>
+__global__ void k_unf_pb(const T* gP, const T* gB, T* gPB) {
+    const size_t p = blockIdx.x;
+    glass::gemm<T>(NX, NU, NX, (T)1, gP + p*NX*NX, gB + p*NX*NU, (T)0, gPB + p*NX*NU);
+}
+template <typename T, uint32_t NX, uint32_t NU>
+__global__ void k_unf_s(const T* gB, const T* gPB, const T* gR, T* gS) {
+    const size_t p = blockIdx.x;
+    T* S = gS + p*NU*NU;
+    const T* R = gR + p*NU*NU;
+    for (uint32_t i = threadIdx.x; i < NU*NU; i += blockDim.x) S[i] = R[i];
+    __syncthreads();
+    // S += Bᵀ·PB  (op(A)=Bᵀ is NU×NX)
+    glass::gemm<T, /*TRANSPOSE_A=*/true>(NU, NU, NX, (T)1, gB + p*NX*NU,
+                                         gPB + p*NX*NU, (T)1, S);
+}
+template <typename T, uint32_t NX, uint32_t NU>
+__global__ void k_unf_g(const T* gPB, const T* gA, T* gG) {
+    const size_t p = blockIdx.x;
+    // G = (P·B)ᵀ·A = Bᵀ·P·A (P symmetric)
+    glass::gemm<T, /*TRANSPOSE_A=*/true>(NU, NX, NX, (T)1, gPB + p*NX*NU,
+                                         gA + p*NX*NX, (T)0, gG + p*NU*NX);
+}
+template <typename T, uint32_t NX, uint32_t NU>
+__global__ void k_unf_solve(T* gS, T* gG) {
+    const size_t p = blockIdx.x;
+    glass::posv<T>(NU, NX, gS + p*NU*NU, gG + p*NU*NX);   // K lands in G
+}
+
 // ─── per-(dtype, shape) driver ───────────────────────────────────────────────
 struct Handles { cublasHandle_t cb; cusolverDnHandle_t cs; };
 
@@ -288,6 +325,12 @@ static void run_shape(Handles H, const char* dt) {
         auto fused = [&](int tb) {
             k_fused_riccati<T, NX, NU><<<B, tb, smem>>>(dP, dA, dB_, dR, dK, B);
         };
+        auto unfused = [&](int tb) {
+            k_unf_pb   <T, NX, NU><<<B, tb>>>(dP, dB_, dPB);
+            k_unf_s    <T, NX, NU><<<B, tb>>>(dB_, dPB, dR, dS);
+            k_unf_g    <T, NX, NU><<<B, tb>>>(dPB, dA, dG);
+            k_unf_solve<T, NX, NU><<<B, tb>>>(dS, dG);
+        };
         auto chain = [&] {
             CK(cudaMemcpyAsync(dS, dR, RR*(size_t)B*sizeof(T), cudaMemcpyDeviceToDevice));
             xgemm_sb(H.cb, CUBLAS_OP_N, NX, NU, NX, (T)1, dP, NX, PP, dB_, NX, BB, (T)0, dPB, NX, BB, B);
@@ -314,6 +357,12 @@ static void run_shape(Handles H, const char* dt) {
             for (size_t i = 0; i < KK; i++) me = fmax(me, fabs((double)hK[i] - refK[i]));
             printf("CHECK shape=%ux%u dtype=%s impl=chain maxerr=%.3e\n", NX, NU, dt, me);
             if (!(me < tol)) { fprintf(stderr, "FATAL chain mismatch\n"); exit(4); }
+            unfused(128); CK(cudaDeviceSynchronize());
+            CK(cudaMemcpy(hK.data(), dG, KK*sizeof(T), cudaMemcpyDeviceToHost));
+            me = 0;
+            for (size_t i = 0; i < KK; i++) me = fmax(me, fabs((double)hK[i] - refK[i]));
+            printf("CHECK shape=%ux%u dtype=%s impl=glass_unfused maxerr=%.3e\n", NX, NU, dt, me);
+            if (!(me < tol)) { fprintf(stderr, "FATAL glass_unfused mismatch\n"); exit(4); }
         }
 
         // timing: median over 5 trials of REPS event-bracketed reps
@@ -325,6 +374,9 @@ static void run_shape(Handles H, const char* dt) {
             {"fused_tb128", [&]{ fused(128); }},
             {"fused_tb256", [&]{ fused(256); }},   // wide-block probe: the (36,12)/(48,16)
             {"fused_tb512", [&]{ fused(512); }},   // chain-wins cells may be TB-starved
+            {"glass_unfused_tb32",  [&]{ unfused(32); }},
+            {"glass_unfused_tb128", [&]{ unfused(128); }},
+            {"glass_unfused_tb256", [&]{ unfused(256); }},
             {"chain",       chain},
         };
         std::mt19937 order_rng(0x46555345u ^ (NX << 20) ^ (NU << 12) ^
