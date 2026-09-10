@@ -119,7 +119,9 @@ serial pivot and TB>32 *hurts*.
 interfaces enter the ladder where supported. Which one wins is not monotonic:
 the current sm_120 and sm_87 tables select NVIDIA thread for some small
 ``potrf``/``trsv``/``posv`` cells, NVIDIA block elsewhere, and native tiers in
-the remaining bands. See :doc:`../tutorials/sweep_results` and
+the remaining bands. (The sm_72 Xavier table is native-only by construction —
+its CUDA 11.4 toolchain predates the device-callable MathDx libraries.) See
+:doc:`../tutorials/sweep_results` and
 ``bench/RESULTS.md`` for the dated per-op × per-precision results.
 
 In-place solver timing uses a separate authoritative ladder. The general
@@ -145,7 +147,7 @@ Pass ``dependency_set::mathdx`` explicitly to admit NVIDIA candidates;
 full winner and the measured native-only winner for every cell. The pick is
 host-/codegen-side because
 the tiers need different ``<<<grid, block>>>`` launches. Tables are per-arch
-(``ideal_sm120`` and ``ideal_sm87`` today)
+(``ideal_sm120``, ``ideal_sm87``, and ``ideal_sm72`` today)
 behind an SM dispatch; ``bench/tune.py --sm auto`` adds or refreshes your GPU's table
 (and the tables below) in-tree, leaving other arches' tables untouched.
 
@@ -168,24 +170,28 @@ bit-stability across retunes pin ``glass::block::`` explicitly (see
 
 .. _tuning-per-arch-results:
 
-What a retune actually changes (sm_120 vs sm_87)
-------------------------------------------------
+What a retune actually changes (sm_120 vs sm_87 vs sm_72)
+---------------------------------------------------------
 
-GLASS ships two measured architectures today: ``sm_120`` (RTX 5090, 170 SMs)
-and ``sm_87`` (Jetson AGX Orin, 16 SMs, integrated memory). Comparing the
-2026-08-30 five-backend captures is the clearest answer to "do I need to
-retune?".
+GLASS ships three measured architectures today: ``sm_120`` (RTX 5090, 170
+SMs), ``sm_87`` (Jetson AGX Orin, 16 SMs, integrated memory), and ``sm_72``
+(Jetson AGX Xavier, 8 SMs, native-only — CUDA 11.4 predates the
+device-callable MathDx libraries). Comparing the paired 2026-09-02
+fresh-input A/B captures that generated the shipped tables is the clearest
+answer to "do I need to retune?".
 
-**Yes, per architecture.** In the raw five-backend ladder, of the 396
-(op, N, precision, batch) cells measured on both, **131 (33 %) crown a
-different tier**. The smaller Orin selects native
-thread more often (87 vs 66 cells), NVIDIA thread more often (52 vs 29), and
-block less often (48 vs 82). Under the legacy 2026-08-30 confirmation method,
-the NPROB=8192 regime that generated those archived tables differs in **39 of 132**
-cells. With far fewer SMs to fill, packing more
-problems per warp often beats spreading one problem across more lanes, but the
-movement is not one-directional. No library source differs between the two
-machines; roughly a third of the decisions do.
+**Yes, per architecture.** Of the 396 (op, N, precision, batch) cells
+measured on every machine, the Orin's recommended placements differ from the
+RTX 5090's in **145** and from the Xavier's in **162**. Part of the Xavier
+gap is structural (no MathDx tier available), but restricting all three GPUs
+to their common native thread/warp/block candidates still changes 107
+(RTX–Orin), 94 (RTX–Xavier), and 66 (Orin–Xavier) recommendations. The
+stakes are real: on the Orin's raw candidate ladder at NPROB=8192, the best
+and worst placements for a cell differ by a **median of 4.9× (up to 81×)**,
+and no library source differs between the machines — only the measured
+tables do. With far fewer SMs to fill, the Jetsons pack more problems per
+warp or thread where the RTX spreads one problem across more lanes, but the
+movement is not one-directional.
 
 **Historically, no material retune was needed per power mode.** Before the
 NVIDIA-thread contender was added, the same Orin measured at all three standard

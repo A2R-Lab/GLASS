@@ -15,11 +15,13 @@ exactly the measurement behind ``glass-defaults.cuh``'s ``recommend<>()``
    source-digest, and signed-receipt protocol and are marked accordingly. Use
    the source capture named beside a claim, and rerun on the target machine.
 
-The figures and table below come from the 2026-08-30 RTX 5090 / sm_120
-five-backend sweep, shown across three batch regimes — **NPROB=64** (low batch,
+The figures and table below come from the 2026-09-02 RTX 5090 / sm_120
+five-backend selection capture — the same paired fresh-input A/B campaign
+that generated the shipped ``ideal_sm120`` / ``ideal_sm87`` / ``ideal_sm72``
+tables (an independent same-protocol second capture confirmed the
+selections) — shown across three batch regimes: **NPROB=64** (low batch,
 latency-leaning), **NPROB=1024** (mid), and **NPROB=8192** (throughput). The
-committed dispatch table uses a separate 500-repetition throughput replication;
-the figures use the full three-regime capture. The winner can shift with batch
+winner can shift with batch
 size, so low-batch plots describe that workload rather than overriding the
 throughput table. These are committed static assets — regenerate them for your
 own hardware with::
@@ -91,11 +93,30 @@ solver defaults all consume the same authoritative measurements.
 The broad high-batch shape is mixed by design: native thread dominates many
 small packed problems, native warp/block remain important as work grows, and
 the NVIDIA block and thread implementations take measured factor/solve bands.
-The ``NPROB=8192`` block shown here is from the full capture; the generated
-sm_120 table uses its higher-repetition replication.
+The ``NPROB=8192`` blocks shown here are from the same capture pair that
+generated the shipped sm_120 table.
 
 .. literalinclude:: /_static/sweep_winners.txt
    :language: text
+
+The same ladder at the edge (Jetson AGX Orin)
+----------------------------------------------
+
+The identical sweep on the Jetson AGX Orin (sm_87, 2026-09-01 selection
+capture, throughput regime) crowns different winners in **145 of 396** cells
+versus the RTX 5090 above, and the older AGX Xavier (sm_72, native-only)
+differs from the Orin in **162 of 396** — placement is a property of the
+silicon, and getting it wrong is expensive: on the Orin's raw ladder the best
+and worst placements for a cell differ by a median of 4.9× (up to 81×). See
+:ref:`tuning-per-arch-results` for the cross-architecture analysis.
+
+.. image:: /_static/mega_sweep_ladder_f32_sm87.png
+   :alt: f32 ladder on Jetson AGX Orin, NPROB=8192 (throughput — feeds recommend)
+   :width: 100%
+
+.. image:: /_static/mega_sweep_ladder_f64_sm87.png
+   :alt: f64 ladder on Jetson AGX Orin, NPROB=8192 (throughput — feeds recommend)
+   :width: 100%
 
 vs. host-batched cuBLAS/cuSOLVER (and TF32)
 -------------------------------------------
@@ -130,6 +151,14 @@ winner between two quiet captures despite low within-run spread. Accordingly,
 small deltas and cross-run winner changes are treated as ties; publication
 claims must survive both independent captures.
 
+The 2026-09 recapture campaign repeated this comparison under the current
+median-of-trials protocol on all three measured architectures and confirmed
+the shape while sharpening the edge story: the host-dispatch overhead that
+GLASS avoids is far more expensive on an embedded GPU, so the same
+comparison that peaks near 16× on the RTX 5090 peaks over 100× on the
+Jetson AGX Orin (small-N ``posv``, where per-call host overhead dominates).
+Raw captures are archived with the paper materials.
+
 Permitting TF32 tensor cores (dashed) does not change the story: cuBLAS
 *declines to engage them* below ``N`` = 24 (results bit-identical to FP32),
 and where they do engage the speed is a wash against FP32 cuBLAS while max
@@ -157,6 +186,16 @@ quadrotor/manipulator scale — 2.5–2.8× at
 chain wins at (36,12) fp32 and (48,16), where the staged operands outgrow what
 one block overlaps profitably. Fusion is a measured choice, not a default:
 GLASS composes both forms from the same primitives.
+
+The harness now also carries a third, *device-side unfused* arm — the same
+GLASS primitives launched one kernel per step with intermediates in global
+memory — which isolates the fusion effect from the device-vs-host effect. On
+the Jetson AGX Orin (2026-09 captures), fusion wins by up to ~1.75× at small
+batches in fp32, while the unfused composition wins by up to ~2.9× at large
+batches and in fp64, where per-primitive kernels regain the occupancy the
+fused kernel's shared-memory footprint caps. Which side of that tradeoff a
+given (size, batch, precision) lands on is exactly the kind of measured
+placement decision the rest of this page is about.
 
 Single-call latency
 -------------------
@@ -214,10 +253,10 @@ NVIDIA thread LAPACK — measured integration
 ---------------------------------------------
 
 The 2026-08-30 wave added cuSOLVERDx's thread interface as a fifth contender
-for ``chol``, ``trsv``, and ``posv``. It is a selective win, not a replacement
+for ``potrf``, ``trsv``, and ``posv``. It is a selective win, not a replacement
 for either GLASS's native thread code or cuSOLVERDx's block interface:
 
-.. list-table:: Throughput cells selected by the generated policy
+.. list-table:: Throughput cells selected by the shipped 2026-09-02 tables
    :header-rows: 1
    :widths: 16 14 30 40
 
@@ -226,36 +265,33 @@ for either GLASS's native thread code or cuSOLVERDx's block interface:
      - float32
      - float64
    * - RTX 5090 / sm_120
-     - 14 / 132
-     - ``chol`` N=6,8; ``trsv`` N=24
-     - ``chol`` N=4,6,8; ``posv`` N=4,6,8; ``trsv`` N=8–32
+     - 12 / 132
+     - ``potrf`` N=6,8
+     - ``potrf`` N=4–8; ``trsv`` N=8–24; ``posv`` N=4–8
    * - Jetson AGX Orin / sm_87
-     - 15 / 132
-     - ``chol`` N=8,12; ``trsv`` N=16,24,32
-     - ``chol`` N=4,6,8; ``trsv`` N=4–32
+     - 18 / 132
+     - ``potrf`` N=4,8,12; ``trsv`` N=8–32
+     - ``potrf`` N=4–8; ``trsv`` N=4–32
 
-The table and replication paragraph below document the archived 2026-08-30
-release method. The next retune replaces its asymmetric confirmation with the
-unified fresh-input solver ladder described above; regenerate these counts and
-ranges from that accepted capture before treating them as current.
+These cells were selected by the unified fresh-input solver ladder described
+above — every native and NVIDIA candidate measured symmetrically on fresh
+valid inputs, with a selected NVIDIA plan additionally interval-confirmed
+(the sm_120 regeneration demoted one ambiguous vendor pick to the capture's
+native winner under that rule). The AGX Xavier (sm_72) ships no
+NVIDIA-thread cells: its CUDA 11.4 toolchain has no device-callable MathDx.
 
-Those ranges enumerate the measured sizes ``4, 6, 8, 12, 16, 24, 32``; they
+The ranges enumerate the measured sizes ``4, 6, 8, 12, 16, 24, 32``; they
 do not imply testing every intervening integer. Against the fastest native
-tier on independent valid inputs, selected NVIDIA-thread cells range from
-about 1.09× to 2.34× on the RTX 5090 and 1.08× to 3.53× on Orin. The largest
-gains are concentrated in ``trsv``; other operations and sizes still select
-another tier.
-
-The 5090 throughput leg was run twice independently at 250 and 500
-repetitions. The raw ladder policy agreed in 131 of 132 cells, agreed on all
-17 pre-veto NVIDIA-thread selections, and disagreed only on ``dot`` f32 N=16 inside the
-native-SIMT tie band. Across the NVIDIA-thread measurements, the second/first
-median time ratio was 0.999 (10th–90th percentile 0.984–1.026). The Orin
-throughput capture used the Tegra profile (50 repetitions, pinned 50 W mode).
-The subsequent valid-input captures on both machines had sub-margin spread at
-every retained or vetoed NVIDIA-thread decision and reduced the shipped bands
-to the 14 and 15 cells above. These checks support the selected bands, not a
-portable speedup claim—rerun both ladder components on a new architecture.
+plan in the same generating captures, the selected NVIDIA-thread cells win
+by about 1.09× to 2.35× on the RTX 5090 and 1.09× to 3.54× on Orin. The
+largest gains are concentrated in ``trsv``; other operations and sizes still
+select another tier. Each table is supported by an independent same-protocol
+second capture (the A/B pair), and the archived 2026-08-30 release
+measurements — a different confirmation method — selected nearly the same
+bands with near-identical win ranges, so the bands are stable across both
+methods and across independent quiet-window sessions. These checks support
+the selected bands, not a portable speedup claim — rerun both ladder
+components on a new architecture.
 
 The native thread tier — historical characterization
 ------------------------------------------------------

@@ -10,7 +10,8 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **GLASS is a header-only CUDA C++ library of composable `__device__`
-primitives for small, block-local linear algebra and robotics math.** It includes
+primitives for small, block-local linear algebra and robotics math —
+architecture-tuned for edge robotics and beyond.** It includes
 BLAS operations, factorizations and solvers, structured-system routines, spatial
 algebra, Lie-group operations, projections, and small estimation kernels. GLASS
 is the foundational linear-algebra layer underneath
@@ -84,6 +85,14 @@ the caller still launches and calls the explicit namespace selected by the
 plan. `native_only` is the default dependency set; measured architectures ship
 a paired native-only table from the same capture. Family and scope are measured;
 the packing fields are ready-to-use legal defaults that callers may retune.
+
+Three measured architectures ship in-tree today: **sm_120** (RTX 5090),
+**sm_87** (Jetson AGX Orin), and **sm_72** (Jetson AGX Xavier, native-only).
+Measuring matters: on the Orin the best and worst placements for a cell differ
+by a median of 4.9× (up to 81×), and the recommended placement changes between
+the Orin and the RTX 5090 in 145 of 396 measured cells — the stakes are
+highest on embedded GPUs, where host dispatch is most expensive relative to
+the work. `bench/tune.py --sm auto` adds a measured table for your GPU.
 
 > **Note:** `glass::cgrps::` (header `glass-cgrps.cuh`) is a cooperative-groups
 > *adapter* for the Block interface — the same SIMT loop indexed via a

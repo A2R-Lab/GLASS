@@ -89,7 +89,8 @@ sm_120 seed. Define it explicitly when targeting another GPU, for example
 ``-DGLASS_TARGET_SM=870``. The historical ``SMS`` macro remains an input alias
 for existing build systems.
 
-The shipped tables currently cover sm_120 and sm_87. Unmeasured architectures
+The shipped tables currently cover sm_120 (RTX 5090), sm_87 (Jetson AGX
+Orin), and sm_72 (Jetson AGX Xavier, native-only). Unmeasured architectures
 use conservative generic choices until ``bench/tune.py`` adds a measured table.
 ``examples/08_backend_picker.cu`` is a complete native-only launcher.
 

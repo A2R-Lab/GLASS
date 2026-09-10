@@ -3,7 +3,7 @@ GLASS: GPU Linear Algebra Simple Subroutines
 
 `GLASS <http://a2r-lab.org/GLASS/>`_ is a header-only CUDA C++ library of
 composable ``__device__`` primitives for small, block-local linear algebra and
-robotics math. It is
+robotics math, architecture-tuned for edge robotics and beyond. It is
 the foundational linear-algebra layer underneath
 `GRiD <https://github.com/A2R-Lab/GRiD>`_,
 `MPCGPU <https://a2r-lab.org/publication/mpcgpu/>`_,
@@ -148,25 +148,34 @@ and :doc:`user_guide/tutorials/examples` for a worked program per concept.
 Measured performance
 --------------------
 
-The measured native and NVIDIA thread / warp / block ladder on an RTX 5090
-(sm_120) — each op's fastest interface across problem size, in ns/problem (the data behind
-``glass::recommend<>``), shown here in the ``NPROB=8192`` throughput
-regime:
+GLASS ships measured placement tables for three architectures — RTX 5090
+(sm_120), Jetson AGX Orin (sm_87), and Jetson AGX Xavier (sm_72,
+native-only) — because placement is worth measuring: on the Orin's raw
+candidate ladder the best and worst placements for a cell differ by a
+median of 4.9× (up to 81×), and the recommended placement changes between
+the Orin and the RTX 5090 in 145 of 396 measured cells (162 of 396 versus
+the Xavier). The stakes are highest on embedded GPUs, where per-call host
+dispatch is most expensive relative to the work — GLASS was tuned edge-first.
 
-.. image:: _static/mega_sweep_ladder_f32.png
-   :alt: GLASS measured backend ladder, float32, RTX 5090 / sm_120
+The measured native and NVIDIA thread / warp / block ladder on the Jetson
+AGX Orin — each op's fastest interface across problem size, in ns/problem
+(the data behind ``glass::recommend<>``), shown in the ``NPROB=8192``
+throughput regime:
+
+.. image:: _static/mega_sweep_ladder_f32_sm87.png
+   :alt: GLASS measured backend ladder, float32, Jetson AGX Orin / sm_87
    :width: 100%
 
-.. image:: _static/mega_sweep_ladder_f64.png
-   :alt: GLASS measured backend ladder, float64, RTX 5090 / sm_120
+.. image:: _static/mega_sweep_ladder_f64_sm87.png
+   :alt: GLASS measured backend ladder, float64, Jetson AGX Orin / sm_87
    :width: 100%
 
-See :doc:`user_guide/tutorials/sweep_results` for the same ladder across the
-``NPROB=64`` / ``1024`` / ``8192`` batch regimes (the winner shifts with batch
-size), a narrowly configured host-batched cuBLAS/cuSOLVER comparison, the fused
-``riccati_gain`` case study, and the per-``(op, N)`` winner table; see
-:doc:`user_guide/concepts/tuning` to regenerate everything for your own GPU
-with ``bench/tune.py``.
+See :doc:`user_guide/tutorials/sweep_results` for the RTX 5090 ladder across
+the ``NPROB=64`` / ``1024`` / ``8192`` batch regimes (the winner shifts with
+batch size), a narrowly configured host-batched cuBLAS/cuSOLVER comparison,
+the fused ``riccati_gain`` case study, and the per-``(op, N)`` winner table;
+see :doc:`user_guide/concepts/tuning` to regenerate everything for your own
+GPU with ``bench/tune.py``.
 
 .. toctree::
    :hidden:
