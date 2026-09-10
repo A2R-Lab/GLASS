@@ -1,0 +1,39 @@
+# Sphinx / Doxygen documentation build artifacts
+docs/build/
+docs/doxygen/
+docs/.venv/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Test / benchmark build outputs
+test/build/
+bench/tuning/
+
+# Local planning / task notes (not for the repo)
+docs/open-tasks/
+docs/HANDOFF.md
+
+# Raw per-GPU sweep dumps (regenerate via bench/run_*sweep.sh; distilled results are the tracked *.md)
+bench/mega_sweep_*.txt
+bench/nvt_valid_*.txt
+bench/warp_block_sweep_*.txt
+bench/paper_*.txt
+
+# Python venv for tests/docs
+.venv/
+
+# Generated companion to the in-tree tuning table (verdicts live in the .cuh comments)
+src/nvidia/tuning_table_results.md
+
+# Logs
+test/sanitizer-logs/*
+
+# Jetson capture landing zone — raw sweep data lives in the paper repo, not here
+bench/jetson_captures/
+test/receipts/
+
+# Agent-only onboarding primer (internal, not for the public repo)
+docs/STARTUP_PROMPT.md

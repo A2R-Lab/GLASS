@@ -1,0 +1,208 @@
+#pragma once
+#include <cstdint>
+
+// ─── contraction-dimension-parallel GEMM (the "reduced" engine) ──────────────
+//
+// The default glass::gemm maps one thread to one OUTPUT element and sums the
+// length-N contraction SERIALLY in that thread. When the output count is small
+// relative to the block (n_out < blockDim) the spare threads sit idle. The
+// `*_reduced` family flips the mapping: one WARP owns one output and its 32
+// lanes split the contraction, combining with a single warp-shuffle reduce.
+//
+// This is a thread-utilization experiment, NOT a FLOP reduction — total MAC
+// work is identical. The 2026-08-14 sm_120 sweep found two f64-only wins among
+// 96 cells, both at one 4x4x64 shape; no f32 cell won. Because the existing
+// measured default remains the standard algorithm everywhere. The explicit
+// `*_reduced` operations remain available for controlled experiments.
+//
+// Thread-count invariance: each output is reduced by the SAME fixed 32-way tree
+// regardless of how many warps the block has, so results are bit-identical at
+// 32 / 64 / 96 / ... threads. A trailing partial warp (blockDim % 32) idles. A
+// block with fewer than 32 threads falls back to a per-thread path that
+// reproduces the EXACT shuffle-tree summation order in registers, so the result
+// is bit-identical across the 32 boundary too (1 / 7 / 31 == 32 == 256).
+
+// reduced_tree32 (the 32-way register tree that matches glass::warp::reduce's
+// lane-0 rounding bit-for-bit) lives in L1/reduce.cuh so every L2/L3 *_reduced
+// engine can share it. The sub-warp fallback below uses it for invariance.
+
+// Core: explicit (rank,size), compile-time dims + standard-BLAS layout flags
+// (C is M×N, contraction K; op(A) M×K, op(B) K×N — see gemm.cuh). HAS_BETA
+// selects whether C is read (false ⇒ overwrite, never touches C).
+template <typename T, uint32_t M, uint32_t N, uint32_t K,
+          bool TRANSPOSE_A, bool TRANSPOSE_B, bool ROW_MAJOR_C, bool HAS_BETA>
+__device__ void gemm_reduced_impl_ct(uint32_t rank, uint32_t size,
+                                      T alpha, T *A, T *B, T beta, T *C)
+{
+    constexpr uint32_t maxel = M * N;
+
+    if (size < 32u) {
+        // Sub-warp fallback: each thread owns whole outputs (strided by size).
+        // Reproduce the 32-lane tree in registers so the rounding matches the
+        // full-warp path exactly — invariant across the 32-thread boundary.
+        for (uint32_t el = rank; el < maxel; el += size) {
+            const uint32_t m = el % M, n = el / M;
+            T p[32];
+            #pragma unroll
+            for (uint32_t v = 0; v < 32u; ++v) {
+                T acc = static_cast<T>(0);
+                for (uint32_t k = v; k < K; k += 32u) {
+                    T a = TRANSPOSE_A ? A[k + m*K] : A[m + k*M];
+                    T b = TRANSPOSE_B ? B[n + k*N] : B[k + n*K];
+                    acc += a * b;
+                }
+                p[v] = acc;
+            }
+            T res = reduced_tree32<T>(p);
+            const uint32_t cidx = ROW_MAJOR_C ? (m*N + n) : (m + n*M);
+            C[cidx] = HAS_BETA ? beta_blend(alpha*res, beta, C[cidx]) : (alpha*res);
+        }
+        return;
+    }
+
+    // Full-warp path: G = size>>5 warp-groups, group `warp` owns outputs strided
+    // by G; the 32 lanes split the contraction and combine via warp::reduce.
+    const uint32_t n_warps = size >> 5;       // full warps only
+    const uint32_t warp    = rank >> 5;
+    const uint32_t lane    = rank & 31u;
+    if (warp < n_warps) {
+        for (uint32_t el = warp; el < maxel; el += n_warps) {
+            const uint32_t m = el % M, n = el / M;
+            T partial = static_cast<T>(0);
+            for (uint32_t k = lane; k < K; k += 32u) {
+                T a = TRANSPOSE_A ? A[k + m*K] : A[m + k*M];
+                T b = TRANSPOSE_B ? B[n + k*N] : B[k + n*K];
+                partial += a * b;
+            }
+            T res = warp::reduce<T>(partial);   // full mask: warp is full
+            if (lane == 0) {
+                const uint32_t cidx = ROW_MAJOR_C ? (m*N + n) : (m + n*M);
+                C[cidx] = HAS_BETA ? beta_blend(alpha*res, beta, C[cidx]) : (alpha*res);
+            }
+        }
+    }
+    // trailing partial-warp threads (warp >= n_warps) idle
+}
+
+/**
+ * @brief Contraction-parallel GEMM: `C = alpha * A * op(B) + beta * C`.
+ *
+ * Same math and layout as the compile-time `glass::gemm`, but parallelizes the
+ * length-N contraction: one warp owns each output element and its 32 lanes
+ * split the inner sum (combined with a single warp-shuffle reduce) instead of
+ * one thread summing serially. A utilization win when the output count is
+ * smaller than the block — see :doc:`../../user_guide/concepts/contraction_parallel`
+ * and `glass::recommend`. Total MAC work is unchanged.
+ *
+ * Thread-count invariant: bit-identical at any block size (a trailing partial
+ * warp idles; below 32 threads a register path reproduces the same rounding).
+ *
+ * @tparam T  Scalar type.
+ * @tparam M,N,K  `C` is `M×N`, contraction `K`. op(A) is `M×K`, op(B) is `K×N` (see gemm.cuh).
+ * @tparam TRANSPOSE_A  If true, `A` is `K×M` and `op(A)=Aᵀ`.
+ * @tparam TRANSPOSE_B  If true, `B` is `N×K` and `op(B)=Bᵀ`.
+ * @tparam ROW_MAJOR_C  Output storage order (false = column-major / Fortran).
+ * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true) so callers can read C safely.
+ * @param alpha  Scalar multiplier on the product.
+ * @param A,B    Input matrices.
+ * @param beta   Scalar multiplier on the existing C (read only when `beta != 0`).
+ * @param C      In/out result matrix.
+ */
+template <typename T, uint32_t M, uint32_t N, uint32_t K,
+          bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
+__device__ void gemm_reduced(T alpha, T *A, T *B, T beta, T *C)
+{
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
+    gemm_reduced_impl_ct<T, M, N, K, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C, true>(
+        rank, size, alpha, A, B, beta, C);
+    if constexpr (TRAILING_SYNC) __syncthreads();
+}
+
+/**
+ * @brief Contraction-parallel GEMM with implicit `beta = 0`: `C = alpha * A * op(B)`.
+ *
+ * Overwrites C (the existing C is not read), avoiding the `beta * C` term.
+ * Otherwise identical to the beta overload above.
+ *
+ * @tparam T  Scalar type.
+ * @tparam M,N,K  `C` is `M×N`, contraction `K`. op(A) is `M×K`, op(B) is `K×N` (see gemm.cuh).
+ * @tparam TRANSPOSE_A  If true, `A` is `K×M` and `op(A)=Aᵀ`.
+ * @tparam TRANSPOSE_B  If true, `B` is `N×K` and `op(B)=Bᵀ`.
+ * @tparam ROW_MAJOR_C  Output storage order (false = column-major / Fortran).
+ * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+ * @param alpha  Scalar multiplier on the product.
+ * @param A,B    Input matrices.
+ * @param C      Output result matrix (overwritten).
+ */
+template <typename T, uint32_t M, uint32_t N, uint32_t K,
+          bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
+__device__ void gemm_reduced(T alpha, T *A, T *B, T *C)
+{
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
+    gemm_reduced_impl_ct<T, M, N, K, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C, false>(
+        rank, size, alpha, A, B, static_cast<T>(0), C);
+    if constexpr (TRAILING_SYNC) __syncthreads();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace warp {
+    /**
+     * @brief Single-warp contraction-parallel GEMM: `C = alpha * A * op(B) + beta * C`.
+     *
+     * One 32-lane warp computes the full product, parallelizing the contraction
+     * across its lanes (warp-shuffle reduce per output). The warp-per-problem
+     * analogue of the block `glass::gemm_reduced`; the caller must run a full
+     * 32-lane warp. `C` must not alias `A`/`B`.
+     *
+     * @tparam T  Scalar type.
+     * @tparam M,N,K  `C` is `M×N`, contraction `K`. op(A) is `M×K`, op(B) is `K×N` (see gemm.cuh).
+     * @tparam TRANSPOSE_A  If true, `A` is `K×M` and `op(A)=Aᵀ`.
+     * @tparam TRANSPOSE_B  If true, `B` is `N×K` and `op(B)=Bᵀ`.
+     * @tparam ROW_MAJOR_C  Output storage order (false = column-major / Fortran).
+     * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true) so lanes can read C safely.
+     * @param alpha  Scalar multiplier on the product.
+     * @param A,B    Input matrices.
+     * @param beta   Scalar multiplier on the existing C (read only when `beta != 0`).
+     * @param C      In/out result matrix.
+     */
+    template <typename T, uint32_t M, uint32_t N, uint32_t K,
+              bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
+    __device__ void gemm_reduced(T alpha, T *A, T *B, T beta, T *C)
+    {
+        uint32_t lane = (flat_rank()) & 31u;
+        gemm_reduced_impl_ct<T, M, N, K, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C, true>(
+            lane, 32u, alpha, A, B, beta, C);
+        if constexpr (TRAILING_SYNC) __syncwarp();
+    }
+
+    /**
+     * @brief Single-warp contraction-parallel GEMM with implicit `beta = 0`: `C = alpha * A * op(B)`.
+     *
+     * Overwrites C (the existing C is not read). Otherwise identical to the beta
+     * overload above; the caller must run a full 32-lane warp.
+     *
+     * @tparam T  Scalar type.
+     * @tparam M,N,K  `C` is `M×N`, contraction `K`. op(A) is `M×K`, op(B) is `K×N` (see gemm.cuh).
+     * @tparam TRANSPOSE_A  If true, `A` is `K×M` and `op(A)=Aᵀ`.
+     * @tparam TRANSPOSE_B  If true, `B` is `N×K` and `op(B)=Bᵀ`.
+     * @tparam ROW_MAJOR_C  Output storage order (false = column-major / Fortran).
+     * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
+     * @param alpha  Scalar multiplier on the product.
+     * @param A,B    Input matrices.
+     * @param C      Output result matrix (overwritten).
+     */
+    template <typename T, uint32_t M, uint32_t N, uint32_t K,
+              bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
+    __device__ void gemm_reduced(T alpha, T *A, T *B, T *C)
+    {
+        uint32_t lane = (flat_rank()) & 31u;
+        gemm_reduced_impl_ct<T, M, N, K, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C, false>(
+            lane, 32u, alpha, A, B, static_cast<T>(0), C);
+        if constexpr (TRAILING_SYNC) __syncwarp();
+    }
+}

@@ -1,0 +1,7 @@
+# Permanent, documented skips — verified as an EXACT set by gpu-proof
+# verify --expected-skips (a new skip, or a baselined test that starts
+# running again, both fail CI; update this file deliberately).
+#
+# Currently EMPTY: the suite runs skip-free. The former getrf needs_pivot
+# n=1 skips were vacuous parameter combinations (a 1x1 zero-leading-pivot
+# matrix is singular) and are now excluded at parametrization instead.

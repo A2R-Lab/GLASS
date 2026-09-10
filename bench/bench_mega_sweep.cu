@@ -1,0 +1,641 @@
+// bench_mega_sweep.cu — ladder scaling sweep:
+//   WARP   — one warp per problem,   <<<ceil(NPROB/WPB), dim3(32,WPB)>>>, WPB ∈ {1..32}
+//   BLOCK  — one block per problem,   <<<NPROB, TB>>>, TB ∈ {32,64,128,256} (pure-SIMT glass::block::)
+//   NVIDIA BLOCK  — cuBLASDx/cuSOLVERDx, <<<NPROB, nv_threads(N)>>>, descriptor-fixed
+//   NVIDIA THREAD — cuSOLVERDx 0.4+, one problem/thread, TPB swept (LAPACK ops)
+//   AUTO   — bare glass::op at the BLOCK launch shapes: the shipped measured-default
+//            face (constexpr device-level body dispatch via GLASS_TARGET_SM). AUDIT-ONLY —
+//            the AUTO segment/token is ignored by tune.py's table parsers and never
+//            feeds a verdict or a plotted figure line (a line invites misreading vs
+//            the warp/thread launch-packing tiers — 08-16 ruling). It validates that
+//            the shipped face tracks the best block-contract body (reported as a
+//            prose stat by the paper's make_figs.py) and doubles as a harness canary:
+//            identical-code AUTO-vs-BLOCK deltas exposed the 2026-08-15 in-place
+//            input-drift bias that the per-trial reset hook now prevents.
+//
+// Answers "where do the breakevens fall on the thread → warp → block and
+// dependency-backed NVIDIA block/thread ladder?" across
+// problem size N and batch count NPROB (single-problem latency → GPU-saturating throughput).
+//
+// Ops each have native scope forms and, where supported, explicit NVIDIA scope forms:
+//   dot (L1)  gemv (L2)  gemm (L3)  chol (L3)  trsv (L3, nvidia=trsm)  posv (L3)
+//
+// dtype: f32 or f64. Native thread/warp/block and NVIDIA block are measured
+// across their supported domains; NVIDIA thread is instantiated through N=32.
+// The nvidia leg is FORCED at every N: a DEFINE_NVIDIA_* macro is in scope for each N, so
+// glass::nvidia::block::<op><float,N,...> resolves to a MathDx specialization
+// unconditionally (bypassing the shipped size-heuristic auto-dispatch) — we want the full
+// vendor curve so the crossover with block/warp is visible, not just the heuristic's verdict.
+//
+// Metric: ns per problem (wall / (reps*NPROB)), min of 3 trials. Lower = better.
+// Each trial starts from an untimed pristine-input reset. Inputs may still be
+// overwritten across repetitions within that trial, uniformly for every contender.
+//
+// Compile (full ladder, needs MathDx — set MATHDX_ROOT):
+//   nvcc -std=c++17 -arch=sm_120 -O3 --expt-relaxed-constexpr -Xptxas -O1 -I.. -I../src
+//        -I$MATHDX_ROOT/include -I$MATHDX_ROOT/external/cutlass/include
+//        -DGLASS_BENCH_CUBLASDX -DGLASS_BENCH_CUSOLVERDX -DGLASS_TARGET_SM=1200
+//        -DCUSOLVERDX_IGNORE_NVBUG_5288270_ASSERT -dlto
+//        -lcusolverdx -lcublas -lcusolver -lcudart bench_mega_sweep.cu -o bench_mega_sweep
+//   (omit the MathDx -I / -D / -l flags → compiles 2-way warp/block only, both dtypes.)
+// Usage: ./bench_mega_sweep [nprob=8192] [reps=500] [dtype=f32|f64]
+
+#include <cstdio>
+#include <cstdlib>
+#include <cstdint>
+#include <cstring>
+#include <ctime>
+#include <functional>
+#include <vector>
+#include <algorithm>
+#include <random>
+#include "timing_common.cuh"
+#include <type_traits>
+
+#if defined(GLASS_BENCH_CUBLASDX)
+#include <cublasdx.hpp>
+#include "../glass-nvidia.cuh"     // pulls glass.cuh; CUB-backed L1 + cuBLASDx L2/L3
+#define MEGA_NV_BLAS 1             // dot (CUB), gemv, gemm (cuBLASDx)
+#else
+#include "../glass.cuh"
+#define MEGA_NV_BLAS 0
+#endif
+
+#if defined(GLASS_BENCH_CUSOLVERDX)
+#define MEGA_NV_LAPACK 1           // chol, trsm, posv (cuSOLVERDx block/thread)
+#else
+#define MEGA_NV_LAPACK 0
+#endif
+
+#if defined(GLASS_HAVE_CUSOLVERDX_THREAD) && GLASS_HAVE_CUSOLVERDX_THREAD
+#define MEGA_NV_THREAD 1
+#else
+#define MEGA_NV_THREAD 0
+#endif
+
+static int NPROB = 8192;
+
+
+// ─── BLOCK model: block b owns problem b ─────────────────────────────────────
+template<typename T,int N> __global__ void kb_dot (T* x, T* y) { int p=blockIdx.x; glass::block::dot<T,N>(x+p*N, y+p*N); }
+template<typename T,int N> __global__ void kb_gemv(T* A, T* x, T* y) { int p=blockIdx.x; glass::block::gemv<T,N,N>((T)1, A+(size_t)p*N*N, x+p*N, (T)0, y+p*N); }
+template<typename T,int N> __global__ void kb_gemm(T* A, T* B, T* C) { int p=blockIdx.x; glass::block::gemm<T,N,N,N>((T)1, A+(size_t)p*N*N, B+(size_t)p*N*N, (T)0, C+(size_t)p*N*N); }
+template<typename T,int N> __global__ void kb_chol(T* A) { int p=blockIdx.x; glass::block::potrf<T,N>(A+(size_t)p*N*N); }
+template<typename T,int N> __global__ void kb_trsv(T* A, T* x) { int p=blockIdx.x; glass::block::trsv<T,N>(A+(size_t)p*N*N, x+p*N); }
+template<typename T,int N> __global__ void kb_posv(T* A, T* b) { int p=blockIdx.x; glass::block::posv<T,N>(A+(size_t)p*N*N, b+p*N); }
+
+// ─── WARP model: warp (blockIdx.x*WPB + threadIdx.y) owns its problem ─────────
+template<typename T,int N> __global__ void kw_dot (T* x, T* y, int np) { int p=blockIdx.x*blockDim.y+threadIdx.y; if(p>=np)return; T r=glass::warp::dot<T,N>(x+p*N, y+p*N); if((threadIdx.x&31)==0) y[p*N]=r; }
+template<typename T,int N> __global__ void kw_gemv(T* A, T* x, T* y, int np) { int p=blockIdx.x*blockDim.y+threadIdx.y; if(p>=np)return; glass::warp::gemv<T,N,N>((T)1, A+(size_t)p*N*N, x+p*N, (T)0, y+p*N); }
+template<typename T,int N> __global__ void kw_gemm(T* A, T* B, T* C, int np) { int p=blockIdx.x*blockDim.y+threadIdx.y; if(p>=np)return; glass::warp::gemm<T,N,N,N>((T)1, A+(size_t)p*N*N, B+(size_t)p*N*N, (T)0, C+(size_t)p*N*N); }
+template<typename T,int N> __global__ void kw_chol(T* A, int np) { int p=blockIdx.x*blockDim.y+threadIdx.y; if(p>=np)return; glass::warp::potrf<T,N>(A+(size_t)p*N*N); }
+template<typename T,int N> __global__ void kw_trsv(T* A, T* x, int np) { int p=blockIdx.x*blockDim.y+threadIdx.y; if(p>=np)return; glass::warp::trsv<T,N>(A+(size_t)p*N*N, x+p*N); }
+template<typename T,int N> __global__ void kw_posv(T* A, T* b, int np) { int p=blockIdx.x*blockDim.y+threadIdx.y; if(p>=np)return; glass::warp::posv<T,N>(A+(size_t)p*N*N, b+p*N); }
+
+// ─── AUTO model: bare glass::op (measured-default face), block launch shapes ──
+// Same launch geometry as BLOCK (block b owns problem b); the implementation
+// body per (op,N,dtype) is whatever glass::dispatch_body() shipped for this SMS.
+template<typename T,int N> __global__ void ka_dot (T* x, T* y) { int p=blockIdx.x; glass::dot<T,N>(x+p*N, y+p*N); }
+template<typename T,int N> __global__ void ka_gemv(T* A, T* x, T* y) { int p=blockIdx.x; glass::gemv<T,N,N>((T)1, A+(size_t)p*N*N, x+p*N, (T)0, y+p*N); }
+template<typename T,int N> __global__ void ka_gemm(T* A, T* B, T* C) { int p=blockIdx.x; glass::gemm<T,N,N,N>((T)1, A+(size_t)p*N*N, B+(size_t)p*N*N, (T)0, C+(size_t)p*N*N); }
+template<typename T,int N> __global__ void ka_chol(T* A) { int p=blockIdx.x; glass::potrf<T,N>(A+(size_t)p*N*N); }
+template<typename T,int N> __global__ void ka_trsv(T* A, T* x) { int p=blockIdx.x; glass::trsv<T,N>(A+(size_t)p*N*N, x+p*N); }
+template<typename T,int N> __global__ void ka_posv(T* A, T* b) { int p=blockIdx.x; glass::posv<T,N>(A+(size_t)p*N*N, b+p*N); }
+
+enum Op { DOT, GEMV, GEMM, CHOL, TRSV, POSV, NOP };
+static const char* op_name(Op o) {
+    const char* n[] = {"dot","gemv","gemm","potrf","trsv","posv"};
+    return n[o];
+}
+
+template<typename T,int N>
+static void launch_block(Op op, int TB, T* A, T* B, T* C, T* x, T* y) {
+    dim3 grid(NPROB), blk(TB);
+    switch (op) {
+        case DOT:  kb_dot <T,N><<<grid,blk>>>(x, y); break;
+        case GEMV: kb_gemv<T,N><<<grid,blk>>>(A, x, y); break;
+        case GEMM: kb_gemm<T,N><<<grid,blk>>>(A, B, C); break;
+        case CHOL: kb_chol<T,N><<<grid,blk>>>(A); break;
+        case TRSV: kb_trsv<T,N><<<grid,blk>>>(A, x); break;
+        case POSV: kb_posv<T,N><<<grid,blk>>>(A, x); break;
+        default: break;
+    }
+}
+template<typename T,int N>
+static void launch_auto(Op op, int TB, T* A, T* B, T* C, T* x, T* y) {
+    dim3 grid(NPROB), blk(TB);
+    switch (op) {
+        case DOT:  ka_dot <T,N><<<grid,blk>>>(x, y); break;
+        case GEMV: ka_gemv<T,N><<<grid,blk>>>(A, x, y); break;
+        case GEMM: ka_gemm<T,N><<<grid,blk>>>(A, B, C); break;
+        case CHOL: ka_chol<T,N><<<grid,blk>>>(A); break;
+        case TRSV: ka_trsv<T,N><<<grid,blk>>>(A, x); break;
+        case POSV: ka_posv<T,N><<<grid,blk>>>(A, x); break;
+        default: break;
+    }
+}
+template<typename T,int N>
+static void launch_warp(Op op, int WPB, T* A, T* B, T* C, T* x, T* y) {
+    dim3 grid((NPROB + WPB - 1) / WPB), blk(32, WPB);
+    switch (op) {
+        case DOT:  kw_dot <T,N><<<grid,blk>>>(x, y, NPROB); break;
+        case GEMV: kw_gemv<T,N><<<grid,blk>>>(A, x, y, NPROB); break;
+        case GEMM: kw_gemm<T,N><<<grid,blk>>>(A, B, C, NPROB); break;
+        case CHOL: kw_chol<T,N><<<grid,blk>>>(A, NPROB); break;
+        case TRSV: kw_trsv<T,N><<<grid,blk>>>(A, x, NPROB); break;
+        case POSV: kw_posv<T,N><<<grid,blk>>>(A, x, NPROB); break;
+        default: break;
+    }
+}
+
+// ─── THREAD model: thread (blockIdx.x*blockDim.x + threadIdx.x) owns its problem ──
+// Operands are staged global -> thread-local registers -> global in the SAME
+// per-problem-contiguous layout BLOCK/WARP use (problem p at A + p*N*N).
+//
+// That staging is UNCOALESCED by construction — lane p and lane p+1 are N*N
+// elements apart — and it is deliberately INSIDE the timed region. This is the
+// apples-to-apples ladder entry: it prices the layout tax a caller holding (P,N,N)
+// data actually pays. Excluding it would let the table recommend `thread` to a
+// caller who then eats an unmeasured transpose and regresses, with the tuner's
+// authority behind it. Two framings NOT measured here, both of which favor
+// `thread` and neither of which the ladder can honestly represent:
+//   (a) interleaved  base[(i*N+j)*P + p] — coalesced; removes the tax, but is a
+//       layout the other tiers do not use, so it is not a fair ladder contender.
+//   (b) resident     A synthesized in-register, never touched in global — the
+//       pyroffi IK case (A = JᵀJ built on-chip); no memory traffic to attribute,
+//       so it trivially wins and would be a meaningless table entry.
+//
+// Instantiated through N=64. That includes every measured winning native-thread
+// cell on sm_120/sm_87 and one losing boundary point, while avoiding the N=96/128
+// template/local-array explosion in this monolithic TU. If a future capture
+// makes N>64 scientifically important, extend with a split executable rather
+// than increasing the roughly 12GB peak of this already-heavy build. tune_pick
+// treats the column as optional so
+// older and deliberately out-of-domain rows remain replay-compatible.
+template<typename T,int N> static constexpr bool thread_ok() { return N <= 64; }
+
+template<typename T,int N> __global__ void kt_dot (T* x, T* y, int np) { int p=blockIdx.x*blockDim.x+threadIdx.x; if(p>=np)return; T r=glass::thread::dot<T,N>(x+(size_t)p*N, y+(size_t)p*N); y[(size_t)p*N]=r; }
+template<typename T,int N> __global__ void kt_gemv(T* A, T* x, T* y, int np) {
+    int p=blockIdx.x*blockDim.x+threadIdx.x; if(p>=np)return;
+    T a[N*N], xv[N], yv[N];
+    for(int i=0;i<N*N;i++) a[i]=A[(size_t)p*N*N+i];
+    for(int i=0;i<N;i++)   xv[i]=x[(size_t)p*N+i];
+    glass::thread::gemv<T,N,N>((T)1, a, xv, yv);
+    for(int i=0;i<N;i++)   y[(size_t)p*N+i]=yv[i];
+}
+template<typename T,int N> __global__ void kt_gemm(T* A, T* B, T* C, int np) {
+    int p=blockIdx.x*blockDim.x+threadIdx.x; if(p>=np)return;
+    T a[N*N], b[N*N], c[N*N];
+    for(int i=0;i<N*N;i++) a[i]=A[(size_t)p*N*N+i];
+    for(int i=0;i<N*N;i++) b[i]=B[(size_t)p*N*N+i];
+    glass::thread::gemm<T,N,N,N>((T)1, a, b, c);
+    for(int i=0;i<N*N;i++) C[(size_t)p*N*N+i]=c[i];
+}
+template<typename T,int N> __global__ void kt_chol(T* A, int np) {
+    int p=blockIdx.x*blockDim.x+threadIdx.x; if(p>=np)return;
+    T a[N*N];
+    for(int i=0;i<N*N;i++) a[i]=A[(size_t)p*N*N+i];
+    glass::thread::potrf<T,N>(a);
+    for(int i=0;i<N*N;i++) A[(size_t)p*N*N+i]=a[i];
+}
+template<typename T,int N> __global__ void kt_trsv(T* A, T* x, int np) {
+    int p=blockIdx.x*blockDim.x+threadIdx.x; if(p>=np)return;
+    T a[N*N], xv[N];
+    for(int i=0;i<N*N;i++) a[i]=A[(size_t)p*N*N+i];
+    for(int i=0;i<N;i++)   xv[i]=x[(size_t)p*N+i];
+    glass::thread::trsv<T,N>(a, xv);
+    for(int i=0;i<N;i++)   x[(size_t)p*N+i]=xv[i];
+}
+template<typename T,int N> __global__ void kt_posv(T* A, T* b, int np) {
+    int p=blockIdx.x*blockDim.x+threadIdx.x; if(p>=np)return;
+    T a[N*N], bv[N];
+    for(int i=0;i<N*N;i++) a[i]=A[(size_t)p*N*N+i];
+    for(int i=0;i<N;i++)   bv[i]=b[(size_t)p*N+i];
+    glass::thread::posv<T,N>(a, bv);
+    for(int i=0;i<N;i++)   b[(size_t)p*N+i]=bv[i];
+}
+
+template<typename T,int N>
+static void launch_thread(Op op, int TPB, T* A, T* B, T* C, T* x, T* y) {
+    if constexpr (thread_ok<T,N>()) {   // if constexpr: gated-out N never instantiates the kernels
+        dim3 grid((NPROB + TPB - 1) / TPB), blk(TPB);
+        switch (op) {
+            case DOT:  kt_dot <T,N><<<grid,blk>>>(x, y, NPROB); break;
+            case GEMV: kt_gemv<T,N><<<grid,blk>>>(A, x, y, NPROB); break;
+            case GEMM: kt_gemm<T,N><<<grid,blk>>>(A, B, C, NPROB); break;
+            case CHOL: kt_chol<T,N><<<grid,blk>>>(A, NPROB); break;
+            case TRSV: kt_trsv<T,N><<<grid,blk>>>(A, x, NPROB); break;
+            case POSV: kt_posv<T,N><<<grid,blk>>>(A, x, NPROB); break;
+            default: break;
+        }
+    }
+}
+
+// ─── NVIDIA model: cuBLASDx / cuSOLVERDx, one block per problem ──────────────
+// DEFINE_NVIDIA_* emit specializations for the glass::nvidia::block::<op> call
+// resolves to the vendor path unconditionally (forced, no size-heuristic dispatch).
+// FLOAT: gemm 16/24/32/64 + gemv 4..64 are already cuBLASDx-specialized by
+// glass-nvidia.cuh/tuning_table.cuh (those shipped specializations ARE the forced
+// path) — we only add the float gaps. DOUBLE: nothing is shipped, so every size is
+// defined via the *_PREC(..., double) macros. Double caps at N<=64 (smem: a 99KB
+// opt-in limit fits f64 gemm only to 64, f64 chol/posv to ~96; we define <=64).
+#if MEGA_NV_BLAS
+static const int NV_DOT_TB = 256;   // CUB BlockReduce thread count for nvidia::block::dot
+namespace glass { namespace nvidia { namespace block {
+    // float gaps (shipped: gemm 16/24/32/64, gemv 4..64)
+    DEFINE_NVIDIA_GEMM(4, 4, 4)  DEFINE_NVIDIA_GEMM(6, 6, 6)
+    DEFINE_NVIDIA_GEMM(8, 8, 8)  DEFINE_NVIDIA_GEMM(12, 12, 12)
+    DEFINE_NVIDIA_GEMM(48, 48, 48)
+    DEFINE_NVIDIA_GEMM(96, 96, 96)  DEFINE_NVIDIA_GEMM(128, 128, 128)
+    DEFINE_NVIDIA_GEMV(32, 32)  DEFINE_NVIDIA_GEMV(48, 48)
+    DEFINE_NVIDIA_GEMV(96, 96)  DEFINE_NVIDIA_GEMV(128, 128)
+    // double — all bench sizes <=64 (none shipped)
+    #define MEGA_GEMM_F64(N) DEFINE_NVIDIA_GEMM_PREC(N, N, N, double)
+    #define MEGA_GEMV_F64(N) DEFINE_NVIDIA_GEMV_PREC(N, N, double)
+    MEGA_GEMM_F64(4) MEGA_GEMM_F64(6) MEGA_GEMM_F64(8) MEGA_GEMM_F64(12)
+    MEGA_GEMM_F64(16) MEGA_GEMM_F64(24) MEGA_GEMM_F64(32) MEGA_GEMM_F64(48) MEGA_GEMM_F64(64)
+    MEGA_GEMV_F64(4) MEGA_GEMV_F64(6) MEGA_GEMV_F64(8) MEGA_GEMV_F64(12)
+    MEGA_GEMV_F64(16) MEGA_GEMV_F64(24) MEGA_GEMV_F64(32) MEGA_GEMV_F64(48) MEGA_GEMV_F64(64)
+}}}
+template<typename T,int N> __global__ void kn_dot (T* x, T* y) {
+    extern __shared__ char s[]; int p=blockIdx.x;
+    glass::nvidia::block::dot<T,N,NV_DOT_TB>(x+p*N, y+p*N, y+p*N, reinterpret_cast<T*>(s));
+}
+template<typename T,int N> __global__ void kn_gemv(T* A, T* x, T* y) {
+    extern __shared__ char s[]; int p=blockIdx.x;
+    glass::nvidia::block::gemv<T,N,N>((T)1, A+(size_t)p*N*N, x+p*N, (T)0, y+p*N, s);
+}
+template<typename T,int N> __global__ void kn_gemm(T* A, T* B, T* C) {
+    extern __shared__ char s[]; int p=blockIdx.x;
+    glass::nvidia::block::gemm<T,N,N,N>((T)1, A+(size_t)p*N*N, B+(size_t)p*N*N, (T)0, C+(size_t)p*N*N, s);
+}
+#endif
+#if MEGA_NV_LAPACK
+static const int NV_LP_TB = 256;    // cuSOLVERDx pinned block dim
+namespace glass { namespace nvidia { namespace block {
+    #define MEGA_CHOL_DEF(N) DEFINE_NVIDIA_CHOL_BLOCKDIM(N, NV_LP_TB)
+    #define MEGA_TRSM_DEF(N) DEFINE_NVIDIA_TRSM_BLOCKDIM(N, 1, NV_LP_TB)
+    #define MEGA_POSV_DEF(N) DEFINE_NVIDIA_POSV_BLOCKDIM(N, 1, NV_LP_TB)
+    #define MEGA_CHOL_F64(N) DEFINE_NVIDIA_CHOL_BLOCKDIM_PREC(N, NV_LP_TB, double)
+    #define MEGA_TRSM_F64(N) DEFINE_NVIDIA_TRSM_BLOCKDIM_PREC(N, 1, NV_LP_TB, double)
+    #define MEGA_POSV_F64(N) DEFINE_NVIDIA_POSV_BLOCKDIM_PREC(N, 1, NV_LP_TB, double)
+    MEGA_CHOL_DEF(4)  MEGA_CHOL_DEF(6)  MEGA_CHOL_DEF(8)  MEGA_CHOL_DEF(12)
+    MEGA_CHOL_DEF(16) MEGA_CHOL_DEF(24) MEGA_CHOL_DEF(32) MEGA_CHOL_DEF(48) MEGA_CHOL_DEF(64)
+    MEGA_CHOL_DEF(96) MEGA_CHOL_DEF(128)
+    MEGA_TRSM_DEF(4)  MEGA_TRSM_DEF(6)  MEGA_TRSM_DEF(8)  MEGA_TRSM_DEF(12)
+    MEGA_TRSM_DEF(16) MEGA_TRSM_DEF(24) MEGA_TRSM_DEF(32) MEGA_TRSM_DEF(48) MEGA_TRSM_DEF(64)
+    MEGA_TRSM_DEF(96) MEGA_TRSM_DEF(128)
+    MEGA_POSV_DEF(4)  MEGA_POSV_DEF(6)  MEGA_POSV_DEF(8)  MEGA_POSV_DEF(12)
+    MEGA_POSV_DEF(16) MEGA_POSV_DEF(24) MEGA_POSV_DEF(32) MEGA_POSV_DEF(48) MEGA_POSV_DEF(64)
+    MEGA_POSV_DEF(96) MEGA_POSV_DEF(128)
+    // double — bench sizes <=64
+    MEGA_CHOL_F64(4)  MEGA_CHOL_F64(6)  MEGA_CHOL_F64(8)  MEGA_CHOL_F64(12)
+    MEGA_CHOL_F64(16) MEGA_CHOL_F64(24) MEGA_CHOL_F64(32) MEGA_CHOL_F64(48) MEGA_CHOL_F64(64)
+    MEGA_TRSM_F64(4)  MEGA_TRSM_F64(6)  MEGA_TRSM_F64(8)  MEGA_TRSM_F64(12)
+    MEGA_TRSM_F64(16) MEGA_TRSM_F64(24) MEGA_TRSM_F64(32) MEGA_TRSM_F64(48) MEGA_TRSM_F64(64)
+    MEGA_POSV_F64(4)  MEGA_POSV_F64(6)  MEGA_POSV_F64(8)  MEGA_POSV_F64(12)
+    MEGA_POSV_F64(16) MEGA_POSV_F64(24) MEGA_POSV_F64(32) MEGA_POSV_F64(48) MEGA_POSV_F64(64)
+}}}
+template<typename T,int N> __global__ void kn_chol(T* A) {
+    extern __shared__ char s[]; int p=blockIdx.x;
+    glass::nvidia::block::potrf<T,N,NV_LP_TB>(A+(size_t)p*N*N, s);
+}
+template<typename T,int N> __global__ void kn_trsv(T* A, T* x) {
+    extern __shared__ char s[]; int p=blockIdx.x;
+    glass::nvidia::block::trsm<T,N,1,NV_LP_TB>((T)1, A+(size_t)p*N*N, x+p*N, s);
+}
+template<typename T,int N> __global__ void kn_posv(T* A, T* b) {
+    extern __shared__ char s[]; int p=blockIdx.x;
+    glass::nvidia::block::posv<T,N,1,NV_LP_TB>(A+(size_t)p*N*N, b+p*N, s);
+}
+#endif
+
+// ─── NVIDIA THREAD model: cuSOLVERDx 0.4+, one problem per CUDA thread ──────
+// Unlike the native glass::thread contender, cuSOLVERDx accepts the packed
+// global-memory operands directly. The same per-problem-contiguous layout and
+// all global traffic remain inside the timed region; there is no hidden layout
+// transform or shared-memory allocation.
+#if MEGA_NV_THREAD
+template<typename T,int N> __global__ void knt_chol(T* A, int np) {
+    int p=blockIdx.x*blockDim.x+threadIdx.x; if(p>=np)return;
+    glass::nvidia::thread::potrf<T,N>(A+(size_t)p*N*N);
+}
+template<typename T,int N> __global__ void knt_trsv(T* A, T* x, int np) {
+    int p=blockIdx.x*blockDim.x+threadIdx.x; if(p>=np)return;
+    glass::nvidia::thread::trsm<T,N,1>((T)1, A+(size_t)p*N*N, x+(size_t)p*N);
+}
+template<typename T,int N> __global__ void knt_posv(T* A, T* b, int np) {
+    int p=blockIdx.x*blockDim.x+threadIdx.x; if(p>=np)return;
+    glass::nvidia::thread::posv<T,N,1>(A+(size_t)p*N*N, b+(size_t)p*N);
+}
+#endif
+
+// True at compile time iff op@N has a forced nvidia variant defined above.
+// Double is defined only up to 64 (f64 descriptors/smem cap lower than float).
+template<typename T,int N> static constexpr bool nv_blas_ok()
+{ return MEGA_NV_BLAS   && (std::is_same_v<T,float> ? N <= 128 : N <= 64); }
+template<typename T,int N> static constexpr bool nv_lapack_ok()
+{ return MEGA_NV_LAPACK && (std::is_same_v<T,float> ? N <= 128 : N <= 64); }
+template<typename T,int N> static constexpr bool nvt_lapack_ok()
+{ return MEGA_NV_THREAD && N <= 32; }
+
+// Measurement core lives in timing_common.cuh (min-of-3 + FAIL probe + trial
+// spread + the mutation invariant). g_row_spread accumulates the worst trial
+// spread across a row's cells; bench_size resets it and prints `spread<=X%`
+// per row so tune.py can flag captures where jitter exceeds the margin.
+static double g_row_spread = 0.0;
+
+// Per-TRIAL pristine-input hook (set by bench_size, inherited by every timing
+// call including nv_timed): tc_time_ns_per_prob_pre runs it untimed before
+// each trial so in-place ops (chol/trsv/posv) time the same pristine->drift
+// trajectory in every trial of every contender.
+static std::function<void()> g_pre_trial;
+
+// Opt-in randomized measurement order (GLASS_SHUFFLE_ORDER=<seed>, nonzero):
+// each row's (contender, launch-shape) cells execute in a shuffled order while
+// the printed row keeps the canonical BLOCK|WARP|THREAD|AUTO|NV layout, so
+// parsers and the default protocol are byte-identical. Guards against
+// systematic order effects (thermal/clock ramp) biasing later contenders.
+static uint64_t g_shuffle_seed = 0;
+static std::mt19937_64 g_shuffle_rng;
+
+template<typename F>
+static double time_ns_per_prob(F launch, int reps) {
+    double ns = tc_time_ns_per_prob_pre(
+        launch, []{ if (g_pre_trial) g_pre_trial(); }, reps, NPROB);
+    if (tc_last_spread_pct() > g_row_spread) g_row_spread = tc_last_spread_pct();
+    return ns;
+}
+
+static size_t g_optin_smem = 48 * 1024;   // device opt-in dynamic-smem cap (queried in main)
+
+#if MEGA_NV_BLAS || MEGA_NV_LAPACK
+// Checked nvidia launch: skip (return -1) if the descriptor's smem exceeds the
+// device opt-in cap, if the attribute opt-in fails, or if a verification launch
+// errors out. Without this, a failed launch (e.g. gemm smem > cap) would time at
+// ~1ns/problem and masquerade as an absurd "win" — corrupting the comparison.
+template<typename Kern, typename Launch>
+static double nv_timed(Kern kern, size_t smem, Launch launch, int reps) {
+    if (smem > g_optin_smem) return -1.0;
+    cudaGetLastError();                                   // clear any prior error
+    if (smem > 48u * 1024u &&
+        cudaFuncSetAttribute((const void*)kern, cudaFuncAttributeMaxDynamicSharedMemorySize,
+                             (int)smem) != cudaSuccess) { cudaGetLastError(); return -1.0; }
+    launch();                                             // verification launch
+    if (cudaDeviceSynchronize() != cudaSuccess) { cudaGetLastError(); return -1.0; }
+    if (cudaGetLastError() != cudaSuccess)       { cudaGetLastError(); return -1.0; }
+    return time_ns_per_prob(launch, reps);
+}
+#endif
+
+// nvidia leg: needs dynamic smem opt-in for the larger descriptors (>48KB).
+// Returns best ns/problem for (op,N) at precision T, or -1 if no nvidia variant
+// (or the launch can't fit / isn't defined for this T,N — see nv_*_ok<T,N>).
+template<typename T,int N>
+static double nv_op_time(Op op, T* A, T* B, T* C, T* x, T* y, int reps) {
+    (void)A;(void)B;(void)C;(void)x;(void)y;(void)reps;(void)op;
+    dim3 grid(NPROB);
+#if MEGA_NV_BLAS
+    if constexpr (nv_blas_ok<T,N>()) {
+        if (op == DOT) {
+            size_t smem = glass::nvidia::block::reduce_scratch_bytes<T,NV_DOT_TB>();
+            return nv_timed(kn_dot<T,N>, smem, [&]{ kn_dot<T,N><<<grid,NV_DOT_TB,smem>>>(x, y); }, reps);
+        }
+        if (op == GEMV) {
+            size_t smem = glass::nvidia::block::gemv_scratch_bytes<T,N,N>();
+            int tb = (int)glass::nvidia::block::gemv_threads<T,N,N>();
+            return nv_timed(kn_gemv<T,N>, smem, [&]{ kn_gemv<T,N><<<grid,tb,smem>>>(A, x, y); }, reps);
+        }
+        if (op == GEMM) {
+            size_t smem = glass::nvidia::block::gemm_scratch_bytes<T,N,N,N>();
+            int tb = (int)glass::nvidia::block::gemm_threads<T,N,N,N>();
+            return nv_timed(kn_gemm<T,N>, smem, [&]{ kn_gemm<T,N><<<grid,tb,smem>>>(A, B, C); }, reps);
+        }
+    }
+#endif
+#if MEGA_NV_LAPACK
+    if constexpr (nv_lapack_ok<T,N>()) {
+        if (op == CHOL) {
+            size_t smem = glass::nvidia::block::potrf_scratch_bytes<T,N,NV_LP_TB>();
+            return nv_timed(kn_chol<T,N>, smem, [&]{ kn_chol<T,N><<<grid,NV_LP_TB,smem>>>(A); }, reps);
+        }
+        if (op == TRSV) {
+            size_t smem = glass::nvidia::block::trsm_scratch_bytes<T,N,1,NV_LP_TB>();
+            return nv_timed(kn_trsv<T,N>, smem, [&]{ kn_trsv<T,N><<<grid,NV_LP_TB,smem>>>(A, x); }, reps);
+        }
+        if (op == POSV) {
+            size_t smem = glass::nvidia::block::posv_scratch_bytes<T,N,1,NV_LP_TB>();
+            return nv_timed(kn_posv<T,N>, smem, [&]{ kn_posv<T,N><<<grid,NV_LP_TB,smem>>>(A, x); }, reps);
+        }
+    }
+#endif
+    return -1.0;
+}
+
+// Dispatch the nvidia leg for the active precision (float full, double <=N64).
+template<typename T,int N>
+static double nv_dispatch(Op op, T* A, T* B, T* C, T* x, T* y, int reps) {
+    return nv_op_time<T,N>(op, A, B, C, x, y, reps);
+}
+
+// One cuSOLVERDx-thread launch shape. The caller sweeps TPB and retains every
+// FAIL explicitly, just like the native THREAD tier.
+template<typename T,int N>
+static double nvt_dispatch(Op op, int TPB, T* A, T* x, int reps) {
+    (void)op; (void)TPB; (void)A; (void)x; (void)reps;
+#if MEGA_NV_THREAD
+    if constexpr (nvt_lapack_ok<T,N>()) {
+        dim3 grid((NPROB + TPB - 1) / TPB), blk(TPB);
+        if (op == CHOL)
+            return nv_timed(knt_chol<T,N>, 0,
+                            [&]{ knt_chol<T,N><<<grid,blk>>>(A, NPROB); }, reps);
+        if (op == TRSV)
+            return nv_timed(knt_trsv<T,N>, 0,
+                            [&]{ knt_trsv<T,N><<<grid,blk>>>(A, x, NPROB); }, reps);
+        if (op == POSV)
+            return nv_timed(knt_posv<T,N>, 0,
+                            [&]{ knt_posv<T,N><<<grid,blk>>>(A, x, NPROB); }, reps);
+    }
+#endif
+    return -1.0;
+}
+
+template<typename T,int N>
+static void bench_size(Op op, int reps) {
+    T *A, *B, *C, *x, *y;
+    size_t mm = (size_t)NPROB * N * N, vv = (size_t)NPROB * N;
+    cudaMalloc(&A, mm*sizeof(T)); cudaMalloc(&B, mm*sizeof(T)); cudaMalloc(&C, mm*sizeof(T));
+    cudaMalloc(&x, vv*sizeof(T)); cudaMalloc(&y, vv*sizeof(T));
+    // diagonally-dominant A (valid for chol/trsv/posv); broadcast one tile to all problems.
+    // PRISTINE MIRRORS (audit 2026-08-15): factor ops refactor A in place and
+    // dot/gemv write into x/y, so inputs drift across launches — identical code
+    // timed ~13% apart purely by contender ORDER before this fix. reset() is
+    // installed as the per-TRIAL hook (g_pre_trial), so every trial of every
+    // contender times the same pristine->drift input trajectory, untimed.
+    T *A0, *x0, *y0;
+    cudaMalloc(&A0, mm*sizeof(T)); cudaMalloc(&x0, vv*sizeof(T)); cudaMalloc(&y0, vv*sizeof(T));
+    T* hA = (T*)malloc((size_t)N*N*sizeof(T));
+    for (int i=0;i<N;i++) for (int j=0;j<N;j++) hA[i+j*N] = (i==j)?(T)(N+2):(T)(0.1*((i+2*j)%5));
+    cudaMemcpy(A0, hA, (size_t)N*N*sizeof(T), cudaMemcpyHostToDevice);
+    for (size_t p=1;p<(size_t)NPROB;p++) cudaMemcpy(A0+p*N*N, A0, (size_t)N*N*sizeof(T), cudaMemcpyDeviceToDevice);
+    cudaMemset(B, 1, mm*sizeof(T)); cudaMemset(C, 0, mm*sizeof(T));
+    cudaMemset(x0, 1, vv*sizeof(T)); cudaMemset(y0, 1, vv*sizeof(T));
+    free(hA);
+    g_pre_trial = [=]{
+        cudaMemcpy(A, A0, mm*sizeof(T), cudaMemcpyDeviceToDevice);
+        cudaMemcpy(x, x0, vv*sizeof(T), cudaMemcpyDeviceToDevice);
+        cudaMemcpy(y, y0, vv*sizeof(T), cudaMemcpyDeviceToDevice);
+        cudaDeviceSynchronize();
+    };
+
+    g_row_spread = 0.0;
+    // MEASURE phase: every (contender, launch-shape) cell is one item; with
+    // GLASS_SHUFFLE_ORDER set the items execute in shuffled order. The PRINT
+    // phase below always emits the canonical row layout from the stored
+    // results, so output is byte-identical either way.
+    constexpr int TBS[4]  = {32, 64, 128, 256};
+    constexpr int WPBS[6] = {1, 2, 4, 8, 16, 32};
+    double r_block[4], r_warp[6], r_thread[4], r_auto[4], r_nvt[4], r_nv = -1.0;
+    for (double* a : {r_block, r_auto, r_thread}) for (int i=0;i<4;i++) a[i] = 1e30;
+    for (int i=0;i<4;i++) r_nvt[i] = -1.0;
+    for (int i=0;i<6;i++) r_warp[i] = 1e30;
+    std::vector<std::function<void()>> items;
+    for (int i=0;i<4;i++) items.push_back([&,i]{
+        int TB = TBS[i];
+        r_block[i] = time_ns_per_prob([&]{ launch_block<T,N>(op, TB, A, B, C, x, y); }, reps); });
+    for (int i=0;i<6;i++) {
+        if (WPBS[i] > NPROB) break;
+        items.push_back([&,i]{
+            int WPB = WPBS[i];
+            r_warp[i] = time_ns_per_prob([&]{ launch_warp<T,N>(op, WPB, A, B, C, x, y); }, reps); });
+    }
+    if constexpr (thread_ok<T,N>()) {
+        for (int i=0;i<4;i++) items.push_back([&,i]{
+            int TPB = TBS[i];
+            r_thread[i] = time_ns_per_prob([&]{ launch_thread<T,N>(op, TPB, A, B, C, x, y); }, reps); });
+    }
+    // AUTO: the bare shipped-default face at the block launch shapes.
+    // AUDIT-ONLY (see header) — excluded from the winner verdict and ignored by
+    // tune.py's parsers (its summary token trails the ones _ROW_RE captures).
+    for (int i=0;i<4;i++) items.push_back([&,i]{
+        int TB = TBS[i];
+        r_auto[i] = time_ns_per_prob([&]{ launch_auto<T,N>(op, TB, A, B, C, x, y); }, reps); });
+    if constexpr (nvt_lapack_ok<T,N>()) {
+        if (op == CHOL || op == TRSV || op == POSV) {
+            for (int i=0;i<4;i++) items.push_back([&,i]{
+                r_nvt[i] = nvt_dispatch<T,N>(op, TBS[i], A, x, reps); });
+        }
+    }
+    items.push_back([&]{ r_nv = nv_dispatch<T,N>(op, A, B, C, x, y, reps); });
+    if (g_shuffle_seed) std::shuffle(items.begin(), items.end(), g_shuffle_rng);
+    for (auto& it : items) it();
+
+    // PRINT phase: canonical layout, identical to the historical in-order path.
+    double best_block=1e30, best_warp=1e30, best_thread=1e30;
+    int best_tb=0, best_wpb=0, best_tpb=0;
+    printf("%-5s N=%-3d | BLOCK", op_name(op), N);
+    for (int i=0;i<4;i++) {
+        double ns = r_block[i];
+        if (ns < 1e29) printf("  tb%d=%.4f", TBS[i], ns); else printf("  tb%d=FAIL", TBS[i]);
+        if (ns < best_block) { best_block = ns; best_tb = TBS[i]; }
+    }
+    printf("  | WARP");
+    for (int i=0;i<6;i++) {
+        if (WPBS[i] > NPROB) break;
+        double ns = r_warp[i];
+        if (ns < 1e29) printf("  w%d=%.4f", WPBS[i], ns); else printf("  w%d=FAIL", WPBS[i]);
+        if (ns < best_warp) { best_warp = ns; best_wpb = WPBS[i]; }
+    }
+    if constexpr (thread_ok<T,N>()) {
+        printf("  | THREAD");
+        for (int i=0;i<4;i++) {
+            double ns = r_thread[i];
+            if (ns < 1e29) printf("  t%d=%.4f", TBS[i], ns); else printf("  t%d=FAIL", TBS[i]);
+            if (ns < best_thread) { best_thread = ns; best_tpb = TBS[i]; }
+        }
+    }
+    double best_auto = 1e30; int best_atb = 0;
+    printf("  | AUTO");
+    for (int i=0;i<4;i++) {
+        double ns = r_auto[i];
+        if (ns < 1e29) printf("  a%d=%.4f", TBS[i], ns); else printf("  a%d=FAIL", TBS[i]);
+        if (ns < best_auto) { best_auto = ns; best_atb = TBS[i]; }
+    }
+    double nv = r_nv;
+    double best_nvt = 1e30; int best_nvt_tpb = 0;
+    const bool has_nvt = nvt_lapack_ok<T,N>() &&
+                         (op == CHOL || op == TRSV || op == POSV);
+    if (has_nvt) {
+        printf("  | NVIDIA_THREAD");
+        for (int i=0;i<4;i++) {
+            double ns = r_nvt[i];
+            if (ns > 0) printf("  nvt%d=%.4f", TBS[i], ns); else printf("  nvt%d=FAIL", TBS[i]);
+            if (ns > 0 && ns < best_nvt) { best_nvt = ns; best_nvt_tpb = TBS[i]; }
+        }
+    }
+
+    // thread/warp/block are dependency-free pure SIMT. NVIDIA block and NVIDIA
+    // thread both carry MathDx and are raw-timed here; tune_pick applies the
+    // shared dependency margin when generating tables.
+    const bool has_thread = (best_thread < 1e29);
+    double base = best_block; const char* base_winner = "BLOCK";
+    if (best_warp < base)               { base = best_warp;   base_winner = "WARP"; }
+    if (has_thread && best_thread < base) { base = best_thread; base_winner = "THREAD"; }
+    // runner-up among the SIMT tiers, for the no-nvidia margin report
+    double simt_second = 1e30;
+    if (best_block  > base && best_block  < simt_second) simt_second = best_block;
+    if (best_warp   > base && best_warp   < simt_second) simt_second = best_warp;
+    if (has_thread && best_thread > base && best_thread < simt_second) simt_second = best_thread;
+
+    const char* winner = base_winner; double winning_time = base;
+    if (nv > 0 && nv < winning_time) { winner = "NVIDIA"; winning_time = nv; }
+    if (best_nvt < winning_time) { winner = "NVIDIA_THREAD"; winning_time = best_nvt; }
+    double runner_up = 1e30;
+    for (double v : {base, nv, best_nvt})
+        if (v > winning_time && v < runner_up) runner_up = v;
+    if (runner_up == 1e30) runner_up = simt_second;
+    double margin = runner_up < 1e29 ? runner_up / winning_time : 1.0;
+    printf("  || block tb%d=%.4f  warp w%d=%.4f", best_tb, best_block, best_wpb, best_warp);
+    if (has_thread) printf("  thread t%d=%.4f", best_tpb, best_thread);
+    if (nv > 0)     printf("  nv=%.4f", nv);
+    if (best_nvt < 1e29) printf("  nvt t%d=%.4f", best_nvt_tpb, best_nvt);
+    // auto token LAST among times: _ROW_RE captures block/warp[/thread][/nv]
+    // left-to-right, so a trailing token cannot perturb table regeneration.
+    if (best_auto < 1e29) printf("  auto a%d=%.4f", best_atb, best_auto);
+    printf("  spread<=%.1f%%  -> %s (%.2fx)\n", g_row_spread, winner, margin);
+    g_pre_trial = nullptr;
+    cudaFree(A); cudaFree(B); cudaFree(C); cudaFree(x); cudaFree(y);
+    cudaFree(A0); cudaFree(x0); cudaFree(y0);
+}
+
+template<typename T> static void run_all(int reps) {
+    for (Op op : {DOT, GEMV, GEMM, CHOL, TRSV, POSV}) {
+        bench_size<T,4>(op, reps);  bench_size<T,6>(op, reps);  bench_size<T,8>(op, reps);
+        bench_size<T,12>(op, reps); bench_size<T,16>(op, reps); bench_size<T,24>(op, reps);
+        bench_size<T,32>(op, reps); bench_size<T,48>(op, reps); bench_size<T,64>(op, reps);
+        bench_size<T,96>(op, reps); bench_size<T,128>(op, reps);
+        printf("\n");
+    }
+}
+
+int main(int argc, char** argv) {
+    NPROB    = (argc > 1) ? atoi(argv[1]) : 8192;
+    int reps = (argc > 2) ? atoi(argv[2]) : 500;
+    const char* dt = (argc > 3) ? argv[3] : "f32";
+    bool f64 = (strcmp(dt, "f64") == 0 || strcmp(dt, "fp64") == 0 || strcmp(dt, "double") == 0);
+    { int v = 48*1024; cudaDeviceGetAttribute(&v, cudaDevAttrMaxSharedMemoryPerBlockOptin, 0); g_optin_smem = (size_t)v; }
+    printf("# mega sweep | NPROB=%d reps=%d dtype=%s | ns/problem (lower=better) | optin_smem=%zuKB\n", NPROB, reps, f64 ? "f64" : "f32", g_optin_smem/1024);
+    printf("# contenders: BLOCK(SIMT, TB swept) | WARP(WPB swept) | THREAD(SIMT, TPB swept) | AUTO(bare glass::, shipped dispatch, TB swept; figure-only) | NV_BLOCK(cuBLASDx/cuSOLVERDx, forced; f32<=128, f64<=64) | NV_THREAD(cuSOLVERDx 0.4+, TPB swept; LAPACK N<=32)\n");
+    printf("# NV_THREAD N>32 is intentionally not instantiated to avoid further growth in this already memory-heavy monolithic TU; extend with a split executable only if a winner reaches N=32.\n");
+    printf("# THREAD stages operands global->registers->global in the per-problem-contiguous layout (uncoalesced; the layout tax is IN the timing; instantiated N<=64).\n");
+    if (const char* s = getenv("GLASS_SHUFFLE_ORDER"); s && strtoull(s, nullptr, 10) != 0) {
+        g_shuffle_seed = strtoull(s, nullptr, 10);
+        g_shuffle_rng.seed(g_shuffle_seed);
+        printf("# measurement_order=shuffled seed=%llu (per-cell execution order randomized; printed layout canonical)\n",
+               (unsigned long long)g_shuffle_seed);
+    }
+    tc_warm_gpu();                    // steady boost clocks before the first timed cell
+    if (f64) run_all<double>(reps);
+    else     run_all<float>(reps);
+    return 0;
+}

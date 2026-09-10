@@ -1,0 +1,117 @@
+#pragma once
+#include <cstdint>
+
+/**
+ * @file axpy_strided.cuh
+ * @brief Row-strided AXPY: `Y[r + c*Y_RS] += alpha * X[r + c*X_RS]` over an M×N block.
+ *
+ * The AXPY analogue of `gemv_strided` — adds an `M×N` (column-major) block of
+ * `X` into a same-shaped block of `Y` when the two live inside wider buffers with
+ * different leading dimensions (`X_RS`, `Y_RS`). PDDP packs a 14×14 update into a
+ * 21-lead buffer top-left (`Y_RS=21`, `X_RS=14`). Each `(r,c)` element is written
+ * by exactly one thread/lane, so there is no race and the op is trivially
+ * thread-count invariant. Block + `warp::`.
+ */
+
+/**
+ * @brief Row-strided AXPY `Y[r + c*Y_RS] += alpha * X[r + c*X_RS]` over an M×N block.
+ *
+ * Column-major; `X` is addressed at leading dimension `X_RS` (default `M`), `Y` at
+ * `Y_RS`. When `X_RS == M` and `Y_RS == M` this is a plain `glass::axpy` over the
+ * `M*N` contiguous elements. NumPy: `Y[:M,:N] += alpha * X[:M,:N]` (col-major lds).
+ *
+ * @tparam T             Scalar type (e.g. `float`, `double`).
+ * @tparam M             Rows of the block.
+ * @tparam N             Columns of the block.
+ * @tparam Y_RS          Column-major leading dimension of `Y`.
+ * @tparam X_RS          Column-major leading dimension of `X` (default `M`).
+ * @tparam TRAILING_SYNC Emit a trailing `__syncthreads()` (default true).
+ * @param alpha  Scalar multiplier on `X`.
+ * @param X      Input block, addressed at `X[r + c*X_RS]` (read-only).
+ * @param Y      In/out block, addressed at `Y[r + c*Y_RS]`.
+ */
+template <typename T, uint32_t M, uint32_t N, uint32_t Y_RS, uint32_t X_RS = M, bool TRAILING_SYNC = true>
+__device__ void axpy_strided(T alpha, const T* X, T* Y)
+{
+    uint32_t rank = flat_rank();
+    uint32_t size = flat_size();
+    for (uint32_t k = rank; k < M * N; k += size) {
+        uint32_t r = k % M, c = k / M;
+        Y[r + c * Y_RS] += alpha * X[r + c * X_RS];
+    }
+    if constexpr (TRAILING_SYNC) __syncthreads();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// warp:: — one warp per problem (32 lanes, __shfl_*_sync)
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace warp {
+    /**
+     * @brief Row-strided AXPY within one warp: `Y[r + c*Y_RS] += alpha * X[r + c*X_RS]`.
+     *
+     * Single-warp form of `axpy_strided`: one 32-lane warp strides over the
+     * `M*N` block elements. Each element written once; no inter-lane comms, no
+     * shared scratch. `TRAILING_SYNC` gates a closing `__syncwarp()`. Full 32 lanes
+     * required; independent warps may run distinct problems concurrently.
+     *
+     * @tparam T             Scalar type.
+     * @tparam M,N           Block shape.
+     * @tparam Y_RS          Leading dimension of `Y`.
+     * @tparam X_RS          Leading dimension of `X` (default `M`).
+     * @tparam TRAILING_SYNC Emit a trailing `__syncwarp()` (default true).
+     * @param alpha  Scalar multiplier on `X`.
+     * @param X      Input block, addressed at `X[r + c*X_RS]` (read-only).
+     * @param Y      In/out block, addressed at `Y[r + c*Y_RS]`.
+     */
+    template <typename T, uint32_t M, uint32_t N, uint32_t Y_RS, uint32_t X_RS = M, bool TRAILING_SYNC = true>
+    __device__ void axpy_strided(T alpha, const T* X, T* Y)
+    {
+        uint32_t lane = (flat_rank()) & 31;
+        for (uint32_t k = lane; k < M * N; k += 32) {
+            uint32_t r = k % M, c = k / M;
+            Y[r + c * Y_RS] += alpha * X[r + c * X_RS];
+        }
+        if constexpr (TRAILING_SYNC) __syncwarp();
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// thread:: — one problem per thread (serial, register-resident)
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace thread {
+    // Single-thread strided AXPY: one THREAD walks the M×N block serially
+    // (column-major order — same element order as the flat block/warp stride at
+    // one thread, without the % / division). The block body is inseparable from
+    // threadIdx/blockDim, so this is a fresh serial loop rather than a reuse.
+    // NOTE: no TRAILING_SYNC template parameter — a single thread has nothing to
+    // synchronize, and the thread:: surface carries no sync knobs anywhere
+    // (see thread::dot); dropped rather than kept-and-ignored.
+
+    /**
+     * @brief Row-strided AXPY on one thread: `Y[r + c*Y_RS] += alpha * X[r + c*X_RS]`, single-thread.
+     *
+     * One thread adds the column-major `M×N` block of `X` (leading dimension
+     * `X_RS`) into the same-shaped block of `Y` (leading dimension `Y_RS`),
+     * walking the elements serially. No shared scratch, no shuffles, no
+     * barriers, no `threadIdx` read; operands may be thread-local register
+     * arrays. NumPy: `Y[:M,:N] += alpha * X[:M,:N]` (col-major lds).
+     *
+     * @tparam T     Scalar type (e.g. `float`, `double`).
+     * @tparam M     Rows of the block.
+     * @tparam N     Columns of the block.
+     * @tparam Y_RS  Column-major leading dimension of `Y`.
+     * @tparam X_RS  Column-major leading dimension of `X` (default `M`).
+     * @param alpha  Scalar multiplier on `X`.
+     * @param X      Input block, addressed at `X[r + c*X_RS]` (read-only).
+     * @param Y      In/out block, addressed at `Y[r + c*Y_RS]`.
+     */
+    template <typename T, uint32_t M, uint32_t N, uint32_t Y_RS, uint32_t X_RS = M>
+    __device__ void axpy_strided(T alpha, const T* X, T* Y)
+    {
+        for (uint32_t c = 0; c < N; c++)
+            for (uint32_t r = 0; r < M; r++)
+                Y[r + c * Y_RS] += alpha * X[r + c * X_RS];
+    }
+}

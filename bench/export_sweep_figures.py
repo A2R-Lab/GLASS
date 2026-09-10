@@ -1,0 +1,219 @@
+#!/usr/bin/env python3
+"""Render the native/NVIDIA execution-scope sweep into static docs assets.
+
+Reads a ``bench/mega_sweep_*.txt`` run plus its symmetric fresh-input
+``bench/solver_ladder_*.txt`` companion (the same combined data behind
+``glass-defaults.cuh``'s ``recommend<>()``) and writes, into
+``docs/source/_static/``:
+
+* ``mega_sweep_ladder_<dt>_n<nprob>.png`` — one figure per (dtype, NPROB regime)
+  for NPROB in {64, 1024, 8192}, ns/problem vs N per backend, one subplot per op;
+* ``mega_sweep_ladder_<dt>.png`` — the headline alias (= the NPROB=8192 throughput
+  regime), embedded on the landing page;
+* ``sweep_winners.txt`` — the data-driven winning backend per (op, N), per regime.
+
+The docs embed these committed assets statically (``docs/source/user_guide/
+tutorials/sweep_results.rst``), so the site needs no GPU and no sweep ``.txt`` at
+build time. Regenerate after a fresh sweep (``bench/tune.py`` runs this as its
+figures leg, or run it standalone)::
+
+    python bench/export_sweep_figures.py bench/mega_sweep_*.txt \
+        --solver bench/solver_ladder_*.txt
+
+This is the script form of ``bench/explore_sweep.ipynb`` (kept as the interactive
+explorer). Needs numpy + matplotlib.
+"""
+import argparse
+import glob
+import os
+import re
+import sys
+
+import numpy as np
+import matplotlib
+
+matplotlib.use("Agg")  # headless: no display needed
+import matplotlib.pyplot as plt
+
+import tune_pick as tp
+
+OPS = ["dot", "gemv", "gemm", "potrf", "trsv", "posv"]
+_HDR = re.compile(r"NPROB=(\d+).*dtype=(f32|f64)")
+_ROW = re.compile(
+    r"^(dot|gemv|gemm|chol|potrf|trsv|posv)\s+N=(\d+).*\|\|\s*"
+    r"block\s+tb\d+=([\d.]+)\s+warp\s+w\d+=([\d.]+)"
+    r"(?:\s+thread\s+t\d+=([\d.]+))?(?:\s+nv=([\d.]+))?"
+    r"(?:\s+nvt\s+t\d+=([\d.]+))?"
+)
+
+
+# NPROB regimes to render, low → high: 64 ≈ low-batch latency, 1024 mid,
+# 8192 the throughput regime that feeds the dispatch tables.
+REGIMES = (64, 1024, 8192)
+HEADLINE_NPROB = 8192  # also written to the bare mega_sweep_ladder_<dt>.png
+
+
+def parse(text, regimes=REGIMES):
+    """(nprob, dtype, op, N) -> {block, warp, nvidia} ns/problem, for each NPROB
+    in `regimes` present in the sweep."""
+    data, dt, nprob = {}, None, None
+    keep = set(regimes)
+    for line in text.splitlines():
+        if line.startswith("####"):
+            m = _HDR.search(line)
+            if m:
+                nprob, dt = int(m.group(1)), m.group(2)
+            continue
+        if nprob not in keep:
+            continue
+        m = _ROW.match(line.strip())
+        if m:
+            op, N = m.group(1), int(m.group(2))
+            op = "potrf" if op == "chol" else op
+            d = {"block": float(m.group(3)), "warp": float(m.group(4))}
+            if m.group(5):
+                d["thread"] = float(m.group(5))
+            if m.group(6):
+                d["nvidia"] = float(m.group(6))
+            if m.group(7):
+                d["nvidia_thread"] = float(m.group(7))
+            data[(nprob, dt, op, N)] = d
+    return data
+
+
+def overlay_solver(data, text):
+    """Replace destructive main-ladder rows with fresh-input measurements."""
+    for nprob in regimes_present(data):
+        rows = tp.parse_solver_ladder(text, nprob)
+        expected = {(dt, op, N) for (np, dt, op, N) in data
+                    if np == nprob and op in {"potrf", "trsv", "posv"}}
+        missing = expected - set(rows)
+        if missing:
+            preview = ", ".join(f"{dt}/{op}/N={N}"
+                                for dt, op, N in sorted(missing)[:6])
+            raise ValueError(f"solver capture missing NPROB={nprob}: {preview}")
+        for dt, op, N in expected:
+            data[(nprob, dt, op, N)] = {
+                impl: metadata["ns"] for impl, metadata in rows[(dt, op, N)].items()
+            }
+    return data
+
+
+def regimes_present(data):
+    return sorted({np for (np, _d, _o, _N) in data})
+
+
+def _series(data, nprob, dt, op, key):
+    pts = sorted(
+        (N, v[key])
+        for (np, d, o, N), v in data.items()
+        if np == nprob and d == dt and o == op and key in v
+    )
+    return [p[0] for p in pts], [p[1] for p in pts]
+
+
+def plot_ladder(data, nprob, dt, out_path):
+    fig, axes = plt.subplots(2, 3, figsize=(13, 7))
+    axes = axes.ravel()
+    drew = False
+    for ax, op in zip(axes, OPS):
+        for key, c in [("warp", "tab:green"), ("block", "tab:blue"),
+                       ("thread", "tab:orange"), ("nvidia", "tab:red"),
+                       ("nvidia_thread", "tab:purple")]:
+            xs, ys = _series(data, nprob, dt, op, key)
+            if xs:
+                ax.plot(xs, ys, "o-", color=c, label=key, ms=4)
+                drew = True
+        ax.set_title(f"{op} ({dt}, NPROB={nprob})")
+        ax.set_xlabel("N")
+        ax.set_ylabel("ns/problem")
+        ax.set_yscale("log")
+        ax.grid(alpha=0.3)
+        ax.legend(fontsize=8)
+    fig.text(0.5, 0.005,
+             "FAIL cells are explicit launch failures, not omitted measurements; "
+             "NVIDIA block f64 caps at N=64 (shared-memory limit).",
+             ha="center", fontsize=7, style="italic")
+    fig.suptitle(f"{dt} native/NVIDIA execution-scope ladder — NPROB={nprob} "
+                 f"({'throughput' if nprob >= 8192 else 'low-batch' if nprob <= 64 else 'mid-batch'})",
+                 fontsize=11)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=120)
+    plt.close(fig)
+    return drew
+
+
+def winners_text(data):
+    lines = []
+    for nprob in regimes_present(data):
+        for dt in ("f32", "f64"):
+            Ns = sorted({N for (np, d, o, N) in data if np == nprob and d == dt})
+            if not Ns:
+                continue
+            lines.append(f"NPROB={nprob}  {dt} winner by op x N:")
+            lines.append("op     " + "".join(f"{N:>14}" for N in Ns))
+            for op in OPS:
+                cells = []
+                for N in Ns:
+                    d = data.get((nprob, dt, op, N))
+                    winner = tp.pick(d, 0.05, {"nvidia", "nvidia_thread"}) if d else None
+                    cells.append(f"{winner:>14}" if winner else f"{'-':>14}")
+                lines.append(f"{op:6} " + "".join(cells))
+            lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def main():
+    here = os.path.dirname(os.path.abspath(__file__))
+    repo = os.path.dirname(here)
+    default_static = os.path.join(repo, "docs", "source", "_static")
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("sweep", nargs="?", help="path to a mega_sweep_*.txt (default: latest in bench/)")
+    ap.add_argument("--solver", help="matching solver_ladder_*.txt (default: latest in bench/)")
+    ap.add_argument("--out", default=default_static, help="output dir (default: docs/source/_static)")
+    args = ap.parse_args()
+
+    sweep = args.sweep
+    if not sweep:
+        cands = sorted(glob.glob(os.path.join(here, "mega_sweep_*.txt")))
+        if not cands:
+            sys.exit("no mega_sweep_*.txt found in bench/ — run ./run_mega_sweep.sh first")
+        sweep = cands[-1]
+    print("sweep file:", os.path.relpath(sweep, repo))
+
+    solver = args.solver
+    if not solver:
+        cands = sorted(glob.glob(os.path.join(here, "solver_ladder_*.txt")))
+        if not cands:
+            sys.exit("no solver_ladder_*.txt found — destructive solver rows "
+                     "cannot be plotted from the main ladder")
+        solver = cands[-1]
+    print("solver file:", os.path.relpath(solver, repo))
+
+    data = overlay_solver(parse(open(sweep).read()), open(solver).read())
+    present = regimes_present(data)
+    print("parsed", len(data), "cells across NPROB", present)
+    os.makedirs(args.out, exist_ok=True)
+
+    # One figure per (dtype, NPROB regime): mega_sweep_ladder_<dt>_n<nprob>.png.
+    for dt in ("f32", "f64"):
+        for nprob in present:
+            png = os.path.join(args.out, f"mega_sweep_ladder_{dt}_n{nprob}.png")
+            if plot_ladder(data, nprob, dt, png):
+                print("wrote", os.path.relpath(png, repo))
+        # Headline alias (bare name) = the throughput regime, for index.rst.
+        headline = HEADLINE_NPROB if HEADLINE_NPROB in present else (present[-1] if present else None)
+        if headline is not None:
+            bare = os.path.join(args.out, f"mega_sweep_ladder_{dt}.png")
+            if plot_ladder(data, headline, dt, bare):
+                print("wrote", os.path.relpath(bare, repo), f"(headline NPROB={headline})")
+
+    winners = os.path.join(args.out, "sweep_winners.txt")
+    with open(winners, "w") as fh:
+        fh.write(winners_text(data))
+    print("wrote", os.path.relpath(winners, repo))
+
+
+if __name__ == "__main__":
+    main()

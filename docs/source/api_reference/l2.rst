@@ -1,0 +1,49 @@
+L2 — Matrix-Vector Operations
+=============================
+
+General matrix-vector products (``gemv``), rank-1 updates (``ger``), the
+strided / segmented ``gemv`` variants, and triangular solve / matvec
+(``trsv`` / ``trmv``).
+
+gemv
+----
+
+.. doxygenfile:: src/base/L2/gemv.cuh
+   :no-link:
+
+Contraction-parallel gemv (``gemv_reduced``)
+--------------------------------------------
+
+One warp owns each output element and its lanes split the contraction — the L2
+sibling of ``gemm_reduced``. See
+:doc:`../user_guide/concepts/contraction_parallel`.
+
+.. doxygenfile:: src/base/L2/gemv_reduced.cuh
+   :no-link:
+
+Strided / segmented gemv
+------------------------
+
+.. doxygenfile:: src/base/L2/gemv_strided.cuh
+   :no-link:
+
+.. doxygenfile:: src/base/L2/gemv_segmented.cuh
+   :no-link:
+
+ger
+---
+
+.. doxygenfile:: src/base/L2/ger.cuh
+   :no-link:
+
+Triangular solve / matvec (trsv / trmv)
+---------------------------------------
+
+.. doxygenfile:: src/base/L2/trsv.cuh
+   :no-link:
+
+Cooperative-groups variants (``glass::cgrps::``)
+------------------------------------------------
+
+.. doxygenfile:: src/cgrps/l2.cuh
+   :no-link:

@@ -1,0 +1,3 @@
+# built example binaries
+[0-9][0-9]_*
+!*.cu

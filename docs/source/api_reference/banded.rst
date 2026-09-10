@@ -1,0 +1,40 @@
+Block-tridiagonal Ops (``glass::bdmv`` / ``glass::bdsv``)
+=========================================================
+
+Single-block matrix-vector product for a **block-tridiagonal** matrix — the
+sparsity pattern of the KKT / Schur systems that arise in trajectory
+optimization and MPC. The matrix is stored as ``NumBlockRows`` contiguous
+``BlockSize × (3·BlockSize)`` row-major strips laid out ``[L | D | R]``
+(left / diagonal / right blocks), and the vectors use a **padded** layout
+``(NumBlockRows + 2)·BlockSize`` (one ``BlockSize`` pad block on each end) so the
+edge block-rows need no special case — their absent ``L`` / ``R`` simply multiply
+the zero pad.
+
+See :doc:`../user_guide/concepts/block_tridiagonal` for the layout in detail, and
+:doc:`pcg` for the conjugate-gradient solver built on top of this matvec.
+
+.. doxygenfile:: src/base/banded/bdmv.cuh
+   :no-link:
+
+Direct solve (``glass::bdsv``)
+------------------------------
+
+Block-Cholesky (block-Thomas) **direct** factor + solve on the same strips —
+the exact one-sweep alternative to :doc:`pcg` for SPD block-tridiagonal
+systems: ``bdsv_factor`` (in place; ``MAIN`` ← Cholesky factor, ``LEFT`` ←
+coupling block), ``bdsv_solve`` (forward/backward block substitution, reusable
+per right-hand side), and the fused ``bdsv``. Composed from
+``potrf``/``trsm``/``syrk``/``gemv``/``trsv``.
+
+.. doxygenfile:: src/base/banded/bdsv.cuh
+   :no-link:
+
+Block accessors (``store_block`` / ``load_block``)
+--------------------------------------------------
+
+Strided read/write of a single ``BlockSize × BlockSize`` block into / out of a
+``[L | D | R]`` strip (with an optional scale), used to assemble and unpack the
+block-tridiagonal strips. Block- and warp-scoped forms.
+
+.. doxygenfile:: src/base/banded/block_access.cuh
+   :no-link:

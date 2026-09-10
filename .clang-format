@@ -1,0 +1,19 @@
+# Advisory formatting baseline for GLASS (CUDA C++ headers).
+#
+# NOT enforced by CI — there is no automated reformat pass. It exists so editors
+# and `clang-format` produce output close to the existing style. Match the
+# surrounding code first; do not reformat unrelated lines in a PR.
+---
+Language: Cpp
+BasedOnStyle: LLVM
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100
+AccessModifierOffset: -4
+PointerAlignment: Right
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: false
+IndentCaseLabels: true
+NamespaceIndentation: All
+SortIncludes: false
