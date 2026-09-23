@@ -1,5 +1,11 @@
-GLASS: GPU Linear Algebra Simple Subroutines
-============================================
+.. _glass-gpu-linear-algebra-simple-subroutines:
+
+GLASS Code Documentation
+========================
+
+For the research overview, paper, figures, and robotics case studies, visit
+`the GLASS project page <https://a2r-lab.org/GLASS/>`_.
+These pages document installation, numerical contracts, tuning, and the API.
 
 `GLASS <http://a2r-lab.org/GLASS/>`_ is a header-only CUDA C++ library of
 composable ``__device__`` primitives for small, block-local linear algebra and
@@ -145,37 +151,13 @@ and :doc:`user_guide/tutorials/examples` for a worked program per concept.
 
 .. _measured-performance:
 
-Measured performance
---------------------
+Paper results
+-------------
 
-GLASS ships measured placement tables for three architectures — RTX 5090
-(sm_120), Jetson AGX Orin (sm_87), and Jetson AGX Xavier (sm_72,
-native-only) — because placement is worth measuring: on the Orin's raw
-candidate ladder the best and worst placements for a cell differ by a
-median of 4.9× (up to 81×), and the recommended placement changes between
-the Orin and the RTX 5090 in 145 of 396 measured cells (162 of 396 versus
-the Xavier). The stakes are highest on embedded GPUs, where per-call host
-dispatch is most expensive relative to the work — GLASS was tuned edge-first.
-
-The measured native and NVIDIA thread / warp / block ladder on the Jetson
-AGX Orin — each op's fastest interface across problem size, in ns/problem
-(the data behind ``glass::recommend<>``), shown in the ``NPROB=8192``
-throughput regime:
-
-.. image:: _static/mega_sweep_ladder_f32_sm87.png
-   :alt: GLASS measured backend ladder, float32, Jetson AGX Orin / sm_87
-   :width: 100%
-
-.. image:: _static/mega_sweep_ladder_f64_sm87.png
-   :alt: GLASS measured backend ladder, float64, Jetson AGX Orin / sm_87
-   :width: 100%
-
-See :doc:`user_guide/tutorials/sweep_results` for the RTX 5090 ladder across
-the ``NPROB=64`` / ``1024`` / ``8192`` batch regimes (the winner shifts with
-batch size), a narrowly configured host-batched cuBLAS/cuSOLVER comparison,
-the fused ``riccati_gain`` case study, and the per-``(op, N)`` winner table;
-see :doc:`user_guide/concepts/tuning` to regenerate everything for your own
-GPU with ``bench/tune.py``.
+The release evaluates GLASS on Jetson AGX Orin, Jetson AGX Xavier, and RTX 5090.
+See :doc:`user_guide/tutorials/paper_results` for the current measurements,
+comparison populations, and release figures. The dated
+:doc:`user_guide/tutorials/sweep_results` archive preserves earlier measurements.
 
 .. toctree::
    :hidden:

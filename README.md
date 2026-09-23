@@ -20,7 +20,9 @@ is the foundational linear-algebra layer underneath
 [GATO](http://a2r-lab.org/GATO/),
 [HJCD-IK](https://a2r-lab.org/publication/hjcdik/), and other A2R Lab GPU solvers.
 
-📖 **Full documentation: <https://a2r-lab.github.io/GLASS/>** (source under [`docs/source/`](docs/source/)).
+📄 **Paper & results: <https://a2r-lab.org/GLASS/>** (arXiv public release pending).
+
+📖 **Full documentation: <https://a2r-lab.org/GLASS/docs/>** (source under [`docs/source/`](docs/source/)).
 
 ## Overview
 
@@ -88,7 +90,8 @@ the packing fields are ready-to-use legal defaults that callers may retune.
 
 Three measured architectures ship in-tree today: **sm_120** (RTX 5090),
 **sm_87** (Jetson AGX Orin), and **sm_72** (Jetson AGX Xavier, native-only).
-Measuring matters: on the Orin the best and worst placements for a cell differ
+Measuring matters: across 132 Orin cells at B=8192 spanning fp32 and fp64,
+the best and worst valid measured placements for a cell differ
 by a median of 4.9× (up to 81×), and the recommended placement changes between
 the Orin and the RTX 5090 in 145 of 396 measured cells — the stakes are
 highest on embedded GPUs, where host dispatch is most expensive relative to
@@ -191,10 +194,26 @@ finite-difference identity, or pinned contract validates each family, attested
 under the signed receipt — is documented in
 [`testing_oracles`](docs/source/user_guide/concepts/testing_oracles.rst).
 
+## Paper release
+
+The research cover page collects the paper's architecture comparisons,
+performance figures, and robotics integrations. On Orin, native GLASS wins
+359/378 measured fp32/fp64 comparisons against the per-cell best of PyTorch
+and JAX. The sampling-based MPC integration improves the replaced computation
+by 1.21–1.50× relative to the corrected baseline; the IK integration reduces
+specialized numerics from approximately 355 to 29 lines and gives a 1.26×
+Orin speedup at batch 2,000. See
+[paper results and methodology](https://a2r-lab.org/GLASS/docs/user_guide/tutorials/paper_results.html)
+for scope and comparison details.
+
+The manuscript is **GLASS: Architecture-Tuned, Composable, Device-Side Linear
+Algebra for Edge Robotics and Beyond**, Brian Plancher (2026). The arXiv public
+release is pending; the identifier and citation link will be added when available.
+
 ## Documentation map
 
 The README is a landing page; the deep reference lives in the
-[hosted docs](https://a2r-lab.github.io/GLASS/) (sources in [`docs/source/`](docs/source/)):
+[hosted docs](https://a2r-lab.org/GLASS/docs/) (sources in [`docs/source/`](docs/source/)):
 
 | Topic | Page |
 |-------|------|

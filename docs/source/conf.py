@@ -59,6 +59,7 @@ numfig = True
 html_theme = "pydata_sphinx_theme"
 html_favicon = "_static/favicon/favicon.ico"
 html_theme_options = {
+    "external_links": [{"name": "GLASS paper & results", "url": "https://a2r-lab.org/GLASS/"}],
     "navigation_depth": 4,
     "github_url": "https://github.com/A2R-Lab/GLASS",
     "use_edit_page_button": True,

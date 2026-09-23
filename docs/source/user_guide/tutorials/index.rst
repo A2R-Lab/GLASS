@@ -13,4 +13,5 @@ suite, the worked examples, and the measured backend-sweep results.
    running_tests
    benchmarks
    examples
+   paper_results
    sweep_results

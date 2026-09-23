@@ -1,5 +1,15 @@
-Backend Sweep Results
-=====================
+Backend Sweep Results (Historical Archive)
+============================================================
+
+.. important::
+
+   The current release figures and numerical claims are collected in
+   :doc:`paper_results` and on the `GLASS project page
+   <https://a2r-lab.org/GLASS/>`_. This page preserves earlier campaigns and
+   their original hardware, protocols, and conclusions. In particular, the
+   July host/fusion figures and August micro-operation results below are not
+   the paper's Orin evaluation. Historical conclusions should not be used as
+   current cross-platform recommendations.
 
 GLASS ships overlapping thread-, warp-, block-, and vendor-backed execution
 tiers. For operations present in more than one tier, the fastest choice depends

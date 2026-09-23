@@ -1,0 +1,37 @@
+{
+  "paper_repository": "https://github.com/plancherb1/glass-paper-arxiv",
+  "paper_commit": "afc01495d5000ceda54b862ff3fba7bad17039ef",
+  "conversion": "pdftoppm -f 1 -singlefile -scale-to 1800 -png",
+  "figures": {
+    "device_vendor_vs_full_glass_orin": {
+      "source": "figs/device_vendor_vs_full_glass_orin.pdf",
+      "pdf_sha256": "dbdc8d98ee1b101ee5d4faa69f217f2fbc236d28144492b95dbae9cd1ab04be5",
+      "png_sha256": "4cd225d86feac278aec2a08e333c6db748104daf7b64511421c4aa427654722b"
+    },
+    "competitive_controls": {
+      "source": "figs/competitive_controls.pdf",
+      "pdf_sha256": "2493dc4500e91d8dfc4674366ad4855c1aef0f2ef0032778dee0546c7abc5e8a",
+      "png_sha256": "a90d6fad77e9a88101f12973a19771a229e156e789e93565888fe68b4c17b3ea"
+    },
+    "tier_heatmap_three_arch": {
+      "source": "figs/tier_heatmap_three_arch.pdf",
+      "pdf_sha256": "2fcb4cd0803075ed5a97ec70353107849e842a727bb513f4a2c8fb66b5bca4eb",
+      "png_sha256": "848f9d2db3efb7d24f64cd7eb94aff2d594088f713362c8c1b86012ddd18ff5a"
+    },
+    "policy_transfer_native_matrix": {
+      "source": "figs/policy_transfer_native_matrix.pdf",
+      "pdf_sha256": "c9709985d5a8aa531102cbae9ec992e5ec9b789252855a1090d32910ed5efbe8",
+      "png_sha256": "9ae4c3122c5ffb22b75207468e759efb99c952751b8e1614135a9349323370dc"
+    },
+    "host_performance_orin_heatmap": {
+      "source": "figs/host_performance_orin_heatmap.pdf",
+      "pdf_sha256": "8f6ab44e52438cd77499f7afb2f4038c4e6657d84b016ab5d550c97a179c977b",
+      "png_sha256": "3b2380a40caa8f44bd1628380fd61a17f9db5273e1a62ed7a63c9f99b882b625"
+    },
+    "riccati_tradeoff_orin": {
+      "source": "figs/riccati_tradeoff_orin.pdf",
+      "pdf_sha256": "f640cc083440aea57ad8b7e4d923406e5e3ad8340b62ae3fc03f2ff20f1e90a5",
+      "png_sha256": "dbddc06989ed0c29f37f65f70f11bc25772f878aaab9b9ea26d5c33e287f53e2"
+    }
+  }
+}

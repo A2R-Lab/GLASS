@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="350" viewBox="0 0 900 350" role="img" aria-labelledby="title desc">
+ <title id="title">GLASS inside an application GPU kernel</title>
+ <desc id="desc">An application calls composable device primitives at thread, warp, block, or NVIDIA scope. Offline measurements provide compile-time body choices and launch recommendations; independent numerical tests validate the implementations.</desc>
+ <defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8" fill="none" stroke="#087c58" stroke-width="1.5"/></marker></defs>
+ <g font-family="Arial, sans-serif" text-anchor="middle" fill="#1a1d25">
+  <rect x="30" y="15" width="840" height="205" rx="14" fill="#fff" stroke="#a6cbbd" stroke-width="2"/>
+  <text x="450" y="51" font-size="22" font-weight="bold">Your application GPU kernel</text>
+  <text x="450" y="82" font-size="17" fill="#4b5060">Compose numerical operations and retain intermediates on chip</text>
+  <rect x="60" y="108" width="780" height="86" rx="10" fill="#e8f7f1"/>
+  <text x="450" y="137" font-size="20" font-weight="bold">GLASS device API</text>
+  <text x="450" y="170" font-size="18" font-family="monospace">thread::  ·  warp::  ·  block::  ·  nvidia::</text>
+  <rect x="30" y="270" width="410" height="65" rx="10" fill="#eaf1fa" stroke="#bbcddd"/>
+  <text x="235" y="296" font-size="18" font-weight="bold">Offline architecture tuning</text>
+  <text x="235" y="319" font-size="15">Compile-time bodies + launch recommendations</text>
+  <rect x="465" y="270" width="405" height="65" rx="10" fill="#f5eef8" stroke="#d8c7df"/>
+  <text x="667" y="296" font-size="18" font-weight="bold">Independent numerical validation</text>
+  <text x="667" y="319" font-size="15">Reference oracles + source-bound test receipts</text>
+ </g>
+ <path d="M235 268 V225 M667 268 V225" stroke="#087c58" stroke-width="2" marker-end="url(#arrow)"/>
+</svg>
