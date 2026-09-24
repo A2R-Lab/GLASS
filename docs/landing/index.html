@@ -17,6 +17,9 @@
   <meta name="citation_title" content="GLASS: Architecture-Tuned, Composable, Device-Side Linear Algebra for Edge Robotics and Beyond">
   <meta name="citation_author" content="Plancher, Brian">
   <meta name="citation_publication_date" content="2026">
+  <meta name="citation_arxiv_id" content="2609.28179">
+  <meta name="citation_abstract_html_url" content="https://arxiv.org/abs/2609.28179v1">
+  <meta name="citation_pdf_url" content="https://arxiv.org/pdf/2609.28179v1">
   <link rel="icon" href="docs/_static/favicon/favicon.ico">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -37,7 +40,7 @@
     <p class="hero-sub">Reusable linear algebra and robotics geometry inside your GPU kernels—with offline tuning across thread, warp, block, and NVIDIA-backed implementations.</p>
     <p class="authors"><a href="https://brianplancher.com/">Brian Plancher</a></p>
     <p class="affiliation">Dartmouth College · A²R Lab</p>
-    <div class="links"><a class="button" href="#paper">Paper — release pending</a><a class="button" href="https://github.com/A2R-Lab/GLASS">Code ↗</a><a class="button primary" href="docs/">Documentation</a><a class="button" href="#get-started">Get started</a></div>
+    <div class="links"><a class="button" href="https://arxiv.org/abs/2609.28179v1">Paper ↗</a><a class="button" href="https://github.com/A2R-Lab/GLASS">Code ↗</a><a class="button primary" href="docs/">Documentation</a><a class="button" href="#get-started">Get started</a></div>
   </section>
   <div class="highlights" aria-label="Selected paper results">
     <a class="highlight" href="#architecture"><strong>145 / 396</strong><b>Placements change with hardware</b>Measured recommendations differ between Jetson AGX Orin and RTX 5090.</a>
@@ -125,13 +128,15 @@ __global__ void saxpy_kernel(uint32_t n, float a, float *x, float *y) {
   <section id="paper"><div class="eyebrow">Paper</div><h2>Abstract</h2>
     <p>GPU robotics lacks the reusable numerical infrastructure of mature CPU stacks, instead relying on compiler frameworks that introduce overhead or repeatedly reimplementing numerical libraries. To address this, we introduce GLASS (GPU Linear Algebra Simple Subroutines), a header-only CUDA C++ library that provides thread-, warp-, block-, and NVIDIA-backed implementations of robotics-scale linear algebra and geometric computations under one composable device API. GLASS treats implementation choice, execution scope, and launch packing as architecture-specific placement decisions determined by offline measurement and resolved statically at compile time. This is critical as the best and worst placements differ by a median of 4.9× (max 81×), with 145 of 396 recommended placements changing between a Jetson AGX Orin and an RTX 5090, and 162 of 396 versus an AGX Xavier. These stakes are highest at the edge as GLASS's advantage over the best of PyTorch and JAX is as much as 73× on the Orin versus 12× on the RTX 5090. GLASS is released open source with independent numerical oracles and source-bound local-GPU test attestation. Finally, integrating GLASS with published robotics systems both exposed a pre-existing numerical bug and improved embedded runtimes by up to 1.5×.</p>
     <p class="note">The placement-spread statistic covers 132 Orin cells at B=8192 across both precisions. See the result sections above for populations and comparison scope.</p>
-    <p><strong>arXiv public release is pending.</strong> The paper link and arXiv identifier will be added when available. The citation below describes the manuscript without an assigned identifier.</p>
+    <p>Read the paper on <a href="https://arxiv.org/abs/2609.28179v1">arXiv:2609.28179v1</a> or <a href="https://arxiv.org/pdf/2609.28179v1">download the PDF</a>.</p>
     <div class="citation-head"><h3>Citation</h3><button class="button" id="copy-citation" type="button">Copy BibTeX</button></div>
     <pre><code id="bibtex">@misc{plancher2026glass,
   title={GLASS: Architecture-Tuned, Composable, Device-Side Linear Algebra for Edge Robotics and Beyond},
   author={Brian Plancher},
   year={2026},
-  note={Manuscript; arXiv public release pending}
+  eprint={2609.28179},
+  archivePrefix={arXiv},
+  url={https://arxiv.org/abs/2609.28179v1}
 }</code></pre><p id="copy-status" class="note" role="status" aria-live="polite"></p>
   </section>
 </main>

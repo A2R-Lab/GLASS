@@ -5,7 +5,8 @@ The paper **GLASS: Architecture-Tuned, Composable, Device-Side Linear Algebra
 for Edge Robotics and Beyond** (Brian Plancher, 2026) evaluates reusable GPU
 numerical infrastructure across three NVIDIA architectures. The
 `research cover page <https://a2r-lab.org/GLASS/>`_ presents the full story,
-figures, and case studies. The arXiv public release is pending.
+figures, and case studies. Read the paper at
+`arXiv:2609.28179v1 <https://arxiv.org/abs/2609.28179v1>`_.
 
 This page summarizes the release at source commit ``afc0149``.
 PDF figures are unchanged copies of the release; PNGs are web previews.

@@ -5,13 +5,34 @@ The research cover page is deployed at `/GLASS/`; Sphinx documentation lives at
 
 ## Review locally
 
-From the repository root, with `docs/requirements.txt` and Doxygen installed:
+From an existing GLASS checkout, first save any local work, then:
+
+```sh
+git fetch origin
+git switch codex/glass-paper-website
+git pull --ff-only origin codex/glass-paper-website
+```
+
+For a new checkout, use `git clone --branch codex/glass-paper-website
+https://github.com/A2R-Lab/GLASS.git` and `cd GLASS` instead.
+
+Install Doxygen if needed (`sudo apt install doxygen` on Ubuntu or
+`brew install doxygen` on macOS), then prepare the Python dependencies:
+
+```sh
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r docs/requirements.txt
+```
+
+Build and serve the full site; no GPU or CUDA build is required:
 
 ```sh
 make -C docs doxygen html SPHINXOPTS="-W --keep-going"
-python docs/build_site.py
-python docs/check_site.py docs/build/site
-python -m http.server 8000 --directory docs/build/site
+preview_dir=$(mktemp -d)
+python docs/build_site.py --output "$preview_dir/site"
+python docs/check_site.py "$preview_dir/site"
+python -m http.server 8000 --bind 127.0.0.1 --directory "$preview_dir/site"
 ```
 
 Open `http://localhost:8000/` for the cover and `/docs/` for the reference.
@@ -38,9 +59,10 @@ The robotics table is transcribed from `figs/robotics_operators_table_orin.tex`.
 `overview.svg` adapts `tex/tikz_overview.tex` for the web. Captions retain the
 populations, native-only host candidates, and 16× clipping disclosure.
 
-When arXiv announces the paper, update the pending Paper button, release
-notice, and BibTeX together; add the actual identifier and URL to citation
-metadata. No identifier or conference acceptance is invented in this draft.
+The Paper button, PDF link, citation metadata, and BibTeX point to
+[arXiv:2609.28179v1](https://arxiv.org/abs/2609.28179v1). Keep these references
+in sync when adopting a later paper version; the figure provenance remains
+pinned to the source release above.
 
 ## Template attribution
 

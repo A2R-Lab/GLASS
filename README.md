@@ -20,7 +20,7 @@ is the foundational linear-algebra layer underneath
 [GATO](http://a2r-lab.org/GATO/),
 [HJCD-IK](https://a2r-lab.org/publication/hjcdik/), and other A2R Lab GPU solvers.
 
-📄 **Paper & results: <https://a2r-lab.org/GLASS/>** (arXiv public release pending).
+📄 **Paper: <https://arxiv.org/abs/2609.28179v1>** · **Results: <https://a2r-lab.org/GLASS/>**
 
 📖 **Full documentation: <https://a2r-lab.org/GLASS/docs/>** (source under [`docs/source/`](docs/source/)).
 
@@ -207,8 +207,8 @@ Orin speedup at batch 2,000. See
 for scope and comparison details.
 
 The manuscript is **GLASS: Architecture-Tuned, Composable, Device-Side Linear
-Algebra for Edge Robotics and Beyond**, Brian Plancher (2026). The arXiv public
-release is pending; the identifier and citation link will be added when available.
+Algebra for Edge Robotics and Beyond**, Brian Plancher (2026), available as
+[arXiv:2609.28179v1](https://arxiv.org/abs/2609.28179v1).
 
 ## Documentation map
 
