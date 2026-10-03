@@ -234,3 +234,97 @@ def test_potrs(bins, n, W):
     for w in range(W):
         assert np.allclose(slices[w], oracles[w], rtol=RTOL, atol=ATOL), \
             f"warp {w} potrs mismatch (n={n}, W={W})"
+
+
+# ─── transform_points (homogeneous 4x4 on packed xyz points) ──────────────────
+# Two assertions per case: (1) BIT-identity vs the HJCD-IK placement expression
+# the primitive replaces (compared on device — the driver prints a per-warp
+# mismatch count on its first line); (2) tolerance vs a numpy oracle computed in
+# the transform's precision. Transforms are random proper rigid motions.
+
+XPTS_SIZES = [1, 5, 31, 32, 33, 64, 97]
+
+
+def _rigid(rng):
+    """Random SE(3) as a column-major 4x4 (flattened order='F')."""
+    q, _ = np.linalg.qr(rng.standard_normal((3, 3)))
+    if np.linalg.det(q) < 0:
+        q[:, 0] *= -1
+    X = np.eye(4)
+    X[:3, :3] = q
+    X[:3, 3] = rng.standard_normal(3) * 2.0
+    return X.astype(np.float32)   # float32 file; the f64 path promotes exactly
+
+
+def _xpts_oracle(X32, pts, f64):
+    dt = np.float64 if f64 else np.float32
+    X = X32.astype(dt)
+    P = pts.reshape(-1, 3).astype(dt)
+    return (P @ X[:3, :3].T + X[:3, 3]).astype(np.float32).ravel()
+
+
+@pytest.mark.parametrize("n", XPTS_SIZES)
+@pytest.mark.parametrize("W", [1, 2, 4])
+@pytest.mark.parametrize("f64", [False, True], ids=["Xf32", "Xf64"])
+def test_transform_points(bins, n, W, f64):
+    Xs = [_rigid(RNG) for _ in range(W)]
+    pts = [RNG.standard_normal(3 * n).astype(np.float32) for _ in range(W)]
+    Xflat = np.concatenate([X.ravel(order="F") for X in Xs])
+    lines = run_op(bins["warp"], "xpts64" if f64 else "xpts", str(n), args=[W],
+                   inputs=[Xflat, np.concatenate(pts)])
+    mism, out = lines
+    assert np.all(mism == 0), f"bit-mismatch vs HJCD expression per warp: {mism}"
+    slices = _per_warp(out, W, 3 * n)
+    tol = 1e-6 if f64 else 1e-5
+    for w in range(W):
+        np.testing.assert_allclose(slices[w], _xpts_oracle(Xs[w], pts[w], f64),
+                                   rtol=tol, atol=tol, err_msg=f"warp {w} (n={n})")
+
+
+@pytest.mark.parametrize("n", [1, 7, 40, 97])
+@pytest.mark.parametrize("W", [1, 3])
+@pytest.mark.parametrize("f64", [False, True], ids=["Xf32", "Xf64"])
+def test_transform_points_indexed(bins, n, W, f64):
+    NX = 6   # transforms per warp (a short kinematic chain); every point picks one
+    Xs = [[_rigid(RNG) for _ in range(NX)] for _ in range(W)]
+    idx = [RNG.integers(0, NX, size=n).astype(np.float32) for _ in range(W)]
+    pts = [RNG.standard_normal(3 * n).astype(np.float32) for _ in range(W)]
+    Xflat = np.concatenate([X.ravel(order="F") for chain in Xs for X in chain])
+    lines = run_op(bins["warp"], "xpts_idx64" if f64 else "xpts_idx", str(n),
+                   args=[W, NX], inputs=[Xflat, np.concatenate(idx), np.concatenate(pts)])
+    mism, out = lines
+    assert np.all(mism == 0), f"bit-mismatch vs HJCD expression per warp: {mism}"
+    slices = _per_warp(out, W, 3 * n)
+    tol = 1e-6 if f64 else 1e-5
+    for w in range(W):
+        P = pts[w].reshape(-1, 3)
+        want = np.concatenate([_xpts_oracle(Xs[w][int(k)], P[i], f64)
+                               for i, k in enumerate(idx[w])])
+        np.testing.assert_allclose(slices[w], want, rtol=tol, atol=tol,
+                                   err_msg=f"warp {w} (n={n})")
+
+
+# ─── warp::any / warp::all ────────────────────────────────────────────────────
+# Lanes diverge (odd lanes take a data-dependent detour) and reconverge before
+# voting. Truth table over all-false, all-true, single-lane and random masks,
+# with several warps voting independently in one block.
+
+def _vote_masks(rng, W):
+    pool = [np.zeros(32), np.ones(32), np.eye(32)[0], np.eye(32)[31],
+            (rng.random(32) < 0.5).astype(float), np.ones(32) - np.eye(32)[17]]
+    return [pool[(w + i) % len(pool)] for i, w in enumerate(range(W))]
+
+
+@pytest.mark.parametrize("W", [1, 2, 3, 6])
+@pytest.mark.parametrize("seed", [0, 1])
+def test_vote_any_all(bins, W, seed):
+    rng = np.random.default_rng(seed)
+    masks = _vote_masks(rng, W)
+    rng.shuffle(masks)
+    pred = np.concatenate(masks).astype(np.float32)
+    out = np.asarray(run_op(bins["warp"], "vote", "0", args=[W], inputs=[pred]),
+                     dtype=np.float32).ravel()
+    for w in range(W):
+        m = masks[w].astype(bool)
+        assert out[2 * w] == float(m.any()), f"warp {w} any: mask={m.astype(int)}"
+        assert out[2 * w + 1] == float(m.all()), f"warp {w} all: mask={m.astype(int)}"

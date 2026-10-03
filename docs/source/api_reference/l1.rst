@@ -96,6 +96,12 @@ Index of max-abs (iamax)
 .. doxygenfile:: src/base/L1/iamax.cuh
    :no-link:
 
+Warp votes (any / all)
+----------------------
+
+.. doxygenfile:: src/base/L1/vote.cuh
+   :no-link:
+
 clip
 ----
 

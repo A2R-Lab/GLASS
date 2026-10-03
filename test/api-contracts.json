@@ -52,7 +52,7 @@
       "id": "glass_gemm_dispatch_smem-8202e79314aa",
       "name": "glass_gemm_dispatch_smem",
       "file": "glass.cuh",
-      "line": 182,
+      "line": 184,
       "surface": "glass::",
       "signature": "glass::glass_gemm_dispatch_smem(int m, int n, int block_threads=256, int tile=8)",
       "params": 4,
@@ -4027,6 +4027,50 @@
           "surface": "glass::block::",
           "args": 1,
           "explicit_template_args": 2
+        }
+      ]
+    },
+    {
+      "id": "any-ddc6e935cf75",
+      "name": "any",
+      "file": "src/base/L1/vote.cuh",
+      "line": 29,
+      "surface": "glass::warp::",
+      "signature": "glass::warp::any(bool pred)",
+      "params": 1,
+      "required_params": 1,
+      "template_params": 0,
+      "minimum_explicit_template_args": 0,
+      "evidence": [
+        {
+          "file": "test/cuda/test_warp.cu",
+          "line": 158,
+          "name": "any",
+          "surface": "glass::warp::",
+          "args": 1,
+          "explicit_template_args": null
+        }
+      ]
+    },
+    {
+      "id": "all-441d09150301",
+      "name": "all",
+      "file": "src/base/L1/vote.cuh",
+      "line": 41,
+      "surface": "glass::warp::",
+      "signature": "glass::warp::all(bool pred)",
+      "params": 1,
+      "required_params": 1,
+      "template_params": 0,
+      "minimum_explicit_template_args": 0,
+      "evidence": [
+        {
+          "file": "test/cuda/test_warp.cu",
+          "line": 159,
+          "name": "all",
+          "surface": "glass::warp::",
+          "args": 1,
+          "explicit_template_args": null
         }
       ]
     },
@@ -8492,6 +8536,50 @@
           "name": "transform_sphere",
           "surface": "glass::block::",
           "args": 4,
+          "explicit_template_args": 1
+        }
+      ]
+    },
+    {
+      "id": "transform_points-cabc8f3b2fae",
+      "name": "transform_points",
+      "file": "src/base/geom/transform_points.cuh",
+      "line": 44,
+      "surface": "glass::warp::",
+      "signature": "glass::warp::transform_points(const T *X, const float *pts, float *out, int n)",
+      "params": 4,
+      "required_params": 4,
+      "template_params": 1,
+      "minimum_explicit_template_args": 0,
+      "evidence": [
+        {
+          "file": "test/cuda/test_warp.cu",
+          "line": 107,
+          "name": "transform_points",
+          "surface": "glass::warp::",
+          "args": 4,
+          "explicit_template_args": 1
+        }
+      ]
+    },
+    {
+      "id": "transform_points-f2d75a39a335",
+      "name": "transform_points",
+      "file": "src/base/geom/transform_points.cuh",
+      "line": 74,
+      "surface": "glass::warp::",
+      "signature": "glass::warp::transform_points(const T *Xs, const int *Xidx, const float *pts, float *out, int n)",
+      "params": 5,
+      "required_params": 5,
+      "template_params": 1,
+      "minimum_explicit_template_args": 0,
+      "evidence": [
+        {
+          "file": "test/cuda/test_warp.cu",
+          "line": 131,
+          "name": "transform_points",
+          "surface": "glass::warp::",
+          "args": 5,
           "explicit_template_args": 1
         }
       ]
@@ -14636,8 +14724,8 @@
     }
   ],
   "summary": {
-    "covered": 665,
-    "total": 665,
+    "covered": 669,
+    "total": 669,
     "percent": 100.0,
     "ambiguous_calls": 38
   }

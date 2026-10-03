@@ -22,6 +22,15 @@ rendered signatures appear on the :doc:`l1`, :doc:`l2`, and :doc:`l3` pages.
   (register-returned, lowest-index tie-break). See :doc:`l1`.
 * ``glass::warp::gemv`` — one output row per lane (reuses the block ``gemv``
   inner kernel). See :doc:`l2`.
+* ``glass::warp::any`` / ``glass::warp::all`` — full-mask votes
+  (``__any_sync`` / ``__all_sync``) so warp-per-problem domain code carries no
+  raw intrinsics. See :doc:`l1`.
+* ``glass::warp::transform_points`` — column-major 4×4 homogeneous transform
+  of packed ``xyz`` points, lanes striding the points (single transform, or one
+  transform index per point); ``float`` points under a ``float`` or ``double``
+  transform, with a fixed per-component expression order so it is
+  bit-identical to the inlined placement loop it replaces. See
+  :doc:`robotics`.
 
 **L3 factor / solve:**
 

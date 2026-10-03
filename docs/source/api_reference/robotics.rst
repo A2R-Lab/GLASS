@@ -90,6 +90,9 @@ Geometry distances
 .. doxygenfile:: src/base/geom/segment.cuh
    :no-link:
 
+.. doxygenfile:: src/base/geom/transform_points.cuh
+   :no-link:
+
 3x3 estimation kit
 ------------------
 

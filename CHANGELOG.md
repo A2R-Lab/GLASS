@@ -8,6 +8,13 @@ All notable changes to GLASS will be documented here. The format follows
 
 ### Added
 
+- `glass::warp::transform_points` applies a column-major 4×4 homogeneous
+  transform (`float` or `double`) to packed `float` points, lanes striding the
+  points, in two forms: one transform for all points, or one transform index
+  per point. The per-component expression order is fixed so results are
+  bit-identical to the inlined sphere-placement loop it replaces.
+- `glass::warp::any` / `glass::warp::all` wrap `__any_sync` / `__all_sync`
+  under the full mask, for symmetry with `warp::reduce` / `warp::argmin_pair`.
 - `glass::nvidia::thread::` provides one-problem-per-thread cuSOLVERDx
   implementations for the supported LAPACK subset. The measured sm_120 and
   sm_87 ladders select it only where it clears the native implementation by

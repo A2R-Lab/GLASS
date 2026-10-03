@@ -87,6 +87,80 @@ __global__ void k_scal_warp(int n, int W, float alpha, float* x) {
         glass::warp::potrs<float, Nc>(L + w*Nc*Nc, b + w*Nc);                             \
     }
 
+// ─── geometry: transform_points (one warp per problem; X float or double) ─────
+// Each warp w owns n points (pts + w*3n), its own transform(s) and its own
+// output slice. The reference kernels inline HJCD-IK's `warp_config_free`
+// placement expression verbatim (the line GLASS replaces) so pytest can assert
+// BIT-identity on device: `mism[w]` counts output words whose bits differ.
+// Transforms arrive as float32 files; the double variants promote on device
+// (exact), so the numpy oracle sees the same values as float64.
+template <typename T>
+__global__ void k_promote(int n, const float* src, T* dst) {
+    for (int i = threadIdx.x; i < n; i += blockDim.x) dst[i] = static_cast<T>(src[i]);
+}
+template <typename T>
+__global__ void k_xpts_warp(int n, int W, const T* X, const float* pts, float* out, float* ref, int* mism) {
+    int w = threadIdx.y; if (w >= W) return;
+    const int lane = threadIdx.x & 31;
+    const T* Xw = X + w*16;
+    const float* p = pts + w*3*n;
+    glass::warp::transform_points<T>(Xw, p, out + w*3*n, n);
+    // reference: HJCD-IK csrc/kernel/hjcd_kernel.cu warp_config_free, per-lane strided
+    for (int s = lane; s < n; s += 32) {
+        const float ox = p[3*s], oy = p[3*s + 1], oz = p[3*s + 2];
+        ref[w*3*n + 3*s]     = (float)(Xw[0] * ox + Xw[4] * oy + Xw[8]  * oz + Xw[12]);
+        ref[w*3*n + 3*s + 1] = (float)(Xw[1] * ox + Xw[5] * oy + Xw[9]  * oz + Xw[13]);
+        ref[w*3*n + 3*s + 2] = (float)(Xw[2] * ox + Xw[6] * oy + Xw[10] * oz + Xw[14]);
+    }
+    __syncwarp();
+    int bad = 0;
+    for (int i = lane; i < 3*n; i += 32)
+        bad += (__float_as_int(out[w*3*n + i]) != __float_as_int(ref[w*3*n + i]));
+    bad = glass::warp::reduce<int>(bad);
+    if (lane == 0) mism[w] = bad;
+}
+// indexed form: NX transforms per warp (Xs + w*16*NX), idx[i] in [0, NX)
+template <typename T>
+__global__ void k_xpts_idx_warp(int n, int W, int NX, const T* Xs, const int* idx, const float* pts,
+                                float* out, float* ref, int* mism) {
+    int w = threadIdx.y; if (w >= W) return;
+    const int lane = threadIdx.x & 31;
+    const T* Xw = Xs + w*16*NX;
+    const int* iw = idx + w*n;
+    const float* p = pts + w*3*n;
+    glass::warp::transform_points<T>(Xw, iw, p, out + w*3*n, n);
+    for (int s = lane; s < n; s += 32) {
+        const T* X = &Xw[16 * iw[s]];
+        const float ox = p[3*s], oy = p[3*s + 1], oz = p[3*s + 2];
+        ref[w*3*n + 3*s]     = (float)(X[0] * ox + X[4] * oy + X[8]  * oz + X[12]);
+        ref[w*3*n + 3*s + 1] = (float)(X[1] * ox + X[5] * oy + X[9]  * oz + X[13]);
+        ref[w*3*n + 3*s + 2] = (float)(X[2] * ox + X[6] * oy + X[10] * oz + X[14]);
+    }
+    __syncwarp();
+    int bad = 0;
+    for (int i = lane; i < 3*n; i += 32)
+        bad += (__float_as_int(out[w*3*n + i]) != __float_as_int(ref[w*3*n + i]));
+    bad = glass::warp::reduce<int>(bad);
+    if (lane == 0) mism[w] = bad;
+}
+
+// ─── votes: warp::any / warp::all on diverged-then-reconverged lanes ─────────
+// pred[w*32 + lane] in {0,1}. Odd lanes take a data-dependent detour (so the
+// warp is genuinely diverged) before everyone reconverges and votes; the
+// per-warp result is {any, all} as floats.
+__global__ void k_vote_warp(int W, const float* pred, float* out) {
+    int w = threadIdx.y; if (w >= W) return;
+    const int lane = threadIdx.x & 31;
+    bool p = pred[w*32 + lane] != 0.f;
+    float junk = 0.f;
+    if (lane & 1) { for (int k = 0; k < lane; ++k) junk += sinf((float)k) * (p ? 1.f : -1.f); }
+    __syncwarp();
+    const bool a = glass::warp::any(p);
+    const bool l = glass::warp::all(p);
+    if (lane == 0) { out[2*w] = a ? 1.f : 0.f; out[2*w + 1] = l ? 1.f : 0.f; }
+    if (junk == 12345.f) out[2*w] = -1.f;   // keep the detour live
+}
+
 #define DEFINE_ALL(Nc) DEFINE_GEMV_KERNEL(Nc) DEFINE_GEMM_KERNEL(Nc) DEFINE_TRI_KERNEL(Nc)
 DEFINE_ALL(5)
 DEFINE_ALL(7)
@@ -258,6 +332,65 @@ int main(int argc, char** argv) {
         launch_potrs(n, W, L, b);
         cudaDeviceSynchronize();
         print_device_vec(b, n*W);
+
+    } else if (strcmp(op, "xpts") == 0 || strcmp(op, "xpts64") == 0) {
+        // files: X (16*W), pts (3n*W). Output: mismatch count per warp, then out.
+        const bool f64 = (strcmp(op, "xpts64") == 0);
+        float* X32 = read_device_vec(argv[4], 16*W);
+        float* pts = read_device_vec(argv[5], 3*n*W);
+        float* out = alloc_device_vec(3*n*W);
+        float* ref = alloc_device_vec(3*n*W);
+        int* mism; cudaMalloc(&mism, W*sizeof(int));
+        if (f64) {
+            double* X64; cudaMalloc(&X64, 16*W*sizeof(double));
+            k_promote<double><<<1, 128>>>(16*W, X32, X64);
+            k_xpts_warp<double><<<1, dim3(32, W)>>>(n, W, X64, pts, out, ref, mism);
+        } else {
+            k_xpts_warp<float><<<1, dim3(32, W)>>>(n, W, X32, pts, out, ref, mism);
+        }
+        cudaDeviceSynchronize();
+        {
+            int* h = (int*)malloc(W*sizeof(int)); cudaMemcpy(h, mism, W*sizeof(int), cudaMemcpyDeviceToHost);
+            for (int w = 0; w < W; ++w) printf("%d%s", h[w], w + 1 < W ? " " : "\n");
+            free(h);
+        }
+        print_device_vec(out, 3*n*W);
+
+    } else if (strcmp(op, "xpts_idx") == 0 || strcmp(op, "xpts_idx64") == 0) {
+        // argv[4] = NX transforms per warp; files: Xs (16*NX*W), idx (n*W, as floats), pts (3n*W)
+        const bool f64 = (strcmp(op, "xpts_idx64") == 0);
+        int NX = atoi(argv[4]);
+        float* X32 = read_device_vec(argv[5], 16*NX*W);
+        float* idxf = read_host_vec(argv[6], n*W);
+        float* pts = read_device_vec(argv[7], 3*n*W);
+        int* hidx = (int*)malloc(n*W*sizeof(int));
+        for (int i = 0; i < n*W; ++i) hidx[i] = (int)idxf[i];
+        int* idx; cudaMalloc(&idx, n*W*sizeof(int)); cudaMemcpy(idx, hidx, n*W*sizeof(int), cudaMemcpyHostToDevice);
+        float* out = alloc_device_vec(3*n*W);
+        float* ref = alloc_device_vec(3*n*W);
+        int* mism; cudaMalloc(&mism, W*sizeof(int));
+        if (f64) {
+            double* X64; cudaMalloc(&X64, 16*NX*W*sizeof(double));
+            k_promote<double><<<1, 128>>>(16*NX*W, X32, X64);
+            k_xpts_idx_warp<double><<<1, dim3(32, W)>>>(n, W, NX, X64, idx, pts, out, ref, mism);
+        } else {
+            k_xpts_idx_warp<float><<<1, dim3(32, W)>>>(n, W, NX, X32, idx, pts, out, ref, mism);
+        }
+        cudaDeviceSynchronize();
+        {
+            int* h = (int*)malloc(W*sizeof(int)); cudaMemcpy(h, mism, W*sizeof(int), cudaMemcpyDeviceToHost);
+            for (int w = 0; w < W; ++w) printf("%d%s", h[w], w + 1 < W ? " " : "\n");
+            free(h);
+        }
+        print_device_vec(out, 3*n*W);
+
+    } else if (strcmp(op, "vote") == 0) {
+        // n unused; file: pred (32*W floats in {0,1}). Output: {any, all} per warp.
+        float* pred = read_device_vec(argv[4], 32*W);
+        float* out = alloc_device_vec(2*W);
+        k_vote_warp<<<1, dim3(32, W)>>>(W, pred, out);
+        cudaDeviceSynchronize();
+        print_device_vec(out, 2*W);
 
     } else {
         fprintf(stderr, "Unknown op: %s\n", op);

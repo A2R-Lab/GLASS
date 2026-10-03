@@ -65,6 +65,7 @@ namespace block {
     #include "./src/base/L1/nrm2.cuh"
     #include "./src/base/L1/infnorm.cuh"
     #include "./src/base/L1/argreduce.cuh"
+    #include "./src/base/L1/vote.cuh"
     #include "./src/base/L1/iamax.cuh"
     #include "./src/base/L1/clip.cuh"
     #include "./src/base/L1/set_const.cuh"
@@ -131,6 +132,7 @@ namespace block {
     #include "./src/base/geom/sphere.cuh"
     #include "./src/base/geom/frame.cuh"
     #include "./src/base/geom/segment.cuh"
+    #include "./src/base/geom/transform_points.cuh"
     #include "./src/base/est/svd3.cuh"
 }  // namespace block
 
