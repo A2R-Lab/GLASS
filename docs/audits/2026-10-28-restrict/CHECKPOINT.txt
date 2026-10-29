@@ -1,3 +1,8 @@
+Implementation complete and full fresh validation passed: 5,126 tests across 8 shards.
+Source commit e537364; final receipt verified with current toolchain and 0.5.0.
+Validated delivery branch: fix-restricted-handoffs.
+See README.txt final section. The pause record below is historical.
+
 RESUMED by explicit user request, 2026-10-28. See README.txt latest implementation entry.
 The following pause checkpoint is historical:
 
