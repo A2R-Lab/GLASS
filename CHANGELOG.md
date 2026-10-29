@@ -22,6 +22,9 @@ All notable changes to GLASS will be documented here. The format follows
 
 ### Changed
 
+- Pin pytest-gpu-proof 0.5.0 for Python 3.10 support and signed CUDA compiler
+  metadata in fresh GPU receipts.
+
 - **Breaking:** NVIDIA operations now require an explicit execution scope
   (`glass::nvidia::block::op`, `glass::nvidia::warp::op`, or
   `glass::nvidia::thread::op`); the ambiguous bare `glass::nvidia::op`
@@ -45,9 +48,9 @@ All notable changes to GLASS will be documented here. The format follows
   (numerically identical, fewer barriers per iteration).
 - Compile-time `ger` uses a flat one-thread-per-output work mapping
   (bit-identical results by construction).
-- Documented-overload coverage is measured per overload contract — 665
+- Documented-overload coverage is measured per overload contract — 669
   contracts extracted from Doxygen XML with call-shape evidence
-  (`test/api-contracts.json`) — instead of per public name, plus 21 declared
+  (`test/api-contracts.json`) — instead of per public name, plus 22 declared
   behavioral correctness obligations checked against the signed receipt.
 - The signed GPU receipt is split into eight dependency-scoped shards with
   lazy test-binary compilation; development reruns only affected shards, and
