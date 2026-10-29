@@ -49,8 +49,9 @@ static void print_host_vec(const T *h, int n)
 
 // --- kernel -----------------------------------------------------------------
 template <typename T>
-__global__ void run_box_qp(std::uint32_t n, T *P, T *q, T *l, T *u, T *x,
-                           T *scratch, T *info, int max_iter, T tol)
+__global__ void run_box_qp(std::uint32_t n, T *__restrict__ P, T *__restrict__ q,
+                           T *__restrict__ l, T *__restrict__ u, T *__restrict__ x,
+                           T *__restrict__ scratch, T *__restrict__ info, int max_iter, T tol)
 {
     glass::internal::QPParams<T> params;
     params.max_iter = max_iter;

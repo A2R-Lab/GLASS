@@ -186,6 +186,7 @@ def _hash_sources(cu_path: pathlib.Path) -> str:
               CUDA_DIR / "test_bdsv.cu",
               CUDA_DIR / "test_block_access.cu",
               CUDA_DIR / "test_robotics.cu",
+              CUDA_DIR / "test_restrict.cu",
     ]
     paths = list(dict.fromkeys(paths))
     for p in paths:
@@ -263,7 +264,7 @@ class LazyBins(Mapping):
     """Compile only the binary a selected test actually requests."""
 
     names = {
-        "l1", "l2", "l3", "qp", "banded", "bdsv", "pcg", "syrk", "trsv",
+        "restrict", "l1", "l2", "l3", "qp", "banded", "bdsv", "pcg", "syrk", "trsv",
         "ldlt", "getrf", "iamax", "fused", "warp", "thread", "posv", "reduced",
         "tensor", "factor_check", "congruence", "solve", "reduced_blas", "base_f64",
         "defaults", "dispatch", "l1_round2", "block_access", "symmetrize", "symm_rot",
@@ -285,7 +286,7 @@ class LazyBins(Mapping):
     def _compile(self, key: str) -> pathlib.Path:
         mathdx, cublasdx = self._mathdx()
         target_sm = CUDA_ARCH.replace("sm_", "") + "0"
-        flags: list[str] = []
+        flags: list[str] = ["-O3"] if key in {"restrict", "bdsv", "pcg", "qp"} else []
         if key == "nvidia_dispatch" and not cublasdx:
             raise KeyError(key)
         if key in {"nvidia_dispatch", "trailing_sync"} and cublasdx:
@@ -441,7 +442,7 @@ def run_op(binary: pathlib.Path, op: str, version: str, args: list, inputs: list
         # stays clean; pair with --error-exitcode so a finding trips returncode.
         prefix = shlex.split(os.environ.get("GLASS_RUN_PREFIX", ""))
         cmd = prefix + [str(binary), op, version] + [str(a) for a in args] + tmpfiles
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         if result.returncode != 0:
             raise RuntimeError(f"Binary failed:\n{result.stdout}\n{result.stderr}")
 

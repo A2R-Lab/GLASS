@@ -14,7 +14,7 @@
 #include "../../glass.cuh"
 
 #define DEFINE_PCG(SS, KP)                                                        \
-    __global__ void k_pcg_##SS##_##KP(float* x, float* S, float* Pinv, float* b, \
+    __global__ void k_pcg_##SS##_##KP(float* __restrict__ x, float* __restrict__ S, float* __restrict__ Pinv, float* __restrict__ b, \
                                       int max_iters, float rel_tol, float abs_tol,\
                                       int* d_iters) {                             \
         extern __shared__ float s_mem[];                                          \

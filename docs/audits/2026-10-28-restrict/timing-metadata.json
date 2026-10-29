@@ -1,0 +1,25 @@
+{
+  "started_utc": "2026-10-29T00:11:01Z",
+  "revision": "9e57178ca146fa1cecae7e27c22260603b993aa6",
+  "dirty_diff_sha256": "3304a87d41efb527f675de4d87166951203a619f4f647852623b56a20205392c",
+  "nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2026 NVIDIA Corporation\nBuilt on Fri_May_08_10:53:34_AM_PDT_2026\nCuda compilation tools, release 13.2, V13.2.86\nBuild cuda_13.2.r13.2/compiler.37953736_0\n",
+  "gpu": "name, driver_version, temperature.gpu, clocks.current.sm [MHz]\nNVIDIA GeForce RTX 5090, 615.71.09, 32, 180 MHz\n",
+  "batch": 4096,
+  "reps": 30,
+  "trials": 3,
+  "flags": "-O3 -std=c++17 -arch=sm_120",
+  "receipt": "pending final receipt; correctness sweep validated separately",
+  "sizes": [
+    3,
+    7,
+    17
+  ],
+  "precisions": [
+    "float",
+    "double"
+  ],
+  "threads": [
+    32,
+    64
+  ]
+}

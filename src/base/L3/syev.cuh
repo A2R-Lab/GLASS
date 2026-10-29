@@ -160,7 +160,8 @@ __device__ void syev_impl(SizeT n, const T *A, T *W, T *V, T *s_scratch)
                     s_ctrl[0] = c; s_ctrl[1] = s;
                 }
                 __syncthreads();                 // (c, s) visible to the block
-                T c = s_ctrl[0], s = s_ctrl[1];
+                T c = cooperative_detail::load(BlockBarrier{}, s_ctrl);
+                T s = cooperative_detail::load(BlockBarrier{}, s_ctrl + 1);
                 if (s != static_cast<T>(0)) {    // uniform branch: same shared values everywhere
                     // Rotate rows/cols p,q of B. Index k owns entries
                     // {(k,p),(k,q),(p,k),(q,k)} — mirror writes keep B exactly
@@ -212,7 +213,7 @@ __device__ void syev_impl(SizeT n, const T *A, T *W, T *V, T *s_scratch)
             s_ctrl[2] = (off2 <= tol_off*tol_off) ? static_cast<T>(1) : static_cast<T>(0);
         }
         __syncthreads();                         // flag visible to the block
-        bool done = (s_ctrl[2] != static_cast<T>(0));
+        bool done = (cooperative_detail::load(BlockBarrier{}, s_ctrl + 2) != static_cast<T>(0));
         __syncthreads();                         // all reads done before rank 0 rewrites s_ctrl
         if (done) break;                         // uniform: same shared value everywhere
     }

@@ -174,7 +174,7 @@ cd docs && PATH="$(cd .. && pwd)/.venv/bin:$PATH" make all SPHINXOPTS="-W --keep
 
 `release.sh` requires a clean `main`, a changelog entry, a complete
 public-overload manifest (every documented overload compile-covered — an
-overload metric, not line coverage), all 21 declared behavioral obligations
+overload metric, not line coverage), all 22 declared behavioral obligations
 passing, a fresh full GPU receipt, and local receipt verification before it
 tags and pushes.
 

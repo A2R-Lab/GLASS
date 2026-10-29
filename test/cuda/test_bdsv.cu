@@ -15,13 +15,13 @@
 #include "../../glass.cuh"
 
 template <uint32_t KP, uint32_t SS, bool CHECK>
-__global__ void k_bdsv(float* M, float* v, int* fail) {
+__global__ void k_bdsv(float* __restrict__ M, float* __restrict__ v, int* __restrict__ fail) {
     extern __shared__ float s[];
     glass::block::bdsv<float, KP, SS, CHECK>(M, v, s, fail);
 }
 
 template <uint32_t KP, uint32_t SS>
-__global__ void k_bdsv_two_rhs(float* M, float* v1, float* v2) {
+__global__ void k_bdsv_two_rhs(float* __restrict__ M, float* __restrict__ v1, float* __restrict__ v2) {
     extern __shared__ float s[];
     glass::block::bdsv_factor<float, KP, SS>(M, s);
     glass::block::bdsv_solve<float, KP, SS>(M, v1, s);

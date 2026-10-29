@@ -1,0 +1,8 @@
+op,dtype,n,seed,threads,error,result
+warp_softmax,f32,3,0,32,9.22964004e-09,PASS
+warp_softmax,f32,3,1,32,8.5873326e-09,PASS
+warp_softmax,f32,3,2,32,9.72626875e-09,PASS
+warp_softmax,f64,7,0,32,4.3373513e-17,PASS
+warp_softmax,f64,7,1,32,4.62908586e-17,PASS
+warp_softmax,f64,7,2,32,2.27475701e-17,PASS
+syev,f32,3,0,1,1.26342732e-07,PASS
