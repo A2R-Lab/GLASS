@@ -1,3 +1,10 @@
+2026-10-29 follow-up: published pytest-gpu-proof 0.5.0 pinned in GLASS.
+Fresh all-eight-shard run at a1aecf3 passed 5,126 tests, no skips; 22/22
+behavioral obligations, 669/669 overload contracts, strict docs and shard scope
+passed. Final dependency update branch: release-pytest-gpu-proof-0.5.0.
+GLASS release version is awaiting the user choice (docs currently say 1.0.0;
+there are no published GLASS releases or version tags). No GLASS tag created.
+
 Implementation complete and full fresh validation passed: 5,126 tests across 8 shards.
 Source commit e537364; final receipt verified with current toolchain and 0.5.0.
 Validated delivery branch: fix-restricted-handoffs.
