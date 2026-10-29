@@ -1,0 +1,592 @@
+src/base/L1/argreduce.cuh:59: __syncthreads();
+src/base/L1/argreduce.cuh:70: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/argreduce.cuh:111: __syncthreads();
+src/base/L1/argreduce.cuh:122: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/argreduce.cuh:194: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/L1/argreduce.cuh:275: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/L1/asum.cuh:15: bar.sync();
+src/base/L1/asum.cuh:36: __syncthreads();
+src/base/L1/asum.cuh:38: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/asum.cuh:65: __syncthreads();
+src/base/L1/asum.cuh:72: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/asum.cuh:97: __syncthreads();
+src/base/L1/asum.cuh:104: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/axpy.cuh:11: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/axpy.cuh:38: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/axpy.cuh:66: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/axpy.cuh:173: __syncwarp();
+src/base/L1/axpy.cuh:193: __syncwarp();
+src/base/L1/axpy_strided.cuh:28: * @tparam TRAILING_SYNC Emit a trailing `__syncthreads()` (default true).
+src/base/L1/axpy_strided.cuh:42: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/axpy_strided.cuh:55: * shared scratch. `TRAILING_SYNC` gates a closing `__syncwarp()`. Full 32 lanes
+src/base/L1/axpy_strided.cuh:62: * @tparam TRAILING_SYNC Emit a trailing `__syncwarp()` (default true).
+src/base/L1/axpy_strided.cuh:75: if constexpr (TRAILING_SYNC) __syncwarp();
+src/base/L1/clip.cuh:12: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/copy.cuh:11: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/copy.cuh:37: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/copy.cuh:119: __syncwarp();
+src/base/L1/copy.cuh:138: __syncwarp();
+src/base/L1/copy_strided.cuh:27: * @tparam TRAILING_SYNC Emit a trailing `__syncthreads()` (default true).
+src/base/L1/copy_strided.cuh:41: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/copy_strided.cuh:54: * shared scratch. `TRAILING_SYNC` gates a closing `__syncwarp()`. Full 32 lanes
+src/base/L1/copy_strided.cuh:61: * @tparam TRAILING_SYNC Emit a trailing `__syncwarp()` (default true).
+src/base/L1/copy_strided.cuh:74: if constexpr (TRAILING_SYNC) __syncwarp();
+src/base/L1/dot.cuh:25: bar.sync();
+src/base/L1/dot.cuh:73: __syncthreads();
+src/base/L1/dot.cuh:75: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/dot.cuh:119: __syncthreads();
+src/base/L1/dot.cuh:126: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/dot.cuh:153: __syncthreads();
+src/base/L1/dot.cuh:160: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/dot_strided_coalesced.cuh:74: __syncthreads();
+src/base/L1/dot_strided_coalesced.cuh:81: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/elementwise_logic.cuh:22: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/elementwise_logic.cuh:44: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/elementwise_logic.cuh:66: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/elementwise_logic.cuh:88: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/elementwise_logic.cuh:110: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/elementwise_logic.cuh:133: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/elementwise_logic.cuh:155: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/elementwise_logic.cuh:176: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/elementwise_logic.cuh:197: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/elementwise_logic.cuh:219: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/elementwise_logic.cuh:241: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/elementwise_logic.cuh:263: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/elementwise_logic.cuh:285: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/elementwise_logic.cuh:307: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/elementwise_logic.cuh:329: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/iamax.cuh:53: * The routine ends on a trailing `__syncthreads()`, so `out[0]` is block-visible
+src/base/L1/iamax.cuh:74: * `__syncthreads()` are as in the runtime-`n` overload.
+src/base/L1/iamax.cuh:92: * lower-index tie-break; NaN skipped; trailing `__syncthreads()`.
+src/base/L1/iamax.cuh:166: * Ends on a trailing `__syncthreads()` so `out[0]` is block-visible.
+src/base/L1/iamax.cuh:183: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/iamax.cuh:225: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/iamax.cuh:258: * slot per warp). Ends on a trailing `__syncthreads()`.
+src/base/L1/ident.cuh:14: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/ident.cuh:40: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/ident.cuh:100: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/infnorm.cuh:31: bar.sync();
+src/base/L1/infnorm.cuh:34: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/norm.cuh:33: __syncthreads();
+src/base/L1/norm.cuh:38: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/norm.cuh:84: __syncthreads();
+src/base/L1/norm.cuh:89: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/norm.cuh:119: __syncthreads();
+src/base/L1/norm.cuh:126: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/norm.cuh:156: __syncthreads();
+src/base/L1/norm.cuh:163: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/nrm1_diff.cuh:35: __syncthreads();
+src/base/L1/nrm1_diff.cuh:37: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/nrm1_diff.cuh:64: __syncthreads();
+src/base/L1/nrm1_diff.cuh:71: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/nrm1_diff.cuh:98: __syncthreads();
+src/base/L1/nrm1_diff.cuh:105: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/nrm2.cuh:18: bar.sync();
+src/base/L1/nrm2.cuh:21: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/nrm2.cuh:45: __syncthreads();
+src/base/L1/nrm2.cuh:50: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/nrm2.cuh:79: __syncthreads();
+src/base/L1/nrm2.cuh:86: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/nrm2.cuh:115: __syncthreads();
+src/base/L1/nrm2.cuh:122: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/prefix_sum.cuh:24: __syncthreads();
+src/base/L1/prefix_sum.cuh:27: __syncthreads();
+src/base/L1/prefix_sum.cuh:29: __syncthreads();
+src/base/L1/prefix_sum.cuh:32: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/prefix_sum.cuh:51: __syncthreads();
+src/base/L1/prefix_sum.cuh:54: __syncthreads();
+src/base/L1/prefix_sum.cuh:56: __syncthreads();
+src/base/L1/prefix_sum.cuh:59: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/reduce.cuh:107: bar.sync();
+src/base/L1/reduce.cuh:110: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/reduce.cuh:150: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/reduce.cuh:168: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/reduce.cuh:208: __syncthreads();
+src/base/L1/reduce.cuh:215: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/reduce.cuh:240: __syncthreads();
+src/base/L1/reduce.cuh:247: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/reduce.cuh:261: // __syncthreads(), so s_scratch is safe to reuse afterwards.  Threads that
+src/base/L1/reduce.cuh:270: * `s_scratch[0]`; the routine ends on a `__syncthreads()`, so `s_scratch` is
+src/base/L1/reduce.cuh:289: __syncthreads();
+src/base/L1/reduce.cuh:296: __syncthreads();
+src/base/L1/reduce.cuh:298: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/reduce.cuh:334: __syncthreads();
+src/base/L1/reduce.cuh:344: __syncthreads();
+src/base/L1/reduce.cuh:346: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/reduce.cuh:405: __syncwarp();
+src/base/L1/reduce.cuh:425: __syncwarp();
+src/base/L1/rot.cuh:35: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/rot.cuh:46: * @tparam TRAILING_SYNC Emit a trailing `__syncthreads()` (default true).
+src/base/L1/rot.cuh:66: * @tparam TRAILING_SYNC Emit a trailing `__syncthreads()` (default true).
+src/base/L1/rot.cuh:130: * lane, both olds read into registers first). Trailing `__syncwarp()`.
+src/base/L1/rot.cuh:149: __syncwarp();
+src/base/L1/scal.cuh:11: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/scal.cuh:36: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/scal.cuh:117: __syncwarp();
+src/base/L1/scal.cuh:136: __syncwarp();
+src/base/L1/set_const.cuh:11: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/softmax.cuh:39: bar.sync();
+src/base/L1/softmax.cuh:44: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/softmax.cuh:85: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/L1/softmax.cuh:98: __syncthreads();
+src/base/L1/softmax.cuh:101: __syncthreads();                       // everyone read m before scratch is rewritten
+src/base/L1/softmax.cuh:110: __syncthreads();
+src/base/L1/softmax.cuh:114: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/softmax.cuh:139: __syncthreads();
+src/base/L1/softmax.cuh:142: __syncthreads();
+src/base/L1/softmax.cuh:145: __syncthreads();
+src/base/L1/softmax.cuh:148: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L1/softmax.cuh:179: __syncwarp();
+src/base/L1/swap.cuh:13: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/symmetrize.cuh:36: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/symmetrize.cuh:47: * @tparam TRAILING_SYNC Emit a trailing `__syncthreads()` (default true).
+src/base/L1/symmetrize.cuh:64: * @tparam TRAILING_SYNC Emit a trailing `__syncthreads()` (default true).
+src/base/L1/symmetrize.cuh:81: // is needed; a trailing __syncwarp() orders the writes for the caller.
+src/base/L1/symmetrize.cuh:89: * one lane; trailing `__syncwarp()`. NumPy equivalent: `A = 0.5*(A + A.T)`.
+src/base/L1/symmetrize.cuh:107: __syncwarp();
+src/base/L1/transpose.cuh:26: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L1/transpose.cuh:58: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L2/gemv.cuh:91: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L2/gemv.cuh:117: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L2/gemv.cuh:197: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L2/gemv.cuh:222: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L2/gemv.cuh:265: __syncwarp();
+src/base/L2/gemv.cuh:291: __syncwarp();
+src/base/L2/gemv_reduced.cuh:65: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/L2/gemv_reduced.cuh:78: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L2/gemv_reduced.cuh:96: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L2/gemv_reduced.cuh:110: * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
+src/base/L2/gemv_reduced.cuh:118: if constexpr (TRAILING_SYNC) __syncwarp();
+src/base/L2/gemv_reduced.cuh:132: if constexpr (TRAILING_SYNC) __syncwarp();
+src/base/L2/ger.cuh:29: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L2/ger.cuh:60: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L2/trsv.cuh:35: // barriers out: mandatory, not an optimization. A raw `__syncthreads()` here is
+src/base/L2/trsv.cuh:55: Bar{}.sync();              // all threads read the resolved pivot
+src/base/L2/trsv.cuh:69: if (TRAILING_SYNC || step + 1 < n) Bar{}.sync();
+src/base/L2/trsv.cuh:85: * `__syncthreads()` so it composes without a defensive barrier.
+src/base/L2/trsv.cuh:189: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L2/trsv.cuh:213: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L2/trsv.cuh:236: * with a single barrier in between. Ends with a trailing `__syncthreads()`.
+src/base/L2/trsv.cuh:254: __syncthreads();                              // scratch fully written before read-back
+src/base/L2/trsv.cuh:256: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L2/trsv.cuh:280: __syncthreads();
+src/base/L2/trsv.cuh:282: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L3/congruence.cuh:110: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/L3/congruence.cuh:125: __syncthreads();                         // MX visible before the Xᵀ·MX contraction
+src/base/L3/congruence.cuh:129: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L3/congruence.cuh:144: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/L3/congruence.cuh:159: __syncthreads();
+src/base/L3/congruence.cuh:163: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L3/congruence.cuh:193: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/L3/congruence.cuh:213: __syncthreads();                          // Gᵀ visible before the congruence
+src/base/L3/congruence.cuh:229: * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
+src/base/L3/congruence.cuh:237: __syncwarp();
+src/base/L3/congruence.cuh:240: if constexpr (TRAILING_SYNC) __syncwarp();
+src/base/L3/congruence.cuh:249: * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
+src/base/L3/congruence.cuh:257: __syncwarp();
+src/base/L3/congruence.cuh:260: if constexpr (TRAILING_SYNC) __syncwarp();
+src/base/L3/congruence.cuh:271: * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
+src/base/L3/congruence.cuh:285: __syncwarp();
+src/base/L3/dimm.cuh:39: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L3/dimm.cuh:64: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L3/eigh.cuh:154: __syncthreads();
+src/base/L3/eigh.cuh:182: __syncthreads();                 // (c, s) visible to the block
+src/base/L3/eigh.cuh:198: __syncthreads();                 // rows settled before columns read them
+src/base/L3/eigh.cuh:218: __syncthreads();                 // round complete before the next (c, s)
+src/base/L3/eigh.cuh:225: __syncthreads();                     // outputs valid for every thread on return
+src/base/L3/eigh.cuh:292: __syncthreads();                   // projected A valid for every thread on return
+src/base/L3/gemm.cuh:374: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L3/gemm.cuh:400: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L3/gemm.cuh:431: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L3/gemm.cuh:456: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L3/gemm.cuh:508: __syncthreads();
+src/base/L3/gemm.cuh:513: __syncthreads();
+src/base/L3/gemm_reduced.cuh:105: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true) so callers can read C safely.
+src/base/L3/gemm_reduced.cuh:119: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L3/gemm_reduced.cuh:133: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/L3/gemm_reduced.cuh:146: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L3/gemm_reduced.cuh:167: * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true) so lanes can read C safely.
+src/base/L3/gemm_reduced.cuh:180: if constexpr (TRAILING_SYNC) __syncwarp();
+src/base/L3/gemm_reduced.cuh:194: * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
+src/base/L3/gemm_reduced.cuh:206: if constexpr (TRAILING_SYNC) __syncwarp();
+src/base/L3/getrf.cuh:54: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L3/getrf.cuh:151: bar.sync();
+src/base/L3/getrf.cuh:160: bar.sync();
+src/base/L3/getrf.cuh:175: bar.sync();
+src/base/L3/getrf.cuh:185: bar.sync();
+src/base/L3/inv.cuh:37: bar.sync();
+src/base/L3/inv.cuh:44: if (TRAILING_SYNC || pivRC + 1 < dimA) bar.sync();
+src/base/L3/inv.cuh:134: *      broadcast to all threads through a shared slot + `__syncthreads()` (never
+src/base/L3/inv.cuh:186: __syncthreads();
+src/base/L3/inv.cuh:197: __syncthreads();
+src/base/L3/inv.cuh:204: __syncthreads();
+src/base/L3/inv.cuh:211: __syncthreads();
+src/base/L3/inv.cuh:314: __syncthreads();
+src/base/L3/inv.cuh:332: if (TRAILING_SYNC || pivRC + 1 < MAX_DIM) __syncthreads();
+src/base/L3/inv.cuh:438: __syncthreads();
+src/base/L3/inv.cuh:448: __syncthreads();
+src/base/L3/inv.cuh:464: if (TRAILING_SYNC || pivRC + 1 < dimA) __syncthreads();
+src/base/L3/inv.cuh:507: * `s_scratch`, `__syncwarp()`, then a lane-strided Gauss-Jordan cell
+src/base/L3/inv.cuh:508: * UPDATE over the `N x (N+1)` active window, `__syncwarp()` — mirroring
+src/base/L3/inv.cuh:541: __syncwarp();
+src/base/L3/inv.cuh:552: __syncwarp();
+src/base/L3/ldlt.cuh:183: __syncthreads();          // s_idx safe to rewrite next step
+src/base/L3/ldlt.cuh:199: __syncthreads();          // row magnitudes visible to argmax
+src/base/L3/ldlt.cuh:224: __syncthreads();          // off-diagonal swaps done
+src/base/L3/ldlt.cuh:230: __syncthreads();          // diagonal swap visible before elim
+src/base/L3/ldlt.cuh:254: __syncthreads();          // trailing update done
+src/base/L3/ldlt.cuh:258: __syncthreads();          // column k finalized
+src/base/L3/ldlt.cuh:297: __syncthreads();          // trailing update done
+src/base/L3/ldlt.cuh:305: __syncthreads();          // block columns finalized
+src/base/L3/ldlt.cuh:331: __syncthreads();                     // all threads read finished D_j
+src/base/L3/ldlt.cuh:340: __syncthreads();                     // trailing column done before next col
+src/base/L3/ldlt.cuh:441: __syncthreads();
+src/base/L3/ldlt.cuh:451: __syncthreads();
+src/base/L3/ldlt.cuh:457: __syncthreads();
+src/base/L3/ldlt.cuh:466: __syncthreads();
+src/base/L3/ldlt.cuh:485: __syncthreads();
+src/base/L3/ldlt.cuh:496: __syncthreads();
+src/base/L3/ldlt.cuh:503: __syncthreads();
+src/base/L3/ldlt.cuh:522: __syncthreads();
+src/base/L3/ldlt.cuh:621: __syncwarp();
+src/base/L3/ldlt.cuh:647: __syncwarp();
+src/base/L3/ldlt.cuh:651: __syncwarp();
+src/base/L3/ldlt.cuh:656: __syncwarp();
+src/base/L3/posv.cuh:10: * `__syncthreads()`, so the factor and the two solves compose with NO inter-call
+src/base/L3/posv.cuh:26: * prismatic/revolute Jacobians). Trailing `__syncthreads()` so the shifted A is
+src/base/L3/posv.cuh:38: __syncthreads();
+src/base/L3/posv.cuh:157: * before the solve (its trailing `__syncthreads()`); all columns are then solved
+src/base/L3/potrf.cuh:47: bar.sync();
+src/base/L3/potrf.cuh:55: if (TRAILING_SYNC || row + 1 < n) bar.sync();
+src/base/L3/potrf.cuh:106: __syncthreads();
+src/base/L3/potrf.cuh:119: if (TRAILING_SYNC || row + 1 < MAX_DIM) __syncthreads();
+src/base/L3/potrf.cuh:242: __syncwarp();
+src/base/L3/riccati.cuh:43: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/L3/riccati.cuh:64: __syncthreads();
+src/base/L3/riccati.cuh:71: __syncthreads();
+src/base/L3/riccati.cuh:114: __syncwarp();
+src/base/L3/riccati.cuh:119: __syncwarp();
+src/base/L3/syev.cuh:127: __syncthreads();
+src/base/L3/syev.cuh:162: __syncthreads();                 // (c, s) visible to the block
+src/base/L3/syev.cuh:202: __syncthreads();
+src/base/L3/syev.cuh:214: __syncthreads();                         // flag visible to the block
+src/base/L3/syev.cuh:216: __syncthreads();                         // all reads done before rank 0 rewrites s_ctrl
+src/base/L3/syev.cuh:231: __syncthreads();                             // permutation visible to the block
+src/base/L3/syev.cuh:237: __syncthreads();                             // W extracted before B is overwritten
+src/base/L3/syev.cuh:240: __syncthreads();                             // staging complete before the permuted write
+src/base/L3/syev.cuh:246: __syncthreads();                         // outputs valid for every thread on return
+src/base/L3/syev.cuh:347: __syncthreads();                   // clamped A valid for every thread on return
+src/base/L3/symm.cuh:58: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L3/symm.cuh:73: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/L3/symm.cuh:99: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/L3/symm.cuh:126: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/L3/symm.cuh:151: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/L3/symm.cuh:196: if constexpr (TRAILING_SYNC) bar.sync();
+src/base/L3/symm.cuh:217: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/L3/symm.cuh:247: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/L3/syrk.cuh:323: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L3/syrk.cuh:353: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L3/syrk.cuh:388: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L3/syrk.cuh:417: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L3/syrk.cuh:450: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L3/syrk.cuh:479: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L3/syrk.cuh:513: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L3/syrk.cuh:543: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L3/syrk_reduced.cuh:92: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/L3/syrk_reduced.cuh:104: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L3/syrk_reduced.cuh:122: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L3/syrk_reduced.cuh:136: * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
+src/base/L3/syrk_reduced.cuh:144: if constexpr (TRAILING_SYNC) __syncwarp();
+src/base/L3/syrk_reduced.cuh:158: if constexpr (TRAILING_SYNC) __syncwarp();
+src/base/L3/tensor_contract.cuh:157: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/L3/tensor_contract.cuh:170: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L3/tensor_contract.cuh:185: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/L3/tensor_contract.cuh:198: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/L3/tensor_contract.cuh:213: * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
+src/base/L3/tensor_contract.cuh:223: if constexpr (TRAILING_SYNC) __syncwarp();
+src/base/L3/tensor_contract.cuh:232: * @tparam TRAILING_SYNC  Emit a trailing `__syncwarp()` (default true).
+src/base/L3/tensor_contract.cuh:241: if constexpr (TRAILING_SYNC) __syncwarp();
+src/base/L3/trsm.cuh:40: bar.sync();
+src/base/L3/trsm.cuh:52: if (TRAILING_SYNC || step + 1 < n) bar.sync();
+src/base/L3/trsm.cuh:161: __syncwarp();
+src/base/L3/trsm.cuh:172: * per-step `__syncwarp()` across every right-hand side. No shared scratch,
+src/base/L3/trsm.cuh:198: __syncwarp();
+src/base/L3/trsm.cuh:206: __syncwarp();
+src/base/L3/trsm.cuh:264: * `__syncwarp()` so the shifted A is warp-visible before factoring. Internal.
+src/base/L3/trsm.cuh:274: __syncwarp();
+src/base/banded/bdmv.cuh:22: * No trailing `__syncthreads()` — the caller barriers before reusing the output
+src/base/banded/bdmv.cuh:53: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/banded/bdmv.cuh:89: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/banded/block_access.cuh:43: * @tparam TRAILING_SYNC Emit a trailing `__syncthreads()` (default true).
+src/base/banded/block_access.cuh:60: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/banded/block_access.cuh:71: * @tparam TRAILING_SYNC Emit a trailing `__syncthreads()` (default true).
+src/base/banded/block_access.cuh:88: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/banded/block_access.cuh:99: * Warp form of `store_block`; `TRAILING_SYNC` gates a closing `__syncwarp()`.
+src/base/banded/block_access.cuh:113: if constexpr (TRAILING_SYNC) __syncwarp();
+src/base/banded/block_access.cuh:119: * Warp form of `load_block`; `TRAILING_SYNC` gates a closing `__syncwarp()`.
+src/base/banded/block_access.cuh:133: if constexpr (TRAILING_SYNC) __syncwarp();
+src/base/barrier.cuh:11: * + `__syncthreads()`); the `glass::cgrps::` surface passes a `GroupBarrier`
+src/base/barrier.cuh:14: * `bar.sync()` is what lets one body serve both surfaces — that barrier
+src/base/barrier.cuh:48: __device__ __forceinline__ void sync() const { __syncthreads(); }
+src/base/dispatch.cuh:49: __syncthreads();
+src/base/dispatch.cuh:56: __syncthreads();
+src/base/est/svd3.cuh:220: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/est/svd3.cuh:234: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/est/svd3.cuh:264: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/est/svd3.cuh:295: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/est/svd3.cuh:312: __syncwarp();
+src/base/est/svd3.cuh:325: __syncwarp();
+src/base/est/svd3.cuh:336: __syncwarp();
+src/base/lie/pose.cuh:102: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/lie/pose.cuh:115: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/lie/pose.cuh:142: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/lie/pose.cuh:188: __syncwarp();
+src/base/lie/pose.cuh:198: __syncwarp();
+src/base/lie/quat.cuh:222: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/lie/quat.cuh:234: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/lie/quat.cuh:256: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/lie/quat.cuh:280: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/lie/quat.cuh:302: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/lie/quat.cuh:326: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/lie/quat.cuh:349: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/lie/quat.cuh:374: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/lie/quat.cuh:400: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/lie/quat.cuh:427: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/lie/quat.cuh:451: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/lie/quat.cuh:460: // copy-out, `__syncwarp()` close. For warp-per-problem kernels. Outputs must
+src/base/lie/quat.cuh:470: __syncwarp();
+src/base/lie/quat.cuh:483: __syncwarp();
+src/base/lie/quat.cuh:493: __syncwarp();
+src/base/lie/quat.cuh:503: __syncwarp();
+src/base/lie/quat.cuh:513: __syncwarp();
+src/base/lie/quat.cuh:523: __syncwarp();
+src/base/lie/quat.cuh:533: __syncwarp();
+src/base/lie/quat.cuh:543: __syncwarp();
+src/base/lie/quat.cuh:557: __syncwarp();
+src/base/lie/quat.cuh:567: __syncwarp();
+src/base/lie/se3.cuh:400: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/lie/se3.cuh:412: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/lie/se3.cuh:429: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/lie/se3.cuh:442: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/lie/se3.cuh:456: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/lie/se3.cuh:470: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/lie/se3.cuh:492: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/lie/se3.cuh:514: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/lie/se3.cuh:535: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/lie/se3.cuh:546: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/lie/se3.cuh:561: __syncwarp();
+src/base/lie/se3.cuh:571: __syncwarp();
+src/base/lie/se3.cuh:582: __syncwarp();
+src/base/lie/se3.cuh:592: __syncwarp();
+src/base/lie/se3.cuh:602: __syncwarp();
+src/base/lie/se3.cuh:611: __syncwarp();
+src/base/lie/so3.cuh:170: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/lie/so3.cuh:181: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/lie/so3.cuh:202: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/lie/so3.cuh:226: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/lie/so3.cuh:247: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/lie/so3.cuh:269: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/lie/so3.cuh:290: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/lie/so3.cuh:310: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/lie/so3.cuh:319: // copy-out, `__syncwarp()` close. Outputs must not alias inputs.
+src/base/lie/so3.cuh:328: __syncwarp();
+src/base/lie/so3.cuh:338: __syncwarp();
+src/base/lie/so3.cuh:348: __syncwarp();
+src/base/lie/so3.cuh:358: __syncwarp();
+src/base/lie/so3.cuh:368: __syncwarp();
+src/base/lie/so3.cuh:378: __syncwarp();
+src/base/lie/so3.cuh:388: __syncwarp();
+src/base/pcg/solve.cuh:11: * independent solve. It uses only `__syncthreads()` (no cooperative groups);
+src/base/pcg/solve.cuh:89: __syncthreads();
+src/base/pcg/solve.cuh:92: __syncthreads();
+src/base/pcg/solve.cuh:95: __syncthreads();
+src/base/pcg/solve.cuh:97: __syncthreads();
+src/base/pcg/solve.cuh:100: __syncthreads();
+src/base/pcg/solve.cuh:103: __syncthreads();
+src/base/pcg/solve.cuh:109: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/pcg/solve.cuh:112: __syncthreads();  // scalar-bank reads above complete before rank 0 writes s_rho_init
+src/base/pcg/solve.cuh:114: __syncthreads();
+src/base/pcg/solve.cuh:121: __syncthreads();
+src/base/pcg/solve.cuh:124: __syncthreads();
+src/base/pcg/solve.cuh:126: __syncthreads();
+src/base/pcg/solve.cuh:130: __syncthreads();
+src/base/pcg/solve.cuh:133: __syncthreads();
+src/base/pcg/solve.cuh:136: __syncthreads();
+src/base/pcg/solve.cuh:140: __syncthreads();  // scalar-bank reads above complete before rank 0 rewrites s_beta/s_rho
+src/base/pcg/solve.cuh:143: __syncthreads();
+src/base/pcg/solve.cuh:146: __syncthreads();
+src/base/pcg/solve.cuh:151: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/proj/cone.cuh:93: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/proj/cone.cuh:104: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/proj/cone.cuh:156: __syncwarp();
+src/base/spatial/cross.cuh:192: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/spatial/cross.cuh:202: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/spatial/cross.cuh:221: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/spatial/cross.cuh:234: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/spatial/cross.cuh:254: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/spatial/cross.cuh:277: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/spatial/cross.cuh:297: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/spatial/cross.cuh:306: // `__syncwarp()` close. Outputs must not alias inputs.
+src/base/spatial/cross.cuh:314: __syncwarp();
+src/base/spatial/cross.cuh:323: __syncwarp();
+src/base/spatial/cross.cuh:332: __syncwarp();
+src/base/spatial/cross.cuh:341: __syncwarp();
+src/base/spatial/cross.cuh:350: __syncwarp();
+src/base/spatial/inertia.cuh:90: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/spatial/inertia.cuh:100: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/spatial/inertia.cuh:114: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/spatial/inertia.cuh:128: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/spatial/inertia.cuh:142: __syncwarp();
+src/base/spatial/inertia.cuh:152: __syncwarp();
+src/base/spatial/transform.cuh:146: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/spatial/transform.cuh:157: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/spatial/transform.cuh:176: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/spatial/transform.cuh:193: * @tparam TRAILING_SYNC  Emit a trailing `__syncthreads()` (default true).
+src/base/spatial/transform.cuh:208: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/spatial/transform.cuh:236: if constexpr (TRAILING_SYNC) __syncthreads();
+src/base/spatial/transform.cuh:250: __syncwarp();
+src/base/spatial/transform.cuh:259: __syncwarp();
+src/base/spatial/transform.cuh:270: __syncwarp();
+src/base/spatial/transform.cuh:281: __syncwarp();
+src/cgrps/l2.cuh:167: * @tparam TRAILING_SYNC  Emit a trailing `g.sync()` (default true).
+src/cgrps/l2.cuh:176: if constexpr (TRAILING_SYNC) g.sync();
+src/cgrps/l2.cuh:190: if constexpr (TRAILING_SYNC) g.sync();
+src/cgrps/l3.cuh:218: * @tparam TRAILING_SYNC  Emit a trailing `g.sync()` (default true).
+src/cgrps/l3.cuh:232: if constexpr (TRAILING_SYNC) g.sync();
+src/cgrps/l3.cuh:246: * @tparam TRAILING_SYNC  Emit a trailing `g.sync()` (default true).
+src/cgrps/l3.cuh:259: if constexpr (TRAILING_SYNC) g.sync();
+src/cgrps/l3.cuh:272: * @tparam TRAILING_SYNC  Emit a trailing `g.sync()` (default true).
+src/cgrps/l3.cuh:284: if constexpr (TRAILING_SYNC) g.sync();
+src/cgrps/l3.cuh:293: * @tparam TRAILING_SYNC  Emit a trailing `g.sync()` (default true).
+src/cgrps/l3.cuh:304: if constexpr (TRAILING_SYNC) g.sync();
+src/cgrps/l3.cuh:317: * @tparam TRAILING_SYNC  Emit a trailing `g.sync()` (default true).
+src/cgrps/l3.cuh:327: g.sync();
+src/cgrps/l3.cuh:330: if constexpr (TRAILING_SYNC) g.sync();
+src/cgrps/l3.cuh:339: * @tparam TRAILING_SYNC  Emit a trailing `g.sync()` (default true).
+src/cgrps/l3.cuh:349: g.sync();
+src/cgrps/l3.cuh:352: if constexpr (TRAILING_SYNC) g.sync();
+src/cgrps/l3.cuh:363: * @tparam TRAILING_SYNC  Emit a trailing `g.sync()` (default true).
+src/cgrps/l3.cuh:372: if constexpr (TRAILING_SYNC) g.sync();
+src/cgrps/l3.cuh:386: if constexpr (TRAILING_SYNC) g.sync();
+src/internal/box_qp.cuh:72: __syncthreads();
+src/internal/box_qp.cuh:95: __syncthreads();
+src/internal/box_qp.cuh:104: __syncthreads();
+src/internal/box_qp.cuh:106: __syncthreads();
+src/internal/box_qp.cuh:110: __syncthreads();
+src/internal/box_qp.cuh:112: __syncthreads();
+src/internal/box_qp.cuh:114: __syncthreads();
+src/internal/box_qp.cuh:116: __syncthreads();
+src/internal/box_qp.cuh:122: __syncthreads();
+src/internal/box_qp.cuh:128: __syncthreads();
+src/internal/box_qp.cuh:130: __syncthreads();
+src/internal/box_qp.cuh:132: __syncthreads();
+src/internal/box_qp.cuh:134: __syncthreads();
+src/internal/box_qp.cuh:136: __syncthreads();
+src/internal/box_qp.cuh:139: __syncthreads();
+src/internal/box_qp.cuh:147: __syncthreads();
+src/nvidia/l1.cuh:15: // returns with all threads at a __syncthreads() so callers can read the
+src/nvidia/l1.cuh:18: // its own __syncthreads(). The LEADING sync (before the CUB BlockReduce) is
+src/nvidia/l1.cuh:48: * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
+src/nvidia/l1.cuh:60: __syncthreads();
+src/nvidia/l1.cuh:65: __syncthreads();
+src/nvidia/l1.cuh:79: * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
+src/nvidia/l1.cuh:93: __syncthreads();
+src/nvidia/l1.cuh:98: __syncthreads();
+src/nvidia/l1.cuh:112: * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
+src/nvidia/l1.cuh:125: __syncthreads();
+src/nvidia/l1.cuh:130: __syncthreads();
+src/nvidia/l1_warp.cuh:14: // TRAILING_SYNC emits __syncwarp() (not __syncthreads()); the leading
+src/nvidia/l1_warp.cuh:15: // __syncwarp() before the CUB call is not gated (TempStorage quiescence).
+src/nvidia/l1_warp.cuh:32: * @tparam TRAILING_SYNC Emit a trailing __syncwarp() before return (default true).
+src/nvidia/l1_warp.cuh:44: __syncwarp();
+src/nvidia/l1_warp.cuh:49: __syncwarp();
+src/nvidia/l1_warp.cuh:62: * @tparam TRAILING_SYNC Emit a trailing __syncwarp() before return (default true).
+src/nvidia/l1_warp.cuh:76: __syncwarp();
+src/nvidia/l1_warp.cuh:81: __syncwarp();
+src/nvidia/l1_warp.cuh:94: * @tparam TRAILING_SYNC Emit a trailing __syncwarp() before return (default true).
+src/nvidia/l1_warp.cuh:107: __syncwarp();
+src/nvidia/l1_warp.cuh:112: __syncwarp();
+src/nvidia/l2.cuh:61: * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
+src/nvidia/l2.cuh:184: __syncthreads();                                                                    \
+src/nvidia/l2.cuh:188: __syncthreads();                                                                \
+src/nvidia/l2.cuh:269: __syncthreads();                                                                    \
+src/nvidia/l2.cuh:273: __syncthreads();                                                                \
+src/nvidia/l2.cuh:389: * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
+src/nvidia/l2.cuh:421: __syncthreads();
+src/nvidia/l3.cuh:99: * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
+src/nvidia/l3.cuh:234: __syncthreads();                                                                    \
+src/nvidia/l3.cuh:238: __syncthreads();                                                                \
+src/nvidia/l3.cuh:322: __syncthreads();                                                                    \
+src/nvidia/l3.cuh:326: __syncthreads();                                                                \
+src/nvidia/l3.cuh:473: * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
+src/nvidia/l3.cuh:512: __syncthreads();
+src/nvidia/l3.cuh:589: * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
+src/nvidia/l3.cuh:710: __syncthreads();                                                                    \
+src/nvidia/l3.cuh:714: __syncthreads();                                                                \
+src/nvidia/l3_simt.cuh:36: // TRAILING_SYNC: when true (default), the function emits a __syncthreads()
+src/nvidia/l3_simt.cuh:63: * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
+src/nvidia/l3_simt.cuh:99: __syncthreads();
+src/nvidia/l3_simt.cuh:152: // fusing with subsequent work that already does its own __syncthreads().
+src/nvidia/l3_simt.cuh:174: * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
+src/nvidia/l3_simt.cuh:213: __syncthreads();
+src/nvidia/lapack.cuh:63: * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
+src/nvidia/lapack.cuh:104: * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
+src/nvidia/lapack.cuh:162: __syncthreads();                                                                  \
+src/nvidia/lapack.cuh:165: __syncthreads();                                                                  \
+src/nvidia/lapack.cuh:168: __syncthreads();                                                              \
+src/nvidia/lapack.cuh:215: __syncthreads();                                                                  \
+src/nvidia/lapack.cuh:218: __syncthreads();                                                                  \
+src/nvidia/lapack.cuh:221: __syncthreads();                                                              \
+src/nvidia/lapack.cuh:279: __syncthreads();                                                                  \
+src/nvidia/lapack.cuh:287: __syncthreads();                                                              \
+src/nvidia/lapack.cuh:290: __syncthreads();                                                                  \
+src/nvidia/lapack.cuh:293: __syncthreads();                                                              \
+src/nvidia/lapack.cuh:347: __syncthreads();                                                                  \
+src/nvidia/lapack.cuh:355: __syncthreads();                                                              \
+src/nvidia/lapack.cuh:358: __syncthreads();                                                                  \
+src/nvidia/lapack.cuh:361: __syncthreads();                                                              \
+src/nvidia/lapack.cuh:450: * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
+src/nvidia/lapack.cuh:504: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:507: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:511: __syncthreads();                                                                 \
+src/nvidia/lapack.cuh:552: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:555: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:559: __syncthreads();                                                                 \
+src/nvidia/lapack.cuh:657: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:659: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:661: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:697: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:699: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:701: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:783: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:786: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:788: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:821: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:824: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:826: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:914: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:916: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:918: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:953: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:955: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:957: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:995: * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
+src/nvidia/lapack.cuh:1048: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:1051: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:1055: __syncthreads();                                                                 \
+src/nvidia/lapack.cuh:1095: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:1098: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:1102: __syncthreads();                                                                 \
+src/nvidia/lapack.cuh:1195: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:1197: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:1199: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:1232: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:1234: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:1236: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:1278: * @tparam TRAILING_SYNC Emit a trailing __syncthreads() before return (default true).
+src/nvidia/lapack.cuh:1335: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:1337: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:1340: __syncthreads();                                                                 \
+src/nvidia/lapack.cuh:1381: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:1383: __syncthreads();                                                                     \
+src/nvidia/lapack.cuh:1386: __syncthreads();                                                                 \

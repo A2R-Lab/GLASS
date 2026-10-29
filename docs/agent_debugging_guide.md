@@ -263,8 +263,15 @@ Nasty properties, so check for it deliberately:
   in-place-without-`__restrict__` correct ⇒ a `__restrict__` aliasing miscompile, not your algebra.
   Don't "fix" it by dropping `__restrict__` (you lose the optimization) — kill the shared re-read.
 - **`glass::warp::reduce` is already safe** (shfl-based); `warp::gemm` is flat (no broadcast). The
-  block-scoped `cgrps`/`__syncthreads` twins are safe *today* (full-block fence) but carry a note to
-  prefer `g.shfl(pivot, 0)` if ever called with a warp-tiled group.
+  block-scoped twins also need explicit handoff reads: issue #44 reproduced
+  stale values through restricted callers despite full-block barriers. Use
+  `cooperative_detail::load(bar, ptr)` for a value whose ownership changes
+  between threads; keep the synchronization that orders its producer and
+  consumer. The helper uses a volatile load for cooperating scopes and a
+  normal load for `ThreadBarrier`. It is not an atomic or a substitute for a
+  barrier. Regression coverage lives in `test/test_restrict.py` and compiles
+  at `-O3`, including partial blocks, true runtime sizes, global/shared buffers,
+  multidimensional launches, and immediate consumers after return.
 
 ### 1h. Loop-unroll copies contract FMAs differently → thread-count NON-invariance inside ONE kernel
 

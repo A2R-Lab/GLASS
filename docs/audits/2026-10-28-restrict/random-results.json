@@ -1,0 +1,2162 @@
+[
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 3,
+    "seed": 0,
+    "threads": 2,
+    "error": 5.15012929319571e-08,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 3,
+    "seed": 0,
+    "threads": 2,
+    "error": 3.047854727130859e-08,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 3,
+    "seed": 0,
+    "threads": 2,
+    "error": 7.41922345145059e-08,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 3,
+    "seed": 0,
+    "threads": 2,
+    "error": 1.8818812186984548e-07,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 3,
+    "seed": 1,
+    "threads": 7,
+    "error": 5.9479168480104766e-08,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 3,
+    "seed": 1,
+    "threads": 7,
+    "error": 3.471346575183231e-08,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 3,
+    "seed": 1,
+    "threads": 7,
+    "error": 2.3968808205569317e-08,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 3,
+    "seed": 1,
+    "threads": 7,
+    "error": 2.2570568267204733e-07,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 3,
+    "seed": 2,
+    "threads": 33,
+    "error": 7.555325238416526e-08,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 3,
+    "seed": 2,
+    "threads": 33,
+    "error": 3.270850129212053e-08,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 3,
+    "seed": 2,
+    "threads": 33,
+    "error": 7.94081283657565e-08,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 3,
+    "seed": 2,
+    "threads": 33,
+    "error": 8.226929048852185e-08,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 3,
+    "seed": 3,
+    "threads": 64,
+    "error": 3.82255773935896e-08,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 3,
+    "seed": 3,
+    "threads": 64,
+    "error": 4.167636309857833e-08,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 3,
+    "seed": 3,
+    "threads": 64,
+    "error": 5.512226449875901e-08,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 3,
+    "seed": 3,
+    "threads": 64,
+    "error": 1.9672542178383145e-07,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 3,
+    "seed": 4,
+    "threads": 2,
+    "error": 3.8916772084206156e-08,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 3,
+    "seed": 4,
+    "threads": 2,
+    "error": 3.4504983304749956e-08,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 3,
+    "seed": 4,
+    "threads": 2,
+    "error": 6.720392020716402e-08,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 3,
+    "seed": 4,
+    "threads": 2,
+    "error": 2.9638496115916914e-07,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 3,
+    "seed": 5,
+    "threads": 7,
+    "error": 4.927869774664117e-08,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 3,
+    "seed": 5,
+    "threads": 7,
+    "error": 1.7051909472219002e-08,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 3,
+    "seed": 5,
+    "threads": 7,
+    "error": 1.2388995720393182e-07,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 3,
+    "seed": 5,
+    "threads": 7,
+    "error": 1.616826959330231e-07,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 3,
+    "seed": 6,
+    "threads": 33,
+    "error": 6.711062230756348e-08,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 3,
+    "seed": 6,
+    "threads": 33,
+    "error": 4.861659987615616e-08,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 3,
+    "seed": 6,
+    "threads": 33,
+    "error": 2.5984368536751373e-07,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 3,
+    "seed": 6,
+    "threads": 33,
+    "error": 3.231847019821723e-07,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 3,
+    "seed": 7,
+    "threads": 64,
+    "error": 5.6342733494538057e-08,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 3,
+    "seed": 7,
+    "threads": 64,
+    "error": 4.940863873217899e-08,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 3,
+    "seed": 7,
+    "threads": 64,
+    "error": 2.981927105080367e-08,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 3,
+    "seed": 7,
+    "threads": 64,
+    "error": 4.369400110440343e-08,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 3,
+    "seed": 8,
+    "threads": 2,
+    "error": 4.661641841545905e-08,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 3,
+    "seed": 8,
+    "threads": 2,
+    "error": 2.7897107586286076e-08,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 3,
+    "seed": 8,
+    "threads": 2,
+    "error": 2.1863832855147747e-08,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 3,
+    "seed": 8,
+    "threads": 2,
+    "error": 1.062666828329329e-07,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 3,
+    "seed": 9,
+    "threads": 7,
+    "error": 4.0356659465033346e-08,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 3,
+    "seed": 9,
+    "threads": 7,
+    "error": 6.801204661583807e-08,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 3,
+    "seed": 9,
+    "threads": 7,
+    "error": 6.060969484190652e-08,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 3,
+    "seed": 9,
+    "threads": 7,
+    "error": 2.2697415856811998e-07,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 7,
+    "seed": 0,
+    "threads": 2,
+    "error": 9.593168993082197e-08,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 7,
+    "seed": 0,
+    "threads": 2,
+    "error": 5.40446461082609e-08,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 7,
+    "seed": 0,
+    "threads": 2,
+    "error": 1.3301581670980826e-07,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 7,
+    "seed": 0,
+    "threads": 2,
+    "error": 4.4542846218835394e-07,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 7,
+    "seed": 1,
+    "threads": 7,
+    "error": 1.5476398048313325e-07,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 7,
+    "seed": 1,
+    "threads": 7,
+    "error": 7.370917421337272e-08,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 7,
+    "seed": 1,
+    "threads": 7,
+    "error": 1.0471810511532201e-07,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 7,
+    "seed": 1,
+    "threads": 7,
+    "error": 8.022310841305637e-07,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 7,
+    "seed": 2,
+    "threads": 33,
+    "error": 1.0853089172910894e-07,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 7,
+    "seed": 2,
+    "threads": 33,
+    "error": 7.313390962304656e-08,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 7,
+    "seed": 2,
+    "threads": 33,
+    "error": 6.576699160003654e-08,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 7,
+    "seed": 2,
+    "threads": 33,
+    "error": 6.135795059464224e-07,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 7,
+    "seed": 3,
+    "threads": 64,
+    "error": 8.035406240823646e-08,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 7,
+    "seed": 3,
+    "threads": 64,
+    "error": 4.611098532752996e-08,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 7,
+    "seed": 3,
+    "threads": 64,
+    "error": 1.0556350400854178e-07,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 7,
+    "seed": 3,
+    "threads": 64,
+    "error": 6.303105995489238e-07,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 7,
+    "seed": 4,
+    "threads": 2,
+    "error": 7.412619763012732e-08,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 7,
+    "seed": 4,
+    "threads": 2,
+    "error": 5.5049787213328194e-08,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 7,
+    "seed": 4,
+    "threads": 2,
+    "error": 4.5472946242502604e-08,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 7,
+    "seed": 4,
+    "threads": 2,
+    "error": 4.754501610280252e-07,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 7,
+    "seed": 5,
+    "threads": 7,
+    "error": 6.424987081152297e-08,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 7,
+    "seed": 5,
+    "threads": 7,
+    "error": 7.699512537938753e-08,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 7,
+    "seed": 5,
+    "threads": 7,
+    "error": 1.4650348407753814e-07,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 7,
+    "seed": 5,
+    "threads": 7,
+    "error": 4.1720511170886934e-07,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 7,
+    "seed": 6,
+    "threads": 33,
+    "error": 8.65035423279373e-08,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 7,
+    "seed": 6,
+    "threads": 33,
+    "error": 5.715759569978293e-08,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 7,
+    "seed": 6,
+    "threads": 33,
+    "error": 7.805352319696356e-08,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 7,
+    "seed": 6,
+    "threads": 33,
+    "error": 4.431964052618589e-07,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 7,
+    "seed": 7,
+    "threads": 64,
+    "error": 1.1596163836096583e-07,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 7,
+    "seed": 7,
+    "threads": 64,
+    "error": 7.658281297420998e-08,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 7,
+    "seed": 7,
+    "threads": 64,
+    "error": 1.707129502233395e-07,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 7,
+    "seed": 7,
+    "threads": 64,
+    "error": 6.426994953382349e-07,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 7,
+    "seed": 8,
+    "threads": 2,
+    "error": 8.040805691290039e-08,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 7,
+    "seed": 8,
+    "threads": 2,
+    "error": 9.079151111493337e-08,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 7,
+    "seed": 8,
+    "threads": 2,
+    "error": 2.4300741262714503e-07,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 7,
+    "seed": 8,
+    "threads": 2,
+    "error": 3.057204422364345e-07,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 7,
+    "seed": 9,
+    "threads": 7,
+    "error": 6.776718604374393e-08,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 7,
+    "seed": 9,
+    "threads": 7,
+    "error": 6.418928079390551e-08,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 7,
+    "seed": 9,
+    "threads": 7,
+    "error": 2.251857499565358e-07,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 7,
+    "seed": 9,
+    "threads": 7,
+    "error": 8.714803518588333e-07,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 17,
+    "seed": 0,
+    "threads": 2,
+    "error": 2.500768740672814e-07,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 17,
+    "seed": 0,
+    "threads": 2,
+    "error": 1.411238868570284e-07,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 17,
+    "seed": 0,
+    "threads": 2,
+    "error": 1.9464353548506508e-07,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 17,
+    "seed": 0,
+    "threads": 2,
+    "error": 1.442953421875824e-06,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 17,
+    "seed": 1,
+    "threads": 7,
+    "error": 1.8869515345698868e-07,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 17,
+    "seed": 1,
+    "threads": 7,
+    "error": 1.1004499311431903e-07,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 17,
+    "seed": 1,
+    "threads": 7,
+    "error": 1.6824501586280826e-07,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 17,
+    "seed": 1,
+    "threads": 7,
+    "error": 2.0401876722487525e-06,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 17,
+    "seed": 2,
+    "threads": 33,
+    "error": 2.4267706176245595e-07,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 17,
+    "seed": 2,
+    "threads": 33,
+    "error": 1.2886373176397227e-07,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 17,
+    "seed": 2,
+    "threads": 33,
+    "error": 2.3044047818667445e-07,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 17,
+    "seed": 2,
+    "threads": 33,
+    "error": 2.0686513797022167e-06,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 17,
+    "seed": 3,
+    "threads": 64,
+    "error": 1.8184324884115464e-07,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 17,
+    "seed": 3,
+    "threads": 64,
+    "error": 1.1237066717533507e-07,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 17,
+    "seed": 3,
+    "threads": 64,
+    "error": 2.8435853111410964e-07,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 17,
+    "seed": 3,
+    "threads": 64,
+    "error": 1.6735452781886549e-06,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 17,
+    "seed": 4,
+    "threads": 2,
+    "error": 1.6949192925709223e-07,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 17,
+    "seed": 4,
+    "threads": 2,
+    "error": 1.1212978886172641e-07,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 17,
+    "seed": 4,
+    "threads": 2,
+    "error": 1.158279768398689e-07,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 17,
+    "seed": 4,
+    "threads": 2,
+    "error": 1.0995008881819923e-06,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 17,
+    "seed": 5,
+    "threads": 7,
+    "error": 1.6207265710387295e-07,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 17,
+    "seed": 5,
+    "threads": 7,
+    "error": 1.2514739189070177e-07,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 17,
+    "seed": 5,
+    "threads": 7,
+    "error": 2.4768275004618365e-07,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 17,
+    "seed": 5,
+    "threads": 7,
+    "error": 1.4764352989082168e-06,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 17,
+    "seed": 6,
+    "threads": 33,
+    "error": 1.9502417500818518e-07,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 17,
+    "seed": 6,
+    "threads": 33,
+    "error": 9.400505283340403e-08,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 17,
+    "seed": 6,
+    "threads": 33,
+    "error": 2.2031052221105867e-07,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 17,
+    "seed": 6,
+    "threads": 33,
+    "error": 1.3791354990486076e-06,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 17,
+    "seed": 7,
+    "threads": 64,
+    "error": 1.9189198472096967e-07,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 17,
+    "seed": 7,
+    "threads": 64,
+    "error": 9.780867684733018e-08,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 17,
+    "seed": 7,
+    "threads": 64,
+    "error": 1.3045782821390602e-07,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 17,
+    "seed": 7,
+    "threads": 64,
+    "error": 1.6666680785761233e-06,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 17,
+    "seed": 8,
+    "threads": 2,
+    "error": 1.807944500197154e-07,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 17,
+    "seed": 8,
+    "threads": 2,
+    "error": 1.2479768259473538e-07,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 17,
+    "seed": 8,
+    "threads": 2,
+    "error": 2.638912680244176e-07,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 17,
+    "seed": 8,
+    "threads": 2,
+    "error": 2.0035349889916395e-06,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 17,
+    "seed": 9,
+    "threads": 7,
+    "error": 2.0270050576301973e-07,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 17,
+    "seed": 9,
+    "threads": 7,
+    "error": 1.24728551777976e-07,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 17,
+    "seed": 9,
+    "threads": 7,
+    "error": 2.4957978710346704e-07,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 17,
+    "seed": 9,
+    "threads": 7,
+    "error": 1.5860640878655864e-06,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 3,
+    "seed": 0,
+    "threads": 2,
+    "error": 1.8033413611080306e-16,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 3,
+    "seed": 0,
+    "threads": 2,
+    "error": 6.035776494821969e-17,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 3,
+    "seed": 0,
+    "threads": 2,
+    "error": 1.4811399390565155e-16,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 3,
+    "seed": 0,
+    "threads": 2,
+    "error": 2.830524433501838e-16,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 3,
+    "seed": 1,
+    "threads": 7,
+    "error": 2.521263178566138e-17,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 3,
+    "seed": 1,
+    "threads": 7,
+    "error": 8.092941314595868e-17,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 3,
+    "seed": 1,
+    "threads": 7,
+    "error": 1.1322796199542722e-16,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 3,
+    "seed": 1,
+    "threads": 7,
+    "error": 2.3598069556154567e-16,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 3,
+    "seed": 2,
+    "threads": 33,
+    "error": 1.4902351612785432e-16,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 3,
+    "seed": 2,
+    "threads": 33,
+    "error": 9.573030453161549e-17,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 3,
+    "seed": 2,
+    "threads": 33,
+    "error": 2.0742497567687573e-16,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 3,
+    "seed": 2,
+    "threads": 33,
+    "error": 3.6679689646711615e-16,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 3,
+    "seed": 3,
+    "threads": 64,
+    "error": 7.223327589297741e-17,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 3,
+    "seed": 3,
+    "threads": 64,
+    "error": 5.641857186528344e-17,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 3,
+    "seed": 3,
+    "threads": 64,
+    "error": 1.0915925247695217e-16,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 3,
+    "seed": 3,
+    "threads": 64,
+    "error": 2.307936732338366e-16,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 3,
+    "seed": 4,
+    "threads": 2,
+    "error": 1.4809981180161436e-16,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 3,
+    "seed": 4,
+    "threads": 2,
+    "error": 1.0677540281388909e-16,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 3,
+    "seed": 4,
+    "threads": 2,
+    "error": 5.850412918933997e-17,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 3,
+    "seed": 4,
+    "threads": 2,
+    "error": 1.7365068462899923e-16,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 3,
+    "seed": 5,
+    "threads": 7,
+    "error": 1.7236427863616892e-16,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 3,
+    "seed": 5,
+    "threads": 7,
+    "error": 9.209723108952232e-17,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 3,
+    "seed": 5,
+    "threads": 7,
+    "error": 9.410399054950999e-17,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 3,
+    "seed": 5,
+    "threads": 7,
+    "error": 8.825849095978682e-16,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 3,
+    "seed": 6,
+    "threads": 33,
+    "error": 0.0,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 3,
+    "seed": 6,
+    "threads": 33,
+    "error": 8.7869290955986e-17,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 3,
+    "seed": 6,
+    "threads": 33,
+    "error": 6.998133906031659e-17,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 3,
+    "seed": 6,
+    "threads": 33,
+    "error": 7.841366784870479e-16,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 3,
+    "seed": 7,
+    "threads": 64,
+    "error": 1.918109004561342e-16,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 3,
+    "seed": 7,
+    "threads": 64,
+    "error": 1.2726963000372132e-16,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 3,
+    "seed": 7,
+    "threads": 64,
+    "error": 0.0,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 3,
+    "seed": 7,
+    "threads": 64,
+    "error": 3.670218562530401e-16,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 3,
+    "seed": 8,
+    "threads": 2,
+    "error": 1.6208898424044532e-16,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 3,
+    "seed": 8,
+    "threads": 2,
+    "error": 8.122493909572693e-17,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 3,
+    "seed": 8,
+    "threads": 2,
+    "error": 1.1052200368065129e-16,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 3,
+    "seed": 8,
+    "threads": 2,
+    "error": 3.783901884599165e-16,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 3,
+    "seed": 9,
+    "threads": 7,
+    "error": 2.2952655935754187e-17,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 3,
+    "seed": 9,
+    "threads": 7,
+    "error": 1.00766049782988e-16,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 3,
+    "seed": 9,
+    "threads": 7,
+    "error": 0.0,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 3,
+    "seed": 9,
+    "threads": 7,
+    "error": 2.7194799110210355e-16,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 7,
+    "seed": 0,
+    "threads": 2,
+    "error": 1.124685773952612e-16,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 7,
+    "seed": 0,
+    "threads": 2,
+    "error": 1.4481258364211453e-16,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 7,
+    "seed": 0,
+    "threads": 2,
+    "error": 3.0196381253244924e-16,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 7,
+    "seed": 0,
+    "threads": 2,
+    "error": 8.798123454738051e-16,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 7,
+    "seed": 1,
+    "threads": 7,
+    "error": 3.9027291798286033e-16,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 7,
+    "seed": 1,
+    "threads": 7,
+    "error": 1.6973961957611453e-16,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 7,
+    "seed": 1,
+    "threads": 7,
+    "error": 2.7590991131357666e-16,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 7,
+    "seed": 1,
+    "threads": 7,
+    "error": 7.352784038670024e-16,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 7,
+    "seed": 2,
+    "threads": 33,
+    "error": 1.2019729471001764e-16,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 7,
+    "seed": 2,
+    "threads": 33,
+    "error": 1.2529883801805864e-16,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 7,
+    "seed": 2,
+    "threads": 33,
+    "error": 2.0975321955011003e-16,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 7,
+    "seed": 2,
+    "threads": 33,
+    "error": 6.887334709262241e-16,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 7,
+    "seed": 3,
+    "threads": 64,
+    "error": 1.297500771838451e-16,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 7,
+    "seed": 3,
+    "threads": 64,
+    "error": 1.4904421790234826e-16,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 7,
+    "seed": 3,
+    "threads": 64,
+    "error": 1.3610233727705625e-16,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 7,
+    "seed": 3,
+    "threads": 64,
+    "error": 1.126869442066323e-15,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 7,
+    "seed": 4,
+    "threads": 2,
+    "error": 1.5563176545260412e-16,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 7,
+    "seed": 4,
+    "threads": 2,
+    "error": 1.1447697550604305e-16,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 7,
+    "seed": 4,
+    "threads": 2,
+    "error": 1.742338937382256e-16,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 7,
+    "seed": 4,
+    "threads": 2,
+    "error": 1.9997914931900216e-15,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 7,
+    "seed": 5,
+    "threads": 7,
+    "error": 1.2219817034283888e-16,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 7,
+    "seed": 5,
+    "threads": 7,
+    "error": 1.1538781521023023e-16,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 7,
+    "seed": 5,
+    "threads": 7,
+    "error": 8.006516198755816e-17,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 7,
+    "seed": 5,
+    "threads": 7,
+    "error": 1.4877184563534636e-15,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 7,
+    "seed": 6,
+    "threads": 33,
+    "error": 1.2475311261185366e-16,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 7,
+    "seed": 6,
+    "threads": 33,
+    "error": 1.4787176931144177e-16,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 7,
+    "seed": 6,
+    "threads": 33,
+    "error": 1.0447032026053792e-16,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 7,
+    "seed": 6,
+    "threads": 33,
+    "error": 9.313639712550681e-16,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 7,
+    "seed": 7,
+    "threads": 64,
+    "error": 9.948418399272465e-17,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 7,
+    "seed": 7,
+    "threads": 64,
+    "error": 1.3037691022193734e-16,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 7,
+    "seed": 7,
+    "threads": 64,
+    "error": 2.5381247044987014e-16,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 7,
+    "seed": 7,
+    "threads": 64,
+    "error": 8.284066212774475e-16,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 7,
+    "seed": 8,
+    "threads": 2,
+    "error": 1.912075321489455e-16,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 7,
+    "seed": 8,
+    "threads": 2,
+    "error": 1.2035728430935848e-16,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 7,
+    "seed": 8,
+    "threads": 2,
+    "error": 5.412305717360463e-16,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 7,
+    "seed": 8,
+    "threads": 2,
+    "error": 8.705880725078443e-16,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 7,
+    "seed": 9,
+    "threads": 7,
+    "error": 1.448520135686478e-16,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 7,
+    "seed": 9,
+    "threads": 7,
+    "error": 1.7854074573502554e-16,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 7,
+    "seed": 9,
+    "threads": 7,
+    "error": 2.2268738647423953e-16,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 7,
+    "seed": 9,
+    "threads": 7,
+    "error": 1.0558916081508132e-15,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 17,
+    "seed": 0,
+    "threads": 2,
+    "error": 4.716730975883318e-16,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 17,
+    "seed": 0,
+    "threads": 2,
+    "error": 2.9935273079597266e-16,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 17,
+    "seed": 0,
+    "threads": 2,
+    "error": 5.372795743961739e-16,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 17,
+    "seed": 0,
+    "threads": 2,
+    "error": 2.760713831479878e-15,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 17,
+    "seed": 1,
+    "threads": 7,
+    "error": 3.2539120224420626e-16,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 17,
+    "seed": 1,
+    "threads": 7,
+    "error": 2.274117165385339e-16,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 17,
+    "seed": 1,
+    "threads": 7,
+    "error": 3.666408594121675e-16,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 17,
+    "seed": 1,
+    "threads": 7,
+    "error": 2.8527704140769195e-15,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 17,
+    "seed": 2,
+    "threads": 33,
+    "error": 3.707272618121879e-16,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 17,
+    "seed": 2,
+    "threads": 33,
+    "error": 2.2129304744675878e-16,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 17,
+    "seed": 2,
+    "threads": 33,
+    "error": 6.324136988046065e-16,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 17,
+    "seed": 2,
+    "threads": 33,
+    "error": 2.7098072989199952e-15,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 17,
+    "seed": 3,
+    "threads": 64,
+    "error": 3.4726953462601417e-16,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 17,
+    "seed": 3,
+    "threads": 64,
+    "error": 1.9292710031748212e-16,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 17,
+    "seed": 3,
+    "threads": 64,
+    "error": 4.971998390910644e-16,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 17,
+    "seed": 3,
+    "threads": 64,
+    "error": 1.760136561349707e-15,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 17,
+    "seed": 4,
+    "threads": 2,
+    "error": 4.209572389982536e-16,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 17,
+    "seed": 4,
+    "threads": 2,
+    "error": 2.4062393669586126e-16,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 17,
+    "seed": 4,
+    "threads": 2,
+    "error": 3.5194037844960663e-16,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 17,
+    "seed": 4,
+    "threads": 2,
+    "error": 2.6044032518094226e-15,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 17,
+    "seed": 5,
+    "threads": 7,
+    "error": 3.427164511685349e-16,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 17,
+    "seed": 5,
+    "threads": 7,
+    "error": 2.294048011731134e-16,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 17,
+    "seed": 5,
+    "threads": 7,
+    "error": 4.625406530203572e-16,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 17,
+    "seed": 5,
+    "threads": 7,
+    "error": 2.371736439974917e-15,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 17,
+    "seed": 6,
+    "threads": 33,
+    "error": 3.3244351710585604e-16,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 17,
+    "seed": 6,
+    "threads": 33,
+    "error": 2.1591076921839625e-16,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 17,
+    "seed": 6,
+    "threads": 33,
+    "error": 4.0717342337602485e-16,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 17,
+    "seed": 6,
+    "threads": 33,
+    "error": 1.7118746317855964e-15,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 17,
+    "seed": 7,
+    "threads": 64,
+    "error": 3.622321482459917e-16,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 17,
+    "seed": 7,
+    "threads": 64,
+    "error": 2.319025176501655e-16,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 17,
+    "seed": 7,
+    "threads": 64,
+    "error": 3.429116294792647e-16,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 17,
+    "seed": 7,
+    "threads": 64,
+    "error": 2.696531038996586e-15,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 17,
+    "seed": 8,
+    "threads": 2,
+    "error": 3.246010276420137e-16,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 17,
+    "seed": 8,
+    "threads": 2,
+    "error": 2.316536844367461e-16,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 17,
+    "seed": 8,
+    "threads": 2,
+    "error": 8.0113467268751e-16,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 17,
+    "seed": 8,
+    "threads": 2,
+    "error": 2.188789334322245e-15,
+    "status": "pass"
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 17,
+    "seed": 9,
+    "threads": 7,
+    "error": 4.002181356153609e-16,
+    "status": "pass"
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 17,
+    "seed": 9,
+    "threads": 7,
+    "error": 2.3507841520946047e-16,
+    "status": "pass"
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 17,
+    "seed": 9,
+    "threads": 7,
+    "error": 3.5659688879777897e-16,
+    "status": "pass"
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 17,
+    "seed": 9,
+    "threads": 7,
+    "error": 2.719958241009291e-15,
+    "status": "pass"
+  }
+]

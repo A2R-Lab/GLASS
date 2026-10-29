@@ -1,0 +1,1490 @@
+[
+  {
+    "op": 0,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 0,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 0,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 0,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 0,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 0,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 1,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 1,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 1,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 1,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 1,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 1,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 2,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 2,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 2,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 2,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 2,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 2,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 3,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 3,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 3,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 3,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 3,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 3,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 4,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 4,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 4,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 4,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 4,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 4,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 5,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 5,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 5,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 5,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 5,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 5,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 6,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 6,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 6,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 6,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 6,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 6,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 7,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 7,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 7,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 7,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 7,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 7,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 8,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 8,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 8,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 8,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 8,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 8,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 9,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 9,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 10,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 10,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 10,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 10,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 10,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 10,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 11,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 11,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 11,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 11,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 11,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 11,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 12,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 12,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 12,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 12,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 12,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 12,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 13,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 13,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 13,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 13,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 13,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 13,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 14,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 14,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 14,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 14,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 14,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 14,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 15,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 15,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 15,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 15,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 15,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 15,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 16,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 3,
+    "error": ""
+  },
+  {
+    "op": 16,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 3,
+    "error": ""
+  },
+  {
+    "op": 16,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 3,
+    "error": ""
+  },
+  {
+    "op": 16,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 3,
+    "error": ""
+  },
+  {
+    "op": 16,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 3,
+    "error": ""
+  },
+  {
+    "op": 16,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 3,
+    "error": ""
+  },
+  {
+    "op": 17,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 3,
+    "error": ""
+  },
+  {
+    "op": 17,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 3,
+    "error": ""
+  },
+  {
+    "op": 17,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 3,
+    "error": ""
+  },
+  {
+    "op": 17,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 3,
+    "error": ""
+  },
+  {
+    "op": 17,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 3,
+    "error": ""
+  },
+  {
+    "op": 17,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 3,
+    "error": ""
+  },
+  {
+    "op": 18,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 18,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 18,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 18,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 18,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 18,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 19,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 19,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 19,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 19,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 19,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 19,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 20,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 27,
+    "error": ""
+  },
+  {
+    "op": 20,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 24,
+    "error": ""
+  },
+  {
+    "op": 20,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 18,
+    "error": ""
+  },
+  {
+    "op": 20,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 27,
+    "error": ""
+  },
+  {
+    "op": 20,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 24,
+    "error": ""
+  },
+  {
+    "op": 20,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 18,
+    "error": ""
+  },
+  {
+    "op": 21,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 21,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 21,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 21,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 21,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 21,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 22,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 22,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 22,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 22,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 22,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 22,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 23,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 23,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 24,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 24,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 25,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 25,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 25,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 25,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 25,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 25,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 26,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 26,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 26,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 26,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 26,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 26,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 27,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 27,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 27,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 27,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 27,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 27,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 28,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 28,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 28,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 28,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 28,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 28,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 29,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 3,
+    "error": ""
+  },
+  {
+    "op": 29,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 3,
+    "error": ""
+  },
+  {
+    "op": 29,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 3,
+    "error": ""
+  },
+  {
+    "op": 29,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 3,
+    "error": ""
+  },
+  {
+    "op": 29,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 3,
+    "error": ""
+  },
+  {
+    "op": 29,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 3,
+    "error": ""
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 30,
+    "bits": 32,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 3,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 7,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  },
+  {
+    "op": 30,
+    "bits": 64,
+    "n": 17,
+    "code": 0,
+    "rows": 33,
+    "error": ""
+  }
+]

@@ -202,6 +202,16 @@
    "evidence": [
     "test/test_pcg.py::test_pcg_bdsv_shared_layout_contract*"
    ]
+  },
+  {
+   "id": "optimized_restricted_callers",
+   "shard": "integration",
+   "description": "Restricted optimized callers match independent oracles, including handoff regressions and memory/launch geometry.",
+   "evidence": [
+    "test/test_restrict.py::test_restricted_callers*",
+    "test/test_restrict.py::test_restricted_memory_and_geometry*",
+    "test/test_restrict.py::test_restricted_pivots_and_shift*"
+   ]
   }
  ]
 }

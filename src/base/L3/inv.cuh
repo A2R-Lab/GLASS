@@ -184,7 +184,7 @@ __device__ void inv_pivoted_impl(SizeT dimA, T *A, T *s_scratch)
             s_piv[0] = static_cast<T>((idx == UINT32_MAX) ? pivRC : idx);
         }
         __syncthreads();
-        unsigned pivRow = static_cast<unsigned>(s_piv[0]);
+        unsigned pivRow = static_cast<unsigned>(cooperative_detail::load(BlockBarrier{}, s_piv));
 
         // ── Swap rows pivRC and pivRow across the full augmented width [A|I]. ──
         if (pivRow != pivRC) {

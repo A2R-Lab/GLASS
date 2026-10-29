@@ -165,7 +165,7 @@ __device__ void ldlt_impl(SizeT n, T *A, T *s_scratch, bool pivot, int32_t *piv,
             if (k + 1 < n) {
                 // column k rows k+1..n-1 is contiguous in column-major storage
                 iamax_lowmem<T>(n - k - 1, &A[k*n + k + 1], s_idx);
-                imax = k + 1 + s_idx[0];
+                imax = k + 1 + cooperative_detail::load(BlockBarrier{}, s_idx);
                 T cv = A[k*n + imax];
                 colmax = (cv < static_cast<T>(0)) ? -cv : cv;
             }
@@ -198,7 +198,7 @@ __device__ void ldlt_impl(SizeT n, T *A, T *s_scratch, bool pivot, int32_t *piv,
                 }
                 __syncthreads();          // row magnitudes visible to argmax
                 iamax_lowmem<T>(n - k, s_row, s_idx);
-                T rowmax = s_row[s_idx[0]];
+                T rowmax = s_row[cooperative_detail::load(BlockBarrier{}, s_idx)];
                 T dv = A[imax*n + imax];
                 T absdimax = (dv < static_cast<T>(0)) ? -dv : dv;
                 if (absakk >= alpha * colmax * (colmax / rowmax)) {

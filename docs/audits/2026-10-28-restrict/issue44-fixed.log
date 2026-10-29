@@ -1,0 +1,6 @@
+threads=1 x=1 2 3 (want 1 2 3)
+threads=2 x=1 2 3 (want 1 2 3)
+threads=31 x=1 2 3 (want 1 2 3)
+threads=32 x=1 2 3 (want 1 2 3)
+threads=33 x=1 2 3 (want 1 2 3)
+threads=64 x=1 2 3 (want 1 2 3)

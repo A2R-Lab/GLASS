@@ -97,7 +97,7 @@ __device__ void softmax(uint32_t n, T alpha, const T *x, T *y, T *s_scratch)
     for (uint32_t i = rank; i < n; i += size) s_scratch[i] = alpha*x[i];
     __syncthreads();
     softmax_detail::max_tree_impl<BlockBarrier, T>(BlockBarrier{}, n, s_scratch);
-    const T m = s_scratch[0];
+    const T m = cooperative_detail::load(BlockBarrier{}, s_scratch);
     __syncthreads();                       // everyone read m before scratch is rewritten
     // unroll 1: unroll-copy FMA contraction of alpha*x[i] - m would break
     // bit-identity across thread counts.
@@ -109,7 +109,7 @@ __device__ void softmax(uint32_t n, T alpha, const T *x, T *y, T *s_scratch)
     }
     __syncthreads();
     reduce_impl<BlockBarrier, T>(BlockBarrier{}, n, s_scratch);
-    const T inv = static_cast<T>(1)/s_scratch[0];
+    const T inv = static_cast<T>(1)/cooperative_detail::load(BlockBarrier{}, s_scratch);
     for (uint32_t i = rank; i < n; i += size) y[i] *= inv;
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
@@ -138,13 +138,13 @@ __device__ void logsumexp(uint32_t n, T alpha, const T *x, T *out, T *s_scratch)
     for (uint32_t i = rank; i < n; i += size) s_scratch[i] = alpha*x[i];
     __syncthreads();
     softmax_detail::max_tree_impl<BlockBarrier, T>(BlockBarrier{}, n, s_scratch);
-    const T m = s_scratch[0];
+    const T m = cooperative_detail::load(BlockBarrier{}, s_scratch);
     __syncthreads();
     #pragma unroll 1
     for (uint32_t i = rank; i < n; i += size) s_scratch[i] = exp(alpha*x[i] - m);
     __syncthreads();
     reduce_impl<BlockBarrier, T>(BlockBarrier{}, n, s_scratch);
-    if (rank == 0) out[0] = m + log(s_scratch[0]);
+    if (rank == 0) out[0] = m + log(cooperative_detail::load(BlockBarrier{}, s_scratch));
     if constexpr (TRAILING_SYNC) __syncthreads();
 }
 

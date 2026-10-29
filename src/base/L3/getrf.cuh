@@ -47,7 +47,7 @@ __device__ void laswp_impl(Bar bar, uint32_t n, uint32_t ncols, T *A,
         T *col = A + j * n;
         for (uint32_t s = k0; s < k1; s++) {
             uint32_t k = REVERSE ? (k0 + k1 - 1 - s) : s;
-            uint32_t p = piv[k];
+            uint32_t p = cooperative_detail::load(bar, piv + k);
             if (p != k) { T tmp = col[k]; col[k] = col[p]; col[p] = tmp; }
         }
     }
@@ -151,7 +151,7 @@ __device__ void getrf_impl(Bar bar, uint32_t n, T *A, uint32_t *piv, int *s_fail
         bar.sync();
         // (c) swap FULL rows k ↔ piv[k] (including the L columns j < k, per
         // LAPACK), thread-strided over all n columns.
-        uint32_t p = piv[k];
+        uint32_t p = cooperative_detail::load(bar, piv + k);
         if (p != k) {
             for (uint32_t j = rank; j < n; j += size) {
                 T tmp = A[k + j * n]; A[k + j * n] = A[p + j * n]; A[p + j * n] = tmp;

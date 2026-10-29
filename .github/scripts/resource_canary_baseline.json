@@ -189,7 +189,7 @@
         "stack": 0
       },
       "canary_block_trsv_f32": {
-        "regs": 17,
+        "regs": 19,
         "smem": 288,
         "spill_loads": 0,
         "spill_stores": 0,

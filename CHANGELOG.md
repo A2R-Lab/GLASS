@@ -66,6 +66,15 @@ All notable changes to GLASS will be documented here. The format follows
 
 ### Fixed
 
+- Restricted optimized callers now reload cross-thread handoffs in triangular
+  solves, softmax/logsumexp, LU pivot selection/permutation, pivoted inverse,
+  pivoted LDLT and symmetric eigendecomposition. This fixes wrong results,
+  invalid accesses and divergent control flow seen despite existing barriers
+  (including issue #44). Thread-only solves retain ordinary loads.
+- Optimized regression coverage now retains the minimal failing caller context
+  alongside independent-oracle checks for shared/global memory, runtime sizes,
+  launch geometry, pivoting and trailing synchronization.
+
 - `glass-dispatch.cuh` is included in the CMake install file list (previously
   a CMake-installed GLASS could not compile the bare measured-default face).
 - CMake propagates the cuBLASDx CUTLASS include path when

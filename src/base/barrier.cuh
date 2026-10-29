@@ -60,6 +60,22 @@ struct ThreadBarrier {
     __device__ __forceinline__ void sync() const { }
 };
 
+// Reload a value published by a different cooperating thread. Under an
+// inlined caller's __restrict__ pointer, nvcc can reuse this thread's old
+// value even across a barrier. Volatile applies only to the handoff load;
+// it does NOT replace synchronization or make an unsynchronized access safe.
+// ThreadBarrier has no peer writers and keeps ordinary register-friendly loads.
+namespace cooperative_detail {
+    template <typename Bar, typename T>
+    __device__ __forceinline__ T load(Bar, const T* p) {
+        return *static_cast<const volatile T*>(p);
+    }
+    template <typename T>
+    __device__ __forceinline__ T load(ThreadBarrier, const T* p) {
+        return *p;
+    }
+}
+
 // Flat block rank/size — THE prologue for every public block-face op. One
 // definition instead of the hand-written threadIdx arithmetic at each site
 // (233 copies removed 2026-08-11); identical instructions after inlining.

@@ -2921,8 +2921,8 @@
       "minimum_explicit_template_args": 2,
       "evidence": [
         {
-          "file": "test/cuda/test_thread.cu",
-          "line": 368,
+          "file": "test/cuda/test_restrict.cu",
+          "line": 28,
           "name": "reduce",
           "surface": "glass::block::",
           "args": 1,
@@ -3669,8 +3669,8 @@
       "minimum_explicit_template_args": 0,
       "evidence": [
         {
-          "file": "test/cuda/test_robotics.cu",
-          "line": 252,
+          "file": "test/cuda/test_restrict.cu",
+          "line": 35,
           "name": "logsumexp",
           "surface": "glass::block::",
           "args": 5,
@@ -3691,8 +3691,8 @@
       "minimum_explicit_template_args": 0,
       "evidence": [
         {
-          "file": "test/cuda/test_robotics.cu",
-          "line": 248,
+          "file": "test/cuda/test_restrict.cu",
+          "line": 45,
           "name": "softmax",
           "surface": "glass::warp::",
           "args": 4,
@@ -4386,7 +4386,7 @@
       "id": "trsv-a359f2ab8910",
       "name": "trsv",
       "file": "src/base/L2/trsv.cuh",
-      "line": 98,
+      "line": 99,
       "surface": "glass::block::",
       "signature": "glass::block::trsv(uint32_t n, const T *A, T *x)",
       "params": 3,
@@ -4395,12 +4395,12 @@
       "minimum_explicit_template_args": 0,
       "evidence": [
         {
-          "file": "test/cuda/test_trsv.cu",
-          "line": 25,
+          "file": "test/cuda/test_restrict.cu",
+          "line": 18,
           "name": "trsv",
           "surface": "glass::block::",
           "args": 3,
-          "explicit_template_args": 4
+          "explicit_template_args": 1
         }
       ]
     },
@@ -4408,7 +4408,7 @@
       "id": "trsv-3375ac9aa932",
       "name": "trsv",
       "file": "src/base/L2/trsv.cuh",
-      "line": 123,
+      "line": 124,
       "surface": "glass::block::",
       "signature": "glass::block::trsv(const T *A, T *x)",
       "params": 2,
@@ -4430,7 +4430,7 @@
       "id": "trmv-500a253af07a",
       "name": "trmv",
       "file": "src/base/L2/trsv.cuh",
-      "line": 184,
+      "line": 185,
       "surface": "glass::block::",
       "signature": "glass::block::trmv(uint32_t n, const T *A, const T *x, T *y)",
       "params": 4,
@@ -4452,7 +4452,7 @@
       "id": "trmv-97ec5baa41d6",
       "name": "trmv",
       "file": "src/base/L2/trsv.cuh",
-      "line": 208,
+      "line": 209,
       "surface": "glass::block::",
       "signature": "glass::block::trmv(const T *A, const T *x, T *y)",
       "params": 3,
@@ -4474,7 +4474,7 @@
       "id": "trmv_scratch_bytes-c65c10d36f08",
       "name": "trmv_scratch_bytes",
       "file": "src/base/L2/trsv.cuh",
-      "line": 228,
+      "line": 229,
       "surface": "glass::block::",
       "signature": "glass::block::trmv_scratch_bytes(uint32_t n)",
       "params": 1,
@@ -4496,7 +4496,7 @@
       "id": "trmv-3668900af273",
       "name": "trmv",
       "file": "src/base/L2/trsv.cuh",
-      "line": 249,
+      "line": 250,
       "surface": "glass::block::",
       "signature": "glass::block::trmv(uint32_t n, const T *A, T *x, T *scratch)",
       "params": 4,
@@ -4518,7 +4518,7 @@
       "id": "trmv-d61b30d5378c",
       "name": "trmv",
       "file": "src/base/L2/trsv.cuh",
-      "line": 275,
+      "line": 276,
       "surface": "glass::block::",
       "signature": "glass::block::trmv(const T *A, T *x, T *scratch)",
       "params": 3,
@@ -4540,7 +4540,7 @@
       "id": "trsv-c4b6f6274bd5",
       "name": "trsv",
       "file": "src/base/L2/trsv.cuh",
-      "line": 314,
+      "line": 315,
       "surface": "glass::thread::",
       "signature": "glass::thread::trsv(const T *A, T *x)",
       "params": 2,
@@ -5605,8 +5605,8 @@
       "minimum_explicit_template_args": 2,
       "evidence": [
         {
-          "file": "test/cuda/test_thread.cu",
-          "line": 440,
+          "file": "test/cuda/test_restrict.cu",
+          "line": 25,
           "name": "inv",
           "surface": "glass::block::",
           "args": 2,
@@ -5693,8 +5693,8 @@
       "minimum_explicit_template_args": 2,
       "evidence": [
         {
-          "file": "examples/12_inv.cu",
-          "line": 37,
+          "file": "test/cuda/test_restrict.cu",
+          "line": 40,
           "name": "inv_pivoted",
           "surface": "glass::block::",
           "args": 2,
@@ -5957,8 +5957,8 @@
       "minimum_explicit_template_args": 2,
       "evidence": [
         {
-          "file": "test/cuda/test_thread.cu",
-          "line": 431,
+          "file": "test/cuda/test_restrict.cu",
+          "line": 27,
           "name": "ldlt",
           "surface": "glass::block::",
           "args": 2,
@@ -6001,8 +6001,8 @@
       "minimum_explicit_template_args": 2,
       "evidence": [
         {
-          "file": "test/cuda/test_thread.cu",
-          "line": 435,
+          "file": "test/cuda/test_restrict.cu",
+          "line": 27,
           "name": "ldlt_solve",
           "surface": "glass::block::",
           "args": 2,
@@ -6155,8 +6155,8 @@
       "minimum_explicit_template_args": 2,
       "evidence": [
         {
-          "file": "test/cuda/test_thread.cu",
-          "line": 363,
+          "file": "test/cuda/test_restrict.cu",
+          "line": 21,
           "name": "potrs",
           "surface": "glass::block::",
           "args": 2,
@@ -6586,7 +6586,7 @@
       "id": "syev-3456cef9d411",
       "name": "syev",
       "file": "src/base/L3/syev.cuh",
-      "line": 250,
+      "line": 251,
       "surface": "glass::block::",
       "signature": "glass::block::syev(uint32_t n, const T *A, T *W, T *V, T *s_scratch)",
       "params": 5,
@@ -6608,7 +6608,7 @@
       "id": "syev-50590a8efeb9",
       "name": "syev",
       "file": "src/base/L3/syev.cuh",
-      "line": 271,
+      "line": 272,
       "surface": "glass::block::",
       "signature": "glass::block::syev(const T *A, T *W, T *V, T *s_scratch)",
       "params": 4,
@@ -6617,8 +6617,8 @@
       "minimum_explicit_template_args": 2,
       "evidence": [
         {
-          "file": "test/cuda/test_syev.cu",
-          "line": 37,
+          "file": "test/cuda/test_restrict.cu",
+          "line": 46,
           "name": "syev",
           "surface": "glass::block::",
           "args": 4,
@@ -6630,7 +6630,7 @@
       "id": "eig_clamp_scratch_bytes-01836cd415ff",
       "name": "eig_clamp_scratch_bytes",
       "file": "src/base/L3/syev.cuh",
-      "line": 288,
+      "line": 289,
       "surface": "glass::block::",
       "signature": "glass::block::eig_clamp_scratch_bytes(uint32_t n)",
       "params": 1,
@@ -6652,7 +6652,7 @@
       "id": "eig_clamp-5a7c840ae070",
       "name": "eig_clamp",
       "file": "src/base/L3/syev.cuh",
-      "line": 351,
+      "line": 352,
       "surface": "glass::block::",
       "signature": "glass::block::eig_clamp(uint32_t n, T *A, T eps, T *s_scratch)",
       "params": 4,
@@ -6674,7 +6674,7 @@
       "id": "eig_clamp-4fa5ffe36e56",
       "name": "eig_clamp",
       "file": "src/base/L3/syev.cuh",
-      "line": 371,
+      "line": 372,
       "surface": "glass::block::",
       "signature": "glass::block::eig_clamp(T *A, T eps, T *s_scratch)",
       "params": 3,
@@ -7431,12 +7431,12 @@
       "minimum_explicit_template_args": 3,
       "evidence": [
         {
-          "file": "test/cuda/test_thread.cu",
-          "line": 427,
+          "file": "test/cuda/test_restrict.cu",
+          "line": 19,
           "name": "trsm",
           "surface": "glass::block::",
           "args": 2,
-          "explicit_template_args": 6
+          "explicit_template_args": 3
         }
       ]
     },
@@ -14727,6 +14727,6 @@
     "covered": 669,
     "total": 669,
     "percent": 100.0,
-    "ambiguous_calls": 38
+    "ambiguous_calls": 40
   }
 }

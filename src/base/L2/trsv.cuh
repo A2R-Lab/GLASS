@@ -47,22 +47,23 @@ __device__ void trsv_impl(uint32_t rank, uint32_t size, SizeT n, const T* A, T* 
     constexpr bool UNIT  = (DIAG == Diag::Unit);
     // op(A) lower-triangular ⇒ forward elimination over pivots k = 0..n-1.
     constexpr bool FORWARD = (LOWER != TRANSPOSE);
+    // Pivot and update ownership changes between steps; reload peer writes.
     for (uint32_t step = 0; step < n; step++) {
         uint32_t k = FORWARD ? step : (n - 1 - step);
-        // resolve pivot x[k] = x[k] / op(A)[k][k]   (diag is A[k+k*n])
+        // Resolve pivot x[k] /= op(A)[k][k] (diagonal is A[k+k*n]).
         if (!UNIT) {
-            if (rank == 0) x[k] = x[k] / A[k + k * n];
+            if (rank == 0) x[k] = cooperative_detail::load(Bar{}, x + k) / A[k + k * n];
             Bar{}.sync();              // all threads read the resolved pivot
         }
-        T xk = x[k];
+        T xk = cooperative_detail::load(Bar{}, x + k);
         // subtract x[k] * op(A)[i][k] from the trailing/leading unknowns:
         //   op(A)[i][k] = TRANSPOSE ? A[k + i*n] : A[i + k*n]
         if (FORWARD) {
             for (uint32_t i = rank + k + 1; i < n; i += size)
-                x[i] -= (TRANSPOSE ? A[k + i * n] : A[i + k * n]) * xk;
+                x[i] = cooperative_detail::load(Bar{}, x + i) - (TRANSPOSE ? A[k + i * n] : A[i + k * n]) * xk;
         } else {
             for (uint32_t i = rank; i < k; i += size)
-                x[i] -= (TRANSPOSE ? A[k + i * n] : A[i + k * n]) * xk;
+                x[i] = cooperative_detail::load(Bar{}, x + i) - (TRANSPOSE ? A[k + i * n] : A[i + k * n]) * xk;
         }
         // Mid-loop this barrier is mandatory (pivot column consumed before the
         // next step); on the FINAL step it is the separable publish barrier.
