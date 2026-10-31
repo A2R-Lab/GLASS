@@ -11,6 +11,7 @@ sweep. Warp forms validated at one 32-lane warp.
 
 import os
 import subprocess
+from conftest import RUN_TIMEOUT
 import tempfile
 
 import numpy as np
@@ -32,7 +33,7 @@ def _write(arr):
 
 def _run(bins, args):
     cmd = [str(bins["block_access"])] + [str(a) for a in args]
-    res = subprocess.run(cmd, capture_output=True, text=True)
+    res = subprocess.run(cmd, capture_output=True, text=True, timeout=RUN_TIMEOUT)
     if res.returncode != 0:
         raise RuntimeError(f"runner failed:\n{res.stderr}")
     return np.fromstring(res.stdout.strip(), sep=" ").astype(np.float32)

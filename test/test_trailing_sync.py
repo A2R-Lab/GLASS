@@ -18,12 +18,13 @@ test_nvidia_dispatch.py (auto-dispatch correctness).
 """
 
 import subprocess
+from conftest import RUN_TIMEOUT
 
 import pytest
 
 
 def _run(binary, op):
-    res = subprocess.run([str(binary), op], capture_output=True, text=True)
+    res = subprocess.run([str(binary), op], capture_output=True, text=True, timeout=RUN_TIMEOUT)
     return res.returncode, res.stdout.strip(), res.stderr.strip()
 
 
@@ -34,6 +35,7 @@ def _run(binary, op):
     "l3_simt_batched",
     "l3_simt_strided_batched",
     "l3_factor_solve",   # uniform retrofit: posv/trsv/trsm/potrf/inv/trmv/syev/bdmv
+    "checker_selftest",  # the differential checker itself rejects NaN/Inf/size mismatch
 ])
 def test_trailing_sync_surface(bin_trailing_sync, op):
     """Default (true) and opt-out (false) produce identical results.

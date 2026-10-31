@@ -12,6 +12,7 @@ present, mirroring how conftest gates the nvidia binaries.
 import os
 import pathlib
 import subprocess
+from conftest import RUN_TIMEOUT
 
 import pytest
 
@@ -30,10 +31,10 @@ def _compile_and_run(tmp_path, src_name, extra_flags=None):
     out = tmp_path / (src.stem)
     cmd = ["nvcc", "-std=c++17", f"-arch={CUDA_ARCH}", "-I", str(GLASS_DIR),
            str(src), "-o", str(out)] + (extra_flags or [])
-    cp = subprocess.run(cmd, capture_output=True, text=True)
+    cp = subprocess.run(cmd, capture_output=True, text=True, timeout=RUN_TIMEOUT)
     if cp.returncode != 0:
         pytest.fail(f"compile failed for {src_name}:\n{cp.stderr}")
-    rp = subprocess.run([str(out)], capture_output=True, text=True)
+    rp = subprocess.run([str(out)], capture_output=True, text=True, timeout=RUN_TIMEOUT)
     assert rp.returncode == 0, f"{src_name} exited {rp.returncode}:\n{rp.stdout}\n{rp.stderr}"
 
 

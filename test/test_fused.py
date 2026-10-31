@@ -13,6 +13,7 @@ threads: the warp body mirrors inv_impl's phases and arithmetic bit-for-bit.
 
 import os
 import subprocess
+from conftest import RUN_TIMEOUT
 import tempfile
 
 import numpy as np
@@ -63,7 +64,7 @@ def _run(binary, op, threads, dims, mats):
         cmd += [str(d) for d in dims]
         cmd += [str(max(dims))]
         cmd += tmpfiles
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=RUN_TIMEOUT)
         if result.returncode != 0:
             raise RuntimeError(f"Binary failed:\n{result.stderr}")
         lines = [l.strip() for l in result.stdout.strip().split("\n") if l.strip()]

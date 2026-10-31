@@ -8,6 +8,7 @@ Skipped unless MATHDX_ROOT + cuSOLVERDx are available (the binary won't compile
 otherwise — see the bin_nvidia_f64 fixture in conftest.py).
 """
 import subprocess
+from conftest import RUN_TIMEOUT
 import numpy as np
 import pytest
 
@@ -24,7 +25,7 @@ def _problem(N):
 
 
 def _run(binary, op, N):
-    out = subprocess.run([str(binary), op, str(N)], capture_output=True, text=True)
+    out = subprocess.run([str(binary), op, str(N)], capture_output=True, text=True, timeout=RUN_TIMEOUT)
     if out.returncode != 0:
         raise RuntimeError(f"runner failed ({op} N={N}):\n{out.stderr}")
     return np.array([float(x) for x in out.stdout.split()], dtype=np.float64)
@@ -75,7 +76,7 @@ def _lapack_b():
 
 
 def _run_tail(nvidia_bin, op):
-    out = subprocess.run([str(nvidia_bin), op, "8"], capture_output=True, text=True)
+    out = subprocess.run([str(nvidia_bin), op, "8"], capture_output=True, text=True, timeout=RUN_TIMEOUT)
     assert out.returncode == 0, out.stderr
     assert "LAUNCH_FAIL" not in out.stdout, f"{op}: launch failed"
     return np.array([float(t) for t in out.stdout.split()])

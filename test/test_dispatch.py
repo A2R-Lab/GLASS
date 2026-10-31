@@ -18,17 +18,19 @@ fallback, alias identity) live in cuda/test_defaults.cu.
 """
 
 import subprocess
+from conftest import RUN_TIMEOUT
 
 import pytest
 
 
 OPS = ["dot_f32", "dot_f64", "gemv_f32", "chol_f32", "trsv_f32", "posv_f32",
-       "eig3_f64", "softmax_f32"]
+       "eig3_f64", "softmax_f32",
+       "checker_selftest"]   # the differential checker rejects NaN/Inf/size mismatch
 
 
 @pytest.mark.parametrize("op", OPS)
 def test_bare_face_matches_block(bin_dispatch, op):
-    res = subprocess.run([str(bin_dispatch), op], capture_output=True, text=True)
+    res = subprocess.run([str(bin_dispatch), op], capture_output=True, text=True, timeout=RUN_TIMEOUT)
     assert res.returncode == 0, (
         f"{op} rc={res.returncode}\nstdout:\n{res.stdout}\nstderr:\n{res.stderr}")
     assert "FAIL" not in res.stdout, f"{op}:\n{res.stdout}"

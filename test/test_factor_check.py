@@ -9,6 +9,7 @@ and flags a zero-pivot breakdown.
 
 import os
 import subprocess
+from conftest import RUN_TIMEOUT
 import tempfile
 
 import numpy as np
@@ -32,7 +33,7 @@ def _cholchk(binary, surf, th, n, A):
     f = _w(A)
     try:
         r = subprocess.run([str(binary), "cholchk", surf, str(th), str(n), f],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, timeout=RUN_TIMEOUT)
         if r.returncode != 0:
             raise RuntimeError(r.stderr)
         lines = r.stdout.strip().split("\n")
@@ -45,7 +46,7 @@ def _ldltchk(binary, th, n, A, pivot=0):
     f = _w(A)
     try:
         r = subprocess.run([str(binary), "ldltchk", str(th), str(n), f, str(pivot)],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, timeout=RUN_TIMEOUT)
         if r.returncode != 0:
             raise RuntimeError(r.stderr)
         lines = r.stdout.strip().split("\n")

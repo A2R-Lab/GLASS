@@ -7,6 +7,7 @@ may fuse differently per instantiation), so cross-surface checks use allclose.
 
 import os
 import subprocess
+from conftest import RUN_TIMEOUT
 import tempfile
 
 import numpy as np
@@ -33,7 +34,7 @@ def _gemv(binary, s, th, M, N, tr, A, x, y):
     t = [_w(A), _w(x), _w(y)]
     try:
         r = subprocess.run([str(binary), "gemv", s, str(th), str(M), str(N), str(int(tr)),
-                            str(AL), str(BE)] + t, capture_output=True, text=True)
+                            str(AL), str(BE)] + t, capture_output=True, text=True, timeout=RUN_TIMEOUT)
         if r.returncode != 0:
             raise RuntimeError(r.stderr)
         return np.fromstring(r.stdout.strip(), sep=" ").astype(np.float32)
@@ -46,7 +47,7 @@ def _syrk(binary, s, th, R, C, tr, A, Cm):
     t = [_w(A), _w(Cm)]
     try:
         r = subprocess.run([str(binary), "syrk", s, str(th), str(R), str(C), str(int(tr)),
-                            str(AL), str(BE)] + t, capture_output=True, text=True)
+                            str(AL), str(BE)] + t, capture_output=True, text=True, timeout=RUN_TIMEOUT)
         if r.returncode != 0:
             raise RuntimeError(r.stderr)
         OUT = C if tr else R

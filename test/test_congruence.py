@@ -8,6 +8,7 @@ instantiation — see the header note), so cross-surface checks use allclose.
 
 import os
 import subprocess
+from conftest import RUN_TIMEOUT
 import tempfile
 
 import numpy as np
@@ -32,7 +33,7 @@ def _w(a):
 def _run(binary, args, files, rows, cols):
     tmp = [_w(a) for a in files]
     try:
-        r = subprocess.run([str(binary)] + args + tmp, capture_output=True, text=True)
+        r = subprocess.run([str(binary)] + args + tmp, capture_output=True, text=True, timeout=RUN_TIMEOUT)
         if r.returncode != 0:
             raise RuntimeError(r.stderr)
         return np.fromstring(r.stdout.strip(), sep=" ").astype(np.float32).reshape(rows, cols, order="F")

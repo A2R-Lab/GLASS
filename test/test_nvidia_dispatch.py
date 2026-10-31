@@ -13,12 +13,13 @@ so the whole module skips when MATHDX_ROOT isn't set (see conftest.py).
 """
 
 import subprocess
+from conftest import RUN_TIMEOUT
 
 import pytest
 
 
 def _run(nvidia_bin, op):
-    res = subprocess.run([str(nvidia_bin), op], capture_output=True, text=True)
+    res = subprocess.run([str(nvidia_bin), op], capture_output=True, text=True, timeout=RUN_TIMEOUT)
     return res.returncode, res.stdout.strip(), res.stderr.strip()
 
 
@@ -31,6 +32,7 @@ def _run(nvidia_bin, op):
     "strided_gemm",   # Gap C — non-tight A_RS/B_RS
     "beta0_poison",   # beta==0 write-only through BOTH routes (NaN-poisoned C);
                       # pins the cuBLASDx vendor behavior (MathDx 26.03) + SIMT beta_blend
+    "checker_selftest",   # the differential checker rejects NaN/Inf/size mismatch
 ])
 def test_dispatch_op(bin_nvidia_dispatch, op):
     rc, stdout, stderr = _run(bin_nvidia_dispatch, op)

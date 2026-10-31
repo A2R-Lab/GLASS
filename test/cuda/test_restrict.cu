@@ -45,6 +45,11 @@ template<class T,int N,int OP> __device__ __forceinline__ void call(T* RESTRICT 
  if constexpr(OP==29)glass::warp::softmax<T>(runtime_n,T(1),b,a);
  if constexpr(OP==30)glass::block::syev<T,N>(a,b,a+N*N,s);
  if constexpr(OP==28)glass::softmax<T>(runtime_n,T(1),b,a,s);
+ // 41/42: the two L1 handoffs completed in the 2026-10-31 reload sweep. Every thread
+ // writes what IT read back from the handoff, so a stale per-thread register shows.
+ if constexpr(OP==41){unsigned r=glass::block::flat_rank(),z=glass::block::flat_size();T part=T(0);for(unsigned i=r;i<N;i+=z)part+=b[i];
+  T tot=glass::block::reduce_fast<T>(part,s);for(unsigned i=r;i<N;i+=z)b[i]=tot;__syncthreads();}
+ if constexpr(OP==42){glass::block::argmin<T>(N,b,p,b+N,s);if(glass::block::flat_rank()==0)b[0]=T(p[0]);__syncthreads();}
 }
 template<class T,int N,int OP> __global__ void kernel(T* inA,T* inB,T* scratch,unsigned* piv,T* out,unsigned runtime_n,bool global){
  __shared__ T sa[2*N*N],sb[2*N],ss[4*N*N]; __shared__ unsigned sp[N];
@@ -84,7 +89,7 @@ template<class T,int N,int OP> void run(int seed,int th,int global,bool multidim
  for(int i=0;i<N*N;i++)a[i]=tri?L[i]:A[i];
  for(int i=0;i<N;i++)a[N*N+i+i*N]=1;
  for(int c=0;c<2;c++)for(int i=0;i<N;i++)for(int j=0;j<N;j++)b[i+c*N]+=T((OP==0||OP==1||OP==2||OP==15||OP==16||OP==25||OP==39?L[i+j*N]:A[i+j*N])*X[j+c*N]);
- if constexpr((OP>=11&&OP<=13)||(OP>=18&&OP<=21)||OP==28||OP==29)for(int i=0;i<N;i++)b[i]=T(X[i]);
+ if constexpr((OP>=11&&OP<=13)||(OP>=18&&OP<=21)||OP==28||OP==29||OP==41||OP==42)for(int i=0;i<N;i++)b[i]=T(X[i]);
  if constexpr(OP>=31&&OP<=38){
   constexpr bool upper=(OP-31)&1,transpose=(OP-31)&2,unit=(OP-31)&4;
   for(int j=0;j<N;j++)for(int i=0;i<N;i++)a[i+j*N]=i==j&&unit?T(1):T(upper?L[j+i*N]:L[i+j*N]);
@@ -104,8 +109,8 @@ template<class T,int N,int OP> void run(int seed,int th,int global,bool multidim
  for(T value:out)printf("%.17g ",double(value));puts("");
  ck(cudaFree(da));ck(cudaFree(db));ck(cudaFree(ds));ck(cudaFree(dp));ck(cudaFree(dout));
 }
-template<class T,int N,int O=0>void choose(int op,int seed,int th,int global,bool multidim){if(op==O)run<T,N,O>(seed,th,global,multidim);else if constexpr(O<40)choose<T,N,O+1>(op,seed,th,global,multidim);}
-int main(int argc,char**argv){if(argc!=8)return 3;int op=atoi(argv[1]),bits=atoi(argv[2]),n=atoi(argv[3]),seed=atoi(argv[4]),th=atoi(argv[5]);int global=atoi(argv[6]);bool multidim=atoi(argv[7]);if(op<0||op>40||(bits!=32&&bits!=64)||th<1||th>1024)return 3;
+template<class T,int N,int O=0>void choose(int op,int seed,int th,int global,bool multidim){if(op==O)run<T,N,O>(seed,th,global,multidim);else if constexpr(O<42)choose<T,N,O+1>(op,seed,th,global,multidim);}
+int main(int argc,char**argv){if(argc!=8)return 3;int op=atoi(argv[1]),bits=atoi(argv[2]),n=atoi(argv[3]),seed=atoi(argv[4]),th=atoi(argv[5]);int global=atoi(argv[6]);bool multidim=atoi(argv[7]);if(op<0||op>42||(bits!=32&&bits!=64)||th<1||th>1024)return 3;
 if((op==16||op==17||op==29)&&th!=32)return 3;if(op==20&&th<n)return 3;
 #define GO(T) if(n==3)choose<T,3>(op,seed,th,global,multidim);else if(n==7)choose<T,7>(op,seed,th,global,multidim);else if(n==17)choose<T,17>(op,seed,th,global,multidim);else return 3;
 if(bits==32){GO(float)}else {GO(double)}return 0;}

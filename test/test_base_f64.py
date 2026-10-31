@@ -5,6 +5,7 @@ scalar type, so this covers the f64 instantiations (correctness + f64 thread-inv
 Oracle-free: residual / reconstruction checks at f64 tolerance.
 """
 import subprocess
+from conftest import RUN_TIMEOUT
 import numpy as np
 import pytest
 
@@ -27,7 +28,7 @@ def _problem(N):
 
 def _run(binary, op, surface, N, threads=64):
     out = subprocess.run([str(binary), op, surface, str(N), str(threads)],
-                         capture_output=True, text=True)
+                         capture_output=True, text=True, timeout=RUN_TIMEOUT)
     if out.returncode != 0:
         raise RuntimeError(f"runner failed ({op}/{surface}/N={N}):\n{out.stderr}")
     return np.array([float(x) for x in out.stdout.split()], dtype=np.float64)

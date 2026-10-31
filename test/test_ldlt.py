@@ -11,6 +11,7 @@ pivots, and all-zero-diagonal matrices where a 2×2 pivot is mandatory.
 
 import os
 import subprocess
+from conftest import RUN_TIMEOUT
 import tempfile
 
 import numpy as np
@@ -58,7 +59,7 @@ def _run(binary, op, n, threads, mats, pivot=0):
             f.close()
             tmp.append(f.name)
         cmd = [str(binary), op, str(n), str(threads), str(pivot)] + tmp
-        r = subprocess.run(cmd, capture_output=True, text=True)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=RUN_TIMEOUT)
         if r.returncode != 0:
             raise RuntimeError(f"binary failed:\n{r.stderr}")
         lines = [l.strip() for l in r.stdout.strip().split("\n") if l.strip()]

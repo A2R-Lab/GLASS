@@ -12,6 +12,7 @@ accumulation), and strictly-positive draws.
 
 import os
 import subprocess
+from conftest import RUN_TIMEOUT
 import tempfile
 
 import numpy as np
@@ -32,7 +33,7 @@ def _write(arr):
 
 def _run(bins, args):
     cmd = [str(bins["l1_round2"])] + [str(a) for a in args]
-    res = subprocess.run(cmd, capture_output=True, text=True)
+    res = subprocess.run(cmd, capture_output=True, text=True, timeout=RUN_TIMEOUT)
     if res.returncode != 0:
         raise RuntimeError(f"runner failed:\n{res.stderr}")
     return [np.fromstring(l, sep=" ").astype(np.float32)

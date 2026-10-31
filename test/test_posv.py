@@ -6,6 +6,7 @@ it directly rather than via conftest.run_op.
 
 import os
 import subprocess
+from conftest import RUN_TIMEOUT
 import tempfile
 
 import numpy as np
@@ -30,7 +31,7 @@ def _run(binary, op, n, threads, M, b):
             f = tempfile.NamedTemporaryFile(suffix=".bin", delete=False)
             arr.astype(np.float32).tofile(f); f.close(); tmp.append(f.name)
         cmd = [str(binary), op, str(n), str(threads), tmp[0], tmp[1]]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=RUN_TIMEOUT)
         if res.returncode != 0:
             raise RuntimeError(f"runner failed:\n{res.stderr}")
         return np.fromstring(res.stdout.strip().split("\n")[0], sep=" ").astype(np.float32)
@@ -51,7 +52,7 @@ def _run_m(binary, op, n, nrhs, threads, M, B):
             f = tempfile.NamedTemporaryFile(suffix=".bin", delete=False)
             arr.astype(np.float32).tofile(f); f.close(); tmp.append(f.name)
         cmd = [str(binary), op, str(n), str(nrhs), str(threads), tmp[0], tmp[1]]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=RUN_TIMEOUT)
         if res.returncode != 0:
             raise RuntimeError(f"runner failed:\n{res.stderr}")
         flat = np.fromstring(res.stdout.strip().split("\n")[0], sep=" ").astype(np.float32)
@@ -159,7 +160,7 @@ def _run_flag(binary, op, threads, A, b, rho):
             f = tempfile.NamedTemporaryFile(suffix=".bin", delete=False)
             arr.astype(np.float32).tofile(f); f.close(); tmp.append(f.name)
         cmd = [str(binary), op, str(FN), str(threads), tmp[0], tmp[1], repr(float(rho))]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=RUN_TIMEOUT)
         if res.returncode != 0:
             raise RuntimeError(f"runner failed:\n{res.stderr}")
         lines = [l for l in res.stdout.strip().split("\n") if l.strip()]

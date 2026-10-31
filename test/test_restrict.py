@@ -18,7 +18,7 @@ OPS = ["trsv_ct", "trsv_rt", "trsm", "potrf", "potrs_1", "posv_1",
        "softmax", "cgrps_potrf", "cgrps_trsm", "warp_trsv", "warp_potrf",
        "logsumexp", "vector_norm", "prefix_inclusive", "cgrps_reduce",
        "potrf_ct", "inv_pivoted", "ldlt_pivot_solve", "trsm_1",
-       "potrs_multi1", "posv_multi1", "bare_softmax", "warp_softmax", "syev"] + [f"trsv_flags_{i}" for i in range(8)] + ["trsv_no_tail", "softmax_no_tail"]
+       "potrs_multi1", "posv_multi1", "bare_softmax", "warp_softmax", "syev"] + [f"trsv_flags_{i}" for i in range(8)] + ["trsv_no_tail", "softmax_no_tail", "reduce_fast", "argmin"]
 
 
 def check_case(binary, op, bits, n, seed, threads, global_memory=False, multidim=False):
@@ -63,6 +63,11 @@ def check_case(binary, op, bits, n, seed, threads, global_memory=False, multidim
         close(right @ A, np.eye(n))
     elif op in (11, 21):
         close(vector[0], np.sum(x[:n].astype(dtype), dtype=np.float64))
+    elif op == 41:   # every thread's own read-back of the reduce_fast handoff
+        close(vector[:n], np.full(n, np.sum(x[:n].astype(dtype), dtype=np.float64)))
+    elif op == 42:   # rank 0's fold over the peers' (key, index) handoffs
+        assert vector[0] == np.argmin(x[:n]), command
+        close(vector[n], np.min(x[:n].astype(dtype)))
     elif op == 12:
         close(vector[0], np.linalg.norm(x[:n].astype(dtype)))
     elif op in (13, 28, 29, 40):
@@ -104,10 +109,12 @@ def test_restricted_callers(bins, op, bits, n):
     for threads in counts:
         if op == 20 and threads < n:
             continue  # prefix's documented launch contract
+        if op == 42 and 2*threads > 4*n*n:
+            continue  # argmin's documented 2*blockDim scratch contract vs the driver's 4n^2 scratch
         check_case(bins["restrict"], op, bits, n, 0, threads, global_memory=2)
 
 
-@pytest.mark.parametrize("op", [0, 1, 4, 5, 13, 18, 23, 24, 28, 30], ids=lambda i: OPS[i])
+@pytest.mark.parametrize("op", [0, 1, 4, 5, 13, 18, 23, 24, 28, 30, 41, 42], ids=lambda i: OPS[i])
 @pytest.mark.parametrize("bits", [32, 64])
 @pytest.mark.parametrize("global_memory,multidim", [(True, False), (False, True), (True, True)])
 def test_restricted_memory_and_geometry(bins, op, bits, global_memory, multidim):
@@ -120,3 +127,26 @@ def test_restricted_memory_and_geometry(bins, op, bits, global_memory, multidim)
 def test_restricted_pivots_and_shift(bins, op, bits):
     for threads in (1, 2, 7, 33, 64):
         check_case(bins["restrict"], op, bits, 7, 10, threads, global_memory=2)
+
+
+@pytest.mark.parametrize("op", range(len(OPS)), ids=OPS)
+@pytest.mark.parametrize("bits", [32, 64])
+def test_restricted_callers_jit(bin_restrict_jit, op, bits):
+    """The same callers through the driver's PTX JIT for an older virtual target
+    (conftest JIT_ARCH): a second code generator on every receipt. Minimal
+    reproducer context only, which is where the handoff mutants surface."""
+    counts = [32] if op in (16, 17, 29) else [2, 33]
+    for n in (3, 7):
+        for threads in counts:
+            if op == 20 and threads < n:
+                continue  # prefix's documented launch contract
+            if op == 42 and 2*threads > 4*n*n:
+                continue  # argmin's documented 2*blockDim scratch contract
+            check_case(bin_restrict_jit, op, bits, n, 0, threads, global_memory=2)
+
+
+@pytest.mark.parametrize("op", [13, 18, 23, 24, 30, 40], ids=lambda i: OPS[i])
+@pytest.mark.parametrize("bits", [32, 64])
+def test_restricted_pivots_and_shift_jit(bin_restrict_jit, op, bits):
+    for threads in (2, 33):
+        check_case(bin_restrict_jit, op, bits, 7, 10, threads, global_memory=2)

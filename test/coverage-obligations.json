@@ -206,11 +206,13 @@
   {
    "id": "optimized_restricted_callers",
    "shard": "integration",
-   "description": "Restricted optimized callers match independent oracles, including handoff regressions and memory/launch geometry.",
+   "description": "Restricted optimized callers match independent oracles, including handoff regressions and memory/launch geometry, through both the native SASS build and the PTX-JIT lane (a second code generator).",
    "evidence": [
     "test/test_restrict.py::test_restricted_callers*",
     "test/test_restrict.py::test_restricted_memory_and_geometry*",
-    "test/test_restrict.py::test_restricted_pivots_and_shift*"
+    "test/test_restrict.py::test_restricted_pivots_and_shift*",
+    "test/test_restrict.py::test_restricted_callers_jit*",
+    "test/test_restrict.py::test_restricted_pivots_and_shift_jit*"
    ]
   }
  ]

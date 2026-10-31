@@ -8,6 +8,7 @@ existing test_posv suite still passing. Here: the regularized shift solves
 
 import os
 import subprocess
+from conftest import RUN_TIMEOUT
 import tempfile
 
 import numpy as np
@@ -32,7 +33,7 @@ def _posv(binary, th, N, NRHS, reg, rho, A, B):
     t = [_w(A), _w(B)]
     try:
         r = subprocess.run([str(binary), "posvreg", str(th), str(N), str(NRHS),
-                            str(int(reg)), str(rho)] + t, capture_output=True, text=True)
+                            str(int(reg)), str(rho)] + t, capture_output=True, text=True, timeout=RUN_TIMEOUT)
         if r.returncode != 0:
             raise RuntimeError(r.stderr)
         L = r.stdout.strip().split("\n")
@@ -46,7 +47,7 @@ def _ricc(binary, th, NX, NU, reg, rho, P, A, B, R, op="riccati"):
     t = [_w(P), _w(A), _w(B), _w(R)]
     try:
         r = subprocess.run([str(binary), op, str(th), str(NX), str(NU),
-                            str(int(reg)), str(rho)] + t, capture_output=True, text=True)
+                            str(int(reg)), str(rho)] + t, capture_output=True, text=True, timeout=RUN_TIMEOUT)
         if r.returncode != 0:
             raise RuntimeError(r.stderr)
         L = r.stdout.strip().split("\n")

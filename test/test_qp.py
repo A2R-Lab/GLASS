@@ -12,6 +12,7 @@ invariant) and both float32 / float64.
 
 import os
 import subprocess
+from conftest import RUN_TIMEOUT
 import tempfile
 
 import numpy as np
@@ -39,7 +40,7 @@ def run_box_qp(binary, P, q, l, u, x0, *, threads=64, max_iter=5000,
             files.append(f.name)
         cmd = [str(binary), "box_qp", dtype, str(n), str(threads),
                str(max_iter), repr(tol)] + files
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=RUN_TIMEOUT)
         if res.returncode != 0:
             raise RuntimeError(f"runner failed:\n{res.stderr}")
         lines = [ln for ln in res.stdout.strip().split("\n") if ln.strip()]

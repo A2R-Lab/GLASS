@@ -12,6 +12,7 @@ stored K×M), op(B) is K×N (TRANSPOSE_B ⇒ B stored N×K). The CUDA runner CLI
 
 import os
 import subprocess
+from conftest import RUN_TIMEOUT
 import tempfile
 
 import numpy as np
@@ -61,7 +62,7 @@ def _run(binary, surface, threads, M, N, K, ta, tb, alpha, beta, A_phys, B_phys,
             tmp.append(f.name)
         cmd = [str(binary), surface, str(threads), str(M), str(N), str(K),
                str(int(ta)), str(int(tb)), str(alpha), str(beta)] + tmp
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=RUN_TIMEOUT)
         if res.returncode != 0:
             raise RuntimeError(f"runner failed:\n{res.stderr}")
         line = res.stdout.strip().split("\n")[0]

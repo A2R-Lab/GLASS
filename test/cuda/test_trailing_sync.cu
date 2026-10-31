@@ -36,10 +36,10 @@
     std::fprintf(stderr, "CUDA: %s @ %d: %s\n", cudaGetErrorString(e), __LINE__, #x); \
     return 1; } } while (0)
 
+#include "check.cuh"   // NaN/Inf/size-mismatch -> +inf, never a silent zero
+
 static float max_abs_diff(const std::vector<float>& a, const std::vector<float>& b) {
-    float m = 0.f;
-    for (size_t i = 0; i < a.size(); i++) m = std::max(m, std::fabs(a[i] - b[i]));
-    return m;
+    return static_cast<float>(checked_max_abs_diff(a, b));
 }
 
 // ─── L1: glass::nvidia::dot ──────────────────────────────────────────────────
@@ -450,6 +450,7 @@ int main(int argc, char** argv)
     if (std::strcmp(op, "l3_simt_batched") == 0)           return op_l3_simt_batched();
     if (std::strcmp(op, "l3_simt_strided_batched") == 0)   return op_l3_simt_strided_batched();
     if (std::strcmp(op, "l3_factor_solve") == 0)           return op_l3_factor_solve();
+    if (std::strcmp(op, "checker_selftest") == 0)          return checker_selftest();
 #ifdef GLASS_BENCH_CUBLASDX
     if (std::strcmp(op, "l3_cublasdx_gemm") == 0)          return op_l3_cublasdx_gemm();
 #else

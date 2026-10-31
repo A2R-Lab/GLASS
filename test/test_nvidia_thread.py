@@ -6,6 +6,7 @@ both supported precisions and at two sizes.
 """
 
 import subprocess
+from conftest import RUN_TIMEOUT
 
 import numpy as np
 import pytest
@@ -75,7 +76,7 @@ def _rect(m, n, dtype):
 
 def _run(binary, op, precision, n):
     result = subprocess.run(
-        [str(binary), op, precision, str(n)], capture_output=True, text=True
+        [str(binary), op, precision, str(n)], capture_output=True, text=True, timeout=RUN_TIMEOUT
     )
     assert result.returncode == 0, result.stderr
     return np.fromstring(result.stdout, sep=" ", dtype=np.float64)

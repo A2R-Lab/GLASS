@@ -36,6 +36,7 @@ COVERAGE:
 
 import os
 import subprocess
+from conftest import RUN_TIMEOUT
 import tempfile
 
 import numpy as np
@@ -82,7 +83,7 @@ def _run(binary, op, model, dtype, n, P, inputs, flags=()):
             fh.close()
             tmp.append(fh.name)
         cmd = [str(binary), op, model, dtype, str(n), str(P)] + [str(x) for x in flags] + tmp
-        r = subprocess.run(cmd, capture_output=True, text=True)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=RUN_TIMEOUT)
         if r.returncode != 0:
             raise RuntimeError(f"Binary failed:\n{r.stderr}")
         return np.fromstring(r.stdout.strip(), sep=" ").astype(_NPDT[dtype])

@@ -26,10 +26,10 @@
     std::fprintf(stderr, "CUDA: %s @ %d: %s\n", cudaGetErrorString(e), __LINE__, #x); \
     return 1; } } while (0)
 
+#include "check.cuh"   // NaN/Inf/size-mismatch -> +inf, never a silent zero
+
 static float max_abs_diff(const std::vector<float>& a, const std::vector<float>& b) {
-    float m = 0.f;
-    for (size_t i = 0; i < a.size(); i++) m = std::max(m, std::fabs(a[i] - b[i]));
-    return m;
+    return static_cast<float>(checked_max_abs_diff(a, b));
 }
 
 // ─── kernels ────────────────────────────────────────────────────────────────
@@ -363,6 +363,7 @@ int main(int argc, char** argv) {
     if (!std::strcmp(op, "beta0_poison")) return op_beta0_poison();
     if (!std::strcmp(op, "dispatch_q"))   return op_dispatch_q();
     if (!std::strcmp(op, "gemm_batched")) return op_gemm_batched();
+    if (!std::strcmp(op, "checker_selftest")) return checker_selftest();
     std::fprintf(stderr, "unknown op: %s\n", op);
     return 2;
 }

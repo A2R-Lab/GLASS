@@ -14,6 +14,7 @@ warp:: forms always run one 32-lane warp.
 
 import os
 import subprocess
+from conftest import RUN_TIMEOUT
 import tempfile
 
 import numpy as np
@@ -59,7 +60,7 @@ def _run(binary, op, threads, n, k, fill, trans, row_major,
         cmd = [str(binary), op, str(threads), str(n), str(k),
                str(fill), str(int(trans)), str(int(row_major)),
                str(alpha), str(beta)] + tmp
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=RUN_TIMEOUT)
         if res.returncode != 0:
             raise RuntimeError(f"runner failed:\n{res.stderr}")
         line = res.stdout.strip().split("\n")[0]

@@ -34,14 +34,11 @@ static const int TBS[] = {16, 32, 64, 256};
 template <typename T>
 static double tol() { return sizeof(T) == 8 ? 1e-10 : 1e-4; }
 
+#include "check.cuh"   // NaN/Inf/size-mismatch -> +inf, never a silent zero
+
 template <typename T>
 static double max_rel_diff(const std::vector<T>& a, const std::vector<T>& b) {
-    double m = 0;
-    for (size_t i = 0; i < a.size(); i++) {
-        double denom = std::max(1.0, std::fabs((double)b[i]));
-        m = std::max(m, std::fabs((double)a[i] - (double)b[i]) / denom);
-    }
-    return m;
+    return checked_max_rel_diff(a, b);
 }
 
 static const char* body_name(glass::body b) {
@@ -341,6 +338,7 @@ int main(int argc, char** argv) {
                                              drive_posv<float, 32>("posv_n32_f32"); }
     else if (!std::strcmp(op, "eig3_f64")) { drive_eig3<double>("eig3_f64"); }
     else if (!std::strcmp(op, "softmax_f32")) { drive_softmax<float>(); }
+    else if (!std::strcmp(op, "checker_selftest")) { return checker_selftest(); }
     else { std::fprintf(stderr, "unknown op %s\n", op); return 2; }
     CUDA_CHECK(cudaDeviceSynchronize());
     return g_fail;

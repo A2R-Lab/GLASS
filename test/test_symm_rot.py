@@ -15,6 +15,7 @@ sweep; rot is elementwise and likewise byte-identical.
 
 import os
 import subprocess
+from conftest import RUN_TIMEOUT
 import tempfile
 
 import numpy as np
@@ -45,7 +46,7 @@ def _invoke(bins, args, files):
     fns = [_write(a) for a in files]
     try:
         cmd = [str(bins["symm_rot"])] + [str(a) for a in args] + fns
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=RUN_TIMEOUT)
         if res.returncode != 0:
             raise RuntimeError(f"runner failed:\n{res.stderr}")
         lines = [l.strip() for l in res.stdout.strip().split("\n") if l.strip()]

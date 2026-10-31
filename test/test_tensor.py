@@ -7,6 +7,7 @@ three surfaces (block / warp / cgrps), plus thread-count invariance.
 
 import os
 import subprocess
+from conftest import RUN_TIMEOUT
 import tempfile
 
 import numpy as np
@@ -52,7 +53,7 @@ def _run_tvc(binary, surf, th, K, A, B, c, sym, acc, rm, T, v, M):
     try:
         cmd = [str(binary), "tvc", surf, str(th), str(K), str(A), str(B),
                str(c), str(int(sym)), str(int(acc)), str(int(rm))] + tmp
-        r = subprocess.run(cmd, capture_output=True, text=True)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=RUN_TIMEOUT)
         if r.returncode != 0:
             raise RuntimeError(r.stderr)
         o0, o1 = _dims(c, K, A, B)
@@ -67,7 +68,7 @@ def _run_vtv(binary, surf, th, K, A, B, acc, rm, T, u, w, s):
     try:
         cmd = [str(binary), "vtv", surf, str(th), str(K), str(A), str(B),
                str(int(acc)), str(int(rm))] + tmp
-        r = subprocess.run(cmd, capture_output=True, text=True)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=RUN_TIMEOUT)
         if r.returncode != 0:
             raise RuntimeError(r.stderr)
         return np.fromstring(r.stdout.strip(), sep=" ").astype(np.float32)

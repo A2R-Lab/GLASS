@@ -27,6 +27,7 @@ GATES, per the wave's validation contract:
 
 import os
 import subprocess
+from conftest import RUN_TIMEOUT
 import tempfile
 import zlib
 
@@ -90,7 +91,7 @@ def _run(bins, op, model, dtype, inputs, tpb=64, flag0=0, flag1=0, p=P):
             tmp.append(fh.name)
         cmd = [str(bins["robotics"]), op, model, dtype, str(p), str(tpb),
                str(flag0), str(flag1)] + tmp
-        r = subprocess.run(cmd, capture_output=True, text=True)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=RUN_TIMEOUT)
         if r.returncode != 0:
             raise RuntimeError(f"driver failed ({op}/{model}/{dtype}):\n{r.stderr}")
         out = np.fromstring(r.stdout.strip(), sep=" ").astype(_NPDT[dtype])

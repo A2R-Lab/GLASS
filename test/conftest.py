@@ -26,6 +26,18 @@ GLASS_DIR = TEST_DIR.parent
 CUDA_DIR  = TEST_DIR / "cuda"
 BUILD_DIR = TEST_DIR / "build"
 
+# Bounded subprocesses: a hung kernel (a missing barrier, a stale handoff that
+# never converges) must fail its test, not stall the whole run. Jetsons and JIT
+# lanes are slower — raise these through the environment, never drop them.
+RUN_TIMEOUT = float(os.environ.get("GLASS_RUN_TIMEOUT", "600"))
+COMPILE_TIMEOUT = float(os.environ.get("GLASS_COMPILE_TIMEOUT", "3600"))
+
+# PTX-JIT lane: the restricted-caller regression is also compiled for a virtual
+# architecture the device can JIT, so a second code generator (the driver's,
+# targeting an older GPU) runs the same handoff-sensitive callers on every
+# receipt. The 2026-10 reload bugs were code-generator dependent.
+JIT_ARCH = os.environ.get("GLASS_JIT_ARCH", "compute_75")
+
 
 # ─── GPU architecture detection ───────────────────────────────────────────────
 
@@ -159,6 +171,7 @@ def _hash_sources(cu_path: pathlib.Path) -> str:
     # must bust every binary, but globbing ALL drivers would rebust the world on
     # any single-driver edit.
     paths = [cu_path, pathlib.Path(__file__), CUDA_DIR / "helpers.cuh",
+             CUDA_DIR / "check.cuh",
              GLASS_DIR / "glass.cuh", GLASS_DIR / "glass-cgrps.cuh",
              GLASS_DIR / "glass-defaults.cuh", GLASS_DIR / "glass-dispatch.cuh",
              GLASS_DIR / "glass-nvidia.cuh"]
@@ -199,9 +212,14 @@ def _hash_sources(cu_path: pathlib.Path) -> str:
 
 def compile_binary(name: str, build_dir: pathlib.Path, arch: str,
                    extra_flags: list = None,
-                   solver_fatbin: pathlib.Path | None = None) -> pathlib.Path:
-    """Compile a CUDA test binary, skipping if the source hash is unchanged."""
-    cu_src    = CUDA_DIR / f"{name}.cu"
+                   solver_fatbin: pathlib.Path | None = None,
+                   source: str | None = None) -> pathlib.Path:
+    """Compile a CUDA test binary, skipping if the source hash is unchanged.
+
+    `source` names the driver when the binary name differs from it (one driver
+    built for several targets, e.g. the PTX-JIT lane).
+    """
+    cu_src    = CUDA_DIR / f"{source or name}.cu"
     out_bin   = build_dir / name
     hash_file = build_dir / f"{name}.hash"
 
@@ -250,7 +268,8 @@ def compile_binary(name: str, build_dir: pathlib.Path, arch: str,
         commands = [common + ["-o", str(out_bin), str(cu_src)]
                     + (extra_flags or [])]
     for cmd in commands:
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True,
+                                timeout=COMPILE_TIMEOUT)
         if result.returncode != 0:
             print(f"\nCompilation failed for {name}:\n{result.stderr}", file=sys.stderr)
             raise RuntimeError(f"nvcc failed for {name}")
@@ -269,6 +288,7 @@ class LazyBins(Mapping):
         "tensor", "factor_check", "congruence", "solve", "reduced_blas", "base_f64",
         "defaults", "dispatch", "l1_round2", "block_access", "symmetrize", "symm_rot",
         "syev", "robotics", "api_vector", "api_dense", "api_factor", "api_robotics", "l3_nvidia", "nvidia_dispatch", "trailing_sync", "nvidia_f64", "nvidia_thread",
+        "restrict_jit",
     }
     optional = {"l3_nvidia", "nvidia_dispatch", "trailing_sync", "nvidia_f64", "nvidia_thread"}
 
@@ -287,6 +307,9 @@ class LazyBins(Mapping):
         mathdx, cublasdx = self._mathdx()
         target_sm = CUDA_ARCH.replace("sm_", "") + "0"
         flags: list[str] = ["-O3"] if key in {"restrict", "bdsv", "pcg", "qp"} else []
+        if key == "restrict_jit":
+            return compile_binary("test_restrict_jit", BUILD_DIR, JIT_ARCH, ["-O3"],
+                                  source="test_restrict")
         if key == "nvidia_dispatch" and not cublasdx:
             raise KeyError(key)
         if key in {"nvidia_dispatch", "trailing_sync"} and cublasdx:
@@ -396,6 +419,22 @@ def bin_nvidia_thread(bins):
 
 
 @pytest.fixture(scope="session")
+def bin_restrict_jit(bins):
+    """PTX-JIT lane of the restricted-caller regression (JIT_ARCH). Skips only
+    on a device older than the virtual target; the desktop receipt never skips.
+    One warm launch populates the driver's JIT cache so per-case timeouts stay
+    tight afterwards."""
+    jit_cc = int(JIT_ARCH.split("_")[1])
+    if int(CUDA_ARCH[3:]) < jit_cc:
+        pytest.skip(f"device {CUDA_ARCH} cannot JIT {JIT_ARCH}")
+    binary = bins["restrict_jit"]
+    warm = subprocess.run([str(binary), "0", "32", "3", "0", "2", "2", "0"],
+                          capture_output=True, text=True, timeout=COMPILE_TIMEOUT)
+    assert warm.returncode == 0, (warm.stdout, warm.stderr)
+    return binary
+
+
+@pytest.fixture(scope="session")
 def bin_base_f64(bins):
     """Double-precision base (glass::) + warp (glass::warp::) ops."""
     return bins["base_f64"]
@@ -442,7 +481,7 @@ def run_op(binary: pathlib.Path, op: str, version: str, args: list, inputs: list
         # stays clean; pair with --error-exitcode so a finding trips returncode.
         prefix = shlex.split(os.environ.get("GLASS_RUN_PREFIX", ""))
         cmd = prefix + [str(binary), op, version] + [str(a) for a in args] + tmpfiles
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=RUN_TIMEOUT)
         if result.returncode != 0:
             raise RuntimeError(f"Binary failed:\n{result.stdout}\n{result.stderr}")
 

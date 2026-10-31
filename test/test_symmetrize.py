@@ -9,6 +9,7 @@ warp; cgrps must match block exactly (same impl body, GroupBarrier).
 
 import os
 import subprocess
+from conftest import RUN_TIMEOUT
 import tempfile
 
 import numpy as np
@@ -31,7 +32,7 @@ def _run(bins, surface, threads, n, ct, A):
     fn = _write(A)
     try:
         cmd = [str(bins["symmetrize"]), surface, str(threads), str(n), str(int(ct)), fn]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=RUN_TIMEOUT)
         if res.returncode != 0:
             raise RuntimeError(f"runner failed:\n{res.stderr}")
         return np.fromstring(res.stdout.strip(), sep=" ").astype(np.float32).reshape(n, n, order="F")
