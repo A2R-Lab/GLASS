@@ -120,11 +120,27 @@ nothing here claims support for every CUDA release or NVIDIA GPU.
    * - Jetson AGX Orin (``sm_87``), JetPack 7 / CUDA 13.2, native, aarch64
      - Full pytest suite with MathDx 26.03; the Pinocchio leg of the robotics
        tests skips (no aarch64 wheel)
-     - Last run 2026-10-31, unsigned: result recorded in the changelog.
+     - 2026-10-31, unsigned: every test passes. The first pass uncovered the
+       device-``printf`` truncation described below; the four affected files
+       were rerun on the fixed drivers.
    * - Jetson AGX Xavier (``sm_72``), JetPack 5.1 / CUDA 11.4, native, aarch64
-     - Restricted-caller regression and the differential-checker drivers
-       (Python 3.8: no pytest session, oracle driven directly)
-     - Last run 2026-10-31, unsigned: result recorded in the changelog.
+     - Restricted-caller regression (1856 oracle cases) and the trailing-sync
+       and dispatch drivers (Python 3.8: no pytest session, oracle driven
+       directly); no MathDx for CUDA 11.4
+     - 2026-10-31, unsigned: every case passes, including the checker
+       self-test.
+
+A reload-to-plain-load mutant of ``cooperative_detail::load`` (the 2026-10
+handoff fix) is caught by the restricted-caller regression on all four code
+generators above: CUDA 13.2 for ``sm_120`` (native and ``compute_75`` JIT),
+CUDA 13.2 for ``sm_87`` and CUDA 11.4 for ``sm_72``. The ``reduce_fast`` and
+``argreduce`` reloads survive that mutant everywhere; they are there for
+consistency of the handoff pattern, not because a miscompile was demonstrated.
+
+Device ``printf`` is not used for test output: its FIFO defaults to 1 MB on a
+Jetson AGX Orin against 8 MB on an RTX 5090, and a long dump is silently cut
+when it fills (2048 values, then nothing). Drivers copy results to the host
+and print there.
 
 CUDA 13 cannot compile for ``sm_72``, so the Xavier lane always uses the
 toolkit installed on the board. Hopper and desktop Ampere parts have compile
