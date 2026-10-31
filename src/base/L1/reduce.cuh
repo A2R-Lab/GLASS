@@ -294,7 +294,7 @@ __device__ T reduce_fast(T partial, T *s_scratch)
         if (rank == 0) s_scratch[0] = val;
     }
     __syncthreads();
-    T total = s_scratch[0];
+    T total = cooperative_detail::load(BlockBarrier{}, s_scratch);   // lane 0's handoff
     if constexpr (TRAILING_SYNC) __syncthreads();
     return total;
 }
@@ -342,7 +342,7 @@ __device__ T reduce_fast_min(T partial, T *s_scratch)
         if (rank == 0) s_scratch[0] = val;
     }
     __syncthreads();
-    T total = s_scratch[0];
+    T total = cooperative_detail::load(BlockBarrier{}, s_scratch);   // lane 0's handoff
     if constexpr (TRAILING_SYNC) __syncthreads();
     return total;
 }

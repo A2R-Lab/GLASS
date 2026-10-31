@@ -71,9 +71,9 @@ __device__ T qp_objective(std::uint32_t n, T *P, T *x, T *q, T *Px, T *tmp)
     gemm<T>(n, 1, n, (T)1, P, x, Px);
     __syncthreads();
     dot_lowmem<T>(n, Px, x, tmp);     // tmp[0] = xᵀP x (uses tmp[0..n-1])
-    T xPx = tmp[0];
+    T xPx = cooperative_detail::load(BlockBarrier{}, tmp);   // published by another thread
     dot_lowmem<T>(n, q, x, tmp);      // tmp[0] = qᵀx
-    T qx = tmp[0];
+    T qx = cooperative_detail::load(BlockBarrier{}, tmp);
     return (T)0.5 * xPx + qx;
 }
 
@@ -114,8 +114,8 @@ __device__ QPResult<T> box_qp(std::uint32_t n, T *P, T *q, T *l, T *u, T *x,
         __syncthreads();
         infnorm<T>(n, d);                       // d[0] = ||pg||_inf (destructive)
         __syncthreads();
-        out.grad_norm = d[0];
-        if (d[0] <= params.tol) { out.converged = true; break; }
+        out.grad_norm = cooperative_detail::load(BlockBarrier{}, d);   // handoff reload
+        if (out.grad_norm <= params.tol) { out.converged = true; break; }
 
         // Armijo projected backtracking line search.
         T f_x = qp_objective<T>(n, P, x, q, Px, tmp);
@@ -134,7 +134,7 @@ __device__ QPResult<T> box_qp(std::uint32_t n, T *P, T *q, T *l, T *u, T *x,
             __syncthreads();
             dot_lowmem<T>(n, grad, d, tmp);               // tmp[0] = grad·d (<=0)
             __syncthreads();
-            T gd = tmp[0];
+            T gd = cooperative_detail::load(BlockBarrier{}, tmp);
             T f_new = qp_objective<T>(n, P, xnew, q, Px, tmp);
             __syncthreads();
             // Sufficient decrease: f(xnew) <= f(x) + c * grad·(xnew - x).

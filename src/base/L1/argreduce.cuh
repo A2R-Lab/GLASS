@@ -59,11 +59,14 @@ __device__ void argreduce(uint32_t n, const T *x, uint32_t *out, T *out_val, T *
     __syncthreads();
 
     if (rank == 0) {
-        T key = s_key[0];
+        T key = s_key[0];                       // rank 0's own partial
         uint32_t idx = s_idx[0];
         uint32_t lim = (size < n) ? size : n;
-        for (uint32_t i = 1; i < lim; i++)
-            combine<T, MINIMUM>(key, idx, s_key[i], s_idx[i] == UINT32_MAX ? UINT32_MAX : s_idx[i]);
+        for (uint32_t i = 1; i < lim; i++) {    // peers' partials: handoff reloads
+            const T ckey = cooperative_detail::load(BlockBarrier{}, s_key + i);
+            const uint32_t cidx = cooperative_detail::load(BlockBarrier{}, s_idx + i);
+            combine<T, MINIMUM>(key, idx, ckey, cidx);
+        }
         out[0] = (idx == UINT32_MAX) ? 0u : idx;
         if (out_val != nullptr) out_val[0] = (idx == UINT32_MAX) ? Key{}.empty(x) : key;
     }
