@@ -93,8 +93,8 @@ SHARD_DRIVERS[mathdx]="test/cuda/test_nvidia_dispatch.cu test/cuda/test_nvidia_f
  test/cuda/test_nvidia_thread.cu test/cuda/test_l3_nvidia.cu"
 SHARD_PATHS[mathdx]="$ROOTS_BASE,$DENSE_BASE,$TEST_BASE,src/nvidia,glass-nvidia.cuh"
 
-SHARD_FILES[integration]="test/test_examples.py test/test_trailing_sync.py test/test_restrict.py"
-SHARD_DRIVERS[integration]="test/cuda/test_trailing_sync.cu test/cuda/test_restrict.cu"
+SHARD_FILES[integration]="test/test_examples.py test/test_trailing_sync.py test/test_restrict.py test/test_select.py"
+SHARD_DRIVERS[integration]="test/cuda/test_trailing_sync.cu test/cuda/test_restrict.cu test/cuda/test_select.cu"
 SHARD_PATHS[integration]="$ROOTS_BASE,glass-nvidia.cuh,src,$TEST_BASE,examples"
 
 ALL_SHARDS="vector dense factor tiers solvers robotics mathdx integration"

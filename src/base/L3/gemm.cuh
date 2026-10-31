@@ -23,8 +23,11 @@
 // threads own 4-row register tiles of a C column (B value reused across 4 FMAs,
 // contiguous A rows vector-loaded when aligned) — same per-element ascending-k
 // accumulation order, so results stay bit-identical across thread counts.
-// A, B, C must not alias each other (C is written while A/B are read; declared
-// __restrict__). A and B may point to the SAME data (both are read-only).
+// A, B, C must not alias each other (C is written while A/B are read). A and B
+// may point to the SAME data (both are read-only). No parameter carries
+// `__restrict__`: GLASS declares none on its own interfaces (see
+// docs/agent_debugging_guide.md §1i), while callers may still pass restricted
+// pointers.
 //
 // Row-major operands need no separate path: a row-major M×K matrix is exactly a
 // column-major K×M matrix, so pass it with the matching TRANSPOSE flag (see
@@ -105,9 +108,9 @@ __host__ __device__ constexpr bool tile4_profitable(uint32_t m)
 template <typename T, bool TRANSPOSE_B, bool HAS_BETA, bool VEC>
 __device__ __forceinline__ void gemm_tile4_loop(uint32_t rank, uint32_t size,
                                                 uint32_t m_, uint32_t n_, uint32_t k_,
-                                                T alpha, const T *__restrict__ A,
-                                                const T *__restrict__ B,
-                                                T beta, T *__restrict__ C)
+                                                T alpha, const T *A,
+                                                const T *B,
+                                                T beta, T *C)
 {
     const uint32_t tpc    = (m_ + 3u) / 4u;   // 4-row tiles per column of C
     const uint32_t ntiles = tpc * n_;
@@ -128,7 +131,7 @@ __device__ __forceinline__ void gemm_tile4_loop(uint32_t rank, uint32_t size,
                 }
                 acc0 += a0 * b; acc1 += a1 * b; acc2 += a2 * b; acc3 += a3 * b;
             }
-            T *__restrict__ c = C + (r + n*m_);
+            T *c = C + (r + n*m_);
             if constexpr (HAS_BETA) {
                 c[0] = beta_blend(alpha*acc0, beta, c[0]);
                 c[1] = beta_blend(alpha*acc1, beta, c[1]);
@@ -155,8 +158,8 @@ __device__ __forceinline__ void gemm_tile4_loop(uint32_t rank, uint32_t size,
 template <typename T, bool TRANSPOSE_B, bool HAS_BETA>
 __device__ void gemm_tile4(uint32_t rank, uint32_t size,
                            uint32_t m_, uint32_t n_, uint32_t k_,
-                           T alpha, const T *__restrict__ A, const T *__restrict__ B,
-                           T beta, T *__restrict__ C)
+                           T alpha, const T *A, const T *B,
+                           T beta, T *C)
 {
     if constexpr (tile4_has_vec<T>::value) {
         if ((m_ % 4u == 0u) && tile4_aligned(A)) {
@@ -171,9 +174,9 @@ __device__ void gemm_tile4(uint32_t rank, uint32_t size,
 // unrolled k loop; M%4 tail statically absent when M is a multiple of 4).
 template <typename T, uint32_t M, uint32_t N, uint32_t K, bool TRANSPOSE_B, bool HAS_BETA, bool VEC>
 __device__ __forceinline__ void gemm_tile4_loop_ct(uint32_t rank, uint32_t size,
-                                                   T alpha, const T *__restrict__ A,
-                                                   const T *__restrict__ B,
-                                                   T beta, T *__restrict__ C)
+                                                   T alpha, const T *A,
+                                                   const T *B,
+                                                   T beta, T *C)
 {
     constexpr uint32_t TPC    = (M + 3u) / 4u;   // 4-row tiles per column of C
     constexpr uint32_t NTILES = TPC * N;
@@ -194,7 +197,7 @@ __device__ __forceinline__ void gemm_tile4_loop_ct(uint32_t rank, uint32_t size,
                 }
                 acc0 += a0 * b; acc1 += a1 * b; acc2 += a2 * b; acc3 += a3 * b;
             }
-            T *__restrict__ c = C + (r + n*M);
+            T *c = C + (r + n*M);
             if constexpr (HAS_BETA) {
                 c[0] = beta_blend(alpha*acc0, beta, c[0]);
                 c[1] = beta_blend(alpha*acc1, beta, c[1]);
@@ -220,8 +223,8 @@ __device__ __forceinline__ void gemm_tile4_loop_ct(uint32_t rank, uint32_t size,
 
 template <typename T, uint32_t M, uint32_t N, uint32_t K, bool TRANSPOSE_B, bool HAS_BETA>
 __device__ void gemm_tile4_ct(uint32_t rank, uint32_t size,
-                              T alpha, const T *__restrict__ A, const T *__restrict__ B,
-                              T beta, T *__restrict__ C)
+                              T alpha, const T *A, const T *B,
+                              T beta, T *C)
 {
     if constexpr (tile4_has_vec<T>::value && (M % 4u == 0u)) {
         if (tile4_aligned(A)) {
@@ -243,8 +246,8 @@ __device__ void gemm_tile4_ct(uint32_t rank, uint32_t size,
 template <typename T, bool TRANSPOSE_A, bool TRANSPOSE_B, bool ROW_MAJOR_C>
 __device__ void gemm_impl(uint32_t rank, uint32_t size,
                           uint32_t m_, uint32_t n_, uint32_t k_,
-                          T alpha, const T *__restrict__ A, const T *__restrict__ B,
-                          T beta, T *__restrict__ C)
+                          T alpha, const T *A, const T *B,
+                          T beta, T *C)
 {
     if constexpr (!TRANSPOSE_A && !ROW_MAJOR_C) {
         if (tile4_profitable(m_)) {
@@ -269,8 +272,8 @@ __device__ void gemm_impl(uint32_t rank, uint32_t size,
 template <typename T, bool TRANSPOSE_A, bool TRANSPOSE_B, bool ROW_MAJOR_C>
 __device__ void gemm_impl(uint32_t rank, uint32_t size,
                           uint32_t m_, uint32_t n_, uint32_t k_,
-                          T alpha, const T *__restrict__ A, const T *__restrict__ B,
-                          T *__restrict__ C)
+                          T alpha, const T *A, const T *B,
+                          T *C)
 {
     if constexpr (!TRANSPOSE_A && !ROW_MAJOR_C) {
         if (tile4_profitable(m_)) {
@@ -298,8 +301,8 @@ __device__ void gemm_impl(uint32_t rank, uint32_t size,
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
           bool TRANSPOSE_A, bool TRANSPOSE_B, bool ROW_MAJOR_C>
 __device__ void gemm_impl_ct(uint32_t rank, uint32_t size,
-                             T alpha, const T *__restrict__ A, const T *__restrict__ B,
-                             T beta, T *__restrict__ C)
+                             T alpha, const T *A, const T *B,
+                             T beta, T *C)
 {
     if constexpr (!TRANSPOSE_A && !ROW_MAJOR_C && tile4_profitable(M)) {
         gemm_tile4_ct<T, M, N, K, TRANSPOSE_B, true>(rank, size, alpha, A, B, beta, C);
@@ -322,8 +325,8 @@ __device__ void gemm_impl_ct(uint32_t rank, uint32_t size,
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
           bool TRANSPOSE_A, bool TRANSPOSE_B, bool ROW_MAJOR_C>
 __device__ void gemm_impl_ct(uint32_t rank, uint32_t size,
-                             T alpha, const T *__restrict__ A, const T *__restrict__ B,
-                             T *__restrict__ C)
+                             T alpha, const T *A, const T *B,
+                             T *C)
 {
     if constexpr (!TRANSPOSE_A && !ROW_MAJOR_C && tile4_profitable(M)) {
         gemm_tile4_ct<T, M, N, K, TRANSPOSE_B, false>(rank, size, alpha, A, B, static_cast<T>(0), C);
@@ -365,8 +368,8 @@ __device__ void gemm_impl_ct(uint32_t rank, uint32_t size,
  */
 template <typename T, bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
 __device__ void gemm(uint32_t m, uint32_t n, uint32_t k,
-                     T alpha, const T *__restrict__ A, const T *__restrict__ B,
-                     T beta, T *__restrict__ C)
+                     T alpha, const T *A, const T *B,
+                     T beta, T *C)
 {
     uint32_t rank = flat_rank();
     uint32_t size = flat_size();
@@ -391,8 +394,8 @@ __device__ void gemm(uint32_t m, uint32_t n, uint32_t k,
  */
 template <typename T, bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
 __device__ void gemm(uint32_t m, uint32_t n, uint32_t k,
-                     T alpha, const T *__restrict__ A, const T *__restrict__ B,
-                     T *__restrict__ C)
+                     T alpha, const T *A, const T *B,
+                     T *C)
 {
     uint32_t rank = flat_rank();
     uint32_t size = flat_size();
@@ -423,7 +426,7 @@ __device__ void gemm(uint32_t m, uint32_t n, uint32_t k,
  */
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
           bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
-__device__ void gemm(T alpha, const T *__restrict__ A, const T *__restrict__ B, T beta, T *__restrict__ C)
+__device__ void gemm(T alpha, const T *A, const T *B, T beta, T *C)
 {
     uint32_t rank = flat_rank();
     uint32_t size = flat_size();
@@ -448,7 +451,7 @@ __device__ void gemm(T alpha, const T *__restrict__ A, const T *__restrict__ B, 
  */
 template <typename T, uint32_t M, uint32_t N, uint32_t K,
           bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false, bool TRAILING_SYNC = true>
-__device__ void gemm(T alpha, const T *__restrict__ A, const T *__restrict__ B, T *__restrict__ C)
+__device__ void gemm(T alpha, const T *A, const T *B, T *C)
 {
     uint32_t rank = flat_rank();
     uint32_t size = flat_size();
@@ -480,8 +483,8 @@ __device__ void gemm(T alpha, const T *__restrict__ A, const T *__restrict__ B, 
  */
 template <typename T, int TILE = 8>
 __device__ void gemm_tiled(uint32_t m, uint32_t n, uint32_t k,
-                            T alpha, const T *__restrict__ A, const T *__restrict__ B,
-                            T beta, T *__restrict__ C,
+                            T alpha, const T *A, const T *B,
+                            T beta, T *C,
                             T *s_A, T *s_B)
 {
     uint32_t rank = flat_rank();
@@ -536,8 +539,8 @@ __device__ void gemm_tiled(uint32_t m, uint32_t n, uint32_t k,
  */
 template <typename T, int TILE = 8>
 __device__ void gemm_dispatch(uint32_t m, uint32_t n, uint32_t k,
-                               T alpha, const T *__restrict__ A, const T *__restrict__ B,
-                               T beta, T *__restrict__ C,
+                               T alpha, const T *A, const T *B,
+                               T beta, T *C,
                                T *s_A = nullptr, T *s_B = nullptr)
 {
     uint32_t size = flat_size();
@@ -573,7 +576,7 @@ namespace warp {
      */
     template <typename T, uint32_t M, uint32_t N, uint32_t K,
               bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false>
-    __device__ void gemm(T alpha, const T *__restrict__ A, const T *__restrict__ B, T beta, T *__restrict__ C)
+    __device__ void gemm(T alpha, const T *A, const T *B, T beta, T *C)
     {
         uint32_t lane = (flat_rank()) & 31;
         gemm_impl_ct<T, M, N, K, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C>(lane, 32u, alpha, A, B, beta, C);
@@ -596,7 +599,7 @@ namespace warp {
      */
     template <typename T, uint32_t M, uint32_t N, uint32_t K,
               bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false>
-    __device__ void gemm(T alpha, const T *__restrict__ A, const T *__restrict__ B, T *__restrict__ C)
+    __device__ void gemm(T alpha, const T *A, const T *B, T *C)
     {
         uint32_t lane = (flat_rank()) & 31;
         gemm_impl_ct<T, M, N, K, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C>(lane, 32u, alpha, A, B, C);
@@ -633,7 +636,7 @@ namespace thread {
      */
     template <typename T, uint32_t M, uint32_t N, uint32_t K,
               bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false>
-    __device__ void gemm(T alpha, const T *__restrict__ A, const T *__restrict__ B, T beta, T *__restrict__ C)
+    __device__ void gemm(T alpha, const T *A, const T *B, T beta, T *C)
     {
         gemm_impl_ct<T, M, N, K, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C>(0u, 1u, alpha, A, B, beta, C);
     }
@@ -655,7 +658,7 @@ namespace thread {
      */
     template <typename T, uint32_t M, uint32_t N, uint32_t K,
               bool TRANSPOSE_A = false, bool TRANSPOSE_B = false, bool ROW_MAJOR_C = false>
-    __device__ void gemm(T alpha, const T *__restrict__ A, const T *__restrict__ B, T *__restrict__ C)
+    __device__ void gemm(T alpha, const T *A, const T *B, T *C)
     {
         gemm_impl_ct<T, M, N, K, TRANSPOSE_A, TRANSPOSE_B, ROW_MAJOR_C>(0u, 1u, alpha, A, B, C);
     }

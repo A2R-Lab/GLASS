@@ -77,6 +77,15 @@ All notable changes to GLASS will be documented here. The format follows
 
 ### Fixed
 
+- `glass::thread::gemm` returned nondeterministic values, often NaN, when its
+  read operand was a pointer selected at runtime between a thread-local array
+  filled by an inlined writer and shared memory: nvcc (11.4 and 13.2, on
+  sm_72, sm_87 and sm_120) dropped the writer's stores once the operand carried
+  `__restrict__`. GLASS no longer declares `__restrict__` on any parameter of
+  its own functions (the qualifier was on the gemm and symm operands; removing
+  it changed no instruction count in the measured gemm kernels). The
+  selected-operand regression `test/test_select.py` covers the case in both
+  precisions. Reported by the GRiD HJCD suffix (GRiD guide 7.z79).
 - The differential checkers in the trailing-sync, dispatch and NVIDIA-dispatch
   drivers report `+inf` for any non-finite element or a size mismatch; a NaN
   output previously read as zero error because `std::max` keeps the previous

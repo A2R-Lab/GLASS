@@ -36,8 +36,8 @@
 template <typename Bar, typename T, FillMode FILL, bool HAS_BETA, bool TRAILING_SYNC,
           typename SizeT, typename SizeU>
 __device__ void symm_impl(Bar bar, SizeT n, SizeU m, T alpha,
-                          const T *__restrict__ A, const T *__restrict__ B,
-                          T beta, T *__restrict__ C)
+                          const T *A, const T *B,
+                          T beta, T *C)
 {
     static_assert(FILL != FillMode::Full, "symm: FILL must name the stored triangle (Lower or Upper)");
     uint32_t rank = bar.rank(), size = bar.size();
@@ -81,8 +81,8 @@ __device__ void symm_impl(Bar bar, SizeT n, SizeU m, T alpha,
  */
 template <typename T, FillMode FILL = FillMode::Lower, bool TRAILING_SYNC = true>
 __device__ void symm(uint32_t n, uint32_t m, T alpha,
-                     const T *__restrict__ A, const T *__restrict__ B,
-                     T beta, T *__restrict__ C)
+                     const T *A, const T *B,
+                     T beta, T *C)
 {
     symm_impl<BlockBarrier, T, FILL, true, TRAILING_SYNC>(BlockBarrier{}, n, m, alpha, A, B, beta, C);
 }
@@ -105,8 +105,8 @@ __device__ void symm(uint32_t n, uint32_t m, T alpha,
  */
 template <typename T, FillMode FILL = FillMode::Lower, bool TRAILING_SYNC = true>
 __device__ void symm(uint32_t n, uint32_t m, T alpha,
-                     const T *__restrict__ A, const T *__restrict__ B,
-                     T *__restrict__ C)
+                     const T *A, const T *B,
+                     T *C)
 {
     symm_impl<BlockBarrier, T, FILL, false, TRAILING_SYNC>(BlockBarrier{}, n, m, alpha, A, B, static_cast<T>(0), C);
 }
@@ -132,8 +132,8 @@ __device__ void symm(uint32_t n, uint32_t m, T alpha,
  */
 template <typename T, uint32_t N, uint32_t M,
           FillMode FILL = FillMode::Lower, bool TRAILING_SYNC = true>
-__device__ void symm(T alpha, const T *__restrict__ A, const T *__restrict__ B,
-                     T beta, T *__restrict__ C)
+__device__ void symm(T alpha, const T *A, const T *B,
+                     T beta, T *C)
 {
     symm_impl<BlockBarrier, T, FILL, true, TRAILING_SYNC>(BlockBarrier{}, ct_size<N>{}, ct_size<M>{}, alpha, A, B, beta, C);
 }
@@ -156,8 +156,8 @@ __device__ void symm(T alpha, const T *__restrict__ A, const T *__restrict__ B,
  */
 template <typename T, uint32_t N, uint32_t M,
           FillMode FILL = FillMode::Lower, bool TRAILING_SYNC = true>
-__device__ void symm(T alpha, const T *__restrict__ A, const T *__restrict__ B,
-                     T *__restrict__ C)
+__device__ void symm(T alpha, const T *A, const T *B,
+                     T *C)
 {
     symm_impl<BlockBarrier, T, FILL, false, TRAILING_SYNC>(BlockBarrier{}, ct_size<N>{}, ct_size<M>{}, alpha, A, B, static_cast<T>(0), C);
 }
@@ -170,8 +170,8 @@ __device__ void symm(T alpha, const T *__restrict__ A, const T *__restrict__ B,
 template <typename Bar, typename T, FillMode FILL, Diag DIAG, bool TRANSPOSE, bool TRAILING_SYNC,
           typename SizeT, typename SizeU>
 __device__ void trmm_impl(Bar bar, SizeT n, SizeU m, T alpha,
-                          const T *__restrict__ A, const T *__restrict__ B,
-                          T *__restrict__ C)
+                          const T *A, const T *B,
+                          T *C)
 {
     static_assert(FILL != FillMode::Full, "trmm: FILL must name a triangle (Lower or Upper)");
     constexpr bool LOWER_OP = ((FILL == FillMode::Lower) != TRANSPOSE);  // op(A) lower-triangular
@@ -225,8 +225,8 @@ __device__ void trmm_impl(Bar bar, SizeT n, SizeU m, T alpha,
 template <typename T, FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit,
           bool TRANSPOSE = false, bool TRAILING_SYNC = true>
 __device__ void trmm(uint32_t n, uint32_t m, T alpha,
-                     const T *__restrict__ A, const T *__restrict__ B,
-                     T *__restrict__ C)
+                     const T *A, const T *B,
+                     T *C)
 {
     trmm_impl<BlockBarrier, T, FILL, DIAG, TRANSPOSE, TRAILING_SYNC>(BlockBarrier{}, n, m, alpha, A, B, C);
 }
@@ -253,8 +253,8 @@ __device__ void trmm(uint32_t n, uint32_t m, T alpha,
 template <typename T, uint32_t N, uint32_t M,
           FillMode FILL = FillMode::Lower, Diag DIAG = Diag::NonUnit,
           bool TRANSPOSE = false, bool TRAILING_SYNC = true>
-__device__ void trmm(T alpha, const T *__restrict__ A, const T *__restrict__ B,
-                     T *__restrict__ C)
+__device__ void trmm(T alpha, const T *A, const T *B,
+                     T *C)
 {
     trmm_impl<BlockBarrier, T, FILL, DIAG, TRANSPOSE, TRAILING_SYNC>(BlockBarrier{}, ct_size<N>{}, ct_size<M>{}, alpha, A, B, C);
 }

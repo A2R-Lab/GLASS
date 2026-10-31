@@ -266,7 +266,8 @@ Nasty properties, so check for it deliberately:
   downstream warp-per-candidate IK solver: correct standalone, wrong only in the full kernel.
 - **The tell:** glass-on-a-fresh-copy correct, in-place-under-`__restrict__` wrong,
   in-place-without-`__restrict__` correct ⇒ a `__restrict__` aliasing miscompile, not your algebra.
-  Don't "fix" it by dropping `__restrict__` (you lose the optimization) — kill the shared re-read.
+  A caller may keep its `__restrict__`; the fix is the register broadcast. GLASS itself declares
+  no `__restrict__` on any of its own parameters since 2026-10-31 (§1i).
 - **`glass::warp::reduce` is already safe** (shfl-based); `warp::gemm` is flat (no broadcast). The
   block-scoped twins also need explicit handoff reads: issue #44 reproduced
   stale values through restricted callers despite full-block barriers. Use
@@ -303,6 +304,70 @@ diff bits).
   everything is deterministic run-to-run at any fixed size.
 
 ---
+
+### 1i. GLASS-side `__restrict__` on a selected read operand → dropped stores (NVVM, nvcc 11.4 through 13.2)
+
+Found 2026-10-31 by the GRiD agent in HJCD's lane-parallel forward-kinematics suffix (GRiD guide
+7.z79). The pattern: an inlined switch writer fills a thread-local 4×4 array; the caller then passes
+a pointer SELECTED at runtime between that array and shared memory as the read operand `B` of
+`glass::thread::gemm<T,4,4,4>`; the compile-time gemm path declared `const T *__restrict__ B`.
+Once the writer is inlined, the optimizer treats the writer's stores to the local array as
+unrelated to the loads through `B` (twelve `st.local` vanish from the PTX), so the product reads
+stale or never-written values: nondeterministic between two repeats of one launch, often NaN, in
+FP32 and FP64 alike. `-Xptxas -O0` still fails and `-G` passes, so the fault is in the NVVM stage.
+All four sanitizers are clean. It reproduces identically on sm_120 / CUDA 13.2, sm_87 / CUDA 13.2
+(Orin) and sm_72 / CUDA 11.4 (Xavier), so this is long-standing behavior, not a 13.2 regression.
+
+The program is well-defined: `B` is only read during the call and the local array is written
+before it, so the qualifier's promise holds and the compiler is wrong. GLASS cannot make the
+program "more legal"; it can only stop handing the optimizer the qualifier.
+
+**Policy (2026-10-31): GLASS declares no `__restrict__` on any parameter of its own functions.**
+The qualifier lived only on the gemm and symm operands. Removing all 51 of them and comparing SASS
+on sm_120 and sm_87 changed no instruction count in the benchmark gemm kernels (block, warp and
+thread tiers), moved the thread and L3 drivers by under 0.05% in total with per-kernel deltas of a
+few instructions in both directions, and changed no local-memory footprint. The one notable
+register change is the 16×16 warp gemm (92 → 40 registers: the compiler no longer hoists every A
+load), which is worth a quiet-GPU timing check but is not a correctness concern. Callers may keep
+their own qualifiers; the contracts in `docs/source/user_guide/concepts/trailing_sync.rst` are
+unchanged.
+
+Three incidents in one toolchain family, all restrict-driven, each a different shape:
+
+| Incident | Where the qualifier was | Mechanism |
+|---|---|---|
+| §1g (2026-08) | the caller's pointer into `warp::potrf` / `warp::trsv` | shared re-read cached stale across `__syncwarp` |
+| issue #44 / GATO bdsv (2026-10) | the caller's pointer into block in-place solves | handoff value forwarded from a stale register across a full barrier |
+| this one (2026-10-31) | GLASS's own `B` of `gemm_impl_ct` | stores to a selected local array dropped after inlining |
+
+Regression: `test/cuda/test_select.cu` + `test/test_select.py` (integration shard) replay the
+suffix with the generated writer kept in its generated shape, check that two repeats of one launch
+are bit-identical, and check every lane against an independent numpy chain of the same transforms
+in both precisions. The case fails on the pre-fix header and passes after it on all three GPUs.
+
+**Hint audit (2026-10-31), so nobody has to redo it.** Constructs in `src/` and the umbrella
+headers that could change program meaning, and the verdict:
+
+- `__restrict__`: 51 sites, gemm and symm only — removed (above). Every other mention is a comment.
+- `volatile`: one site, `cooperative_detail::load` — intentional, it is the §1g/#44 fix.
+- `__fmaf_rn`: one site, `beta_blend` — intentional contraction control for bit-exactness.
+- `reinterpret_cast`: the `float4` / `double2` tile loads in gemm (behind a 16-byte alignment
+  check; the documented CUDA vector-load idiom, read-only), integer index views over scalar
+  scratch in argreduce / ldlt / syev (disjoint sub-ranges or barrier-separated phases), and the
+  MathDx / CUB shared-storage views. No type-punned location is written through one type and read
+  through another inside one phase.
+- `const_cast` (7): passes read-only operands into `T*` gemm signatures that only read them.
+- `__forceinline__` (149), `#pragma unroll` (57), `__syncwarp` (118): no semantic content; they
+  only decide how much the optimizer sees, which is why the restrict faults surfaced under inlining.
+- Full-mask `__shfl_*_sync(0xffffffff, …)` (31): all inside `warp::` bodies whose contract is a full
+  32-lane warp; every block-scope reduction goes through `shfl_detail::*_bounded` with
+  `warp_active(rank, size)` masks, so ragged last warps are legal.
+- Absent entirely: `__noinline__`, `__launch_bounds__`, inline `asm`, `__ldg` / cache-hint loads,
+  `__builtin_assume` / `__builtin_expect`, `__threadfence`, `memcpy`, `__align__`, fast-math
+  intrinsics, diagnostic pragmas.
+- Build flags: the tests compile with nvcc defaults (device `-O3`); the tuning sweeps add
+  `-Xptxas -O1` only for MathDx translation units, the documented CUDA 12.9 ptxas workaround
+  (`bench/TUNING.md`).
 
 ## 2. Debugging methodology (what localizes a bug fast here)
 

@@ -200,6 +200,7 @@ def _hash_sources(cu_path: pathlib.Path) -> str:
               CUDA_DIR / "test_block_access.cu",
               CUDA_DIR / "test_robotics.cu",
               CUDA_DIR / "test_restrict.cu",
+              CUDA_DIR / "test_select.cu",
     ]
     paths = list(dict.fromkeys(paths))
     for p in paths:
@@ -288,7 +289,7 @@ class LazyBins(Mapping):
         "tensor", "factor_check", "congruence", "solve", "reduced_blas", "base_f64",
         "defaults", "dispatch", "l1_round2", "block_access", "symmetrize", "symm_rot",
         "syev", "robotics", "api_vector", "api_dense", "api_factor", "api_robotics", "l3_nvidia", "nvidia_dispatch", "trailing_sync", "nvidia_f64", "nvidia_thread",
-        "restrict_jit",
+        "restrict_jit", "select",
     }
     optional = {"l3_nvidia", "nvidia_dispatch", "trailing_sync", "nvidia_f64", "nvidia_thread"}
 
@@ -306,7 +307,7 @@ class LazyBins(Mapping):
     def _compile(self, key: str) -> pathlib.Path:
         mathdx, cublasdx = self._mathdx()
         target_sm = CUDA_ARCH.replace("sm_", "") + "0"
-        flags: list[str] = ["-O3"] if key in {"restrict", "bdsv", "pcg", "qp"} else []
+        flags: list[str] = ["-O3"] if key in {"restrict", "select", "bdsv", "pcg", "qp"} else []
         if key == "restrict_jit":
             return compile_binary("test_restrict_jit", BUILD_DIR, JIT_ARCH, ["-O3"],
                                   source="test_restrict")

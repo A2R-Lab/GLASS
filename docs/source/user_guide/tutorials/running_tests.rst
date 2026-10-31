@@ -137,6 +137,11 @@ CUDA 13.2 for ``sm_87`` and CUDA 11.4 for ``sm_72``. The ``reduce_fast`` and
 ``argreduce`` reloads survive that mutant everywhere; they are there for
 consistency of the handoff pattern, not because a miscompile was demonstrated.
 
+The selected-operand regression (``test_select.py``) ran on the same three
+GPUs: it fails on the header that still carried ``__restrict__`` and passes on
+the current one, in both precisions, under CUDA 13.2 for ``sm_120`` and
+``sm_87`` and CUDA 11.4 for ``sm_72`` (the Jetson results unsigned, as above).
+
 Device ``printf`` is not used for test output: its FIFO defaults to 1 MB on a
 Jetson AGX Orin against 8 MB on an RTX 5090, and a long dump is silently cut
 when it fills (2048 values, then nothing). Drivers copy results to the host

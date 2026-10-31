@@ -167,6 +167,14 @@ These hold regardless of oracle class and are what make the suite hard to fool:
   virtual architecture, so two code generators run the same callers on every
   receipt. Results go to independent NumPy/SciPy oracles, never to a second
   GLASS variant.
+- **Selected operands** — the same shard replays a lane-parallel
+  forward-kinematics suffix in which a thread-tier product reads an operand
+  selected at runtime between a thread-local array filled by an inlined writer
+  and shared memory. Two repeats of one launch must be bit-identical and every
+  lane must match an independent NumPy chain of the same transforms, in both
+  precisions. This is the case in which ``__restrict__`` on GLASS's own gemm
+  operand made nvcc drop the writer's stores (2026-10-31); GLASS declares no
+  ``__restrict__`` on its own parameters since.
 - **Checkers that cannot be fooled** — the C++ differential checkers in the
   variant-agreement drivers report ``+inf`` for any non-finite element on
   either side or for a size mismatch (``std::max`` silently kept the previous

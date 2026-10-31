@@ -80,6 +80,16 @@ not alias one another. The restricted-caller regression
 (``test/test_restrict.py``) checks this contract for the block primitives on
 every receipt, natively and through the PTX-JIT lane.
 
+GLASS declares no ``__restrict__`` on its own parameters. The qualifier was on
+the gemm and symm operands until 2026-10-31, when a read operand selected at
+runtime between a thread-local array and shared memory made nvcc (11.4 and
+13.2, on sm_72, sm_87 and sm_120) drop the inlined writer's stores to that
+array, and the single-thread product returned nondeterministic values. The
+program was well defined, so the only repair on the library side was to stop
+supplying the qualifier. Removing it changed no instruction count in the
+measured gemm kernels, so nothing was traded away. The selected-operand
+regression (``test/test_select.py``) keeps that case fixed in both precisions.
+
 Testing
 -------
 
