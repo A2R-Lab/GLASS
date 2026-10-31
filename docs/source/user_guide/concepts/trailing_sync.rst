@@ -63,6 +63,23 @@ parameter. ``warp::riccati_gain`` accepts it for interface uniformity but
 documents it as a no-op — the composed warp solver always ends at a sync
 boundary.
 
+Pointer qualifiers and in-place operands
+----------------------------------------
+
+Callers may pass ``__restrict__`` pointers into GLASS, including into the
+in-place solves that read back what the caller or an earlier step wrote.
+GLASS does not depend on the qualifier being absent: every scalar one thread
+publishes for the others to consume after a barrier is reloaded through
+``cooperative_detail::load`` (a volatile load in the cooperating scopes, an
+ordinary load in the thread tier), because an optimizing compiler may
+otherwise forward the caller's stale register value across the barrier when
+the pointer is restricted (issue #44, 2026-10). The reload is not a
+substitute for synchronization: the barriers and the ``TRAILING_SYNC``
+ownership rules above remain the contract, and restricted pointers must still
+not alias one another. The restricted-caller regression
+(``test/test_restrict.py``) checks this contract for the block primitives on
+every receipt, natively and through the PTX-JIT lane.
+
 Testing
 -------
 

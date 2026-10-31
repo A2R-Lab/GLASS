@@ -15,6 +15,11 @@ All notable changes to GLASS will be documented here. The format follows
   bit-identical to the inlined sphere-placement loop it replaces.
 - `glass::warp::any` / `glass::warp::all` wrap `__any_sync` / `__all_sync`
   under the full mask, for symmetry with `warp::reduce` / `warp::argmin_pair`.
+- A PTX-JIT lane of the restricted-caller regression (`test_restrict.py`
+  `*_jit` tests, `GLASS_JIT_ARCH`, default `compute_75`) runs the same callers
+  through the driver's code generator for an older virtual architecture on
+  every receipt; the documentation gains a validated-lanes table and the
+  pointer-qualifier contract.
 - `glass::nvidia::thread::` provides one-problem-per-thread cuSOLVERDx
   implementations for the supported LAPACK subset. The measured sm_120 and
   sm_87 ladders select it only where it clears the native implementation by
@@ -22,6 +27,9 @@ All notable changes to GLASS will be documented here. The format follows
 
 ### Changed
 
+- Every test-driver subprocess is time-bounded (`GLASS_RUN_TIMEOUT`, default
+  600 s; `GLASS_COMPILE_TIMEOUT` for `nvcc`), so a hung kernel fails its test
+  instead of stalling the run.
 - Pin pytest-gpu-proof 0.5.0 for Python 3.10 support and signed CUDA compiler
   metadata in fresh GPU receipts.
 
@@ -69,6 +77,15 @@ All notable changes to GLASS will be documented here. The format follows
 
 ### Fixed
 
+- The differential checkers in the trailing-sync, dispatch and NVIDIA-dispatch
+  drivers report `+inf` for any non-finite element or a size mismatch; a NaN
+  output previously read as zero error because `std::max` keeps the previous
+  maximum on a NaN comparison. Each of those drivers gains a `checker_selftest`
+  op that injects NaN, ±inf, equal infinities and a size mismatch.
+- Handoff reloads now also cover `reduce_fast` / `reduce_min_fast`, the block
+  `argreduce` fold and the internal box-QP objective and termination scalars,
+  so every cross-thread scalar handoff in the block tier goes through
+  `cooperative_detail::load`.
 - Restricted optimized callers now reload cross-thread handoffs in triangular
   solves, softmax/logsumexp, LU pivot selection/permutation, pivoted inverse,
   pivoted LDLT and symmetric eigendecomposition. This fixes wrong results,

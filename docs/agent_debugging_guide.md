@@ -43,7 +43,9 @@ Source map you will reference constantly:
    that binary's operation-family headers (see §4). Add new binaries to the
    right family; unassigned binaries conservatively hash the full source tree.
 3. **Check thread-count invariance.** A correct single-block GLASS function must produce
-   **identical output for any block size.** The shipped tests sweep representative
+   **identical output for any block size** (bit-identical for deterministic-order ops; the
+   `_fast` shuffle reductions and `pcg` have a documented `blockDim`-dependent summation
+   order and are checked to tolerance). The shipped tests sweep representative
    counts, including serial, single-warp, partial-final-warp, and multi-warp
    launches. Extend that sweep for a new primitive rather than introducing a
    one-off fixed thread count. A discrepancy indicates a missing barrier or a
@@ -77,11 +79,13 @@ result to shared/device memory, then read or accumulate across it — needs a `_
 (or the cooperative-group equivalent) between the phases. Without it, thread *i* may read a slot
 that thread *j* has not yet written.
 
-- **Why a 32-thread test hides it:** within a single warp, threads execute in lockstep
-  (warp-synchronous), so a phase-1 write by lane *j* is visible to lane *i*'s phase-2 read
-  **without** a barrier. The race only appears once two or more warps run, because warp B can race
-  ahead of warp A's writes. A test that only ever launches ≤ 32 threads will pass a kernel that is
-  missing a barrier.
+- **Why a small launch hides it:** with one or two warps the natural timing usually lets every
+  phase-1 write land before any phase-2 read, so the race seldom loses. Do not reason from "lanes
+  of one warp run in lockstep": since Volta, independent thread scheduling lets lanes of the same
+  warp diverge and reconverge on their own schedule, and the compiler may keep a shared value in a
+  register across the phase boundary (under an inlined `__restrict__` caller, even across a
+  barrier — §1g). A test that only ever launches a single small block will pass a kernel that is
+  missing a barrier; the multi-warp counts of the thread sweep (33/57/64/…) are what surface it.
 - **The fix / the rule:** every phase boundary that crosses threads needs a barrier. Look at the
   correct examples already in-tree: `reduce` in `src/base/L1/reduce.cuh` syncs once per halving
   round (`__syncthreads()` after each `for (i=rank; i<left; i+=size) x[i] += x[i+left];`);
@@ -111,7 +115,8 @@ that thread *j* has not yet written.
 ### 1b. Thread-count NON-invariance
 
 A correct single-block function produces the **same output for any block size** — 1 thread,
-32, a partial warp, or hundreds. The canonical correct pattern is the strided loop:
+32, a partial warp, or hundreds (bit-identical, except the documented tolerance-based `_fast`
+and `pcg` reductions). The canonical correct pattern is the strided loop:
 ```cpp
 uint32_t rank = threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y;
 uint32_t size = blockDim.x * blockDim.y * blockDim.z;

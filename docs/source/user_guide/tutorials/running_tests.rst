@@ -76,3 +76,58 @@ than fail when those aren't present:
 When ``MATHDX_ROOT`` is set and ``cublasdx.hpp`` is found, the cuBLASDx-gated
 binaries are compiled with ``--expt-relaxed-constexpr -DGLASS_BENCH_CUBLASDX``
 plus the MathDx include paths automatically.
+
+Environment knobs
+-----------------
+
+``CUDA_ARCH`` overrides architecture detection (set it on Jetson, where
+``nvidia-smi`` is absent and the fallback would be ``sm_75``).
+``GLASS_RUN_TIMEOUT`` (seconds, default 600) bounds every driver subprocess,
+so a hung kernel fails its test instead of stalling the run; raise it on slow
+devices rather than removing it. ``GLASS_COMPILE_TIMEOUT`` (default 3600)
+bounds each ``nvcc`` invocation. ``GLASS_JIT_ARCH`` (default ``compute_75``)
+selects the virtual architecture of the PTX-JIT lane described below; that
+lane skips only on a device older than its target. ``GLASS_RUN_PREFIX`` wraps
+every launch, for example with ``compute-sanitizer --error-exitcode 1``.
+
+Validated lanes
+---------------
+
+Correctness evidence is recorded per lane: the device, the toolkit that
+compiled the binaries, and how the code reached that device. The signed
+receipt covers exactly one lane; every other lane is evidence attached to a
+dated run, not an attestation. A lane that is not listed has not been run, and
+nothing here claims support for every CUDA release or NVIDIA GPU.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 34 26 40
+
+   * - Lane
+     - Scope
+     - Status
+   * - RTX 5090 (``sm_120``), CUDA 13.2, native SASS, x86-64
+     - All eight shards with MathDx 26.03
+     - Signed receipt in ``test/gpu-proof.json``, verified by CI on every push.
+   * - RTX 5090, PTX JIT for ``compute_75``
+     - Restricted-caller regression (``test_restrict.py``, ``*_jit`` tests)
+     - Part of the ``integration`` shard of the same receipt: a second code
+       generator (the driver's) runs the handoff-sensitive callers on every
+       receipt.
+   * - CUDA 13.2, ``sm_90`` and ``sm_120``, compile only, no GPU
+     - Umbrella headers, examples, overload-manifest canaries
+     - GitHub-hosted CI on every push.
+   * - Jetson AGX Orin (``sm_87``), JetPack 7 / CUDA 13.2, native, aarch64
+     - Full pytest suite with MathDx 26.03; the Pinocchio leg of the robotics
+       tests skips (no aarch64 wheel)
+     - Last run 2026-10-31, unsigned: result recorded in the changelog.
+   * - Jetson AGX Xavier (``sm_72``), JetPack 5.1 / CUDA 11.4, native, aarch64
+     - Restricted-caller regression and the differential-checker drivers
+       (Python 3.8: no pytest session, oracle driven directly)
+     - Last run 2026-10-31, unsigned: result recorded in the changelog.
+
+CUDA 13 cannot compile for ``sm_72``, so the Xavier lane always uses the
+toolkit installed on the board. Hopper and desktop Ampere parts have compile
+coverage only; building ``sm_86`` or ``sm_90`` SASS on an RTX 5090 says
+nothing about running it, and the PTX-JIT lane is a second compiler, not an
+emulation of older hardware.

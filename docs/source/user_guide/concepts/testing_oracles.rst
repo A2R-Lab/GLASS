@@ -159,6 +159,22 @@ These hold regardless of oracle class and are what make the suite hard to fool:
 - **No-read guarantees** — ``beta = 0`` paths run against NaN-poisoned
   buffers; triangular ops run with NaN-poisoned dead triangles, so any stray
   read fails loudly.
+- **Optimized restricted callers** — the ``integration`` shard calls the
+  block primitives from an inlined ``-O3`` caller whose pointers carry
+  ``__restrict__`` (the minimal context in which the 2026-10 stale-handoff
+  bugs reproduced), across shared and global storage, runtime sizes and
+  launch geometries, and once more through the driver's PTX JIT for an older
+  virtual architecture, so two code generators run the same callers on every
+  receipt. Results go to independent NumPy/SciPy oracles, never to a second
+  GLASS variant.
+- **Checkers that cannot be fooled** — the C++ differential checkers in the
+  variant-agreement drivers report ``+inf`` for any non-finite element on
+  either side or for a size mismatch (``std::max`` silently kept the previous
+  maximum on a NaN difference until 2026-10-31), and each of those drivers
+  carries a ``checker_selftest`` op that injects NaN, ±inf, equal infinities
+  and a size mismatch. The Python oracles use ``assert_allclose`` or explicit
+  finiteness assertions, which fail on NaN by construction. Every driver
+  subprocess is time-bounded, so a hang is a failure rather than a stall.
 
 Receipt shards
 --------------
