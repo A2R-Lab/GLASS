@@ -19,20 +19,20 @@
 #include <cstring>
 #include <cstdint>
 
+#include <vector>
 #include "helpers.cuh"
 #include "../../glass.cuh"
 
 // ─── uint output print (index is exact in float for n < 2^24) ────────────────
-__global__ void k_print_uint(uint32_t* d, int n) {
+static void print_device_uint(uint32_t* d, int n) {   // host-side dump (see helpers.cuh)
+    std::vector<uint32_t> h(n);
+    cudaDeviceSynchronize();
+    cudaMemcpy(h.data(), d, n * sizeof(uint32_t), cudaMemcpyDeviceToHost);
     for (int i = 0; i < n; i++) {
-        printf("%u", d[i]);
+        printf("%u", h[i]);
         if (i < n - 1) printf(" ");
     }
     printf("\n");
-}
-static void print_device_uint(uint32_t* d, int n) {
-    k_print_uint<<<1,1>>>(d, n);
-    cudaDeviceSynchronize();
 }
 
 // ─── kernel wrappers ─────────────────────────────────────────────────────────

@@ -129,16 +129,18 @@ static T* read_dev(const char* path, long n) {
 template <typename T>
 static T* alloc_dev(long n) { T* d; cudaMalloc(&d, n * sizeof(T)); cudaMemset(d, 0, n * sizeof(T)); return d; }
 
-template <typename T> __global__ void print_kernelT(const T* d, long n) {
+// Host-side dump (device printf's FIFO truncates long outputs on Jetson).
+template <typename T> static void print_dev(const T* d, long n) {
+    T* h = (T*)malloc(n * sizeof(T));
+    cudaDeviceSynchronize();
+    cudaMemcpy(h, d, n * sizeof(T), cudaMemcpyDeviceToHost);
     for (long i = 0; i < n; i++) {
-        if constexpr (sizeof(T) == 8) printf("%.17g", (double)d[i]);
-        else                          printf("%.9g",  (double)d[i]);
+        if constexpr (sizeof(T) == 8) printf("%.17g", (double)h[i]);
+        else                          printf("%.9g",  (double)h[i]);
         if (i < n - 1) printf(" ");
     }
     printf("\n");
-}
-template <typename T> static void print_dev(const T* d, long n) {
-    print_kernelT<T><<<1,1>>>(d, n); cudaDeviceSynchronize();
+    free(h);
 }
 
 // ─── tier dispatch ───────────────────────────────────────────────────────────

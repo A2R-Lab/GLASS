@@ -18,6 +18,7 @@
 // Scratch is allocated as (n+1) floats (used by the pivot path's argmax scans).
 
 #include <cstdio>
+#include <vector>
 #include <cstdlib>
 #include <cstring>
 #include <cstdint>
@@ -46,10 +47,14 @@ __global__ void k_ldlt_solve_warp(float* A, float* b) {
     glass::warp::ldlt_solve<float, N>(A, b);
 }
 
-// Print n device int32 values (the pivot array) as space-separated ints.
-__global__ void print_piv_kernel(int32_t* d, int n) {
+// Print n device int32 values (the pivot array) as space-separated ints,
+// from the host (device printf's FIFO truncates long outputs on Jetson).
+static void print_piv(const int32_t* d, int n) {
+    std::vector<int32_t> h(n);
+    cudaDeviceSynchronize();
+    cudaMemcpy(h.data(), d, n * sizeof(int32_t), cudaMemcpyDeviceToHost);
     for (int i = 0; i < n; i++) {
-        printf("%d", d[i]);
+        printf("%d", h[i]);
         if (i < n - 1) printf(" ");
     }
     printf("\n");
@@ -77,7 +82,7 @@ int main(int argc, char** argv) {
         cudaDeviceSynchronize();
         print_device_vec(dA, n * n);
         if (pivot) {
-            print_piv_kernel<<<1, 1>>>(dpiv, n);
+            print_piv(dpiv, n);
             cudaDeviceSynchronize();
         }
     } else if (strcmp(op, "ldlt_solve") == 0) {

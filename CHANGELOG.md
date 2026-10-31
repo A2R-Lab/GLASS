@@ -82,6 +82,10 @@ All notable changes to GLASS will be documented here. The format follows
   output previously read as zero error because `std::max` keeps the previous
   maximum on a NaN comparison. Each of those drivers gains a `checker_selftest`
   op that injects NaN, ±inf, equal infinities and a size mismatch.
+- Test drivers print their outputs from the host after a copy instead of
+  through device `printf`, whose FIFO is 1 MB by default on a Jetson AGX Orin
+  (8 MB on an RTX 5090) and silently truncated the robotics drivers' larger
+  dumps at 2048 values, failing those tests only on Jetson.
 - Handoff reloads now also cover `reduce_fast` / `reduce_min_fast`, the block
   `argreduce` fold and the internal box-QP objective and termination scalars,
   so every cross-thread scalar handoff in the block tier goes through

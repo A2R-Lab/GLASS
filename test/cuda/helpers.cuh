@@ -27,18 +27,21 @@ inline float* read_device_vec(const char* path, int n) {
     return d;
 }
 
-// Print n device float32 values to stdout as space-separated values followed by newline.
-__global__ void print_kernel(float* d, int n) {
+// Print n device float32 values to stdout as space-separated values followed by
+// newline. Printed from the HOST after a copy: device printf drains through a
+// FIFO whose default size is platform-dependent (1 MB on a Jetson AGX Orin,
+// 8 MB on an RTX 5090) and a long dump is silently truncated when it fills
+// (seen 2026-10-31: 2048 values, then nothing). Same format as before.
+inline void print_device_vec(float* d, int n) {
+    float* h = (float*)malloc(n * sizeof(float));
+    cudaDeviceSynchronize();
+    cudaMemcpy(h, d, n * sizeof(float), cudaMemcpyDeviceToHost);
     for (int i = 0; i < n; i++) {
-        printf("%.8g", d[i]);
+        printf("%.8g", h[i]);
         if (i < n - 1) printf(" ");
     }
     printf("\n");
-}
-
-inline void print_device_vec(float* d, int n) {
-    print_kernel<<<1,1>>>(d, n);
-    cudaDeviceSynchronize();
+    free(h);
 }
 
 // Print n host float32 values to stdout.

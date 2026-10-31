@@ -83,16 +83,18 @@ static T* read_dev(const char* path, int n) {
 template <typename T>
 static T* alloc_dev(int n) { T* d; cudaMalloc(&d, n * sizeof(T)); cudaMemset(d, 0, n * sizeof(T)); return d; }
 
-template <typename T> __global__ void print_kernelT(const T* d, int n) {
+// Host-side dump (device printf's FIFO truncates long outputs on Jetson).
+template <typename T> static void print_dev(const T* d, int n) {
+    T* h = (T*)malloc(n * sizeof(T));
+    cudaDeviceSynchronize();
+    cudaMemcpy(h, d, n * sizeof(T), cudaMemcpyDeviceToHost);
     for (int i = 0; i < n; i++) {
-        if constexpr (sizeof(T) == 8) printf("%.17g", (double)d[i]);
-        else                          printf("%.9g",  (double)d[i]);
+        if constexpr (sizeof(T) == 8) printf("%.17g", (double)h[i]);
+        else                          printf("%.9g",  (double)h[i]);
         if (i < n - 1) printf(" ");
     }
     printf("\n");
-}
-template <typename T> static void print_dev(const T* d, int n) {
-    print_kernelT<T><<<1,1>>>(d, n); cudaDeviceSynchronize();
+    free(h);
 }
 
 // ─── THREAD model: thread p owns problem p, operands thread-local ─────────────
