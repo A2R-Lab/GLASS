@@ -21,3 +21,11 @@ updates:
     directory: /docs
     schedule:
       interval: monthly
+    ignore:
+      # Sphinx 9.2+ needs Python 3.13; the docs are built locally with 3.12.
+      - dependency-name: sphinx
+        versions: [">=9.2"]
+      # Breathe 5 matches doxygenfile against the index basename
+      # (breathe-doc/breathe#1084); directory-qualified directives break.
+      - dependency-name: breathe
+        versions: [">=5"]
