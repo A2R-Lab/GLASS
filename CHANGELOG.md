@@ -16,7 +16,9 @@ All notable changes to GLASS will be documented here. The format follows
   (no carried shards, 180-day horizon) and pins the Xavier's skips through
   `test/expected_skips_sm72.txt`. The runner takes `GLASS_PY`,
   `GLASS_GPU_PROOF`, `GLASS_SKIP_PIP` and `GLASS_ROOT` for a device without
-  the repository's `.venv`.
+  the repository's `.venv`. The Xavier lane runs on Python 3.9 and records
+  its GPU through the driver API, so the pin moves to pytest-gpu-proof 0.5.1,
+  the release that supports both.
 - A compile matrix in CI: CUDA 13.2, 12.4 and 11.8 across `sm_70` to
   `sm_120` (sixteen cells), nvcc only, replacing the two-cell smoke.
 - A supported-platforms page that lists every device and toolkit at its
