@@ -96,6 +96,10 @@ by a median of 4.9× (up to 81×), and the recommended placement changes between
 the Orin and the RTX 5090 in 145 of 396 measured cells — the stakes are
 highest on embedded GPUs, where host dispatch is most expensive relative to
 the work. `bench/tune.py --sm auto` adds a measured table for your GPU.
+Measured tables and correctness evidence are separate: the docs'
+[supported platforms](https://a2r-lab.org/GLASS/docs/user_guide/getting_started/supported_platforms.html)
+page lists which devices carry a signed receipt, which have been exercised,
+and which only compile.
 
 > **Note:** `glass::cgrps::` (header `glass-cgrps.cuh`) is a cooperative-groups
 > *adapter* for the Block interface — the same SIMT loop indexed via a

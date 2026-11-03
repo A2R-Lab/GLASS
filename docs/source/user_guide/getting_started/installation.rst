@@ -35,6 +35,8 @@ CUDA Toolkit requirement
 
 * **CUDA Toolkit 11.0 or newer.** CUB (used by the ``glass::nvidia::`` L1
   reductions) ships bundled with every CUDA 11+ install — no separate download.
+  The oldest toolkit the suite has run under is CUDA 11.4, on a Jetson AGX
+  Xavier; :doc:`supported_platforms` lists every toolkit and device checked.
 * **C++17** (``nvcc -std=c++17``). The pure-SIMT core compiles cleanly under
   C++17; the ``glass::nvidia::`` path *requires* C++17 (mandated by cuBLASDx /
   cuSOLVERDx).

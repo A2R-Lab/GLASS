@@ -94,41 +94,48 @@ Validated lanes
 ---------------
 
 Correctness evidence is recorded per lane: the device, the toolkit that
-compiled the binaries, and how the code reached that device. The signed
-receipt covers exactly one lane; every other lane is evidence attached to a
-dated run, not an attestation. A lane that is not listed has not been run, and
-nothing here claims support for every CUDA release or NVIDIA GPU.
+compiled the binaries, and how the code reached that device.
+:doc:`../getting_started/supported_platforms` lists every lane at its
+evidence level (attested, exercised, compiles); this section covers how a
+lane is recorded and verified.
 
-.. list-table::
-   :header-rows: 1
-   :widths: 34 26 40
+The desktop lane is the receipt in ``test/gpu-proof.json``: all eight shards
+on the RTX 5090, signed by the keyholder, refreshed with every change to a
+fingerprinted path and verified by CI on every push. Its ``integration``
+shard also runs the restricted-caller regression through the driver's PTX
+JIT for ``compute_75`` (``test_restrict.py`` ``*_jit`` tests), a second code
+generator on every receipt.
 
-   * - Lane
-     - Scope
-     - Status
-   * - RTX 5090 (``sm_120``), CUDA 13.2, native SASS, x86-64
-     - All eight shards with MathDx 26.03
-     - Signed receipt in ``test/gpu-proof.json``, verified by CI on every push.
-   * - RTX 5090, PTX JIT for ``compute_75``
-     - Restricted-caller regression (``test_restrict.py``, ``*_jit`` tests)
-     - Part of the ``integration`` shard of the same receipt: a second code
-       generator (the driver's) runs the handoff-sensitive callers on every
-       receipt.
-   * - CUDA 13.2, ``sm_90`` and ``sm_120``, compile only, no GPU
-     - Umbrella headers, examples, overload-manifest canaries
-     - GitHub-hosted CI on every push.
-   * - Jetson AGX Orin (``sm_87``), JetPack 7 / CUDA 13.2, native, aarch64
-     - Full pytest suite with MathDx 26.03; the Pinocchio leg of the robotics
-       tests skips (no aarch64 wheel)
-     - 2026-10-31, unsigned: every test passes. The first pass uncovered the
-       device-``printf`` truncation described below; the four affected files
-       were rerun on the fixed drivers.
-   * - Jetson AGX Xavier (``sm_72``), JetPack 5.1 / CUDA 11.4, native, aarch64
-     - Restricted-caller regression (1856 oracle cases) and the trailing-sync
-       and dispatch drivers (Python 3.8: no pytest session, oracle driven
-       directly); no MathDx for CUDA 11.4
-     - 2026-10-31, unsigned: every case passes, including the checker
-       self-test.
+A device lane is a second receipt file, ``test/gpu-proof-<lane>.json``. The
+merge refuses shards from different environments, so a Jetson never folds
+into the desktop receipt. The device records the eight shards unsigned, from
+a clean clone at the commit to attest, with the same runner:
+
+.. code-block:: bash
+
+   GLASS_PY=~/glass-venv/bin/python GLASS_SKIP_PIP=1 CUDA_ARCH=sm_87 \
+       ./test/run_gpu_proof.sh --lane sm87 --unsigned
+
+The shard receipts land in ``test/receipts/sm87/``; copied to the
+keyholder's box, they are merged and signed there:
+
+.. code-block:: bash
+
+   gpu-proof merge --out test/gpu-proof-sm87.json --github-user plancherb1 \
+       test/receipts/sm87/*.json
+
+``GLASS_PY`` names the interpreter (the Jetsons have no ``.venv``),
+``GLASS_SKIP_PIP`` leaves its packages alone, ``GLASS_ROOT`` points a copy of
+the runner at another checkout, and ``CUDA_ARCH`` is needed where
+``nvidia-smi`` is absent. A lane that cannot reach every shard records its
+skips, and CI pins that set exactly through ``test/expected_skips_<lane>.txt``
+(the Xavier has no MathDx for CUDA 11.4 and cannot JIT ``compute_75``).
+
+CI verifies each lane in a worktree at the commit the receipt names, so the
+fingerprint recomputes against the tree the device ran, and requires that
+commit to be an ancestor of the commit under test. The lane policy
+(``test/gpu-proof-policy-lane.json``) allows no carried shards and rejects a
+lane older than 180 days, which is the refresh horizon for the Jetsons.
 
 A reload-to-plain-load mutant of ``cooperative_detail::load`` (the 2026-10
 handoff fix) is caught by the restricted-caller regression on all four code
@@ -140,7 +147,8 @@ consistency of the handoff pattern, not because a miscompile was demonstrated.
 The selected-operand regression (``test_select.py``) ran on the same three
 GPUs: it fails on the header that still carried ``__restrict__`` and passes on
 the current one, in both precisions, under CUDA 13.2 for ``sm_120`` and
-``sm_87`` and CUDA 11.4 for ``sm_72`` (the Jetson results unsigned, as above).
+``sm_87`` and CUDA 11.4 for ``sm_72``; since 2026-11-02 it is part of the
+``integration`` shard of all three lane receipts.
 
 Device ``printf`` is not used for test output: its FIFO defaults to 1 MB on a
 Jetson AGX Orin against 8 MB on an RTX 5090, and a long dump is silently cut

@@ -8,6 +8,21 @@ All notable changes to GLASS will be documented here. The format follows
 
 ### Added
 
+- Signed receipts for the two Jetson lanes, `test/gpu-proof-sm87.json`
+  (AGX Orin, CUDA 13.2) and `test/gpu-proof-sm72.json` (AGX Xavier, CUDA
+  11.4), recorded on the device with `run_gpu_proof.sh --lane <name>
+  --unsigned` and signed on the keyholder's box. CI verifies each lane in a
+  worktree at the commit it attests under `test/gpu-proof-policy-lane.json`
+  (no carried shards, 180-day horizon) and pins the Xavier's skips through
+  `test/expected_skips_sm72.txt`. The runner takes `GLASS_PY`,
+  `GLASS_GPU_PROOF`, `GLASS_SKIP_PIP` and `GLASS_ROOT` for a device without
+  the repository's `.venv`.
+- A compile matrix in CI: CUDA 13.2, 12.4 and 11.8 across `sm_70` to
+  `sm_120` (sixteen cells), nvcc only, replacing the two-cell smoke.
+- A supported-platforms page that lists every device and toolkit at its
+  evidence level (attested, exercised, compiles) and states what is not
+  claimed.
+
 - `glass::warp::transform_points` applies a column-major 4×4 homogeneous
   transform (`float` or `double`) to packed `float` points, lanes striding the
   points, in two forms: one transform for all points, or one transform index

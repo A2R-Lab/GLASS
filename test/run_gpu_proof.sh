@@ -25,6 +25,21 @@
 #    can never verify post-commit, so it must not be committed)
 #   (extra args after -- go to pytest)
 #
+# Lanes (2026-11-02). A second device records its own receipt file: the merge
+# refuses shards from different environments, so a Jetson never folds into
+# the desktop receipt. On the device:
+#
+#   GLASS_PY=~/glass-venv/bin/python GLASS_SKIP_PIP=1 CUDA_ARCH=sm_87 \
+#       ./test/run_gpu_proof.sh --lane sm87 --unsigned
+#
+# writes test/receipts/sm87/<shard>.json (unsigned, signing backend none) and
+# skips the merge. Copy that directory to the keyholder's box and sign there:
+#
+#   gpu-proof merge --out test/gpu-proof-sm87.json --github-user plancherb1 \
+#       test/receipts/sm87/*.json
+#
+# GLASS_ROOT points the script at a checkout other than the one it lives in.
+#
 # Merge always attempts --carry-from the last committed test/gpu-proof.json
 # when a subset ran: freshly-run shards win; absent shards graft in iff their
 # narrow fingerprint recomputes identical AND the old commit is an ancestor
@@ -36,10 +51,13 @@
 # by CI via test/expected_skips.txt. The signer must be the human KEYHOLDER
 # (--gpu-proof-github-user), not the org.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "${GLASS_ROOT:-$(dirname "$0")/..}"
 
-PY=.venv/bin/python
-$PY -m pip install -q -r test/requirements.txt
+PY=${GLASS_PY:-.venv/bin/python}
+GPU_PROOF=${GLASS_GPU_PROOF:-.venv/bin/gpu-proof}
+if [[ "${GLASS_SKIP_PIP:-0}" != 1 ]]; then
+    $PY -m pip install -q -r test/requirements.txt
+fi
 
 ROOTS_BASE="glass.cuh,glass-cgrps.cuh,glass-defaults.cuh,glass-dispatch.cuh"
 SYNC_BASE="src/base/barrier.cuh,src/base/dispatch.cuh,src/base/flags.cuh"
@@ -102,8 +120,14 @@ RUN_SHARDS="$ALL_SHARDS"
 REUSE_SHARDS=""
 CARRY_FROM=""
 ALLOW_DIRTY=0
+LANE=""
+UNSIGNED=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --lane)
+            LANE="$2"; shift 2 ;;
+        --unsigned)
+            UNSIGNED=1; shift ;;
         --shards)
             RUN_SHARDS="${2//,/ }"; shift 2 ;;
         --carry-from)
@@ -119,6 +143,14 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 [[ "${1:-}" == "--" ]] && shift
+
+# A lane keeps its shard receipts and merged receipt apart from the desktop
+# ones; the signing flags make the device run unsigned (merge + sign happen on
+# the keyholder's box, see the header).
+RECEIPT_DIR=test/receipts${LANE:+/$LANE}
+RECEIPT_OUT=test/gpu-proof${LANE:+-$LANE}.json
+SIGN_FLAGS=()
+[[ "$UNSIGNED" == 1 ]] && SIGN_FLAGS=(--gpu-proof-signing-backend none)
 
 # Order-insensitive "did every shard run" test — a reordered or duplicated
 # --shards list must still count as a full run (and vice versa).
@@ -147,29 +179,29 @@ for s in $REUSE_SHARDS; do
     [[ " $RUN_SHARDS " != *" $s "* ]] || {
         echo "FATAL: shard '$s' appears in both --shards and --reuse-shards" >&2; exit 2;
     }
-    [[ -f "test/receipts/$s.json" ]] || {
-        echo "FATAL: reusable receipt test/receipts/$s.json does not exist" >&2; exit 2;
+    [[ -f "$RECEIPT_DIR/$s.json" ]] || {
+        echo "FATAL: reusable receipt $RECEIPT_DIR/$s.json does not exist" >&2; exit 2;
     }
     # Reused shard files merge as FRESH (no carry-time fingerprint recheck),
     # so require they were produced at exactly this commit on a clean tree.
     read -r R_SHA R_DIRTY < <($PY -c "
 import json, sys
-r = json.load(open('test/receipts/$s.json'))['repo']
+r = json.load(open('$RECEIPT_DIR/$s.json'))['repo']
 print(r.get('commit_sha', '?'), r.get('dirty', True))")
     [[ "$R_SHA" == "$HEAD_SHA" && "$R_DIRTY" == "False" ]] || {
-        echo "FATAL: test/receipts/$s.json was generated at $R_SHA (dirty=$R_DIRTY)," >&2
+        echo "FATAL: $RECEIPT_DIR/$s.json was generated at $R_SHA (dirty=$R_DIRTY)," >&2
         echo "not at clean HEAD $HEAD_SHA — rerun the shard instead of reusing it." >&2
         exit 2
     }
 done
 
-mkdir -p test/receipts
+mkdir -p "$RECEIPT_DIR"
 if [[ -n "$CARRY_FROM" ]]; then
     if is_full_run; then
         echo "FATAL: --carry-from is only meaningful with --shards" >&2
         exit 2
     fi
-    cp "$CARRY_FROM" test/receipts/_carry_explicit.json
+    cp "$CARRY_FROM" "$RECEIPT_DIR/_carry_explicit.json"
 fi
 FRESH=()
 for s in $RUN_SHARDS; do
@@ -179,28 +211,35 @@ for s in $RUN_SHARDS; do
     FP_PATHS="${SHARD_PATHS[$s]},$(echo ${SHARD_FILES[$s]} ${SHARD_DRIVERS[$s]} | tr -s ' ' ',')"
     # shellcheck disable=SC2086
     $PY -m pytest ${SHARD_FILES[$s]} -q "$@" \
-        --gpu-proof-enable \
-        --gpu-proof-out "test/receipts/$s.json" \
+        --gpu-proof-enable "${SIGN_FLAGS[@]}" \
+        --gpu-proof-out "$RECEIPT_DIR/$s.json" \
         --gpu-proof-github-user plancherb1 \
         --gpu-proof-shard "$s" \
         --gpu-proof-shard-fingerprint-paths "$FP_PATHS" \
         --gpu-proof-fingerprint-paths "glass.cuh,glass-cgrps.cuh,glass-nvidia.cuh,glass-defaults.cuh,glass-dispatch.cuh,src,test/cuda,test/conftest.py"
-    FRESH+=("test/receipts/$s.json")
+    FRESH+=("$RECEIPT_DIR/$s.json")
 done
 for s in $REUSE_SHARDS; do
     echo "── reuse fresh shard receipt: $s ───────────────────────"
-    FRESH+=("test/receipts/$s.json")
+    FRESH+=("$RECEIPT_DIR/$s.json")
 done
+
+if [[ "$UNSIGNED" == 1 ]]; then
+    echo
+    echo "Unsigned shard receipts in $RECEIPT_DIR/ — copy them to the keyholder's box and"
+    echo "merge + sign there (see the header of this script)."
+    exit 0
+fi
 
 CARRY=()
 if [[ -n "$CARRY_FROM" ]]; then
-    CARRY=(--carry-from test/receipts/_carry_explicit.json --repo .)
-elif ! is_full_run && git cat-file -e HEAD:test/gpu-proof.json 2>/dev/null; then
-    git show HEAD:test/gpu-proof.json > test/receipts/_last_green.json
-    CARRY=(--carry-from test/receipts/_last_green.json --repo .)
+    CARRY=(--carry-from "$RECEIPT_DIR/_carry_explicit.json" --repo .)
+elif ! is_full_run && git cat-file -e "HEAD:$RECEIPT_OUT" 2>/dev/null; then
+    git show "HEAD:$RECEIPT_OUT" > "$RECEIPT_DIR/_last_green.json"
+    CARRY=(--carry-from "$RECEIPT_DIR/_last_green.json" --repo .)
 fi
-.venv/bin/gpu-proof merge --out test/gpu-proof.json "${CARRY[@]}" \
+$GPU_PROOF merge --out "$RECEIPT_OUT" "${CARRY[@]}" \
     --github-user plancherb1 "${FRESH[@]}"
 
 echo
-echo "Signed receipt: test/gpu-proof.json — 'git add test/gpu-proof.json' to attest this run."
+echo "Signed receipt: $RECEIPT_OUT — 'git add $RECEIPT_OUT' to attest this run."

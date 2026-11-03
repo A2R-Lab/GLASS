@@ -33,18 +33,43 @@ jobs:
           git check-ignore --quiet bench/solver_ladder_20990101_000000.txt
           python3 -m pytest test/test_bench_common.py test/test_tune_isolation.py -q
 
+  # Toolchain matrix (2026-11-02): nvcc only, no GPU. A cell shows that the
+  # header surface, the examples and the installed package compile for that
+  # (toolkit, architecture) pair; it is not a claim that the code runs there.
+  # The platforms page in the docs reads this list. CUDA 13 cannot target
+  # sm_70 or sm_72, and the hosted CUDA 11.8 / 12.4 repositories exist for
+  # Ubuntu 22.04 only. The resource canary has baselines for the two desktop
+  # cells only.
   compile-smoke:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        arch: [sm_90, sm_120]
+        include:
+          - { cuda: '13.2.0', arch: sm_75,  os: ubuntu-latest }
+          - { cuda: '13.2.0', arch: sm_86,  os: ubuntu-latest }
+          - { cuda: '13.2.0', arch: sm_87,  os: ubuntu-latest }
+          - { cuda: '13.2.0', arch: sm_90,  os: ubuntu-latest, canary: true }
+          - { cuda: '13.2.0', arch: sm_100, os: ubuntu-latest }
+          - { cuda: '13.2.0', arch: sm_120, os: ubuntu-latest, canary: true }
+          - { cuda: '12.4.1', arch: sm_72,  os: ubuntu-22.04 }
+          - { cuda: '12.4.1', arch: sm_75,  os: ubuntu-22.04 }
+          - { cuda: '12.4.1', arch: sm_86,  os: ubuntu-22.04 }
+          - { cuda: '12.4.1', arch: sm_89,  os: ubuntu-22.04 }
+          - { cuda: '12.4.1', arch: sm_90,  os: ubuntu-22.04 }
+          - { cuda: '11.8.0', arch: sm_70,  os: ubuntu-22.04 }
+          - { cuda: '11.8.0', arch: sm_72,  os: ubuntu-22.04 }
+          - { cuda: '11.8.0', arch: sm_75,  os: ubuntu-22.04 }
+          - { cuda: '11.8.0', arch: sm_86,  os: ubuntu-22.04 }
+          - { cuda: '11.8.0', arch: sm_89,  os: ubuntu-22.04 }
+    name: compile-smoke (${{ matrix.cuda }}, ${{ matrix.arch }})
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install CUDA toolkit (nvcc only, no GPU needed)
         uses: Jimver/cuda-toolkit@b8bf9c6c28f8a92fbb04dcfcaee872e60c57462d # v0.2.36
         with:
-          cuda: '13.2.0'
+          cuda: ${{ matrix.cuda }}
           method: network
           sub-packages: '["nvcc"]'
 
@@ -78,4 +103,5 @@ jobs:
             -c .github/scripts/install_canary.cu -o install-canary.o
 
       - name: Static resource canary (regs/spill/smem vs committed baseline)
+        if: matrix.canary
         run: python3 .github/scripts/resource_canary.py --arch ${{ matrix.arch }}
