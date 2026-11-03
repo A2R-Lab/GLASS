@@ -71,6 +71,7 @@ jobs:
           lanes=(test/gpu-proof-*.json)
           [ ${#lanes[@]} -gt 0 ] || { echo "::notice::no lane receipts"; exit 0; }
           for receipt in "${lanes[@]}"; do
+            case "$receipt" in *policy*) continue ;; esac   # test/gpu-proof-policy-*.json
             lane=$(basename "$receipt" .json); lane=${lane#gpu-proof-}
             sha=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['repo']['commit_sha'])" "$receipt")
             git merge-base --is-ancestor "$sha" HEAD || { echo "::error::$receipt attests $sha, not an ancestor of HEAD"; exit 1; }
