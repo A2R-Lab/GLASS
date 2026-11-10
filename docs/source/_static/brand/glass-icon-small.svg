@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220" width="220" height="220" role="img" aria-label="GLASS">
+<title>GLASS</title>
+<polygon points="110.0,6.0 200.1,58.0 200.1,162.0 110.0,214.0 19.9,162.0 19.9,58.0" fill="#00693e"/>
+<polygon points="110.0,34.0 175.8,72.0 175.8,148.0 110.0,186.0 44.2,148.0 44.2,72.0" fill="#cfe6f6"/>
+<polygon points="110.0,34.0 175.8,72.0 175.8,148.0 110.0,110.0" fill="#9bcbeb"/>
+<rect x="63" y="63" width="40" height="40" rx="6" fill="#00693e"/>
+<rect x="63" y="117" width="40" height="40" rx="6" fill="#00693e"/>
+<rect x="117" y="63" width="40" height="40" rx="6" fill="#00693e"/>
+<rect x="117" y="117" width="40" height="40" rx="6" fill="#00693e"/>
+</svg>

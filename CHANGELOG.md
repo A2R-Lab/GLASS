@@ -19,6 +19,8 @@ All notable changes to GLASS will be documented here. The format follows
   the repository's `.venv`. The Xavier lane runs on Python 3.9 and records
   its GPU through the driver API, so the pin moves to pytest-gpu-proof 0.5.1,
   the release that supports both.
+- A GLASS logo and favicon on the README, the project page and the
+  documentation, with Dartmouth Green and River Blue as the site colors.
 - A compile matrix in CI: CUDA 13.2, 12.4 and 11.8 across `sm_70` to
   `sm_120` (sixteen cells), nvcc only, replacing the two-cell smoke.
 - A supported-platforms page that lists every device and toolkit at its

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220" width="220" height="220" role="img" aria-label="GLASS">
+<title>GLASS</title>
+<polygon points="110.00,10.00 196.60,60.00 178.42,70.50" fill="#267b61" stroke="#267b61" stroke-width="0.6" stroke-linejoin="round"/>
+<polygon points="110.00,10.00 178.42,70.50 110.00,31.00" fill="#3b977e" stroke="#3b977e" stroke-width="0.6" stroke-linejoin="round"/>
+<polygon points="196.60,60.00 196.60,160.00 178.42,149.50" fill="#075336" stroke="#075336" stroke-width="0.6" stroke-linejoin="round"/>
+<polygon points="196.60,60.00 178.42,149.50 178.42,70.50" fill="#1c6e53" stroke="#1c6e53" stroke-width="0.6" stroke-linejoin="round"/>
+<polygon points="196.60,160.00 110.00,210.00 110.00,189.00" fill="#004a2c" stroke="#004a2c" stroke-width="0.6" stroke-linejoin="round"/>
+<polygon points="196.60,160.00 110.00,189.00 178.42,149.50" fill="#085537" stroke="#085537" stroke-width="0.6" stroke-linejoin="round"/>
+<polygon points="110.00,210.00 23.40,160.00 41.58,149.50" fill="#136347" stroke="#136347" stroke-width="0.6" stroke-linejoin="round"/>
+<polygon points="110.00,210.00 41.58,149.50 110.00,189.00" fill="#136347" stroke="#136347" stroke-width="0.6" stroke-linejoin="round"/>
+<polygon points="23.40,160.00 23.40,60.00 41.58,70.50" fill="#328b71" stroke="#328b71" stroke-width="0.6" stroke-linejoin="round"/>
+<polygon points="23.40,160.00 41.58,70.50 41.58,149.50" fill="#328b72" stroke="#328b72" stroke-width="0.6" stroke-linejoin="round"/>
+<polygon points="23.40,60.00 110.00,10.00 110.00,31.00" fill="#3b977e" stroke="#3b977e" stroke-width="0.6" stroke-linejoin="round"/>
+<polygon points="23.40,60.00 110.00,31.00 41.58,70.50" fill="#3f9c84" stroke="#3f9c84" stroke-width="0.6" stroke-linejoin="round"/>
+<polygon points="110.00,110.00 110.00,31.00 178.42,70.50" fill="#c7e1f4" stroke="#c7e1f4" stroke-width="0.6" stroke-linejoin="round"/>
+<polygon points="110.00,110.00 178.42,70.50 178.42,149.50" fill="#a0cbea" stroke="#a0cbea" stroke-width="0.6" stroke-linejoin="round"/>
+<polygon points="110.00,110.00 178.42,149.50 110.00,189.00" fill="#7fb9e2" stroke="#7fb9e2" stroke-width="0.6" stroke-linejoin="round"/>
+<polygon points="110.00,110.00 110.00,189.00 41.58,149.50" fill="#a5ceeb" stroke="#a5ceeb" stroke-width="0.6" stroke-linejoin="round"/>
+<polygon points="110.00,110.00 41.58,149.50 41.58,70.50" fill="#cce4f5" stroke="#cce4f5" stroke-width="0.6" stroke-linejoin="round"/>
+<polygon points="110.00,110.00 41.58,70.50 110.00,31.00" fill="#e3f1fb" stroke="#e3f1fb" stroke-width="0.6" stroke-linejoin="round"/>
+<clipPath id="face"><polygon points="110.00,31.00 178.42,70.50 178.42,149.50 110.00,189.00 41.58,149.50 41.58,70.50"/></clipPath>
+<g clip-path="url(#face)"><polygon points="20,120 90,15 118,15 48,120" fill="#ffffff" opacity="0.38"/><polygon points="62,120 132,15 142,15 72,120" fill="#ffffff" opacity="0.25"/></g>
+<rect x="74.0" y="74.0" width="31" height="31" rx="5" fill="#00693e" opacity="0.93"/>
+<rect x="74.0" y="115.0" width="31" height="31" rx="5" fill="#00693e" opacity="0.93"/>
+<rect x="115.0" y="74.0" width="31" height="31" rx="5" fill="#00693e" opacity="0.93"/>
+<rect x="115.0" y="115.0" width="31" height="31" rx="5" fill="#00693e" opacity="0.93"/>
+<path d="M71.0,67 H58.0 V153 H71.0" fill="none" stroke="#00693e" stroke-width="8.5" stroke-linejoin="miter"/>
+<path d="M149.0,67 H162.0 V153 H149.0" fill="none" stroke="#00693e" stroke-width="8.5" stroke-linejoin="miter"/>
+</svg>

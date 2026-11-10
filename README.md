@@ -1,4 +1,4 @@
-# GLASS
+<p align="center"><img src="docs/source/_static/brand/glass-logo.svg" alt="GLASS" width="520"></p>
 
 [![CI](https://github.com/A2R-Lab/GLASS/actions/workflows/ci.yml/badge.svg)](https://github.com/A2R-Lab/GLASS/actions/workflows/ci.yml)
 [![verify-gpu-proof](https://github.com/A2R-Lab/GLASS/actions/workflows/verify-gpu-proof.yml/badge.svg)](https://github.com/A2R-Lab/GLASS/actions/workflows/verify-gpu-proof.yml)
