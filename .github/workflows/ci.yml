@@ -13,7 +13,7 @@ on:
 
 jobs:
   contract-coverage:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -46,12 +46,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { cuda: '13.2.0', arch: sm_75,  os: ubuntu-latest }
-          - { cuda: '13.2.0', arch: sm_86,  os: ubuntu-latest }
-          - { cuda: '13.2.0', arch: sm_87,  os: ubuntu-latest }
-          - { cuda: '13.2.0', arch: sm_90,  os: ubuntu-latest, canary: true }
-          - { cuda: '13.2.0', arch: sm_100, os: ubuntu-latest }
-          - { cuda: '13.2.0', arch: sm_120, os: ubuntu-latest, canary: true }
+          - { cuda: '13.2.0', arch: sm_75,  os: ubuntu-24.04 }
+          - { cuda: '13.2.0', arch: sm_86,  os: ubuntu-24.04 }
+          - { cuda: '13.2.0', arch: sm_87,  os: ubuntu-24.04 }
+          - { cuda: '13.2.0', arch: sm_90,  os: ubuntu-24.04, canary: true }
+          - { cuda: '13.2.0', arch: sm_100, os: ubuntu-24.04 }
+          - { cuda: '13.2.0', arch: sm_120, os: ubuntu-24.04, canary: true }
           - { cuda: '12.4.1', arch: sm_72,  os: ubuntu-22.04 }
           - { cuda: '12.4.1', arch: sm_75,  os: ubuntu-22.04 }
           - { cuda: '12.4.1', arch: sm_86,  os: ubuntu-22.04 }

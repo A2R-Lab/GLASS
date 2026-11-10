@@ -20,7 +20,7 @@ on:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -51,7 +51,7 @@ jobs:
   # lane policy (no carry, 180-day horizon), and that commit must be an
   # ancestor of the commit under test. The platforms page lists the lanes.
   lanes:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
