@@ -64,8 +64,9 @@ html_theme_options = {
     "github_url": "https://github.com/A2R-Lab/GLASS",
     "use_edit_page_button": True,
     "logo": {
-        "image_light": "_static/a2r_lab.png",
-        "image_dark": "_static/a2r_lab.png",
+        "image_light": "_static/brand/glass-logo.svg",
+        "image_dark": "_static/brand/glass-logo.svg",
+        "alt_text": "GLASS",
     },
     "collapse_navigation": True,
     "header_links_before_dropdown": 6,
@@ -79,7 +80,7 @@ html_theme_options = {
 }
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
-html_logo = "_static/favicon/favicon.ico"
+html_logo = "_static/brand/glass-logo.svg"
 
 html_context = {
     "display_github": True,

@@ -1,6 +1,25 @@
 /* GLASS docs — light overrides on top of pydata-sphinx-theme. */
 
-/* Size the A2R Lab navbar logo consistently in light/dark mode. */
+/* Brand colors: Dartmouth Green and River Blue, the two colors of the logo.
+   Green is too dark for links on the dark theme, so River Blue leads there. */
+html[data-theme="light"] {
+    --pst-color-primary: #00693e;
+    --pst-color-primary-highlight: #004a2c;
+    --pst-color-primary-bg: #e6f0ec;
+    --pst-color-secondary: #004a2c;
+    --pst-color-secondary-highlight: #00331e;
+    --pst-color-secondary-bg: #ebf5fb;
+}
+html[data-theme="dark"] {
+    --pst-color-primary: #9bcbeb;
+    --pst-color-primary-highlight: #c5e1f4;
+    --pst-color-primary-bg: #0f3b4f;
+    --pst-color-secondary: #7fd1a8;
+    --pst-color-secondary-highlight: #a8e2c4;
+    --pst-color-secondary-bg: #004a2c;
+}
+
+/* Size the navbar logo consistently in light/dark mode. */
 .navbar-brand img {
     height: 40px;
     width: auto;
