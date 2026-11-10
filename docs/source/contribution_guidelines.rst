@@ -61,3 +61,8 @@ Documentation
 
 The docs build with Sphinx + Doxygen + Breathe. See
 :doc:`sphinx_edit_guide` for how to build and preview locally.
+
+.. toctree::
+   :hidden:
+
+   sphinx_edit_guide

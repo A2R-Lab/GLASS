@@ -187,5 +187,4 @@ comparison populations, and release figures. The dated
    :hidden:
    :caption: Developer Guide
 
-   contribution_guidelines
-   sphinx_edit_guide
+   Contributing <contribution_guidelines>
