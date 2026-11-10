@@ -68,6 +68,7 @@ pinned to the source release above.
 
 Layout and styling adapt A2R Lab's GATO cover page (`gh-pages`), itself adapted
 from Nerfies under CC BY-SA 4.0. The footer retains those attributions; GLASS
-software remains MIT licensed. Font families, green accents, serif headings,
+software remains MIT licensed. Font families, serif headings,
 figure cards, resource buttons, and citation copying follow GATO; content,
-responsive layout, and navigation are tailored to GLASS.
+responsive layout, and navigation are tailored to GLASS. The accent is Dartmouth Green (`#00693e`) with River Blue
+(`#9bcbeb`), the two colors of the logo in `../source/_static/brand/`.

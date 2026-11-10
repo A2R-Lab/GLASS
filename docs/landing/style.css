@@ -1,6 +1,6 @@
 /* Adapted from A2R Lab's GATO research page (gh-pages, CC BY-SA 4.0).
    Serif headings, green accents, paper figures, and compact resource buttons. */
-:root { --bg:#f6f7f9; --card:#fff; --text:#1a1d25; --dim:#4b5060; --accent:#087c58; --border:#dde0e6; --serif:'Source Serif 4',Georgia,serif; --sans:'DM Sans',system-ui,sans-serif; --mono:'JetBrains Mono',monospace; }
+:root { --bg:#f6f7f9; --card:#fff; --text:#1a1d25; --dim:#4b5060; --accent:#00693e; --border:#dde0e6; --serif:'Source Serif 4',Georgia,serif; --sans:'DM Sans',system-ui,sans-serif; --mono:'JetBrains Mono',monospace; }
 * { box-sizing:border-box; }
 html { scroll-behavior:smooth; scroll-padding-top:5rem; }
 body { margin:0; background:var(--bg); color:var(--text); font-family:var(--sans); line-height:1.75; }
@@ -16,11 +16,11 @@ a:hover { text-decoration-thickness:2px; }
 .navlinks { display:flex; gap:1.3rem; font-size:.85rem; }
 .navlinks a { color:var(--dim); text-decoration:none; }
 .hero { text-align:center; padding:4.2rem 0 1.5rem; }
-.badge,.eyebrow { font-family:var(--mono); font-size:.72rem; font-weight:600; letter-spacing:.10em; text-transform:uppercase; color:var(--accent); }
-.badge { display:inline-block; border:1px solid #b7ddcc; border-radius:30px; background:#e8f7f1; padding:.3rem .9rem; }
+.eyebrow { font-family:var(--mono); font-size:.72rem; font-weight:600; letter-spacing:.10em; text-transform:uppercase; color:var(--accent); }
+.hero-logo { display:block; width:min(400px,78%); height:auto; margin:0 auto .4rem; }
+.sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
 h1,h2,h3 { font-family:var(--serif); line-height:1.22; }
 h1 { font-size:clamp(2rem,4.2vw,3rem); max-width:880px; margin:1.3rem auto; }
-h1 span { color:var(--accent); }
 h2 { font-size:clamp(1.65rem,3vw,2.05rem); margin:.65rem 0 1.3rem; }
 h3 { font-size:1.3rem; margin:.4rem 0 .8rem; }
 .hero-sub { max-width:700px; margin:1.4rem auto; color:var(--dim); font-size:1.06rem; }
@@ -50,7 +50,7 @@ figure { margin:1.5rem 0 2.4rem; }
 .compact { max-width:750px; margin:1.5rem auto 2.4rem; }
 figcaption { margin-top:.8rem; line-height:1.65; }
 .figure-meta { display:flex; flex-wrap:wrap; gap:1rem; margin:.45rem 0; font-size:.78rem; }
-.method { background:#eaf3ef; border-left:3px solid var(--accent); padding:1.2rem 1.4rem; border-radius:0 8px 8px 0; font-size:.9rem; }
+.method { background:#e6f0ec; border-left:3px solid var(--accent); padding:1.2rem 1.4rem; border-radius:0 8px 8px 0; font-size:.9rem; }
 details { margin:1.2rem 0; }
 summary { cursor:pointer; color:var(--accent); font-weight:600; }
 .table-wrap { overflow-x:auto; border:1px solid var(--border); border-radius:10px; background:white; }
