@@ -5,17 +5,6 @@ The research cover page is deployed at `/GLASS/`; Sphinx documentation lives at
 
 ## Review locally
 
-From an existing GLASS checkout, first save any local work, then:
-
-```sh
-git fetch origin
-git switch codex/glass-paper-website
-git pull --ff-only origin codex/glass-paper-website
-```
-
-For a new checkout, use `git clone --branch codex/glass-paper-website
-https://github.com/A2R-Lab/GLASS.git` and `cd GLASS` instead.
-
 Install Doxygen if needed (`sudo apt install doxygen` on Ubuntu or
 `brew install doxygen` on macOS), then prepare the Python dependencies:
 
@@ -42,7 +31,7 @@ Old HTML URLs redirect to matching `/docs/` pages with query strings and
 fragments preserved. Old assets, downloads, and `/badges/` remain accessible.
 
 The workflow deploys only pushes to `main`. PRs build and check without
-deploying. This branch does not update the public site.
+deploying.
 
 ## Paper provenance and release
 

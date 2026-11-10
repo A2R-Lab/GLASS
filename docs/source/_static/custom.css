@@ -9,6 +9,7 @@ html[data-theme="light"] {
     --pst-color-secondary: #004a2c;
     --pst-color-secondary-highlight: #00331e;
     --pst-color-secondary-bg: #ebf5fb;
+    --pst-color-inline-code: #004a2c;
 }
 html[data-theme="dark"] {
     --pst-color-primary: #9bcbeb;
@@ -17,6 +18,7 @@ html[data-theme="dark"] {
     --pst-color-secondary: #7fd1a8;
     --pst-color-secondary-highlight: #a8e2c4;
     --pst-color-secondary-bg: #004a2c;
+    --pst-color-inline-code: #a8e2c4;
 }
 
 /* Size the navbar logo consistently in light/dark mode. */
@@ -30,4 +32,12 @@ dl.cpp.function > dt,
 dl.cpp.struct > dt {
     border-left: 3px solid var(--pst-color-primary);
     padding-left: 0.6rem;
+}
+
+/* File names and identifiers in table cells may break, so a long one cannot
+   push the table past the content column. */
+table.table td code.literal,
+table.table td code.literal .pre {
+    overflow-wrap: anywhere;
+    white-space: normal;
 }

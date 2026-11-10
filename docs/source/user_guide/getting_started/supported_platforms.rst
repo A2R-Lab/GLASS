@@ -20,7 +20,7 @@ trust model.
 
 .. list-table::
    :header-rows: 1
-   :widths: 24 26 30 20
+   :widths: 20 24 30 26
 
    * - Device
      - Toolkit and host
